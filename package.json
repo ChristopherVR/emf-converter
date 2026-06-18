@@ -11,16 +11,15 @@
 		"windows-metafile",
 		"wmf"
 	],
-	"homepage": "https://github.com/ChristopherVR/pptx-viewer",
+	"homepage": "https://github.com/ChristopherVR/emf-converter",
 	"bugs": {
-		"url": "https://github.com/ChristopherVR/pptx-viewer/issues"
+		"url": "https://github.com/ChristopherVR/emf-converter/issues"
 	},
 	"license": "Apache-2.0",
 	"author": "ChristopherVR",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/ChristopherVR/pptx-viewer.git",
-		"directory": "packages/emf-converter"
+		"url": "https://github.com/ChristopherVR/emf-converter.git"
 	},
 	"files": [
 		"dist/",
