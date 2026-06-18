@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # npm dependencies (package.json) — tsup / typescript / vitest, etc.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions used by the CI / publish / pages workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns: ["*"]
