@@ -1,35 +1,39 @@
 name: Publish to npm
 
-# Publishes emf-converter to https://www.npmjs.com/package/emf-converter
-# on a published GitHub release. The package version is taken from the
-# release tag (a leading "v" is stripped, so tag v1.4.0 publishes 1.4.0).
+# On every push to main, publish the package.json version of emf-converter to
+# npm via OIDC trusted publishing (with provenance) when that version is not
+# already on npm, then cut a matching GitHub release. To ship a new version,
+# bump "version" in package.json and push to main.
 #
-# Auth: OIDC trusted publishing — no secrets. On npmjs.com configure a trusted
-# publisher for this package (GitHub Actions; owner ChristopherVR; repo
-# emf-converter; workflow publish.yml; environment npm) to match the id-token
-# permission and `environment: npm` below. npm mints a short-lived token via
-# OIDC and attaches provenance automatically. Requires npm >= 11.5.1 (Node 24)
-# and a public repository.
+# Why publish here (on push) rather than from a separate "release: published"
+# event: a GitHub release created with the built-in GITHUB_TOKEN does NOT
+# trigger other workflows (GitHub's loop-prevention rule), so a release->publish
+# hop would never fire without a PAT. Doing both in one job avoids that.
+#
+# Auth: OIDC trusted publishing — no secrets. Configure a trusted publisher on
+# npmjs.com for this package: GitHub Actions; owner ChristopherVR; repo
+# emf-converter; workflow publish.yml; environment npm. Requires a public repo.
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
 
 permissions:
-  contents: read
-  id-token: write
+  contents: write # create the GitHub release/tag
+  id-token: write # OIDC trusted publishing + provenance
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     environment: npm
-    permissions:
-      contents: read
-      id-token: write # OIDC trusted publishing + provenance
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
@@ -44,20 +48,34 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Set version from release tag
-        id: version
-        run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          node -e "const fs=require('fs');const p='package.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));d.version='${VERSION}';fs.writeFileSync(p,JSON.stringify(d,null,'\t')+'\n')"
+      - name: Read package version
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Publish
+      - name: Skip if already published
+        id: check
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          EXISTING=$(npm view emf-converter@"$VERSION" version 2>/dev/null || echo "")
-          if [ "$EXISTING" = "$VERSION" ]; then
-            echo "emf-converter@$VERSION already published, skipping"
+          VERSION="${{ steps.v.outputs.version }}"
+          if [ "$(npm view emf-converter@"$VERSION" version 2>/dev/null || true)" = "$VERSION" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "emf-converter@$VERSION already on npm — nothing to do."
           else
-            npm publish --provenance --access public
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Ensure npm supports trusted publishing
+        if: steps.check.outputs.publish == 'true'
+        run: npm install -g npm@latest
+
+      - name: Publish to npm
+        if: steps.check.outputs.publish == 'true'
+        run: npm publish --provenance --access public
+
+      - name: Create GitHub release
+        if: steps.check.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.v.outputs.version }}
+          target_commitish: main
+          name: v${{ steps.v.outputs.version }}
+          generate_release_notes: true
