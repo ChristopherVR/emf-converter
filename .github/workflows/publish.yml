@@ -1,25 +1,24 @@
 name: Publish to npm
 
-# On every push to main, publish the package.json version of emf-converter to
-# npm via OIDC trusted publishing (with provenance) when that version is not
-# already on npm, then cut a matching GitHub release. To ship a new version,
-# bump "version" in package.json and push to main.
+# On push to main: build + test, and if the package.json version is not yet on
+# npm, regenerate CHANGELOG.md (git-cliff), commit it back, publish to npm via
+# OIDC trusted publishing (with provenance), and cut a GitHub release whose body
+# is the new changelog section. To ship a release, bump "version" in
+# package.json and push to main.
 #
-# Why publish here (on push) rather than from a separate "release: published"
-# event: a GitHub release created with the built-in GITHUB_TOKEN does NOT
-# trigger other workflows (GitHub's loop-prevention rule), so a release->publish
-# hop would never fire without a PAT. Doing both in one job avoids that.
+# The CHANGELOG commit is pushed with GITHUB_TOKEN and marked [skip ci]; pushes
+# made with GITHUB_TOKEN do not retrigger workflows, so this does not loop.
 #
 # Auth: OIDC trusted publishing — no secrets. Configure a trusted publisher on
-# npmjs.com for this package: GitHub Actions; owner ChristopherVR; repo
-# emf-converter; workflow publish.yml; environment npm. Requires a public repo.
+# npmjs.com: GitHub Actions; owner ChristopherVR; repo emf-converter; workflow
+# publish.yml; environment npm. Requires a public repo.
 
 on:
   push:
     branches: [main]
 
 permissions:
-  contents: write # create the GitHub release/tag
+  contents: write # commit the changelog + create the release/tag
   id-token: write # OIDC trusted publishing + provenance
 
 concurrency:
@@ -28,6 +27,7 @@ concurrency:
 
 jobs:
   publish:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     environment: npm
     steps:
@@ -48,11 +48,17 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Test
+        run: bun run test
+
       - name: Read package version
         id: v
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if already published
+      - name: Skip if this version is already on npm
         id: check
         run: |
           VERSION="${{ steps.v.outputs.version }}"
@@ -63,19 +69,41 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Ensure npm supports trusted publishing
+      - name: Generate changelog
         if: steps.check.outputs.publish == 'true'
-        run: npm install -g npm@latest
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --tag ${{ steps.v.outputs.tag }} --output CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit changelog
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- CHANGELOG.md; then
+            git add CHANGELOG.md
+            git commit -m "docs(changelog): ${{ steps.v.outputs.tag }} [skip ci]"
+            git push origin HEAD:main
+          fi
+
+      - name: Extract latest release notes
+        if: steps.check.outputs.publish == 'true'
+        run: awk '/^## \[/{c++} c==1{print} c==2{exit}' CHANGELOG.md > "${RUNNER_TEMP}/notes.md"
 
       - name: Publish to npm
         if: steps.check.outputs.publish == 'true'
-        run: npm publish --provenance --access public
+        run: |
+          npm install -g npm@latest
+          npm publish --provenance --access public
 
       - name: Create GitHub release
         if: steps.check.outputs.publish == 'true'
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ steps.v.outputs.version }}
+          tag_name: ${{ steps.v.outputs.tag }}
           target_commitish: main
-          name: v${{ steps.v.outputs.version }}
-          generate_release_notes: true
+          name: ${{ steps.v.outputs.tag }}
+          body_path: ${{ runner.temp }}/notes.md
