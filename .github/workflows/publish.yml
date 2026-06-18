@@ -4,9 +4,12 @@ name: Publish to npm
 # on a published GitHub release. The package version is taken from the
 # release tag (a leading "v" is stripped, so tag v1.4.0 publishes 1.4.0).
 #
-# Auth: set an NPM_TOKEN secret in the "npm" environment, or configure OIDC
-# trusted publishing on npmjs.com (linked publisher) and drop NODE_AUTH_TOKEN.
-# Provenance requires this repo to be public.
+# Auth: OIDC trusted publishing — no secrets. On npmjs.com configure a trusted
+# publisher for this package (GitHub Actions; owner ChristopherVR; repo
+# emf-converter; workflow publish.yml; environment npm) to match the id-token
+# permission and `environment: npm` below. npm mints a short-lived token via
+# OIDC and attaches provenance automatically. Requires npm >= 11.5.1 (Node 24)
+# and a public repository.
 
 on:
   release:
@@ -58,5 +61,3 @@ jobs:
           else
             npm publish --provenance --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
