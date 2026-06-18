@@ -1,0 +1,62 @@
+name: Publish to npm
+
+# Publishes emf-converter to https://www.npmjs.com/package/emf-converter
+# on a published GitHub release. The package version is taken from the
+# release tag (a leading "v" is stripped, so tag v1.4.0 publishes 1.4.0).
+#
+# Auth: set an NPM_TOKEN secret in the "npm" environment, or configure OIDC
+# trusted publishing on npmjs.com (linked publisher) and drop NODE_AUTH_TOKEN.
+# Provenance requires this repo to be public.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # OIDC trusted publishing + provenance
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Set version from release tag
+        id: version
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          node -e "const fs=require('fs');const p='package.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));d.version='${VERSION}';fs.writeFileSync(p,JSON.stringify(d,null,'\t')+'\n')"
+
+      - name: Publish
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          EXISTING=$(npm view emf-converter@"$VERSION" version 2>/dev/null || echo "")
+          if [ "$EXISTING" = "$VERSION" ]; then
+            echo "emf-converter@$VERSION already published, skipping"
+          else
+            npm publish --provenance --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
