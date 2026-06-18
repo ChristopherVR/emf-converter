@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>emf-converter — EMF/WMF → PNG in the browser</title>
+		<meta
+			name="description"
+			content="A zero-dependency TypeScript library that converts EMF and WMF metafile binaries into PNG data URLs using Canvas. Try the interactive demo."
+		/>
+		<style>
+			:root {
+				--bg: #0d1117;
+				--panel: #161b22;
+				--panel-2: #1c2230;
+				--border: #2d3748;
+				--text: #e6edf3;
+				--muted: #9aa7b4;
+				--accent: #58a6ff;
+				--accent-2: #7ee787;
+				--danger: #ff7b72;
+				--mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html {
+				scroll-behavior: smooth;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--text);
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+					Helvetica, Arial, sans-serif;
+				line-height: 1.6;
+			}
+			a {
+				color: var(--accent);
+			}
+			.wrap {
+				max-width: 920px;
+				margin: 0 auto;
+				padding: 0 20px;
+			}
+			header.hero {
+				padding: 64px 0 40px;
+				border-bottom: 1px solid var(--border);
+				background: radial-gradient(
+					900px 400px at 50% -120px,
+					rgba(88, 166, 255, 0.18),
+					transparent
+				);
+			}
+			.hero h1 {
+				font-size: clamp(2rem, 5vw, 3rem);
+				margin: 0 0 8px;
+				letter-spacing: -0.02em;
+			}
+			.hero .tag {
+				color: var(--muted);
+				font-size: 1.1rem;
+				max-width: 640px;
+			}
+			.badges {
+				margin-top: 20px;
+				display: flex;
+				gap: 10px;
+				flex-wrap: wrap;
+			}
+			.badge {
+				display: inline-block;
+				padding: 4px 12px;
+				border: 1px solid var(--border);
+				border-radius: 999px;
+				background: var(--panel);
+				color: var(--muted);
+				font-size: 0.85rem;
+				font-family: var(--mono);
+			}
+			section {
+				padding: 40px 0;
+				border-bottom: 1px solid var(--border);
+			}
+			h2 {
+				font-size: 1.5rem;
+				margin: 0 0 16px;
+				letter-spacing: -0.01em;
+			}
+			h3 {
+				font-size: 1rem;
+				color: var(--muted);
+				margin: 24px 0 8px;
+				text-transform: uppercase;
+				letter-spacing: 0.06em;
+			}
+			p {
+				color: var(--text);
+			}
+			.formats {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+				gap: 14px;
+				margin-top: 16px;
+			}
+			.fmt {
+				border: 1px solid var(--border);
+				border-radius: 10px;
+				background: var(--panel);
+				padding: 16px;
+			}
+			.fmt b {
+				color: var(--accent-2);
+				font-family: var(--mono);
+			}
+			.fmt span {
+				color: var(--muted);
+				font-size: 0.9rem;
+			}
+			pre {
+				background: var(--panel);
+				border: 1px solid var(--border);
+				border-radius: 10px;
+				padding: 16px;
+				overflow-x: auto;
+				font-family: var(--mono);
+				font-size: 0.9rem;
+				line-height: 1.55;
+			}
+			code {
+				font-family: var(--mono);
+			}
+			code.inline {
+				background: var(--panel-2);
+				padding: 2px 6px;
+				border-radius: 5px;
+				font-size: 0.9em;
+			}
+			.tok-key {
+				color: #ff7b72;
+			}
+			.tok-fn {
+				color: var(--accent);
+			}
+			.tok-str {
+				color: var(--accent-2);
+			}
+			.tok-com {
+				color: var(--muted);
+				font-style: italic;
+			}
+
+			/* Demo */
+			.demo-grid {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 20px;
+			}
+			@media (max-width: 720px) {
+				.demo-grid {
+					grid-template-columns: 1fr;
+				}
+			}
+			.drop-zone {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				gap: 8px;
+				min-height: 220px;
+				padding: 24px;
+				border: 2px dashed var(--border);
+				border-radius: 12px;
+				background: var(--panel);
+				cursor: pointer;
+				text-align: center;
+				transition: border-color 0.15s, background 0.15s;
+			}
+			.drop-zone:hover {
+				border-color: var(--accent);
+			}
+			.drop-zone[data-dragging="true"] {
+				border-color: var(--accent-2);
+				background: var(--panel-2);
+			}
+			.drop-zone strong {
+				font-size: 1.05rem;
+			}
+			.drop-zone span {
+				color: var(--muted);
+				font-size: 0.9rem;
+			}
+			.drop-zone input {
+				display: none;
+			}
+			.controls {
+				margin-top: 14px;
+				display: flex;
+				gap: 12px;
+				align-items: center;
+				flex-wrap: wrap;
+			}
+			button {
+				appearance: none;
+				border: 1px solid var(--accent);
+				background: var(--accent);
+				color: #07101f;
+				font-weight: 600;
+				font-size: 0.95rem;
+				padding: 9px 18px;
+				border-radius: 8px;
+				cursor: pointer;
+			}
+			button:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+			#status {
+				margin: 0;
+				font-size: 0.9rem;
+				color: var(--muted);
+			}
+			#status[data-tone="busy"] {
+				color: var(--accent);
+			}
+			#status[data-tone="ok"] {
+				color: var(--accent-2);
+			}
+			#status[data-tone="error"] {
+				color: var(--danger);
+			}
+			.output {
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				background: var(--panel);
+				min-height: 220px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 12px;
+				overflow: hidden;
+			}
+			.output img {
+				max-width: 100%;
+				max-height: 360px;
+				image-rendering: auto;
+				background: #ffffff;
+				border-radius: 6px;
+			}
+			#output-placeholder {
+				color: var(--muted);
+				font-size: 0.9rem;
+				text-align: center;
+			}
+			.meta {
+				margin-top: 14px;
+				border: 1px solid var(--border);
+				border-radius: 10px;
+				background: var(--panel-2);
+				padding: 12px 16px;
+				display: grid;
+				grid-template-columns: auto 1fr;
+				gap: 4px 16px;
+				font-size: 0.88rem;
+			}
+			.meta dt {
+				color: var(--muted);
+			}
+			.meta dd {
+				margin: 0;
+				font-family: var(--mono);
+				word-break: break-word;
+			}
+			ul.lims {
+				color: var(--muted);
+				padding-left: 20px;
+			}
+			ul.lims li {
+				margin: 6px 0;
+			}
+			footer {
+				padding: 32px 0 56px;
+				color: var(--muted);
+				font-size: 0.88rem;
+			}
+		</style>
+	</head>
+	<body>
+		<header class="hero">
+			<div class="wrap">
+				<h1>emf-converter</h1>
+				<p class="tag">
+					A zero-dependency TypeScript library that converts
+					<strong>EMF</strong> (Enhanced Metafile) and
+					<strong>WMF</strong> (Windows Metafile) binaries into
+					<strong>PNG data URLs</strong> — entirely in the browser, by
+					replaying their GDI/GDI+ drawing records onto a Canvas.
+				</p>
+				<div class="badges">
+					<span class="badge">zero dependencies</span>
+					<span class="badge">Canvas 2D</span>
+					<span class="badge">EMF · EMF+ · WMF</span>
+					<span class="badge">Apache-2.0</span>
+				</div>
+				<div class="badges">
+					<a class="badge" href="https://www.npmjs.com/package/emf-converter"
+						>npm: emf-converter</a
+					>
+					<a class="badge" href="https://github.com/ChristopherVR/emf-converter"
+						>GitHub</a
+					>
+					<a class="badge" href="#demo">Jump to demo ↓</a>
+				</div>
+			</div>
+		</header>
+
+		<section id="install">
+			<div class="wrap">
+				<h2>Install</h2>
+				<pre><code>npm install emf-converter</code></pre>
+				<p>
+					No runtime dependencies. Requires a Canvas API —
+					<code class="inline">OffscreenCanvas</code> (Web Workers) or
+					<code class="inline">HTMLCanvasElement</code>.
+				</p>
+
+				<h3>Usage</h3>
+				<pre><code><span class="tok-key">import</span> { convertEmfToDataUrl, convertWmfToDataUrl } <span class="tok-key">from</span> <span class="tok-str">'emf-converter'</span>;
+
+<span class="tok-com">// `buffer` is an ArrayBuffer loaded from a file, fetch(), or an Office doc.</span>
+<span class="tok-key">const</span> pngDataUrl = <span class="tok-key">await</span> <span class="tok-fn">convertEmfToDataUrl</span>(buffer);
+<span class="tok-com">// => "data:image/png;base64,iVBORw0KGgo…"  (or null on failure)</span>
+
+<span class="tok-key">const</span> wmfPng = <span class="tok-key">await</span> <span class="tok-fn">convertWmfToDataUrl</span>(wmfBuffer);
+
+<span class="tok-com">// Optional: clamp output dimensions (aspect ratio preserved).</span>
+<span class="tok-key">const</span> scaled = <span class="tok-key">await</span> <span class="tok-fn">convertEmfToDataUrl</span>(buffer, <span class="tok-str">1024</span>, <span class="tok-str">768</span>);</code></pre>
+				<p>
+					Both functions are <code class="inline">async</code> and return
+					<code class="inline">Promise&lt;string | null&gt;</code> — the PNG
+					data URL, or <code class="inline">null</code> when the buffer is
+					invalid or no Canvas API is available.
+				</p>
+			</div>
+		</section>
+
+		<section id="demo">
+			<div class="wrap">
+				<h2>Interactive demo</h2>
+				<p>
+					Everything below runs <strong>client-side in your browser</strong> —
+					no upload, no server. Pick or drop an
+					<code class="inline">.emf</code> or
+					<code class="inline">.wmf</code> file and it is converted to a PNG
+					on the spot.
+				</p>
+				<div class="demo-grid">
+					<div>
+						<label class="drop-zone" id="drop-zone" for="file-input">
+							<strong>Drop a file here</strong>
+							<span>or click to browse — .emf / .wmf</span>
+							<input
+								type="file"
+								id="file-input"
+								accept=".emf,.wmf,image/emf,image/wmf,image/x-emf,image/x-wmf"
+							/>
+						</label>
+						<div class="controls">
+							<button type="button" id="convert-button" disabled>
+								Convert
+							</button>
+							<p id="status" data-tone="idle">Loading demo…</p>
+						</div>
+					</div>
+					<div>
+						<div class="output">
+							<img id="output-image" alt="Converted PNG output" hidden />
+							<div id="output-placeholder">
+								The rasterised PNG appears here.
+							</div>
+						</div>
+						<dl class="meta" id="meta-panel" hidden>
+							<dt>File</dt>
+							<dd id="meta-name">—</dd>
+							<dt>Size</dt>
+							<dd id="meta-size">—</dd>
+							<dt>Convert time</dt>
+							<dd id="meta-time">—</dd>
+							<dt>Data-URL length</dt>
+							<dd id="meta-url-len">—</dd>
+						</dl>
+					</div>
+				</div>
+				<!-- screenshots: add images to demo/assets/ and reference them here -->
+			</div>
+		</section>
+
+		<section id="how">
+			<div class="wrap">
+				<h2>How it works</h2>
+				<p>
+					A three-phase pipeline: <strong>parse → replay → export</strong>.
+					The header parser extracts the drawing bounds, a Canvas is created
+					(clamped to 4096×4096), then records are scanned sequentially and
+					dispatched to GDI, EMF+, or WMF handlers that drive the Canvas 2D
+					context. Embedded bitmaps (DIB and GDI+ pixel formats) and
+					recursively embedded metafiles are resolved asynchronously after the
+					synchronous replay completes, then the canvas is exported as a
+					<code class="inline">data:image/png;base64,…</code> URL.
+				</p>
+				<div class="formats">
+					<div class="fmt">
+						<b>WMF</b><br />
+						<span>Windows Metafile (16-bit) — window/viewport mapping.</span>
+					</div>
+					<div class="fmt">
+						<b>EMF</b><br />
+						<span>Enhanced Metafile (32-bit GDI) — bounds-based scaling.</span>
+					</div>
+					<div class="fmt">
+						<b>EMF+</b><br />
+						<span>GDI+ extension embedded in EMF — world transform matrix.</span>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section id="limits">
+			<div class="wrap">
+				<h2>Limitations</h2>
+				<ul class="lims">
+					<li>
+						<strong>EMF+ region objects</strong> are not parsed (no Canvas 2D
+						equivalent for boolean region clipping).
+					</li>
+					<li>
+						<strong>Gradient brushes are simplified</strong> — GDI+
+						linear/path gradients use the primary colour only.
+					</li>
+					<li>
+						<strong>No raster operations (ROP)</strong> —
+						<code class="inline">SetROP2</code> blend modes are not applied.
+					</li>
+					<li>
+						<strong>Limited clipping</strong> — single rect/path clipping is
+						supported; combined regions are not.
+					</li>
+					<li>
+						<strong>Safety limits</strong> — output is clamped to 4096×4096;
+						processing stops after 50,000 records (EMF/WMF) or 100,000
+						(EMF+).
+					</li>
+					<li>
+						<strong>Font rendering</strong> uses the browser's font engine, so
+						glyph metrics may differ from Windows GDI.
+					</li>
+				</ul>
+			</div>
+		</section>
+
+		<footer>
+			<div class="wrap">
+				emf-converter — Apache-2.0 ·
+				<a href="https://www.npmjs.com/package/emf-converter">npm</a> ·
+				<a href="https://github.com/ChristopherVR/emf-converter">source</a>
+			</div>
+		</footer>
+
+		<script type="module" src="./main.js"></script>
+	</body>
+</html>
