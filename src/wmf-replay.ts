@@ -71,7 +71,18 @@ export function replayWmfRecords(
 	const coord = createWmfCoord(windowOrg, windowExt, canvasW, canvasH);
 
 	const objectTable = new Map<number, GdiObject>();
-	let nextObjectSlot = 0;
+	// WMF object-creation records carry no explicit index: GDI assigns each new
+	// object to the LOWEST currently-free slot, and SELECTOBJECT/DELETEOBJECT
+	// reference that slot by number. Metafiles routinely create→select→delete a
+	// rotating brush at slot 0, so we must reuse freed slots (a monotonic
+	// counter would orphan every reused-slot object and drop its colour).
+	const allocObjectSlot = (): number => {
+		let slot = 0;
+		while (objectTable.has(slot)) {
+			slot++;
+		}
+		return slot;
+	};
 	const state = defaultState();
 	const stateStack: DrawState[] = [];
 
@@ -156,7 +167,7 @@ export function replayWmfRecords(
 				break;
 			case META_CREATEPENINDIRECT:
 				if (recSize >= 16) {
-					const slot = nextObjectSlot++;
+					const slot = allocObjectSlot();
 					objectTable.set(slot, {
 						kind: 'pen',
 						style: view.getUint16(dataOff, true) & 0xff,
@@ -167,7 +178,7 @@ export function replayWmfRecords(
 				break;
 			case META_CREATEBRUSHINDIRECT:
 				if (recSize >= 14) {
-					const slot = nextObjectSlot++;
+					const slot = allocObjectSlot();
 					objectTable.set(slot, {
 						kind: 'brush',
 						style: view.getUint16(dataOff, true),
@@ -185,7 +196,7 @@ export function replayWmfRecords(
 						}
 						family += String.fromCharCode(ch);
 					}
-					const slot = nextObjectSlot++;
+					const slot = allocObjectSlot();
 					objectTable.set(slot, {
 						kind: 'font',
 						height: Math.abs(view.getInt16(dataOff, true)),
