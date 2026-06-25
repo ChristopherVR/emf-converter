@@ -2,6 +2,13 @@
  * Canvas creation, styling, string reading, stock objects, and export helpers.
  */
 
+import {
+	MAX_CANVAS_DIMENSION,
+	R2_MASKPEN,
+	R2_MERGEPEN,
+	R2_NOT,
+	R2_XORPEN,
+} from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import type { CanvasContext, DrawState, GdiObject } from './emf-types';
 
@@ -22,6 +29,7 @@ export function createCanvas(
 	maxWidth?: number,
 	maxHeight?: number,
 	dpiScale: number = DEFAULT_DPI_SCALE,
+	maxCanvasDimension: number = MAX_CANVAS_DIMENSION,
 ): {
 	canvas: OffscreenCanvas | HTMLCanvasElement;
 	ctx: CanvasContext;
@@ -49,8 +57,9 @@ export function createCanvas(
 		scaleY *= factor;
 	}
 
-	const clampedW = Math.max(1, Math.min(w, 8192));
-	const clampedH = Math.max(1, Math.min(h, 8192));
+	const dimCap = Math.max(1, Math.floor(maxCanvasDimension));
+	const clampedW = Math.max(1, Math.min(w, dimCap));
+	const clampedH = Math.max(1, Math.min(h, dimCap));
 	if (clampedW !== w || clampedH !== h) {
 		console.warn(
 			`[emf-converter] Canvas size clamped from ${w}×${h} to ${clampedW}×${clampedH}. Output may lose detail.`,
@@ -106,8 +115,8 @@ export function createTempCanvas(
 	if (width <= 0 || height <= 0) {
 		return null;
 	}
-	width = Math.max(1, Math.min(Math.floor(width), 8192));
-	height = Math.max(1, Math.min(Math.floor(height), 8192));
+	width = Math.max(1, Math.min(Math.floor(width), MAX_CANVAS_DIMENSION));
+	height = Math.max(1, Math.min(Math.floor(height), MAX_CANVAS_DIMENSION));
 	if (typeof OffscreenCanvas !== 'undefined') {
 		const canvas = new OffscreenCanvas(width, height);
 		const ctx = canvas.getContext('2d');
@@ -133,7 +142,33 @@ export function createTempCanvas(
 // Apply pen/brush/font to context
 // ---------------------------------------------------------------------------
 
+/**
+ * Maps a GDI binary raster-operation (ROP2) mode onto the closest Canvas 2D
+ * `globalCompositeOperation`. GDI ROP2 modes are bitwise boolean operations
+ * between pen/brush and destination pixels; Canvas offers alpha compositing, so
+ * only a subset has a reasonable equivalent. Unsupported modes fall back to the
+ * default `'source-over'` (and the common `R2_COPYPEN` default is a no-op).
+ *
+ * @param rop2 - A ROP2 mode constant (R2_*); 13 (R2_COPYPEN) is the default.
+ * @returns The closest `globalCompositeOperation` value.
+ */
+export function rop2ToGco(rop2: number): GlobalCompositeOperation {
+	switch (rop2) {
+		case R2_XORPEN:
+			return 'xor';
+		case R2_MASKPEN:
+			return 'multiply';
+		case R2_MERGEPEN:
+			return 'lighten';
+		case R2_NOT:
+			return 'difference';
+		default:
+			return 'source-over';
+	}
+}
+
 export function applyPen(ctx: CanvasContext, state: DrawState): void {
+	ctx.globalCompositeOperation = rop2ToGco(state.rop2);
 	if (state.penStyle === 5) {
 		ctx.strokeStyle = 'rgba(0,0,0,0)';
 		ctx.lineWidth = 0;
@@ -161,6 +196,7 @@ export function applyPen(ctx: CanvasContext, state: DrawState): void {
 }
 
 export function applyBrush(ctx: CanvasContext, state: DrawState): void {
+	ctx.globalCompositeOperation = rop2ToGco(state.rop2);
 	if (state.brushStyle === 1) {
 		ctx.fillStyle = 'rgba(0,0,0,0)';
 		return;
@@ -168,11 +204,86 @@ export function applyBrush(ctx: CanvasContext, state: DrawState): void {
 	ctx.fillStyle = state.brushColor;
 }
 
+/**
+ * Maps a GDI/GDI+ numeric font weight (100..900, where 400 = normal and
+ * 700 = bold) to the corresponding CSS `font-weight` token. Returns an empty
+ * string for the normal weight so the default is left implicit.
+ */
+export function cssFontWeight(weight: number): string {
+	if (!weight || weight === 400) {
+		return '';
+	}
+	const rounded = Math.round(weight / 100) * 100;
+	// 'bold' is the canonical CSS alias for 700 and keeps output stable for the
+	// overwhelmingly common bold case; finer weights are emitted numerically.
+	if (rounded === 700) {
+		return 'bold';
+	}
+	if (rounded >= 100 && rounded <= 900) {
+		return String(rounded);
+	}
+	return weight >= 700 ? 'bold' : '';
+}
+
+/**
+ * Resolves a Windows face name to a CSS font family, applying an optional
+ * caller-supplied remap (keyed by lowercased face name) and quoting multi-word
+ * names so the Canvas font shorthand parses them as a single family.
+ *
+ * @param face - The raw Windows face name (e.g. `Times New Roman`).
+ * @param map  - Optional lowercased-face → CSS-family overrides.
+ */
+export function mapFontFamily(face: string, map?: Record<string, string>): string {
+	const resolved = map?.[face.toLowerCase().trim()] ?? face;
+	// Quote names containing whitespace or commas unless already quoted.
+	if (/[\s,]/.test(resolved) && !/^["']/.test(resolved)) {
+		return `"${resolved}"`;
+	}
+	return resolved;
+}
+
 export function applyFont(ctx: CanvasContext, state: DrawState): void {
 	const italic = state.fontItalic ? 'italic ' : '';
-	const weight = state.fontWeight >= 700 ? 'bold ' : '';
+	const weight = cssFontWeight(state.fontWeight);
+	const weightPart = weight ? `${weight} ` : '';
 	const size = Math.max(Math.abs(state.fontHeight), 8);
-	ctx.font = `${italic}${weight}${size}px ${state.fontFamily}`;
+	const family = mapFontFamily(state.fontFamily, state.fontFamilyMap);
+	ctx.font = `${italic}${weightPart}${size}px ${family}`;
+}
+
+/**
+ * Draws underline and/or strike-out decorations for a run of text, using the
+ * current font/colour state. Canvas has no native text-decoration support, so
+ * the lines are rendered as thin filled rectangles. No-op when neither
+ * decoration is active.
+ *
+ * @param ctx   - The target rendering context.
+ * @param state - The active draw state (provides decoration flags + size).
+ * @param x     - The left edge of the text run, in the current user space.
+ * @param y     - The text baseline Y coordinate.
+ * @param width - The measured advance width of the text run.
+ */
+export function drawTextDecorations(
+	ctx: CanvasContext,
+	state: DrawState,
+	x: number,
+	y: number,
+	width: number,
+): void {
+	if (!state.fontUnderline && !state.fontStrikeOut) {
+		return;
+	}
+	const size = Math.max(Math.abs(state.fontHeight), 8);
+	const thickness = Math.max(1, Math.round(size / 14));
+	const prevFill = ctx.fillStyle;
+	ctx.fillStyle = state.textColor;
+	if (state.fontUnderline) {
+		ctx.fillRect(x, y + Math.round(size * 0.12), width, thickness);
+	}
+	if (state.fontStrikeOut) {
+		ctx.fillRect(x, y - Math.round(size * 0.3), width, thickness);
+	}
+	ctx.fillStyle = prevFill;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +378,8 @@ export function getStockObject(index: number): GdiObject | null {
 				height: 12,
 				weight: 400,
 				italic: false,
+				underline: false,
+				strikeOut: false,
 				family: 'monospace',
 			};
 		case 12:
@@ -278,6 +391,8 @@ export function getStockObject(index: number): GdiObject | null {
 				height: 12,
 				weight: 400,
 				italic: false,
+				underline: false,
+				strikeOut: false,
 				family: 'sans-serif',
 			};
 		default:

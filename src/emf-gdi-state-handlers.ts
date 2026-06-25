@@ -105,7 +105,12 @@ export function handleEmfGdiStateRecord(
 			}
 			return true;
 		}
-		case EMR_SETROP2:
+		case EMR_SETROP2: {
+			if (recSize >= 12) {
+				state.rop2 = view.getUint32(dataOff, true);
+			}
+			return true;
+		}
 		case EMR_SETSTRETCHBLTMODE:
 		case EMR_SETMITERLIMIT:
 		case EMR_SETTEXTALIGN: {

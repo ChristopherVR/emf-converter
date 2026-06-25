@@ -3,7 +3,12 @@
  * ExtTextOutW, BitBlt, StretchDIBits, IntersectClipRect.
  */
 
-import { applyFont, readUtf16LE, createTempCanvas } from './emf-canvas-helpers';
+import {
+	applyFont,
+	drawTextDecorations,
+	readUtf16LE,
+	createTempCanvas,
+} from './emf-canvas-helpers';
 import {
 	EMR_EXTTEXTOUTW,
 	EMR_BITBLT,
@@ -64,6 +69,17 @@ function handleExtTextOutW(
 					ctx.fillStyle = state.textColor;
 				}
 				ctx.fillText(text, gmx(rCtx, refX), gmy(rCtx, refY));
+				if (state.fontUnderline || state.fontStrikeOut) {
+					const w = ctx.measureText(text).width;
+					const baseX = gmx(rCtx, refX);
+					const startX =
+						alignHoriz === 'center'
+							? baseX - w / 2
+							: alignHoriz === 'right'
+								? baseX - w
+								: baseX;
+					drawTextDecorations(ctx, state, startX, gmy(rCtx, refY), w);
+				}
 			}
 		}
 	}

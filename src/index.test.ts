@@ -714,6 +714,8 @@ describe('emf-canvas-helpers', () => {
 					height: 12,
 					weight: 400,
 					italic: false,
+					underline: false,
+					strikeOut: false,
 					family: 'monospace',
 				});
 			}
@@ -727,6 +729,8 @@ describe('emf-canvas-helpers', () => {
 					height: 12,
 					weight: 400,
 					italic: false,
+					underline: false,
+					strikeOut: false,
 					family: 'sans-serif',
 				});
 			}

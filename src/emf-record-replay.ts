@@ -15,6 +15,8 @@ import {
 	EMR_SETLAYOUT,
 	EMFPLUS_SIGNATURE,
 	EMR_COMMENT_PUBLIC_SIGNATURE,
+	MAX_RECORDS_DEFAULT,
+	MAX_RECORDS_EMFPLUS_DEFAULT,
 } from './emf-constants';
 import { handleEmfGdiDrawRecord } from './emf-gdi-draw-handlers';
 import { handleEmfGdiPolyPathRecord } from './emf-gdi-poly-path-handlers';
@@ -28,6 +30,7 @@ import type {
 	DeferredImageDraw,
 	GdiObject,
 	DrawState,
+	ReplayOptions,
 } from './emf-types';
 import { defaultState, createEmfPlusState } from './emf-types';
 
@@ -78,6 +81,7 @@ export function replayEmfRecords(
 	canvasW: number,
 	canvasH: number,
 	dpiScale: number = 1,
+	replayOptions: ReplayOptions = {},
 ): DeferredImageDraw[] {
 	emfLog(
 		`replayEmfRecords: bounds=(${bounds.left},${bounds.top})→(${bounds.right},${bounds.bottom}), canvas=${canvasW}×${canvasH}`,
@@ -85,6 +89,8 @@ export function replayEmfRecords(
 
 	const allDeferredImages: DeferredImageDraw[] = [];
 	const emfPlusState = createEmfPlusState();
+	const maxRecords = replayOptions.maxRecords ?? MAX_RECORDS_DEFAULT;
+	const maxRecordsEmfPlus = replayOptions.maxRecordsEmfPlus ?? MAX_RECORDS_EMFPLUS_DEFAULT;
 
 	const logicalW = bounds.right - bounds.left || 1;
 	const logicalH = bounds.bottom - bounds.top || 1;
@@ -99,7 +105,7 @@ export function replayEmfRecords(
 		ctx,
 		view,
 		objectTable: new Map<number, GdiObject>(),
-		state: defaultState(),
+		state: { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap },
 		stateStack: [] as DrawState[],
 		inPath: false,
 		windowOrg: { x: bounds.left, y: bounds.top },
@@ -117,7 +123,6 @@ export function replayEmfRecords(
 
 	let offset = 0;
 	const maxOffset = view.byteLength;
-	const maxRecords = 200000;
 	let recordCount = 0;
 	let emfPlusCommentCount = 0;
 	const gdiRecordTypes = new Map<number, number>();
@@ -152,6 +157,8 @@ export function replayEmfRecords(
 						canvasH,
 						emfPlusState,
 						dpiScale,
+						maxRecordsEmfPlus,
+						replayOptions.fontFamilyMap,
 					);
 					emfLog(
 						`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} returned ${deferred.length} deferred images`,

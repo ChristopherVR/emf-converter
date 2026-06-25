@@ -141,13 +141,13 @@ describe('convertEmfToDataUrl', () => {
 	it('passes maxWidth and maxHeight to createCanvas', async () => {
 		setupEmfMocks();
 		await convertEmfToDataUrl(new ArrayBuffer(100), 500, 400);
-		expect(createCanvas).toHaveBeenCalledWith(100, 100, 500, 400, 2);
+		expect(createCanvas).toHaveBeenCalledWith(100, 100, 500, 400, 2, undefined);
 	});
 
 	it('accepts numeric dpiScale for backward compatibility', async () => {
 		setupEmfMocks();
 		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, 3);
-		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 3);
+		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 3, undefined);
 	});
 
 	it('accepts options object with dpiScale', async () => {
@@ -155,7 +155,7 @@ describe('convertEmfToDataUrl', () => {
 		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
 			dpiScale: 4,
 		});
-		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 4);
+		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 4, undefined);
 	});
 
 	it('accepts options object with maxWidth/maxHeight', async () => {
@@ -164,7 +164,36 @@ describe('convertEmfToDataUrl', () => {
 			maxWidth: 300,
 			maxHeight: 250,
 		});
-		expect(createCanvas).toHaveBeenCalledWith(100, 100, 300, 250, 2);
+		expect(createCanvas).toHaveBeenCalledWith(100, 100, 300, 250, 2, undefined);
+	});
+
+	it('forwards maxCanvasDimension to createCanvas', async () => {
+		setupEmfMocks();
+		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
+			maxCanvasDimension: 2048,
+		});
+		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 2, 2048);
+	});
+
+	it('threads maxRecords and fontFamilyMap into replayEmfRecords', async () => {
+		setupEmfMocks();
+		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
+			maxRecords: 1234,
+			fontFamilyMap: { calibri: 'Carlito' },
+		});
+		expect(replayEmfRecords).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+			200,
+			200,
+			2,
+			{
+				maxRecords: 1234,
+				maxRecordsEmfPlus: 1234,
+				fontFamilyMap: { calibri: 'Carlito' },
+			},
+		);
 	});
 
 	it('calls ctx.save before replay and ctx.restore after', async () => {
@@ -231,7 +260,7 @@ describe('convertWmfToDataUrl', () => {
 	it('passes maxWidth, maxHeight, and dpiScale to createCanvas', async () => {
 		setupWmfMocks();
 		await convertWmfToDataUrl(new ArrayBuffer(100), 600, 500, 3);
-		expect(createCanvas).toHaveBeenCalledWith(200, 200, 600, 500, 3);
+		expect(createCanvas).toHaveBeenCalledWith(200, 200, 600, 500, 3, undefined);
 	});
 
 	it('calls replayWmfRecords with correct parameters', async () => {
@@ -255,6 +284,6 @@ describe('convertWmfToDataUrl', () => {
 			maxWidth: 100,
 			maxHeight: 80,
 		});
-		expect(createCanvas).toHaveBeenCalledWith(200, 200, 100, 80, 1);
+		expect(createCanvas).toHaveBeenCalledWith(200, 200, 100, 80, 1, undefined);
 	});
 });

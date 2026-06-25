@@ -75,6 +75,10 @@ export interface GdiFont {
 	weight: number;
 	/** Whether the font is italic. */
 	italic: boolean;
+	/** Whether the font is underlined. */
+	underline: boolean;
+	/** Whether the font is struck out. */
+	strikeOut: boolean;
 	/** Font family name (e.g. `"Arial"`, `"sans-serif"`). */
 	family: string;
 }
@@ -121,6 +125,21 @@ export interface DrawState {
 	fontItalic: boolean;
 	/** Current font family name. */
 	fontFamily: string;
+	/** Whether the current font is underlined. */
+	fontUnderline: boolean;
+	/** Whether the current font is struck out. */
+	fontStrikeOut: boolean;
+	/**
+	 * Optional map from lowercased Windows face name to a CSS font family that
+	 * is available in the rendering environment (e.g. `{ calibri: 'Carlito' }`).
+	 * Threaded from {@link EmfConvertOptions.fontFamilyMap}.
+	 */
+	fontFamilyMap?: Record<string, string>;
+	/**
+	 * Binary raster-operation mode set via EMR_SETROP2 / META_SETROP2.
+	 * 13 = R2_COPYPEN (the default, normal source-over drawing).
+	 */
+	rop2: number;
 	/** Current pen position X (logical coordinates). */
 	curX: number;
 	/** Current pen position Y (logical coordinates). */
@@ -153,6 +172,9 @@ export function defaultState(): DrawState {
 		fontWeight: 400,
 		fontItalic: false,
 		fontFamily: 'sans-serif',
+		fontUnderline: false,
+		fontStrikeOut: false,
+		rop2: 13,
 		curX: 0,
 		curY: 0,
 		polyFillMode: 1,
@@ -173,6 +195,20 @@ export function cloneState(s: DrawState): DrawState {
 		...s,
 		worldTransform: [...s.worldTransform] as TransformMatrix,
 	};
+}
+
+/**
+ * Per-call replay tuning threaded from {@link EmfConvertOptions} down into the
+ * record-replay loops. All fields are optional; omitted values fall back to the
+ * built-in safety defaults.
+ */
+export interface ReplayOptions {
+	/** Record cap for the GDI/WMF stream (default {@link MAX_RECORDS_DEFAULT}). */
+	maxRecords?: number;
+	/** Record cap for the EMF+ stream (default {@link MAX_RECORDS_EMFPLUS_DEFAULT}). */
+	maxRecordsEmfPlus?: number;
+	/** Lowercased Windows-face → CSS-family overrides applied to text. */
+	fontFamilyMap?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -480,6 +516,8 @@ export interface EmfPlusReplayCtx {
 	continuationOffset: number;
 	/** DPI scale factor applied to the canvas (1 = normal, 2 = HiDPI). */
 	dpiScale: number;
+	/** Optional lowercased-face → CSS-family overrides for text rendering. */
+	fontFamilyMap?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------

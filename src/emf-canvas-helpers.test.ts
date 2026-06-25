@@ -1,6 +1,16 @@
 import { describe, it, expect } from 'vitest';
 
-import { applyPen, applyBrush, applyFont, readUtf16LE, getStockObject } from './emf-canvas-helpers';
+import {
+	applyPen,
+	applyBrush,
+	applyFont,
+	cssFontWeight,
+	drawTextDecorations,
+	mapFontFamily,
+	readUtf16LE,
+	rop2ToGco,
+	getStockObject,
+} from './emf-canvas-helpers';
 import type { DrawState } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -187,7 +197,7 @@ describe('applyFont', () => {
 		expect(ctx.font).toContain('20px');
 	});
 
-	it('combines italic and bold for heavy italic font', () => {
+	it('combines italic and numeric weight for heavy italic font', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({
 			fontHeight: 18,
@@ -196,7 +206,141 @@ describe('applyFont', () => {
 			fontFamily: 'Georgia',
 		});
 		applyFont(asCtx(ctx), state);
-		expect(ctx.font).toBe('italic bold 18px Georgia');
+		expect(ctx.font).toBe('italic 800 18px Georgia');
+	});
+
+	it('quotes multi-word face names', () => {
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({ fontHeight: 10, fontFamily: 'Times New Roman' });
+		applyFont(asCtx(ctx), state);
+		expect(ctx.font).toBe('10px "Times New Roman"');
+	});
+
+	it('applies a fontFamilyMap override (case-insensitive)', () => {
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({
+			fontHeight: 10,
+			fontFamily: 'Calibri',
+			fontFamilyMap: { calibri: 'Carlito' },
+		});
+		applyFont(asCtx(ctx), state);
+		expect(ctx.font).toBe('10px Carlito');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// cssFontWeight
+// ---------------------------------------------------------------------------
+
+describe('cssFontWeight', () => {
+	it('returns empty string for normal weight', () => {
+		expect(cssFontWeight(400)).toBe('');
+		expect(cssFontWeight(0)).toBe('');
+	});
+
+	it('returns "bold" for 700', () => {
+		expect(cssFontWeight(700)).toBe('bold');
+	});
+
+	it('emits numeric tokens for other weights, rounded to nearest 100', () => {
+		expect(cssFontWeight(300)).toBe('300');
+		expect(cssFontWeight(600)).toBe('600');
+		expect(cssFontWeight(900)).toBe('900');
+		expect(cssFontWeight(820)).toBe('800');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// mapFontFamily
+// ---------------------------------------------------------------------------
+
+describe('mapFontFamily', () => {
+	it('returns the face unchanged when no map is supplied', () => {
+		expect(mapFontFamily('Arial')).toBe('Arial');
+	});
+
+	it('quotes names containing whitespace', () => {
+		expect(mapFontFamily('MS Shell Dlg')).toBe('"MS Shell Dlg"');
+	});
+
+	it('remaps via a case-insensitive lookup before quoting', () => {
+		expect(mapFontFamily('MS Shell Dlg', { 'ms shell dlg': 'Tahoma' })).toBe('Tahoma');
+	});
+
+	it('does not double-quote an already-quoted family', () => {
+		expect(mapFontFamily('"Already Quoted"')).toBe('"Already Quoted"');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// rop2ToGco
+// ---------------------------------------------------------------------------
+
+describe('rop2ToGco', () => {
+	it('maps the supported ROP2 subset to composite operations', () => {
+		expect(rop2ToGco(7)).toBe('xor'); // R2_XORPEN
+		expect(rop2ToGco(9)).toBe('multiply'); // R2_MASKPEN
+		expect(rop2ToGco(15)).toBe('lighten'); // R2_MERGEPEN
+		expect(rop2ToGco(6)).toBe('difference'); // R2_NOT
+	});
+
+	it('falls back to source-over for the default and unsupported modes', () => {
+		expect(rop2ToGco(13)).toBe('source-over'); // R2_COPYPEN (default)
+		expect(rop2ToGco(2)).toBe('source-over'); // R2_NOTMERGEPEN (no equivalent)
+		expect(rop2ToGco(0)).toBe('source-over');
+	});
+
+	it('is applied by applyPen/applyBrush from state.rop2', () => {
+		const pen = createMockCtx() as MockCtx & { globalCompositeOperation: string };
+		applyPen(asCtx(pen), createDefaultDrawState({ rop2: 7 }));
+		expect(pen.globalCompositeOperation).toBe('xor');
+
+		const brush = createMockCtx() as MockCtx & { globalCompositeOperation: string };
+		applyBrush(asCtx(brush), createDefaultDrawState({ rop2: 13 }));
+		expect(brush.globalCompositeOperation).toBe('source-over');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// drawTextDecorations
+// ---------------------------------------------------------------------------
+
+describe('drawTextDecorations', () => {
+	interface RectCtx {
+		fillStyle: string;
+		rects: Array<{ x: number; y: number; w: number; h: number }>;
+		fillRect(x: number, y: number, w: number, h: number): void;
+	}
+	const makeRectCtx = (): RectCtx => ({
+		fillStyle: '',
+		rects: [],
+		fillRect(x, y, w, h) {
+			this.rects.push({ x, y, w, h });
+		},
+	});
+
+	it('draws nothing when neither decoration is set', () => {
+		const ctx = makeRectCtx();
+		const state = createDefaultDrawState({ fontUnderline: false, fontStrikeOut: false });
+		drawTextDecorations(ctx as unknown as CanvasRenderingContext2D, state, 0, 20, 50);
+		expect(ctx.rects).toHaveLength(0);
+	});
+
+	it('draws an underline rectangle below the baseline', () => {
+		const ctx = makeRectCtx();
+		const state = createDefaultDrawState({ fontUnderline: true, textColor: '#112233' });
+		drawTextDecorations(ctx as unknown as CanvasRenderingContext2D, state, 5, 20, 40);
+		expect(ctx.rects).toHaveLength(1);
+		expect(ctx.rects[0].x).toBe(5);
+		expect(ctx.rects[0].w).toBe(40);
+		expect(ctx.rects[0].y).toBeGreaterThan(20);
+	});
+
+	it('draws both underline and strike-out when both are set', () => {
+		const ctx = makeRectCtx();
+		const state = createDefaultDrawState({ fontUnderline: true, fontStrikeOut: true });
+		drawTextDecorations(ctx as unknown as CanvasRenderingContext2D, state, 0, 30, 60);
+		expect(ctx.rects).toHaveLength(2);
 	});
 });
 

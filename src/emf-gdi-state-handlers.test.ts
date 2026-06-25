@@ -218,9 +218,11 @@ describe('emf-gdi-state-handlers', () => {
 		});
 
 		describe('eMR_SETROP2 / EMR_SETSTRETCHBLTMODE / EMR_SETMITERLIMIT', () => {
-			it('returns true for EMR_SETROP2 (accepted, no visible state change)', () => {
+			it('stores the ROP2 mode on state for EMR_SETROP2', () => {
 				const rCtx = makeRCtx();
+				rCtx.view.setUint32(8, 7, true); // R2_XORPEN
 				expect(handleEmfGdiStateRecord(rCtx, EMR_SETROP2, 0, 8, 12)).toBeTruthy();
+				expect(rCtx.state.rop2).toBe(7);
 			});
 
 			it('returns true for EMR_SETSTRETCHBLTMODE', () => {

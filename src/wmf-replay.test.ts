@@ -547,11 +547,11 @@ describe('wmf-replay', () => {
 		});
 
 		// -----------------------------------------------------------------------
-		// META_SETROP2 (no-op)
+		// META_SETROP2 (stores raster-op mode)
 		// -----------------------------------------------------------------------
 
 		describe('mETA_SETROP2', () => {
-			it('is accepted without error (no-op)', () => {
+			it('is accepted without error and records the raster-op mode', () => {
 				const header = defaultHeader();
 				const view = buildWmf(header, [
 					{

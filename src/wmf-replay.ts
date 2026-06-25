@@ -22,6 +22,7 @@ import {
 	META_CREATEFONTINDIRECT,
 	META_SELECTOBJECT,
 	META_DELETEOBJECT,
+	MAX_RECORDS_DEFAULT,
 } from './emf-constants';
 import type {
 	CanvasContext,
@@ -30,6 +31,7 @@ import type {
 	WmfCoord,
 	WmfReplayCtx,
 	WmfHeader,
+	ReplayOptions,
 } from './emf-types';
 import { defaultState, cloneState } from './emf-types';
 import { handleWmfDrawRecord } from './wmf-draw-handlers';
@@ -62,6 +64,7 @@ export function replayWmfRecords(
 	header: WmfHeader,
 	canvasW: number,
 	canvasH: number,
+	replayOptions: ReplayOptions = {},
 ): void {
 	const logicalW = header.boundsRight - header.boundsLeft || 1;
 	const logicalH = header.boundsBottom - header.boundsTop || 1;
@@ -83,14 +86,14 @@ export function replayWmfRecords(
 		}
 		return slot;
 	};
-	const state = defaultState();
+	const state: DrawState = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap };
 	const stateStack: DrawState[] = [];
 
 	const wCtx: WmfReplayCtx = { view, ctx, state, coord };
 
 	let offset = header.headerSize;
 	const maxOffset = view.byteLength;
-	const maxRecords = 200000;
+	const maxRecords = replayOptions.maxRecords ?? MAX_RECORDS_DEFAULT;
 	let recordCount = 0;
 
 	while (offset + 6 <= maxOffset && recordCount < maxRecords) {
@@ -154,6 +157,9 @@ export function replayWmfRecords(
 				}
 				break;
 			case META_SETROP2:
+				if (recSize >= 8) {
+					state.rop2 = view.getUint16(dataOff, true);
+				}
 				break;
 			case META_SETPOLYFILLMODE:
 				if (recSize >= 8) {
@@ -202,6 +208,8 @@ export function replayWmfRecords(
 						height: Math.abs(view.getInt16(dataOff, true)),
 						weight: view.getInt16(dataOff + 8, true),
 						italic: view.getUint8(dataOff + 10) !== 0,
+						underline: view.getUint8(dataOff + 11) !== 0,
+						strikeOut: view.getUint8(dataOff + 12) !== 0,
 						family: family || 'sans-serif',
 					});
 				}
@@ -224,6 +232,8 @@ export function replayWmfRecords(
 								state.fontHeight = obj.height;
 								state.fontWeight = obj.weight;
 								state.fontItalic = obj.italic;
+								state.fontUnderline = obj.underline;
+								state.fontStrikeOut = obj.strikeOut;
 								state.fontFamily = obj.family;
 								break;
 						}

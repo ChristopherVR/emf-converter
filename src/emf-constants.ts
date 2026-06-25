@@ -34,6 +34,39 @@ export const EMR_SETBKMODE = 18;
 export const EMR_SETPOLYFILLMODE = 19;
 export const EMR_SETROP2 = 20;
 export const EMR_SETSTRETCHBLTMODE = 21;
+
+// Binary raster-operation (ROP2) modes — the 1..16 wire values shared by
+// EMR_SETROP2 and META_SETROP2 (MS-WMF 2.1.1.31). Only a subset has a faithful
+// Canvas globalCompositeOperation equivalent; see `rop2ToGco` in emf-canvas-helpers.
+export const R2_BLACK = 1;
+export const R2_NOTMERGEPEN = 2;
+export const R2_MASKNOTPEN = 3;
+export const R2_NOTCOPYPEN = 4;
+export const R2_MASKPENNOT = 5;
+export const R2_NOT = 6;
+export const R2_XORPEN = 7;
+export const R2_NOTMASKPEN = 8;
+export const R2_MASKPEN = 9;
+export const R2_NOTXORPEN = 10;
+export const R2_NOP = 11;
+export const R2_MERGENOTPEN = 12;
+export const R2_COPYPEN = 13;
+export const R2_MERGEPENNOT = 14;
+export const R2_MERGEPEN = 15;
+export const R2_WHITE = 16;
+
+/**
+ * Hard cap on the output canvas width/height in pixels. Guards against
+ * pathological metafiles requesting gigantic surfaces. Overridable per call via
+ * {@link EmfConvertOptions.maxCanvasDimension}.
+ */
+export const MAX_CANVAS_DIMENSION = 8192;
+
+/** Default record-processing cap for GDI (EMF) and WMF streams. */
+export const MAX_RECORDS_DEFAULT = 200000;
+
+/** Default record-processing cap for the finer-grained EMF+ record stream. */
+export const MAX_RECORDS_EMFPLUS_DEFAULT = 500000;
 export const EMR_SETTEXTALIGN = 22;
 export const EMR_SETTEXTCOLOR = 24;
 export const EMR_SETBKCOLOR = 25;

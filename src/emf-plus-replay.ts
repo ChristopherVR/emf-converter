@@ -5,7 +5,13 @@
  * dispatches to the appropriate handler modules.
  */
 
-import { EMFPLUS_HEADER, EMFPLUS_ENDOFFILE, EMFPLUS_GETDC, EMFPLUS_OBJECT } from './emf-constants';
+import {
+	EMFPLUS_HEADER,
+	EMFPLUS_ENDOFFILE,
+	EMFPLUS_GETDC,
+	EMFPLUS_OBJECT,
+	MAX_RECORDS_EMFPLUS_DEFAULT,
+} from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
@@ -64,6 +70,8 @@ export function replayEmfPlusRecords(
 	_canvasH: number,
 	state?: EmfPlusState,
 	dpiScale: number = 1,
+	maxRecords: number = MAX_RECORDS_EMFPLUS_DEFAULT,
+	fontFamilyMap?: Record<string, string>,
 ): DeferredImageDraw[] {
 	const s = state ?? createEmfPlusState();
 	const rCtx: EmfPlusReplayCtx = {
@@ -85,10 +93,10 @@ export function replayEmfPlusRecords(
 		continuationTotalSize: 0,
 		continuationOffset: 0,
 		dpiScale,
+		fontFamilyMap,
 	};
 
 	const end = offset + length;
-	const maxRecords = 500000;
 	let recordCount = 0;
 	const emfPlusRecordTypes = new Map<number, number>();
 

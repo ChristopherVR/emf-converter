@@ -33,6 +33,23 @@ export interface EmfConvertOptions {
 	 * Values above 4 are clamped to 4 to prevent excessive memory usage.
 	 */
 	dpiScale?: number;
+	/**
+	 * Hard cap on the output canvas width/height in pixels. Guards against
+	 * pathological metafiles. Defaults to {@link MAX_CANVAS_DIMENSION} (8192).
+	 */
+	maxCanvasDimension?: number;
+	/**
+	 * Maximum number of records processed per stream before replay stops.
+	 * Defaults to 200,000 for GDI/WMF and 500,000 for the finer-grained EMF+
+	 * stream. Supplying a value overrides both with the same cap.
+	 */
+	maxRecords?: number;
+	/**
+	 * Optional map from a (case-insensitive) Windows face name to a CSS font
+	 * family available in the rendering environment, e.g. `{ calibri: 'Carlito',
+	 * 'ms shell dlg': 'Tahoma' }`. Applied to GDI, WMF, and EMF+ text.
+	 */
+	fontFamilyMap?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +225,11 @@ export async function convertEmfToDataUrl(
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
 	const effectiveMaxWidth = maxWidth ?? opts.maxWidth;
 	const effectiveMaxHeight = maxHeight ?? opts.maxHeight;
+	const replayOptions = {
+		maxRecords: opts.maxRecords,
+		maxRecordsEmfPlus: opts.maxRecords,
+		fontFamilyMap: opts.fontFamilyMap,
+	};
 
 	try {
 		emfLog('=== convertEmfToDataUrl START ===');
@@ -240,7 +262,14 @@ export async function convertEmfToDataUrl(
 		const logicalH = renderBounds.bottom - renderBounds.top;
 		emfLog(`convertEmfToDataUrl: logicalSize=${logicalW}×${logicalH}`);
 
-		const setup = createCanvas(logicalW, logicalH, effectiveMaxWidth, effectiveMaxHeight, dpiScale);
+		const setup = createCanvas(
+			logicalW,
+			logicalH,
+			effectiveMaxWidth,
+			effectiveMaxHeight,
+			dpiScale,
+			opts.maxCanvasDimension,
+		);
 		if (!setup) {
 			emfLog('convertEmfToDataUrl: createCanvas returned null — returning null');
 			return null;
@@ -261,6 +290,7 @@ export async function convertEmfToDataUrl(
 			canvas.width,
 			canvas.height,
 			dpiScale,
+			replayOptions,
 		);
 		emfLog(
 			`convertEmfToDataUrl: replayEmfRecords returned ${deferredImages.length} deferred images`,
@@ -333,6 +363,10 @@ export async function convertWmfToDataUrl(
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
 	const effectiveMaxWidth = maxWidth ?? opts.maxWidth;
 	const effectiveMaxHeight = maxHeight ?? opts.maxHeight;
+	const replayOptions = {
+		maxRecords: opts.maxRecords,
+		fontFamilyMap: opts.fontFamilyMap,
+	};
 
 	try {
 		emfLog(
@@ -355,7 +389,14 @@ export async function convertWmfToDataUrl(
 			return null;
 		}
 
-		const setup = createCanvas(logicalW, logicalH, effectiveMaxWidth, effectiveMaxHeight, dpiScale);
+		const setup = createCanvas(
+			logicalW,
+			logicalH,
+			effectiveMaxWidth,
+			effectiveMaxHeight,
+			dpiScale,
+			opts.maxCanvasDimension,
+		);
 		if (!setup) {
 			return null;
 		}
@@ -363,7 +404,7 @@ export async function convertWmfToDataUrl(
 		const { canvas, ctx } = setup;
 
 		ctx.save();
-		replayWmfRecords(view, ctx, header, canvas.width, canvas.height);
+		replayWmfRecords(view, ctx, header, canvas.width, canvas.height, replayOptions);
 		ctx.restore();
 
 		const result = await exportCanvasToPngDataUrl(canvas);

@@ -77,12 +77,16 @@ export function handleEmfObjectRecord(
 				const height = view.getInt32(dataOff + 4, true);
 				const weight = view.getInt32(dataOff + 20, true);
 				const italic = view.getUint8(dataOff + 24);
+				const underline = view.getUint8(dataOff + 25);
+				const strikeOut = view.getUint8(dataOff + 26);
 				const family = readUtf16LE(view, dataOff + 28, 32) || 'sans-serif';
 				rCtx.objectTable.set(ihFont, {
 					kind: 'font',
 					height: Math.abs(height),
 					weight,
 					italic: italic !== 0,
+					underline: underline !== 0,
+					strikeOut: strikeOut !== 0,
 					family,
 				});
 			}
@@ -110,6 +114,8 @@ export function handleEmfObjectRecord(
 							state.fontHeight = obj.height;
 							state.fontWeight = obj.weight;
 							state.fontItalic = obj.italic;
+							state.fontUnderline = obj.underline;
+							state.fontStrikeOut = obj.strikeOut;
 							state.fontFamily = obj.family;
 							break;
 					}

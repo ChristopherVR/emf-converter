@@ -5,7 +5,7 @@
  * DrawImage, DrawImagePoints.
  */
 
-import { readUtf16LE } from './emf-canvas-helpers';
+import { mapFontFamily, readUtf16LE } from './emf-canvas-helpers';
 import {
 	EMFPLUS_FILLPATH,
 	EMFPLUS_DRAWPATH,
@@ -93,7 +93,8 @@ export function handleEmfPlusTextImageRecord(
 					if (text.length > 0 && font && font.kind === 'plus-font') {
 						const bold = font.flags & 1 ? 'bold ' : '';
 						const italic = font.flags & 2 ? 'italic ' : '';
-						ctx.font = `${italic}${bold}${font.emSize}px ${font.family}`;
+						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
+						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
 						ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
 						ctx.textBaseline = 'top';
 
@@ -143,7 +144,8 @@ export function handleEmfPlusTextImageRecord(
 					if (text.length > 0) {
 						const bold = font.flags & 1 ? 'bold ' : '';
 						const italic = font.flags & 2 ? 'italic ' : '';
-						ctx.font = `${italic}${bold}${font.emSize}px ${font.family}`;
+						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
+						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
 						ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
 						ctx.textBaseline = 'alphabetic';
 						ctx.textAlign = 'left';

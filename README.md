@@ -51,29 +51,47 @@ Both functions return `Promise<string | null>` — `null` if the buffer is inval
 
 ## API
 
-### `convertEmfToDataUrl(buffer, maxWidth?, maxHeight?)` · `convertWmfToDataUrl(buffer, maxWidth?, maxHeight?)`
+### `convertEmfToDataUrl(buffer, maxWidth?, maxHeight?, options?)` · `convertWmfToDataUrl(buffer, maxWidth?, maxHeight?, options?)`
 
-| Parameter   | Type                      | Description                       |
-| ----------- | ------------------------- | --------------------------------- |
-| `buffer`    | `ArrayBuffer`             | Raw EMF/WMF file bytes            |
-| `maxWidth`  | `number` (optional)       | Maximum output width in pixels    |
-| `maxHeight` | `number` (optional)       | Maximum output height in pixels   |
-| **Returns** | `Promise<string \| null>` | PNG data URL or `null` on failure |
+| Parameter   | Type                                  | Description                                          |
+| ----------- | ------------------------------------- | ---------------------------------------------------- |
+| `buffer`    | `ArrayBuffer`                         | Raw EMF/WMF file bytes                               |
+| `maxWidth`  | `number` (optional)                   | Maximum output width in pixels                       |
+| `maxHeight` | `number` (optional)                   | Maximum output height in pixels                      |
+| `options`   | `EmfConvertOptions \| number` (opt.)  | Options object, or a numeric `dpiScale` (legacy)    |
+| **Returns** | `Promise<string \| null>`             | PNG data URL or `null` on failure                   |
+
+#### `EmfConvertOptions`
+
+| Field                | Type                       | Default        | Description                                                                 |
+| -------------------- | -------------------------- | -------------- | --------------------------------------------------------------------------- |
+| `maxWidth`           | `number`                   | —              | Maximum output width in pixels (aspect ratio preserved)                     |
+| `maxHeight`          | `number`                   | —              | Maximum output height in pixels                                             |
+| `dpiScale`           | `number`                   | `1`            | Resolution multiplier for sharper output; clamped to `4`                    |
+| `maxCanvasDimension` | `number`                   | `8192`         | Hard cap on canvas width/height in pixels                                   |
+| `maxRecords`         | `number`                   | `200000`/`500000` | Cap on records processed per stream before replay stops (EMF+ uses the higher default unless overridden) |
+| `fontFamilyMap`      | `Record<string, string>`   | —              | Maps Windows face names (case-insensitive) to fonts available locally, e.g. `{ calibri: 'Carlito' }` |
+
+```ts
+const png = await convertEmfToDataUrl(buffer, undefined, undefined, {
+	dpiScale: 2,
+	fontFamilyMap: { calibri: 'Carlito', 'ms shell dlg': 'Tahoma' },
+});
+```
 
 ## How it works
 
-A three-phase pipeline: **parse → replay → export**. The header parser extracts the drawing bounds, a Canvas is created and clamped to 4096×4096, then records are scanned sequentially and dispatched to GDI, EMF+, or WMF handlers that drive the Canvas 2D context. Embedded bitmaps (DIB and GDI+ pixel formats) and recursively embedded metafiles are resolved asynchronously after the synchronous replay completes.
+A three-phase pipeline: **parse → replay → export**. The header parser extracts the drawing bounds, a Canvas is created and clamped to 8192×8192 (configurable via `maxCanvasDimension`), then records are scanned sequentially and dispatched to GDI, EMF+, or WMF handlers that drive the Canvas 2D context. Embedded bitmaps (DIB and GDI+ pixel formats) and recursively embedded metafiles are resolved asynchronously after the synchronous replay completes.
 
 It supports 300+ EMF GDI record types, the EMF+ (GDI+) record set, and legacy WMF records, including state, transforms, objects, shapes, poly/path operations, text, bitmaps, and clipping.
 
 ## Limitations
 
-- **EMF+ region objects** are not parsed (no Canvas 2D equivalent for boolean region clipping).
-- **Gradient brushes are simplified** — GDI+ linear/path gradients use the primary colour only.
-- **No raster operations (ROP)** — `SetROP2` blend modes are not applied.
-- **Limited clipping** — single rect/path clipping is supported; combined regions are not.
-- **Safety limits** — output is clamped to 4096×4096; processing stops after 50,000 records (EMF/WMF) or 100,000 (EMF+).
-- **Font rendering** uses the browser's font engine, so glyph metrics may differ from Windows GDI.
+- **Region boolean ops are partial** — rectangle, path, and union-of-rectangles regions (multi-rect `RGNDATA`, EMF+ rect/path region trees) are clipped correctly, but `Xor` / `Exclude` / `Complement` region operations have no Canvas 2D equivalent and fall back to intersect-or-skip. `EMR_EXCLUDECLIPRECT` and `EMR_OFFSETCLIPRGN` are recognised but not applied (Canvas 2D cannot subtract from or translate an active clip).
+- **Gradient brushes are simplified** — GDI+ linear/path gradient brushes render with their primary colour only (no interpolated colour stops yet).
+- **Raster operations (ROP2) are partial** — `SetROP2` modes `R2_COPYPEN` (default) and `R2_NOP` are faithful; `R2_XORPEN`, `R2_MASKPEN`, `R2_MERGEPEN`, and `R2_NOT` are approximated via Canvas composite modes (`xor` / `multiply` / `lighten` / `difference`). The bitwise NOT/NAND/NOR-family modes have no Canvas equivalent and fall back to normal source-over drawing.
+- **Safety limits** — output is clamped to 8192×8192 and replay stops after 200,000 records (EMF/WMF) or 500,000 (EMF+). All three are overridable via `maxCanvasDimension` / `maxRecords`.
+- **Font rendering** uses the host Canvas font engine, so glyph metrics may differ from Windows GDI. Weight, italic, underline, and strike-out are honoured; supply `fontFamilyMap` to remap Windows face names to fonts available in your environment.
 
 ## License
 
