@@ -115,20 +115,8 @@ async function processDeferredImages(
 				}
 				emfLog(`  Deferred image [${idx}]: recursively converting embedded metafile...`);
 				const metafileDataUrl =
-					(await convertEmfToDataUrl(
-						plainBuffer,
-						undefined,
-						undefined,
-						undefined,
-						recursionDepth + 1,
-					)) ??
-					(await convertWmfToDataUrl(
-						plainBuffer,
-						undefined,
-						undefined,
-						undefined,
-						recursionDepth + 1,
-					));
+					(await convertEmfToDataUrl(plainBuffer, undefined, recursionDepth + 1)) ??
+					(await convertWmfToDataUrl(plainBuffer, undefined, recursionDepth + 1));
 				if (metafileDataUrl) {
 					// Decode the data-URL back to raw bytes so we can build a Blob
 					// and hand it to createImageBitmap for drawing.
@@ -197,18 +185,14 @@ async function processDeferredImages(
  * - The logical bounds are zero-sized or negative.
  * - No canvas API is available (e.g. headless test environment).
  *
- * @param buffer    - The raw EMF file bytes.
- * @param maxWidth  - Optional cap on the output canvas width (pixels).
- * @param maxHeight - Optional cap on the output canvas height (pixels).
- * @param optionsOrDpiScale - Either an {@link EmfConvertOptions} object, or
- *   a numeric DPI scale (for backward compatibility). Default DPI scale is 2.
+ * @param buffer  - The raw EMF file bytes.
+ * @param options - Optional {@link EmfConvertOptions} controlling output size,
+ *   DPI scale, record limits, and font mapping.
  * @returns A `data:image/png;base64,…` string, or `null` on failure.
  */
 export async function convertEmfToDataUrl(
 	buffer: ArrayBuffer,
-	maxWidth?: number,
-	maxHeight?: number,
-	optionsOrDpiScale?: EmfConvertOptions | number,
+	options?: EmfConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<string | null> {
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
@@ -217,14 +201,10 @@ export async function convertEmfToDataUrl(
 		);
 		return null;
 	}
-	// Parse the flexible options argument
-	const opts: EmfConvertOptions =
-		typeof optionsOrDpiScale === 'number'
-			? { dpiScale: optionsOrDpiScale }
-			: (optionsOrDpiScale ?? {});
+	const opts = options ?? {};
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
-	const effectiveMaxWidth = maxWidth ?? opts.maxWidth;
-	const effectiveMaxHeight = maxHeight ?? opts.maxHeight;
+	const effectiveMaxWidth = opts.maxWidth;
+	const effectiveMaxHeight = opts.maxHeight;
 	const replayOptions = {
 		maxRecords: opts.maxRecords,
 		maxRecordsEmfPlus: opts.maxRecords,
@@ -336,18 +316,14 @@ export async function convertEmfToDataUrl(
  * - The header cannot be parsed or reports invalid dimensions.
  * - No canvas API is available.
  *
- * @param buffer    - The raw WMF file bytes.
- * @param maxWidth  - Optional cap on the output canvas width (pixels).
- * @param maxHeight - Optional cap on the output canvas height (pixels).
- * @param optionsOrDpiScale - Either an {@link EmfConvertOptions} object, or
- *   a numeric DPI scale. Default DPI scale is 2.
+ * @param buffer  - The raw WMF file bytes.
+ * @param options - Optional {@link EmfConvertOptions} controlling output size,
+ *   DPI scale, record limits, and font mapping.
  * @returns A `data:image/png;base64,…` string, or `null` on failure.
  */
 export async function convertWmfToDataUrl(
 	buffer: ArrayBuffer,
-	maxWidth?: number,
-	maxHeight?: number,
-	optionsOrDpiScale?: EmfConvertOptions | number,
+	options?: EmfConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<string | null> {
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
@@ -356,13 +332,10 @@ export async function convertWmfToDataUrl(
 		);
 		return null;
 	}
-	const opts: EmfConvertOptions =
-		typeof optionsOrDpiScale === 'number'
-			? { dpiScale: optionsOrDpiScale }
-			: (optionsOrDpiScale ?? {});
+	const opts = options ?? {};
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
-	const effectiveMaxWidth = maxWidth ?? opts.maxWidth;
-	const effectiveMaxHeight = maxHeight ?? opts.maxHeight;
+	const effectiveMaxWidth = opts.maxWidth;
+	const effectiveMaxHeight = opts.maxHeight;
 	const replayOptions = {
 		maxRecords: opts.maxRecords,
 		fontFamilyMap: opts.fontFamilyMap,

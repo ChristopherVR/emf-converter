@@ -44,22 +44,20 @@ const pngDataUrl = await convertEmfToDataUrl(emfBuffer);
 const wmfPng = await convertWmfToDataUrl(wmfBuffer);
 
 // Optional: limit output dimensions (aspect ratio preserved)
-const scaled = await convertEmfToDataUrl(emfBuffer, 1024, 768);
+const scaled = await convertEmfToDataUrl(emfBuffer, { maxWidth: 1024, maxHeight: 768 });
 ```
 
 Both functions return `Promise<string | null>` — `null` if the buffer is invalid or no Canvas API is available.
 
 ## API
 
-### `convertEmfToDataUrl(buffer, maxWidth?, maxHeight?, options?)` · `convertWmfToDataUrl(buffer, maxWidth?, maxHeight?, options?)`
+### `convertEmfToDataUrl(buffer, options?)` · `convertWmfToDataUrl(buffer, options?)`
 
-| Parameter   | Type                                  | Description                                          |
-| ----------- | ------------------------------------- | ---------------------------------------------------- |
-| `buffer`    | `ArrayBuffer`                         | Raw EMF/WMF file bytes                               |
-| `maxWidth`  | `number` (optional)                   | Maximum output width in pixels                       |
-| `maxHeight` | `number` (optional)                   | Maximum output height in pixels                      |
-| `options`   | `EmfConvertOptions \| number` (opt.)  | Options object, or a numeric `dpiScale` (legacy)    |
-| **Returns** | `Promise<string \| null>`             | PNG data URL or `null` on failure                   |
+| Parameter   | Type                          | Description                                          |
+| ----------- | ----------------------------- | ---------------------------------------------------- |
+| `buffer`    | `ArrayBuffer`                 | Raw EMF/WMF file bytes                               |
+| `options`   | `EmfConvertOptions` (optional)| Output size, DPI scale, record limits, font mapping |
+| **Returns** | `Promise<string \| null>`     | PNG data URL or `null` on failure                   |
 
 #### `EmfConvertOptions`
 
@@ -73,7 +71,7 @@ Both functions return `Promise<string | null>` — `null` if the buffer is inval
 | `fontFamilyMap`      | `Record<string, string>`   | —              | Maps Windows face names (case-insensitive) to fonts available locally, e.g. `{ calibri: 'Carlito' }` |
 
 ```ts
-const png = await convertEmfToDataUrl(buffer, undefined, undefined, {
+const png = await convertEmfToDataUrl(buffer, {
 	dpiScale: 2,
 	fontFamilyMap: { calibri: 'Carlito', 'ms shell dlg': 'Tahoma' },
 });

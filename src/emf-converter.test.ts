@@ -140,19 +140,13 @@ describe('convertEmfToDataUrl', () => {
 
 	it('passes maxWidth and maxHeight to createCanvas', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), 500, 400);
+		await convertEmfToDataUrl(new ArrayBuffer(100), { maxWidth: 500, maxHeight: 400 });
 		expect(createCanvas).toHaveBeenCalledWith(100, 100, 500, 400, 2, undefined);
-	});
-
-	it('accepts numeric dpiScale for backward compatibility', async () => {
-		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, 3);
-		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 3, undefined);
 	});
 
 	it('accepts options object with dpiScale', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
+		await convertEmfToDataUrl(new ArrayBuffer(100), {
 			dpiScale: 4,
 		});
 		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 4, undefined);
@@ -160,7 +154,7 @@ describe('convertEmfToDataUrl', () => {
 
 	it('accepts options object with maxWidth/maxHeight', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
+		await convertEmfToDataUrl(new ArrayBuffer(100), {
 			maxWidth: 300,
 			maxHeight: 250,
 		});
@@ -169,7 +163,7 @@ describe('convertEmfToDataUrl', () => {
 
 	it('forwards maxCanvasDimension to createCanvas', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
+		await convertEmfToDataUrl(new ArrayBuffer(100), {
 			maxCanvasDimension: 2048,
 		});
 		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 2, 2048);
@@ -177,7 +171,7 @@ describe('convertEmfToDataUrl', () => {
 
 	it('threads maxRecords and fontFamilyMap into replayEmfRecords', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
+		await convertEmfToDataUrl(new ArrayBuffer(100), {
 			maxRecords: 1234,
 			fontFamilyMap: { calibri: 'Carlito' },
 		});
@@ -259,7 +253,7 @@ describe('convertWmfToDataUrl', () => {
 
 	it('passes maxWidth, maxHeight, and dpiScale to createCanvas', async () => {
 		setupWmfMocks();
-		await convertWmfToDataUrl(new ArrayBuffer(100), 600, 500, 3);
+		await convertWmfToDataUrl(new ArrayBuffer(100), { maxWidth: 600, maxHeight: 500, dpiScale: 3 });
 		expect(createCanvas).toHaveBeenCalledWith(200, 200, 600, 500, 3, undefined);
 	});
 
@@ -279,7 +273,7 @@ describe('convertWmfToDataUrl', () => {
 
 	it('accepts options object', async () => {
 		setupWmfMocks();
-		await convertWmfToDataUrl(new ArrayBuffer(100), undefined, undefined, {
+		await convertWmfToDataUrl(new ArrayBuffer(100), {
 			dpiScale: 1,
 			maxWidth: 100,
 			maxHeight: 80,
