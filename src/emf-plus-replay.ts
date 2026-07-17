@@ -84,7 +84,8 @@ export function replayEmfPlusRecords(
 		saveIdMap: s.saveIdMap,
 		totalImageObjects: 0,
 		totalDrawImageCalls: 0,
-		clipSaveDepth: 0,
+		clipSaveDepth: s.clipSaveDepth,
+		clipRegion: s.clipRegion,
 		pageUnit: 2,
 		pageScale: 1,
 		continuationBuffer: null,
@@ -266,6 +267,8 @@ export function replayEmfPlusRecords(
 	if (state) {
 		state.worldTransform = rCtx.worldTransform;
 		state.saveIdMap = rCtx.saveIdMap;
+		state.clipRegion = rCtx.clipRegion ?? null;
+		state.clipSaveDepth = rCtx.clipSaveDepth;
 	}
 
 	ctx.setTransform(1, 0, 0, 1, 0, 0);

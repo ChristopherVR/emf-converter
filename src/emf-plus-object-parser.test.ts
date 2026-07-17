@@ -97,33 +97,124 @@ describe('emf-plus-object-parser', () => {
 			}
 		});
 
-		it('parses a linear gradient brush (uses first color)', () => {
+		it('parses a linear gradient brush with geometry and colour stops', () => {
 			const rCtx = makeRCtx();
 			const d = 0;
+			// EmfPlusLinearGradientBrushData: type, flags, wrap, RectF, start, end, reserved×2
 			rCtx.view.setUint32(d, EMFPLUS_BRUSHTYPE_LINEARGRADIENT, true);
-			// offset 40 = ARGB start color
-			rCtx.view.setUint32(d + 40, 0xff00ff00, true); // green
+			const b = d + 4;
+			rCtx.view.setUint32(b, 0, true); // BrushDataFlags
+			rCtx.view.setUint32(b + 4, 0, true); // WrapMode
+			rCtx.view.setFloat32(b + 8, 10, true); // rect x
+			rCtx.view.setFloat32(b + 12, 20, true); // rect y
+			rCtx.view.setFloat32(b + 16, 100, true); // rect w
+			rCtx.view.setFloat32(b + 20, 50, true); // rect h
+			rCtx.view.setUint32(b + 24, 0xff00ff00, true); // start = green
+			rCtx.view.setUint32(b + 28, 0xffff0000, true); // end = red
 
-			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 1), d, 48);
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 1), d, 4 + 40);
 			const brush = rCtx.objectTable.get(1);
 			expect(brush).toBeDefined();
 			expect(brush!.kind).toBe('plus-brush');
 			if (brush!.kind === 'plus-brush') {
 				expect(brush.color).toContain('0,255,0');
+				expect(brush.gradient).toBeDefined();
+				if (brush.gradient?.type === 'linear') {
+					// Horizontal midline of the rect
+					expect(brush.gradient.x1).toBe(10);
+					expect(brush.gradient.y1).toBe(45);
+					expect(brush.gradient.x2).toBe(110);
+					expect(brush.gradient.y2).toBe(45);
+					expect(brush.gradient.stops).toEqual([
+						{ offset: 0, color: 'rgba(0,255,0,1.000)' },
+						{ offset: 1, color: 'rgba(255,0,0,1.000)' },
+					]);
+				}
 			}
 		});
 
-		it('parses a path gradient brush (uses center color)', () => {
+		it('parses linear gradient preset colour stops', () => {
 			const rCtx = makeRCtx();
 			const d = 0;
-			rCtx.view.setUint32(d, EMFPLUS_BRUSHTYPE_PATHGRADIENT, true);
-			rCtx.view.setUint32(d + 8, 0xff0000ff, true); // blue
+			rCtx.view.setUint32(d, EMFPLUS_BRUSHTYPE_LINEARGRADIENT, true);
+			const b = d + 4;
+			rCtx.view.setUint32(b, 0x4, true); // BrushDataPresetColors
+			rCtx.view.setFloat32(b + 8, 0, true);
+			rCtx.view.setFloat32(b + 12, 0, true);
+			rCtx.view.setFloat32(b + 16, 10, true);
+			rCtx.view.setFloat32(b + 20, 10, true);
+			rCtx.view.setUint32(b + 24, 0xff000000, true); // start
+			rCtx.view.setUint32(b + 28, 0xffffffff, true); // end
+			// Preset colours: 3 stops at 0 / 0.5 / 1
+			const o = b + 40;
+			rCtx.view.setUint32(o, 3, true);
+			rCtx.view.setFloat32(o + 4, 0, true);
+			rCtx.view.setFloat32(o + 8, 0.5, true);
+			rCtx.view.setFloat32(o + 12, 1, true);
+			rCtx.view.setUint32(o + 16, 0xffff0000, true); // red
+			rCtx.view.setUint32(o + 20, 0xff00ff00, true); // green
+			rCtx.view.setUint32(o + 24, 0xff0000ff, true); // blue
 
-			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 2), d, 12);
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 4), d, 4 + 40 + 28);
+			const brush = rCtx.objectTable.get(4);
+			expect(brush!.kind).toBe('plus-brush');
+			if (brush!.kind === 'plus-brush' && brush.gradient) {
+				expect(brush.gradient.stops).toEqual([
+					{ offset: 0, color: 'rgba(255,0,0,1.000)' },
+					{ offset: 0.5, color: 'rgba(0,255,0,1.000)' },
+					{ offset: 1, color: 'rgba(0,0,255,1.000)' },
+				]);
+			}
+		});
+
+		it('parses a path gradient brush into a radial gradient', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			// EmfPlusPathGradientBrushData: type, flags, wrap, centre colour,
+			// centre point, surrounding colours, boundary point list.
+			rCtx.view.setUint32(d, EMFPLUS_BRUSHTYPE_PATHGRADIENT, true);
+			const b = d + 4;
+			rCtx.view.setUint32(b, 0, true); // flags (boundary = point list)
+			rCtx.view.setUint32(b + 4, 0, true); // wrap
+			rCtx.view.setUint32(b + 8, 0xff0000ff, true); // centre = blue
+			rCtx.view.setFloat32(b + 12, 50, true); // cx
+			rCtx.view.setFloat32(b + 16, 50, true); // cy
+			rCtx.view.setUint32(b + 20, 1, true); // surround count
+			rCtx.view.setUint32(b + 24, 0xffffffff, true); // surround = white
+			rCtx.view.setUint32(b + 28, 2, true); // boundary point count
+			rCtx.view.setFloat32(b + 32, 0, true); // p0.x
+			rCtx.view.setFloat32(b + 36, 50, true); // p0.y
+			rCtx.view.setFloat32(b + 40, 100, true); // p1.x
+			rCtx.view.setFloat32(b + 44, 50, true); // p1.y
+
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 2), d, 4 + 48);
 			const brush = rCtx.objectTable.get(2);
 			expect(brush).toBeDefined();
 			if (brush!.kind === 'plus-brush') {
 				expect(brush.color).toContain('0,0,255');
+				expect(brush.gradient).toBeDefined();
+				if (brush.gradient?.type === 'radial') {
+					expect(brush.gradient.cx).toBe(50);
+					expect(brush.gradient.cy).toBe(50);
+					expect(brush.gradient.r).toBe(50);
+					expect(brush.gradient.stops[0].color).toBe('rgba(0,0,255,1.000)');
+					expect(brush.gradient.stops[1].color).toBe('rgba(255,255,255,1.000)');
+				}
+			}
+		});
+
+		it('accepts a version-prefixed brush (real GDI+ layout)', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			rCtx.view.setUint32(d, 0xdbc01002, true); // EmfPlusGraphicsVersion
+			rCtx.view.setUint32(d + 4, EMFPLUS_BRUSHTYPE_SOLID, true);
+			rCtx.view.setUint32(d + 8, 0xffff0000, true); // red
+
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 5), d, 12);
+			const brush = rCtx.objectTable.get(5);
+			expect(brush!.kind).toBe('plus-brush');
+			if (brush!.kind === 'plus-brush') {
+				expect(brush.color).toBe('rgba(255,0,0,1.000)');
 			}
 		});
 

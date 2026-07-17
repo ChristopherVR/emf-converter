@@ -5,10 +5,9 @@
  */
 
 import { readUtf16LE } from './emf-canvas-helpers';
-import { argbToRgba } from './emf-color-helpers';
-import { EMFPLUS_BRUSHTYPE_SOLID } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { decodeEmfPlusBitmapPixels } from './emf-plus-bitmap-decoder';
+import { looksLikeGraphicsVersion, parseEmfPlusBrushObject } from './emf-plus-brush-parser';
 import type { EmfPlusObject } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -24,7 +23,11 @@ export function parseEmfPlusPenObject(
 		return null;
 	}
 
-	const penFlags = view.getUint32(dataOff + 4, true);
+	// Real GDI+ files start with EmfPlusGraphicsVersion + Type; the synthetic
+	// legacy layout starts at PenDataFlags directly after a 4-byte type slot.
+	// PenWidth sits at +16 and the optional data at +20 in both layouts.
+	const hasVersion = looksLikeGraphicsVersion(view.getUint32(dataOff, true));
+	const penFlags = view.getUint32(dataOff + (hasVersion ? 8 : 4), true);
 	const penWidth = view.getFloat32(dataOff + 16, true);
 
 	let brushOff = dataOff + 20;
@@ -80,11 +83,13 @@ export function parseEmfPlusPenObject(
 		}
 	}
 
+	// The pen's colour comes from an embedded brush object (with or without
+	// its own leading version field — parseEmfPlusBrushObject sniffs both).
 	let penColor = 'rgba(0,0,0,1)';
 	if (brushOff + 8 <= dataOff + recDataSize) {
-		const penBrushType = view.getUint32(brushOff, true);
-		if (penBrushType === EMFPLUS_BRUSHTYPE_SOLID && brushOff + 8 <= dataOff + recDataSize) {
-			penColor = argbToRgba(view.getUint32(brushOff + 4, true));
+		const brush = parseEmfPlusBrushObject(view, brushOff, dataOff + recDataSize - brushOff);
+		if (brush) {
+			penColor = brush.color;
 		}
 	}
 

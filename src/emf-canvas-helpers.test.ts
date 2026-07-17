@@ -8,6 +8,7 @@ import {
 	drawTextDecorations,
 	mapFontFamily,
 	readUtf16LE,
+	rop2Paint,
 	rop2ToGco,
 	getStockObject,
 } from './emf-canvas-helpers';
@@ -276,28 +277,70 @@ describe('mapFontFamily', () => {
 // rop2ToGco
 // ---------------------------------------------------------------------------
 
-describe('rop2ToGco', () => {
-	it('maps the supported ROP2 subset to composite operations', () => {
-		expect(rop2ToGco(7)).toBe('xor'); // R2_XORPEN
-		expect(rop2ToGco(9)).toBe('multiply'); // R2_MASKPEN
+describe('rop2Paint / rop2ToGco', () => {
+	it('maps bitwise pen ops to their nearest composite operations', () => {
+		expect(rop2ToGco(7)).toBe('difference'); // R2_XORPEN
+		expect(rop2ToGco(9)).toBe('darken'); // R2_MASKPEN
 		expect(rop2ToGco(15)).toBe('lighten'); // R2_MERGEPEN
 		expect(rop2ToGco(6)).toBe('difference'); // R2_NOT
 	});
 
-	it('falls back to source-over for the default and unsupported modes', () => {
+	it('falls back to source-over for the default and unknown modes', () => {
 		expect(rop2ToGco(13)).toBe('source-over'); // R2_COPYPEN (default)
-		expect(rop2ToGco(2)).toBe('source-over'); // R2_NOTMERGEPEN (no equivalent)
 		expect(rop2ToGco(0)).toBe('source-over');
+		expect(rop2ToGco(99)).toBe('source-over');
+	});
+
+	it('reports exact emulation for the faithful modes', () => {
+		for (const mode of [1, 4, 6, 11, 13, 16]) {
+			expect(rop2Paint(mode).exact).toBe(true);
+		}
+		for (const mode of [2, 3, 5, 7, 8, 9, 10, 12, 14, 15]) {
+			expect(rop2Paint(mode).exact).toBe(false);
+		}
+	});
+
+	it('applies colour transforms for the NOT-family modes', () => {
+		expect(rop2Paint(1)).toMatchObject({ gco: 'source-over', colorTransform: 'black' }); // R2_BLACK
+		expect(rop2Paint(16)).toMatchObject({ gco: 'source-over', colorTransform: 'white' }); // R2_WHITE
+		expect(rop2Paint(11)).toMatchObject({ colorTransform: 'skip' }); // R2_NOP
+		expect(rop2Paint(4)).toMatchObject({ gco: 'source-over', colorTransform: 'invert' }); // R2_NOTCOPYPEN
+		expect(rop2Paint(6)).toMatchObject({ gco: 'difference', colorTransform: 'white' }); // R2_NOT
+		expect(rop2Paint(2)).toMatchObject({ gco: 'darken', colorTransform: 'invert' }); // R2_NOTMERGEPEN
+		expect(rop2Paint(8)).toMatchObject({ gco: 'lighten', colorTransform: 'invert' }); // R2_NOTMASKPEN
 	});
 
 	it('is applied by applyPen/applyBrush from state.rop2', () => {
 		const pen = createMockCtx() as MockCtx & { globalCompositeOperation: string };
 		applyPen(asCtx(pen), createDefaultDrawState({ rop2: 7 }));
-		expect(pen.globalCompositeOperation).toBe('xor');
+		expect(pen.globalCompositeOperation).toBe('difference');
 
 		const brush = createMockCtx() as MockCtx & { globalCompositeOperation: string };
 		applyBrush(asCtx(brush), createDefaultDrawState({ rop2: 13 }));
 		expect(brush.globalCompositeOperation).toBe('source-over');
+	});
+
+	it('inverts the pen colour for R2_NOTCOPYPEN and forces white for R2_NOT', () => {
+		const pen = createMockCtx() as MockCtx & {
+			globalCompositeOperation: string;
+			strokeStyle: string;
+		};
+		applyPen(asCtx(pen), createDefaultDrawState({ rop2: 4, penColor: '#ff0000' }));
+		expect(pen.strokeStyle).toBe('#00ffff');
+
+		const notPen = createMockCtx() as MockCtx & {
+			globalCompositeOperation: string;
+			strokeStyle: string;
+		};
+		applyPen(asCtx(notPen), createDefaultDrawState({ rop2: 6, penColor: '#ff0000' }));
+		expect(notPen.strokeStyle).toBe('#ffffff');
+		expect(notPen.globalCompositeOperation).toBe('difference');
+	});
+
+	it('draws nothing for R2_NOP via a fully transparent brush', () => {
+		const brush = createMockCtx() as MockCtx & { fillStyle: string };
+		applyBrush(asCtx(brush), createDefaultDrawState({ rop2: 11, brushColor: '#123456' }));
+		expect(brush.fillStyle).toBe('rgba(0,0,0,0)');
 	});
 });
 

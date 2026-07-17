@@ -17,7 +17,7 @@ import {
 import { emfLog, emfWarn } from './emf-logging';
 import { replayEmfPlusPath } from './emf-plus-path';
 import {
-	resolveBrushColor,
+	resolveBrushPaint,
 	applyPlusWorldTransform,
 	getPageUnitMultiplier,
 } from './emf-plus-state-handlers';
@@ -44,7 +44,7 @@ export function handleEmfPlusTextImageRecord(
 				const pathId = recFlags & 0xff;
 				const pathObj = objectTable.get(pathId);
 				if (pathObj && pathObj.kind === 'plus-path') {
-					ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
+					ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 					applyPlusWorldTransform(rCtx);
 					replayEmfPlusPath(ctx, pathObj);
 					ctx.fill();
@@ -95,7 +95,7 @@ export function handleEmfPlusTextImageRecord(
 						const italic = font.flags & 2 ? 'italic ' : '';
 						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
 						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
-						ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
+						ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 						ctx.textBaseline = 'top';
 
 						const sf = objectTable.get(formatId);
@@ -146,7 +146,7 @@ export function handleEmfPlusTextImageRecord(
 						const italic = font.flags & 2 ? 'italic ' : '';
 						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
 						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
-						ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
+						ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 						ctx.textBaseline = 'alphabetic';
 						ctx.textAlign = 'left';
 

@@ -25,6 +25,7 @@ import {
 	handleEmfPlusStateRecord,
 	multiplyMatrix,
 	resolveBrushColor,
+	resolveBrushPaint,
 	getPageUnitMultiplier,
 	applyPlusWorldTransform,
 } from './emf-plus-state-handlers';
@@ -167,6 +168,59 @@ describe('emf-plus-state-handlers', () => {
 			rCtx.objectTable.set(5, { kind: 'plus-brush', color: 'rgba(1,2,3,1.000)' });
 			const color = resolveBrushColor(rCtx, 0, 0x0100_0005);
 			expect(color).toBe('rgba(1,2,3,1.000)');
+		});
+	});
+
+	describe('resolveBrushPaint()', () => {
+		it('builds a linear CanvasGradient with the brush stops', () => {
+			const rCtx = makeRCtx();
+			const created: Array<{ args: number[]; stops: Array<[number, string]> }> = [];
+			(rCtx.ctx as unknown as Record<string, unknown>).createLinearGradient = (
+				...args: number[]
+			) => {
+				const g = { args, stops: [] as Array<[number, string]> };
+				created.push(g);
+				return {
+					addColorStop: (o: number, c: string) => g.stops.push([o, c]),
+				};
+			};
+			rCtx.objectTable.set(3, {
+				kind: 'plus-brush',
+				color: 'rgba(255,0,0,1.000)',
+				gradient: {
+					type: 'linear',
+					x1: 0,
+					y1: 5,
+					x2: 10,
+					y2: 5,
+					stops: [
+						{ offset: 0, color: 'rgba(255,0,0,1.000)' },
+						{ offset: 1, color: 'rgba(0,0,255,1.000)' },
+					],
+				},
+			});
+			const paint = resolveBrushPaint(rCtx, 0, 3);
+			expect(typeof paint).toBe('object');
+			expect(created[0].args).toEqual([0, 5, 10, 5]);
+			expect(created[0].stops).toEqual([
+				[0, 'rgba(255,0,0,1.000)'],
+				[1, 'rgba(0,0,255,1.000)'],
+			]);
+		});
+
+		it('falls back to the flat colour when the ctx lacks gradient support', () => {
+			const rCtx = makeRCtx();
+			rCtx.objectTable.set(3, {
+				kind: 'plus-brush',
+				color: 'rgba(1,2,3,1.000)',
+				gradient: { type: 'radial', cx: 0, cy: 0, r: 10, stops: [] },
+			});
+			expect(resolveBrushPaint(rCtx, 0, 3)).toBe('rgba(1,2,3,1.000)');
+		});
+
+		it('returns inline ARGB colours directly', () => {
+			const rCtx = makeRCtx();
+			expect(resolveBrushPaint(rCtx, 0x8000, 0xffff0000)).toBe('rgba(255,0,0,1.000)');
 		});
 	});
 
@@ -375,17 +429,65 @@ describe('emf-plus-state-handlers', () => {
 
 		// -- SETCLIPRECT --
 		describe('eMFPLUS_SETCLIPRECT', () => {
-			it('clips a rectangle on the canvas', () => {
+			const writeRect = (rCtx: EmfPlusReplayCtx, d: number, x = 10, y = 20, w = 100, h = 200) => {
+				rCtx.view.setFloat32(d, x, true);
+				rCtx.view.setFloat32(d + 4, y, true);
+				rCtx.view.setFloat32(d + 8, w, true);
+				rCtx.view.setFloat32(d + 12, h, true);
+			};
+
+			it('clips a rectangle on the canvas and tracks the region', () => {
 				const rCtx = makeRCtx();
 				const d = 8;
-				rCtx.view.setFloat32(d, 10, true); // x
-				rCtx.view.setFloat32(d + 4, 20, true); // y
-				rCtx.view.setFloat32(d + 8, 100, true); // w
-				rCtx.view.setFloat32(d + 12, 200, true); // h
+				writeRect(rCtx, d);
 				const flags = 1 << 8; // combineMode = 1 (Intersect)
 				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, flags, d, 16);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
 				expect(ctx.clip.mock.calls.length).toBeGreaterThanOrEqual(1);
+				expect(rCtx.clipRegion).toHaveLength(1);
+				expect(rCtx.clipSaveDepth).toBe(1);
+				// Device-space polygon of the world-space rect
+				expect(rCtx.clipRegion![0].cmds[0]).toMatchObject({ op: 'moveTo', x: 10, y: 20 });
+			});
+
+			it('supports CombineMode Exclude via even-odd clipping', () => {
+				const rCtx = makeRCtx();
+				const d = 8;
+				writeRect(rCtx, d, 0, 0, 300, 300);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 0 /* Replace */, d, 16);
+				writeRect(rCtx, d, 100, 100, 50, 50);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 4 << 8 /* Exclude */, d, 16);
+
+				expect(rCtx.clipRegion).toHaveLength(2);
+				expect(rCtx.clipRegion![1].fillRule).toBe('evenodd');
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.clip.mock.calls.some((c) => c[0] === 'evenodd')).toBe(true);
+			});
+
+			it('supports CombineMode Xor of two rects as a single even-odd clip', () => {
+				const rCtx = makeRCtx();
+				const d = 8;
+				writeRect(rCtx, d, 0, 0, 100, 60);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 0 /* Replace */, d, 16);
+				writeRect(rCtx, d, 50, 0, 100, 60);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 3 << 8 /* Xor */, d, 16);
+
+				expect(rCtx.clipRegion).toHaveLength(1);
+				expect(rCtx.clipRegion![0].fillRule).toBe('evenodd');
+			});
+
+			it('supports CombineMode Union by merging into one nonzero shape', () => {
+				const rCtx = makeRCtx();
+				const d = 8;
+				writeRect(rCtx, d, 0, 0, 100, 60);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 0 /* Replace */, d, 16);
+				writeRect(rCtx, d, 200, 0, 100, 60);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 2 << 8 /* Union */, d, 16);
+
+				expect(rCtx.clipRegion).toHaveLength(1);
+				expect(rCtx.clipRegion![0].fillRule).toBe('nonzero');
+				// Both rect outlines present in the merged shape (5 cmds each)
+				expect(rCtx.clipRegion![0].cmds).toHaveLength(10);
 			});
 		});
 
@@ -438,12 +540,29 @@ describe('emf-plus-state-handlers', () => {
 
 		// -- OFFSETCLIP --
 		describe('eMFPLUS_OFFSETCLIP', () => {
-			it('returns true (accepted, logged)', () => {
+			it('returns true when no clip is active', () => {
 				const rCtx = makeRCtx();
 				const d = 8;
 				rCtx.view.setFloat32(d, 5, true);
 				rCtx.view.setFloat32(d + 4, 10, true);
 				expect(handleEmfPlusStateRecord(rCtx, EMFPLUS_OFFSETCLIP, 0, d, 8)).toBeTruthy();
+			});
+
+			it('translates the tracked clip region', () => {
+				const rCtx = makeRCtx();
+				const d = 8;
+				// Establish a clip rect at (10,20)
+				rCtx.view.setFloat32(d, 10, true);
+				rCtx.view.setFloat32(d + 4, 20, true);
+				rCtx.view.setFloat32(d + 8, 100, true);
+				rCtx.view.setFloat32(d + 12, 50, true);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 0, d, 16);
+
+				rCtx.view.setFloat32(d, 5, true); // dx
+				rCtx.view.setFloat32(d + 4, -10, true); // dy
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_OFFSETCLIP, 0, d, 8);
+
+				expect(rCtx.clipRegion![0].cmds[0]).toMatchObject({ op: 'moveTo', x: 15, y: 10 });
 			});
 		});
 

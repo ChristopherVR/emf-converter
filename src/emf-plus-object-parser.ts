@@ -4,7 +4,6 @@
  * Handles the EMFPLUS_OBJECT record by delegating to type-specific parsers.
  */
 
-import { argbToRgba } from './emf-color-helpers';
 import {
 	EMFPLUS_OBJECTTYPE_BRUSH,
 	EMFPLUS_OBJECTTYPE_PEN,
@@ -14,12 +13,9 @@ import {
 	EMFPLUS_OBJECTTYPE_IMAGE,
 	EMFPLUS_OBJECTTYPE_IMAGEATTRIBUTES,
 	EMFPLUS_OBJECTTYPE_REGION,
-	EMFPLUS_BRUSHTYPE_SOLID,
-	EMFPLUS_BRUSHTYPE_HATCHFILL,
-	EMFPLUS_BRUSHTYPE_LINEARGRADIENT,
-	EMFPLUS_BRUSHTYPE_PATHGRADIENT,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
+import { parseEmfPlusBrushObject } from './emf-plus-brush-parser';
 import {
 	parseEmfPlusPenObject,
 	parseEmfPlusImageObject,
@@ -47,19 +43,9 @@ export function handleEmfPlusObjectRecord(
 		// Brush
 		// ---------------------------------------------------------------
 		case EMFPLUS_OBJECTTYPE_BRUSH: {
-			if (recDataSize >= 8) {
-				const brushType = view.getUint32(dataOff, true);
-				let color = 'rgba(0,0,0,1)';
-				if (brushType === EMFPLUS_BRUSHTYPE_SOLID && recDataSize >= 8) {
-					color = argbToRgba(view.getUint32(dataOff + 4, true));
-				} else if (brushType === EMFPLUS_BRUSHTYPE_LINEARGRADIENT && recDataSize >= 48) {
-					color = argbToRgba(view.getUint32(dataOff + 40, true));
-				} else if (brushType === EMFPLUS_BRUSHTYPE_PATHGRADIENT && recDataSize >= 12) {
-					color = argbToRgba(view.getUint32(dataOff + 8, true));
-				} else if (brushType === EMFPLUS_BRUSHTYPE_HATCHFILL && recDataSize >= 12) {
-					color = argbToRgba(view.getUint32(dataOff + 8, true));
-				}
-				objectTable.set(objectId, { kind: 'plus-brush', color });
+			const brush = parseEmfPlusBrushObject(view, dataOff, recDataSize);
+			if (brush) {
+				objectTable.set(objectId, brush);
 			}
 			break;
 		}
@@ -188,8 +174,10 @@ function parseRegionNode(
 	const nodeType = view.getUint32(off, true);
 	let cursor = off + 4;
 
-	// Combine node types: 0=And(Intersect), 1=Or(Union), 2=Xor, 3=Exclude, 4=Complement
-	if (nodeType <= 4) {
+	// Combine node types (RegionNodeDataType, MS-EMFPLUS 2.1.1.27):
+	// 1=And(Intersect), 2=Or(Union), 3=Xor, 4=Exclude, 5=Complement.
+	// 0 is not assigned by the spec but is tolerated as And.
+	if (nodeType <= 5) {
 		const leftResult = parseRegionNode(view, cursor, endOff, depth + 1);
 		if (!leftResult) {
 			return null;

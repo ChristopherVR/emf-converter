@@ -8,6 +8,8 @@
  * @module emf-types
  */
 
+import type { ClipRegion } from './emf-clip-region';
+
 // ---------------------------------------------------------------------------
 // Shared type aliases
 // ---------------------------------------------------------------------------
@@ -230,11 +232,52 @@ export interface EmfBounds {
 // EMF+ GDI+ object table types
 // ---------------------------------------------------------------------------
 
-/** An EMF+ (GDI+) solid-colour brush object. */
-export interface EmfPlusBrush {
-	kind: 'plus-brush';
+/** A single colour stop of an EMF+ gradient brush (offset in 0..1). */
+export interface EmfPlusGradientStop {
+	/** Normalised position along the gradient (0 = start/centre side). */
+	offset: number;
 	/** CSS rgba() colour string. */
 	color: string;
+}
+
+/** Geometry + colour stops of a GDI+ linear gradient brush. */
+export interface EmfPlusLinearGradient {
+	type: 'linear';
+	/** Gradient start point in brush (world) space. */
+	x1: number;
+	y1: number;
+	/** Gradient end point in brush (world) space. */
+	x2: number;
+	y2: number;
+	/** Colour stops ordered by offset (0 = start colour, 1 = end colour). */
+	stops: EmfPlusGradientStop[];
+}
+
+/**
+ * Geometry + colour stops of a GDI+ path gradient brush, approximated as a
+ * radial gradient from the centre point to the boundary's bounding radius.
+ */
+export interface EmfPlusRadialGradient {
+	type: 'radial';
+	/** Centre point in brush (world) space. */
+	cx: number;
+	cy: number;
+	/** Radius reaching the farthest boundary point. */
+	r: number;
+	/** Colour stops ordered by offset (0 = centre colour, 1 = boundary colour). */
+	stops: EmfPlusGradientStop[];
+}
+
+/** Union of the gradient descriptors an EMF+ brush can carry. */
+export type EmfPlusGradient = EmfPlusLinearGradient | EmfPlusRadialGradient;
+
+/** An EMF+ (GDI+) brush object (solid colour, hatch, or gradient). */
+export interface EmfPlusBrush {
+	kind: 'plus-brush';
+	/** Primary CSS rgba() colour (solid colour, or gradient fallback). */
+	color: string;
+	/** Present for linear/path gradient brushes; rendered as a CanvasGradient. */
+	gradient?: EmfPlusGradient;
 }
 
 /** An EMF+ (GDI+) pen object used for stroking shapes. */
@@ -316,7 +359,9 @@ export interface EmfPlusRegion {
  * - A path leaf (type "path") referencing an EmfPlusPath
  * - An infinite region (type "infinite")
  * - An empty region (type "empty")
- * - A combination node (type "combine") with a CombineMode and two children
+ * - A combination node (type "combine") with two children. `combineMode`
+ *   holds the RegionNodeDataType value from MS-EMFPLUS 2.1.1.27:
+ *   1 = And (intersect), 2 = Or (union), 3 = Xor, 4 = Exclude, 5 = Complement.
  */
 export type EmfPlusRegionNode =
 	| { type: 'rect'; x: number; y: number; width: number; height: number }
@@ -389,6 +434,10 @@ export interface EmfPlusState {
 	saveStack: Array<{ transform: TransformMatrix }>;
 	/** Maps the caller-supplied save/container ID to an index in {@link saveStack}. */
 	saveIdMap: Map<number, number>;
+	/** Tracked clip region (device-space shapes), persisted across comment batches. */
+	clipRegion: ClipRegion;
+	/** Number of canvas save() brackets currently open for clip management. */
+	clipSaveDepth: number;
 }
 
 /**
@@ -403,6 +452,8 @@ export function createEmfPlusState(): EmfPlusState {
 		worldTransform: [1, 0, 0, 1, 0, 0],
 		saveStack: [],
 		saveIdMap: new Map(),
+		clipRegion: null,
+		clipSaveDepth: 0,
 	};
 }
 
@@ -518,6 +569,12 @@ export interface EmfPlusReplayCtx {
 	dpiScale: number;
 	/** Optional lowercased-face → CSS-family overrides for text rendering. */
 	fontFamilyMap?: Record<string, string>;
+	/**
+	 * Tracked clip region as device-space shapes (`null` = no clip). Enables
+	 * Union/Xor/Exclude/Complement CombineModes and OffsetClip, which Canvas 2D
+	 * cannot express through successive `clip()` calls alone.
+	 */
+	clipRegion?: ClipRegion;
 }
 
 // ---------------------------------------------------------------------------
@@ -559,6 +616,20 @@ export interface EmfGdiReplayCtx {
 	 * so they can be unwound before a state save/restore.
 	 */
 	clipSaveDepth: number;
+	/**
+	 * Tracked clip region as device-space shapes (`null`/`undefined` = no
+	 * clip). Kept in sync with the canvas clip so Exclude/Xor/Offset region
+	 * operations can rebuild the clip state.
+	 */
+	clipRegion?: ClipRegion;
+	/**
+	 * True when the active canvas clip contains a component this tracker
+	 * cannot represent (e.g. EMR_SELECTCLIPPATH clips with the live ctx path).
+	 * While set, region ops that require rebuilding fall back conservatively.
+	 */
+	clipUntracked?: boolean;
+	/** Saved clip regions parallel to {@link stateStack} (EMR_SAVEDC). */
+	clipStack?: Array<{ region: ClipRegion; untracked: boolean }>;
 	/** Logical bounding rectangle from the EMF header. */
 	bounds: EmfBounds;
 	/** Output canvas width in pixels. */

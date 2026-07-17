@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import { gmx, gmy, gmw, gmh, activateGdiMappingMode } from './emf-gdi-coord';
-import type { CanvasContext, DrawState, EmfGdiReplayCtx } from './emf-types';
+import { defaultState } from './emf-types';
+import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,7 +16,7 @@ function makeCtx(overrides: Partial<EmfGdiReplayCtx> = {}): EmfGdiReplayCtx {
 		ctx: {} as unknown as CanvasContext,
 		view: {} as unknown as DataView,
 		objectTable: new Map(),
-		state: {} as unknown as DrawState,
+		state: defaultState(),
 		stateStack: [],
 		inPath: false,
 		windowOrg: { x: 0, y: 0 },
@@ -57,6 +58,15 @@ describe('emf-gdi-coord', () => {
 		it('gmw scales width by sx', () => {
 			const r = makeCtx({ sx: 2.5 });
 			expect(gmw(r, 40)).toBe(100);
+		});
+
+		it('applies the world transform scale and translation (GDI+ ×16 sub-pixel files)', () => {
+			const r = makeCtx({ sx: 1, sy: 1 });
+			r.state.worldTransform = [0.0625, 0, 0, 0.0625, 5, 10];
+			expect(gmx(r, 4800)).toBe(305); // 4800/16 + 5
+			expect(gmy(r, 3200)).toBe(210); // 3200/16 + 10
+			expect(gmw(r, 1600)).toBe(100);
+			expect(gmh(r, 800)).toBe(50);
 		});
 
 		it('gmh scales height by sy', () => {

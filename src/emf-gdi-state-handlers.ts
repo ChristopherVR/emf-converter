@@ -5,7 +5,9 @@
  * Object creation/selection records are delegated to ./emf-gdi-object-handlers.
  */
 
+import { reapplyClipRegion } from './emf-clip-region';
 import { readColorRef } from './emf-color-helpers';
+import { emfLog } from './emf-logging';
 import {
 	EMR_SAVEDC,
 	EMR_RESTOREDC,
@@ -49,12 +51,27 @@ export function handleEmfGdiStateRecord(
 	switch (recType) {
 		// ---- save / restore ----
 		case EMR_SAVEDC: {
+			// Unwind clip saves so the DC save() captures the pre-clip canvas
+			// state, snapshot the tracked clip region, then re-apply the clip on
+			// top of the fresh DC bracket.
 			while (rCtx.clipSaveDepth > 0) {
 				ctx.restore();
 				rCtx.clipSaveDepth--;
 			}
+			rCtx.clipStack ??= [];
+			rCtx.clipStack.push({
+				region: rCtx.clipRegion ?? null,
+				untracked: rCtx.clipUntracked ?? false,
+			});
 			rCtx.stateStack.push(cloneState(state));
 			ctx.save();
+			if (rCtx.clipUntracked) {
+				emfLog('EMR_SAVEDC: untracked clip (SELECTCLIPPATH) cannot be re-applied — dropped');
+				rCtx.clipUntracked = false;
+				rCtx.clipRegion = null;
+			} else if (rCtx.clipRegion) {
+				reapplyClipRegion(rCtx, rCtx.clipRegion);
+			}
 			return true;
 		}
 		case EMR_RESTOREDC: {
@@ -63,18 +80,30 @@ export function handleEmfGdiStateRecord(
 					ctx.restore();
 					rCtx.clipSaveDepth--;
 				}
+				// Positive values address a 1-based save level; negative values are
+				// relative to the current level (-1 = most recent SaveDC). Convert to
+				// the 1-based level so `restored` pops the addressed snapshot itself.
 				let rel = view.getInt32(dataOff, true);
 				if (rel < 0) {
-					rel = rCtx.stateStack.length + rel;
+					rel = rCtx.stateStack.length + rel + 1;
 				}
 				while (rCtx.stateStack.length > rel && rCtx.stateStack.length > 0) {
 					rCtx.stateStack.pop();
+					rCtx.clipStack?.pop();
 					ctx.restore();
 				}
 				const restored = rCtx.stateStack.pop();
 				if (restored) {
+					const clipSnapshot = rCtx.clipStack?.pop();
 					Object.assign(state, restored);
 					ctx.restore();
+					// Restore the clip that was active when the DC was saved. An
+					// untracked snapshot cannot be rebuilt; leave the clip cleared.
+					rCtx.clipRegion = clipSnapshot?.region ?? null;
+					rCtx.clipUntracked = false;
+					if (rCtx.clipRegion) {
+						reapplyClipRegion(rCtx, rCtx.clipRegion);
+					}
 				}
 			}
 			return true;

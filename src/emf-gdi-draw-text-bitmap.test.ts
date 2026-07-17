@@ -292,11 +292,39 @@ describe('emf-gdi-draw-text-bitmap', () => {
 				expect(ctx.clip).toHaveBeenCalledOnce();
 			});
 
-			it('ignores non-RGN_COPY modes', () => {
+			it('applies RGN_XOR of two region selections via even-odd clipping', () => {
+				const rCtx = makeRCtx();
+				const dataOff = 8;
+				const writeRegion = (iMode: number, left: number) => {
+					rCtx.view.setUint32(dataOff, 48, true); // cbRgnData (32 header + 1 rect)
+					rCtx.view.setUint32(dataOff + 4, iMode, true);
+					const rgnStart = dataOff + 8;
+					rCtx.view.setUint32(rgnStart + 8, 1, true); // nCount
+					const rOff = rgnStart + 32;
+					rCtx.view.setInt32(rOff, left, true);
+					rCtx.view.setInt32(rOff + 4, 0, true);
+					rCtx.view.setInt32(rOff + 8, left + 100, true);
+					rCtx.view.setInt32(rOff + 12, 100, true);
+				};
+
+				writeRegion(5, 0); // RGN_COPY first rect
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTSELECTCLIPRGN, 0, dataOff, 56);
+				writeRegion(3, 50); // RGN_XOR overlapping rect
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTSELECTCLIPRGN, 0, dataOff, 56);
+
+				// XOR of two simple shapes collapses to one even-odd clip.
+				expect(rCtx.clipRegion).toHaveLength(1);
+				expect(rCtx.clipRegion![0].fillRule).toBe('evenodd');
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				const clipCalls = ctx.clip.mock.calls;
+				expect(clipCalls[clipCalls.length - 1]).toEqual(['evenodd']);
+			});
+
+			it('ignores unknown region modes', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				rCtx.view.setUint32(dataOff, 32, true); // cbRgnData
-				rCtx.view.setUint32(dataOff + 4, 1, true); // iMode = RGN_AND (not 5)
+				rCtx.view.setUint32(dataOff + 4, 9, true); // invalid mode
 
 				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTSELECTCLIPRGN, 0, dataOff, 16);
 				expect(rCtx.clipSaveDepth).toBe(0); // no clip applied
@@ -304,11 +332,11 @@ describe('emf-gdi-draw-text-bitmap', () => {
 		});
 
 		// -----------------------------------------------------------------------
-		// EMR_EXCLUDECLIPRECT (stub)
+		// EMR_EXCLUDECLIPRECT
 		// -----------------------------------------------------------------------
 
 		describe('eMR_EXCLUDECLIPRECT', () => {
-			it('returns true (stub handler)', () => {
+			it('excludes the rect via an even-odd inverted clip', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				rCtx.view.setInt32(dataOff, 0, true);
@@ -319,21 +347,66 @@ describe('emf-gdi-draw-text-bitmap', () => {
 				expect(
 					handleEmfGdiTextBitmapRecord(rCtx, EMR_EXCLUDECLIPRECT, 0, dataOff, 24),
 				).toBeTruthy();
+				expect(rCtx.clipSaveDepth).toBe(1);
+				expect(rCtx.clipRegion).toHaveLength(1);
+				expect(rCtx.clipRegion![0].fillRule).toBe('evenodd');
+				// Huge covering rect + the excluded rect (scaled by sx=sy=0.5)
+				expect(rCtx.clipRegion![0].cmds).toHaveLength(2);
+				expect(rCtx.clipRegion![0].cmds[1]).toMatchObject({ op: 'rect', w: 50, h: 50 });
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.clip).toHaveBeenCalledWith('evenodd');
+			});
+
+			it('stacks after an intersect clip (band with a hole)', () => {
+				const rCtx = makeRCtx();
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff, 0, true);
+				rCtx.view.setInt32(dataOff + 4, 0, true);
+				rCtx.view.setInt32(dataOff + 8, 400, true);
+				rCtx.view.setInt32(dataOff + 12, 400, true);
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_INTERSECTCLIPRECT, 0, dataOff, 24);
+
+				rCtx.view.setInt32(dataOff, 100, true);
+				rCtx.view.setInt32(dataOff + 4, 100, true);
+				rCtx.view.setInt32(dataOff + 8, 200, true);
+				rCtx.view.setInt32(dataOff + 12, 200, true);
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXCLUDECLIPRECT, 0, dataOff, 24);
+
+				expect(rCtx.clipRegion).toHaveLength(2);
+				expect(rCtx.clipRegion![0].fillRule).toBe('nonzero');
+				expect(rCtx.clipRegion![1].fillRule).toBe('evenodd');
 			});
 		});
 
 		// -----------------------------------------------------------------------
-		// EMR_OFFSETCLIPRGN (stub)
+		// EMR_OFFSETCLIPRGN
 		// -----------------------------------------------------------------------
 
 		describe('eMR_OFFSETCLIPRGN', () => {
-			it('returns true (stub handler)', () => {
+			it('translates the tracked clip region by the mapped offset', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
-				rCtx.view.setInt32(dataOff, 5, true); // dx
-				rCtx.view.setInt32(dataOff + 4, 10, true); // dy
+				// Establish a clip rect (0,0)-(100,100) logical → 50×50 device
+				rCtx.view.setInt32(dataOff, 0, true);
+				rCtx.view.setInt32(dataOff + 4, 0, true);
+				rCtx.view.setInt32(dataOff + 8, 100, true);
+				rCtx.view.setInt32(dataOff + 12, 100, true);
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_INTERSECTCLIPRECT, 0, dataOff, 24);
 
+				rCtx.view.setInt32(dataOff, 40, true); // dx (logical) → 20 device
+				rCtx.view.setInt32(dataOff + 4, 10, true); // dy (logical) → 5 device
 				expect(handleEmfGdiTextBitmapRecord(rCtx, EMR_OFFSETCLIPRGN, 0, dataOff, 16)).toBeTruthy();
+
+				expect(rCtx.clipRegion![0].cmds[0]).toMatchObject({ op: 'rect', x: 20, y: 5 });
+			});
+
+			it('is a no-op without an active clip', () => {
+				const rCtx = makeRCtx();
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff, 5, true);
+				rCtx.view.setInt32(dataOff + 4, 10, true);
+				expect(handleEmfGdiTextBitmapRecord(rCtx, EMR_OFFSETCLIPRGN, 0, dataOff, 16)).toBeTruthy();
+				expect(rCtx.clipSaveDepth).toBe(0);
 			});
 		});
 	});

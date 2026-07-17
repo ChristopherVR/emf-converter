@@ -4,6 +4,17 @@
  * Also exports shared utility functions used by other handler modules.
  */
 
+import {
+	combineClipRegions,
+	emptyClipShape,
+	reapplyClipRegion,
+	translateClipRegion,
+	type ClipCombineOp,
+	type ClipCombineResult,
+	type ClipPathCmd,
+	type ClipRegion,
+	type ClipShape,
+} from './emf-clip-region';
 import { argbToRgba } from './emf-color-helpers';
 import {
 	EMFPLUS_SETWORLDTRANSFORM,
@@ -29,12 +40,12 @@ import {
 	EMFPLUS_OFFSETCLIP,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
-import { replayEmfPlusPath } from './emf-plus-path';
+import { emfPlusPathToClipCmds } from './emf-plus-path';
 import type {
-	EmfPlusReplayCtx,
+	EmfPlusGradient,
 	EmfPlusRegionNode,
+	EmfPlusReplayCtx,
 	TransformMatrix,
-	CanvasContext,
 } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -64,6 +75,66 @@ export function resolveBrushColor(
 	}
 	const obj = rCtx.objectTable.get(brushIdOrColor & 0xff);
 	if (obj && obj.kind === 'plus-brush') {
+		return obj.color;
+	}
+	return 'rgba(0,0,0,1)';
+}
+
+/**
+ * Build a CanvasGradient from a parsed EMF+ gradient descriptor. Returns
+ * null when the context lacks gradient support (e.g. test stubs) or the
+ * geometry is degenerate, in which case callers fall back to the flat colour.
+ */
+function createBrushGradient(rCtx: EmfPlusReplayCtx, grad: EmfPlusGradient): CanvasGradient | null {
+	const ctx = rCtx.ctx;
+	try {
+		let g: CanvasGradient | null = null;
+		if (grad.type === 'linear' && typeof ctx.createLinearGradient === 'function') {
+			if (grad.x1 === grad.x2 && grad.y1 === grad.y2) {
+				return null;
+			}
+			g = ctx.createLinearGradient(grad.x1, grad.y1, grad.x2, grad.y2);
+		} else if (grad.type === 'radial' && typeof ctx.createRadialGradient === 'function') {
+			if (!(grad.r > 0)) {
+				return null;
+			}
+			g = ctx.createRadialGradient(grad.cx, grad.cy, 0, grad.cx, grad.cy, grad.r);
+		}
+		if (!g) {
+			return null;
+		}
+		for (const stop of grad.stops) {
+			g.addColorStop(stop.offset, stop.color);
+		}
+		return g;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Resolve a brush to a canvas paint style: an inline ARGB colour, a solid
+ * brush colour, or a CanvasGradient for linear/path gradient brushes.
+ * Gradient geometry is defined in brush (world) space — the same space fills
+ * execute in after {@link applyPlusWorldTransform} — so the gradient can be
+ * assigned directly to `fillStyle`.
+ */
+export function resolveBrushPaint(
+	rCtx: EmfPlusReplayCtx,
+	flags: number,
+	brushIdOrColor: number,
+): string | CanvasGradient {
+	if (flags & 0x8000) {
+		return argbToRgba(brushIdOrColor);
+	}
+	const obj = rCtx.objectTable.get(brushIdOrColor & 0xff);
+	if (obj && obj.kind === 'plus-brush') {
+		if (obj.gradient) {
+			const g = createBrushGradient(rCtx, obj.gradient);
+			if (g) {
+				return g;
+			}
+		}
 		return obj.color;
 	}
 	return 'rgba(0,0,0,1)';
@@ -138,165 +209,137 @@ function popState(rCtx: EmfPlusReplayCtx, stackId: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// Clip save/restore helpers for CombineMode support
+// Clip tracking (full CombineMode support via emf-clip-region)
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure the canvas state has been saved for clip management.
- * Called before any clip operation so we can later restore to a clean state.
+ * The effective device matrix for EMF+ drawing: world transform × page-unit
+ * multiplier × DPI scale — the same matrix {@link applyPlusWorldTransform}
+ * installs on the canvas. Clip shapes are recorded in this (device) space so
+ * they survive later transform changes, exactly like a native canvas clip.
  */
-function ensureClipSave(rCtx: EmfPlusReplayCtx): void {
-	if (rCtx.clipSaveDepth === 0) {
-		rCtx.ctx.save();
-		rCtx.clipSaveDepth = 1;
-	}
+function plusDeviceMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
+	const wt = rCtx.worldTransform;
+	const s = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale) * rCtx.dpiScale;
+	return [wt[0] * s, wt[1] * s, wt[2] * s, wt[3] * s, wt[4] * s, wt[5] * s];
 }
 
-/**
- * Restore the canvas to the pre-clip state, removing all clip regions.
- */
-function resetClipState(rCtx: EmfPlusReplayCtx): void {
-	if (rCtx.clipSaveDepth > 0) {
-		rCtx.ctx.restore();
-		rCtx.clipSaveDepth = 0;
-	}
+/** Build a device-space polygon shape from a world-space rectangle. */
+function transformedRectShape(
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	m: TransformMatrix,
+): ClipShape {
+	const tx = (px: number, py: number) => m[0] * px + m[2] * py + m[4];
+	const ty = (px: number, py: number) => m[1] * px + m[3] * py + m[5];
+	const cmds: ClipPathCmd[] = [
+		{ op: 'moveTo', x: tx(x, y), y: ty(x, y) },
+		{ op: 'lineTo', x: tx(x + w, y), y: ty(x + w, y) },
+		{ op: 'lineTo', x: tx(x + w, y + h), y: ty(x + w, y + h) },
+		{ op: 'lineTo', x: tx(x, y + h), y: ty(x, y + h) },
+		{ op: 'closePath' },
+	];
+	return { cmds, fillRule: 'nonzero', simple: true };
 }
 
-/**
- * Apply a clip operation respecting the CombineMode.
- *
- * CombineMode values:
- *   0 = Replace — restore pre-clip state, then apply new clip
- *   1 = Intersect — apply clip on top of existing (Canvas default)
- *   2 = Union — not supported, fall back to Intersect with warning
- *   3 = Xor — not supported, skip with warning
- *   4 = Exclude — not supported, skip with warning
- *   5 = Complement — not supported, skip with warning
- *
- * @returns true if the clip was applied, false if skipped
- */
-function applyClipCombineMode(
-	rCtx: EmfPlusReplayCtx,
-	combineMode: number,
-	opName: string,
-	clipFn: () => void,
-): boolean {
-	switch (combineMode) {
-		case 0: // Replace
-			resetClipState(rCtx);
-			ensureClipSave(rCtx);
-			clipFn();
-			return true;
-		case 1: // Intersect
-			ensureClipSave(rCtx);
-			clipFn();
-			return true;
-		case 2: // Union
-			emfWarn(`${opName}: CombineMode Union not supported by Canvas2D, falling back to Intersect`);
-			ensureClipSave(rCtx);
-			clipFn();
-			return true;
-		case 3: // Xor
-			emfWarn(`${opName}: CombineMode Xor not supported by Canvas2D, skipping`);
-			return false;
-		case 4: // Exclude
-			emfWarn(`${opName}: CombineMode Exclude not supported by Canvas2D, skipping`);
-			return false;
-		case 5: // Complement
-			emfWarn(`${opName}: CombineMode Complement not supported by Canvas2D, skipping`);
-			return false;
-		default:
-			emfWarn(`${opName}: unknown CombineMode ${combineMode}, falling back to Intersect`);
-			ensureClipSave(rCtx);
-			clipFn();
-			return true;
-	}
+/** Build a device-space clip shape from an EMF+ path object. */
+function pathClipShape(path: EmfPlusRegionNode & { type: 'path' }, m: TransformMatrix): ClipShape {
+	return { cmds: emfPlusPathToClipCmds(path.path, m), fillRule: 'nonzero', simple: true };
 }
 
-// ---------------------------------------------------------------------------
-// Region clipping helpers
-// ---------------------------------------------------------------------------
+/** RegionNodeDataType (MS-EMFPLUS 2.1.1.27) → boolean combine op. */
+const REGION_NODE_OPS: Record<number, ClipCombineOp> = {
+	0: 'intersect', // legacy/lenient: treat 0 as And
+	1: 'intersect', // RegionNodeDataTypeAnd
+	2: 'union', // RegionNodeDataTypeOr
+	3: 'xor', // RegionNodeDataTypeXor
+	4: 'exclude', // RegionNodeDataTypeExclude
+	5: 'complement', // RegionNodeDataTypeComplement
+};
+
+const MAX_REGION_FLATTEN_DEPTH = 64;
 
 /**
- * Recursively trace a region node tree onto the canvas as a clip path.
- * Builds a path from rect / path leaf nodes. For combine nodes, only
- * Intersect is natively supported by Canvas2D; others log a warning
- * and fall back to tracing just the left subtree.
+ * Flatten an EMF+ region node tree into a tracked clip region (a list of
+ * intersecting shapes, or `null` for the infinite region). Boolean combine
+ * nodes are resolved through {@link combineClipRegions}; combinations that
+ * cannot be expressed exactly set `exact: false`.
  */
-const MAX_REGION_TRACE_DEPTH = 64;
-
-function traceRegionNodePath(ctx: CanvasContext, node: EmfPlusRegionNode, depth: number = 0): void {
-	if (depth > MAX_REGION_TRACE_DEPTH) {
-		emfWarn(`traceRegionNodePath: depth limit (${MAX_REGION_TRACE_DEPTH}) exceeded`);
-		// Safe default: trace zero-area rect, equivalent to empty region.
-		ctx.rect(0, 0, 0, 0);
-		return;
+export function flattenRegionNode(
+	node: EmfPlusRegionNode,
+	m: TransformMatrix,
+	depth: number = 0,
+): ClipCombineResult {
+	if (depth > MAX_REGION_FLATTEN_DEPTH) {
+		emfWarn(`flattenRegionNode: depth limit (${MAX_REGION_FLATTEN_DEPTH}) exceeded`);
+		return { region: [emptyClipShape()], exact: false };
 	}
 	switch (node.type) {
 		case 'rect':
-			ctx.rect(node.x, node.y, node.width, node.height);
-			break;
+			return { region: [transformedRectShape(node.x, node.y, node.width, node.height, m)], exact: true };
 		case 'path':
-			replayEmfPlusPath(ctx, node.path);
-			break;
+			return { region: [pathClipShape(node, m)], exact: true };
 		case 'infinite':
-			// Infinite region — clip to a very large rectangle
-			ctx.rect(-1e6, -1e6, 2e6, 2e6);
-			break;
+			return { region: null, exact: true };
 		case 'empty':
-			// Empty region — trace a zero-area rect (clips everything)
-			ctx.rect(0, 0, 0, 0);
-			break;
-		case 'combine':
-			// Canvas2D only supports intersect natively via successive clip() calls.
-			// For other combine modes we trace the left subtree as a best-effort fallback.
-			traceRegionNodePath(ctx, node.left, depth + 1);
-			if (node.combineMode !== 0 /* And/Intersect */) {
-				emfWarn(
-					`traceRegionNodePath: combine mode ${node.combineMode} not fully supported, using left subtree only`,
-				);
-			} else {
-				// For Intersect: trace right subtree too; successive clip() will intersect.
-				try {
-					ctx.clip();
-				} catch {
-					/* ignore */
-				}
-				ctx.beginPath();
-				traceRegionNodePath(ctx, node.right, depth + 1);
-			}
-			break;
+			return { region: [emptyClipShape()], exact: true };
+		case 'combine': {
+			const left = flattenRegionNode(node.left, m, depth + 1);
+			const right = flattenRegionNode(node.right, m, depth + 1);
+			const op = REGION_NODE_OPS[node.combineMode] ?? 'intersect';
+			const combined = combineClipRegions(left.region, right.region, op);
+			return { region: combined.region, exact: combined.exact && left.exact && right.exact };
+		}
 	}
 }
 
-/**
- * Apply a region node as a clipping region on the canvas context.
- *
- * CombineMode values (from SetClipRegion flags):
- *   0 = Replace, 1 = Intersect, 2 = Union, 3 = Xor, 4 = Exclude, 5 = Complement
- *
- * Canvas2D only supports Replace (save + beginPath + clip) and Intersect
- * (just beginPath + clip on top of existing clip). For other modes we log
- * a warning and fall back to Replace.
- */
-function applyRegionNodeClip(
-	ctx: CanvasContext,
-	rootNode: EmfPlusRegionNode,
-	combineMode: number,
-): void {
-	if (combineMode > 1) {
-		emfWarn(
-			`applyRegionNodeClip: CombineMode ${combineMode} not supported by Canvas2D, falling back to Replace`,
-		);
-	}
+/** SetClip* CombineMode (MS-EMFPLUS 2.1.1.4) → boolean combine op. */
+const PLUS_COMBINE_OPS: Record<number, ClipCombineOp> = {
+	0: 'replace',
+	1: 'intersect',
+	2: 'union',
+	3: 'xor',
+	4: 'exclude',
+	5: 'complement',
+};
 
-	ctx.beginPath();
-	traceRegionNodePath(ctx, rootNode);
-	try {
-		ctx.clip();
-	} catch {
-		/* ignore clip errors */
+/** Rebuild the canvas clip from the tracked EMF+ clip region. */
+function reapplyPlusClip(rCtx: EmfPlusReplayCtx): void {
+	reapplyClipRegion(rCtx, rCtx.clipRegion ?? null, true);
+}
+
+/**
+ * Combine the tracked clip with an incoming region per the CombineMode and
+ * rebuild the canvas clip state.
+ */
+function applyPlusClipRegion(
+	rCtx: EmfPlusReplayCtx,
+	incoming: ClipRegion,
+	combineMode: number,
+	opName: string,
+): void {
+	const op = PLUS_COMBINE_OPS[combineMode];
+	if (!op) {
+		emfWarn(`${opName}: unknown CombineMode ${combineMode}, falling back to Intersect`);
 	}
+	const res = combineClipRegions(rCtx.clipRegion ?? null, incoming, op ?? 'intersect');
+	if (!res.exact) {
+		emfWarn(`${opName}: CombineMode ${combineMode} approximated (region too complex)`);
+	}
+	rCtx.clipRegion = res.region;
+	reapplyPlusClip(rCtx);
+}
+
+/** Convenience wrapper for single-shape clip records (SetClipRect/SetClipPath). */
+function applyPlusClipShape(
+	rCtx: EmfPlusReplayCtx,
+	shape: ClipShape,
+	combineMode: number,
+	opName: string,
+): void {
+	applyPlusClipRegion(rCtx, [shape], combineMode, opName);
 }
 
 // ---------------------------------------------------------------------------
@@ -418,24 +461,15 @@ export function handleEmfPlusStateRecord(
 				const cy = view.getFloat32(dataOff + 4, true);
 				const cw = view.getFloat32(dataOff + 8, true);
 				const ch = view.getFloat32(dataOff + 12, true);
-				applyClipCombineMode(rCtx, combineMode, 'SetClipRect', () => {
-					applyPlusWorldTransform(rCtx);
-					rCtx.ctx.beginPath();
-					rCtx.ctx.rect(cx, cy, cw, ch);
-					try {
-						rCtx.ctx.clip();
-					} catch {
-						/* ignore clip errors */
-					}
-				});
+				const shape = transformedRectShape(cx, cy, cw, ch, plusDeviceMatrix(rCtx));
+				applyPlusClipShape(rCtx, shape, combineMode, 'SetClipRect');
 			}
 			return true;
 		}
 
 		case EMFPLUS_RESETCLIP: {
-			resetClipState(rCtx);
-			// Re-save so subsequent clips can be applied and later reset
-			ensureClipSave(rCtx);
+			rCtx.clipRegion = null;
+			reapplyPlusClip(rCtx);
 			emfLog('ResetClip: clip region cleared');
 			return true;
 		}
@@ -445,9 +479,11 @@ export function handleEmfPlusStateRecord(
 			const combineMode = (recFlags >> 8) & 0x0f;
 			const regionObj = rCtx.objectTable.get(regionId);
 			if (regionObj && regionObj.kind === 'plus-region' && regionObj.nodes.length > 0) {
-				applyPlusWorldTransform(rCtx);
-				const rootNode = regionObj.nodes[0];
-				applyRegionNodeClip(rCtx.ctx, rootNode, combineMode);
+				const flattened = flattenRegionNode(regionObj.nodes[0], plusDeviceMatrix(rCtx));
+				if (!flattened.exact) {
+					emfWarn('SetClipRegion: region tree approximated (unsupported boolean combination)');
+				}
+				applyPlusClipRegion(rCtx, flattened.region, combineMode, 'SetClipRegion');
 			}
 			return true;
 		}
@@ -457,16 +493,12 @@ export function handleEmfPlusStateRecord(
 			const combineMode = (recFlags >> 8) & 0x0f;
 			const pathObj = rCtx.objectTable.get(pathId);
 			if (pathObj && pathObj.kind === 'plus-path') {
-				applyClipCombineMode(rCtx, combineMode, 'SetClipPath', () => {
-					applyPlusWorldTransform(rCtx);
-					rCtx.ctx.beginPath();
-					replayEmfPlusPath(rCtx.ctx, pathObj);
-					try {
-						rCtx.ctx.clip();
-					} catch {
-						/* ignore clip errors */
-					}
-				});
+				const shape: ClipShape = {
+					cmds: emfPlusPathToClipCmds(pathObj, plusDeviceMatrix(rCtx)),
+					fillRule: 'nonzero',
+					simple: true,
+				};
+				applyPlusClipShape(rCtx, shape, combineMode, 'SetClipPath');
 			}
 			return true;
 		}
@@ -475,7 +507,18 @@ export function handleEmfPlusStateRecord(
 			if (recDataSize >= 8) {
 				const dx = view.getFloat32(dataOff, true);
 				const dy = view.getFloat32(dataOff + 4, true);
-				emfLog(`OffsetClip: dx=${dx}, dy=${dy} (not fully supported)`);
+				if (rCtx.clipRegion) {
+					// The offset is specified in world units; convert to a device
+					// delta via the linear part of the effective matrix.
+					const m = plusDeviceMatrix(rCtx);
+					const ddx = m[0] * dx + m[2] * dy;
+					const ddy = m[1] * dx + m[3] * dy;
+					rCtx.clipRegion = translateClipRegion(rCtx.clipRegion, ddx, ddy);
+					reapplyPlusClip(rCtx);
+					emfLog(`OffsetClip: clip translated by world (${dx},${dy}) → device (${ddx},${ddy})`);
+				} else {
+					emfLog(`OffsetClip: dx=${dx}, dy=${dy} — no active clip, nothing to offset`);
+				}
 			}
 			return true;
 		}

@@ -257,6 +257,11 @@ export function handleEmfGdiPolyPathRecord(
 			return true;
 
 		case EMR_SELECTCLIPPATH: {
+			// The bracketed path lives only in the canvas' current path, so it
+			// cannot be recorded into the tracked clip region. Mark the clip as
+			// untracked; ops that need an exact region fall back conservatively
+			// (see gdiCombineClip). RGN_COPY (5) replaces the clip, every other
+			// mode is approximated by intersecting with the path.
 			const clipMode = recSize >= 12 ? rCtx.view.getUint32(dataOff, true) : 5;
 			try {
 				if (clipMode === 5) {
@@ -264,14 +269,15 @@ export function handleEmfGdiPolyPathRecord(
 						ctx.restore();
 						rCtx.clipSaveDepth--;
 					}
-					ctx.save();
-					rCtx.clipSaveDepth++;
-					ctx.clip();
-				} else {
-					ctx.save();
-					rCtx.clipSaveDepth++;
-					ctx.clip();
 				}
+				ctx.save();
+				rCtx.clipSaveDepth++;
+				// GDI converts the path to a region using the current polygon fill
+				// mode (ALTERNATE = even-odd), which is what carves holes out of
+				// multi-figure clip paths.
+				ctx.clip(state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
+				rCtx.clipRegion = null;
+				rCtx.clipUntracked = true;
 			} catch {
 				/* ignore clip errors */
 			}

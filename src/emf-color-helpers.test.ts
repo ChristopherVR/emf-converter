@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
-import { colorRefToHex, readColorRef, argbToRgba } from './emf-color-helpers';
+import {
+	colorRefToHex,
+	readColorRef,
+	argbToRgba,
+	invertCssColor,
+	lerpArgbToRgba,
+} from './emf-color-helpers';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -150,6 +156,44 @@ describe('emf-color-helpers', () => {
 		it('handles alpha=254 (nearly opaque)', () => {
 			const argb = ((254 << 24) | (0 << 16) | (0 << 8) | 255) >>> 0;
 			expect(argbToRgba(argb)).toBe(`rgba(0,0,255,${(254 / 255).toFixed(3)})`);
+		});
+	});
+
+	describe('lerpArgbToRgba', () => {
+		it('returns the endpoints at t=0 and t=1', () => {
+			expect(lerpArgbToRgba(0xffff0000, 0xff0000ff, 0)).toBe('rgba(255,0,0,1.000)');
+			expect(lerpArgbToRgba(0xffff0000, 0xff0000ff, 1)).toBe('rgba(0,0,255,1.000)');
+		});
+
+		it('interpolates channels and alpha at the midpoint', () => {
+			expect(lerpArgbToRgba(0xff000000, 0x00fefefe, 0.5)).toBe('rgba(127,127,127,0.502)');
+		});
+
+		it('clamps t outside 0..1', () => {
+			expect(lerpArgbToRgba(0xffff0000, 0xff0000ff, -3)).toBe('rgba(255,0,0,1.000)');
+			expect(lerpArgbToRgba(0xffff0000, 0xff0000ff, 42)).toBe('rgba(0,0,255,1.000)');
+		});
+	});
+
+	describe('invertCssColor', () => {
+		it('inverts 6-digit hex colours', () => {
+			expect(invertCssColor('#000000')).toBe('#ffffff');
+			expect(invertCssColor('#ff0000')).toBe('#00ffff');
+			expect(invertCssColor('#123456')).toBe('#edcba9');
+		});
+
+		it('inverts 3-digit hex colours', () => {
+			expect(invertCssColor('#fff')).toBe('#000000');
+			expect(invertCssColor('#f00')).toBe('#00ffff');
+		});
+
+		it('inverts rgb()/rgba() colours preserving alpha', () => {
+			expect(invertCssColor('rgb(255,0,0)')).toBe('rgb(0,255,255)');
+			expect(invertCssColor('rgba(0,128,255,0.5)')).toBe('rgba(255,127,0,0.5)');
+		});
+
+		it('returns unparseable colours unchanged', () => {
+			expect(invertCssColor('papayawhip')).toBe('papayawhip');
 		});
 	});
 });

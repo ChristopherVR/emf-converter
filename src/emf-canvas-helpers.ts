@@ -2,11 +2,23 @@
  * Canvas creation, styling, string reading, stock objects, and export helpers.
  */
 
+import { invertCssColor } from './emf-color-helpers';
 import {
 	MAX_CANVAS_DIMENSION,
+	R2_BLACK,
+	R2_MASKNOTPEN,
 	R2_MASKPEN,
+	R2_MASKPENNOT,
+	R2_MERGENOTPEN,
 	R2_MERGEPEN,
+	R2_MERGEPENNOT,
+	R2_NOP,
 	R2_NOT,
+	R2_NOTCOPYPEN,
+	R2_NOTMASKPEN,
+	R2_NOTMERGEPEN,
+	R2_NOTXORPEN,
+	R2_WHITE,
 	R2_XORPEN,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
@@ -143,38 +155,115 @@ export function createTempCanvas(
 // ---------------------------------------------------------------------------
 
 /**
- * Maps a GDI binary raster-operation (ROP2) mode onto the closest Canvas 2D
- * `globalCompositeOperation`. GDI ROP2 modes are bitwise boolean operations
- * between pen/brush and destination pixels; Canvas offers alpha compositing, so
- * only a subset has a reasonable equivalent. Unsupported modes fall back to the
- * default `'source-over'` (and the common `R2_COPYPEN` default is a no-op).
+ * How the pen/brush colour must be adjusted before drawing to emulate a
+ * ROP2 mode on top of Canvas compositing:
+ * - `'none'`       — use the colour as-is
+ * - `'invert'`     — use the ones-complement of the colour (~pen)
+ * - `'black'`/`'white'` — replace the colour entirely
+ * - `'skip'`       — draw nothing (fully transparent colour)
+ */
+export type Rop2ColorTransform = 'none' | 'invert' | 'black' | 'white' | 'skip';
+
+/** Composite operation + colour adjustment emulating a ROP2 mode. */
+export interface Rop2Paint {
+	gco: GlobalCompositeOperation;
+	colorTransform: Rop2ColorTransform;
+	/** True when the emulation reproduces GDI output exactly (for opaque pixels). */
+	exact: boolean;
+}
+
+/**
+ * Maps a GDI binary raster-operation (ROP2) mode onto a Canvas 2D emulation
+ * strategy: a `globalCompositeOperation` plus a colour adjustment.
+ *
+ * GDI ROP2 modes are *bitwise* boolean ops between the pen/brush (P) and the
+ * destination (D); Canvas only offers arithmetic compositing, so each mode is
+ * mapped to the nearest achievable equivalent:
+ *
+ * Exact (for opaque destinations):
+ * - `R2_BLACK` (0) → draw black · `R2_WHITE` (1) → draw white
+ * - `R2_NOP` (D) → draw nothing
+ * - `R2_COPYPEN` (P) → normal source-over
+ * - `R2_NOTCOPYPEN` (~P) → draw the inverted colour
+ * - `R2_NOT` (~D) → draw white with `'difference'` (255 − D per channel)
+ *
+ * Approximated:
+ * - `R2_XORPEN` (P^D) / `R2_MASKPENNOT` (P&~D) → `'difference'`
+ * - `R2_NOTXORPEN` (~(P^D)) → `'difference'` with ~P
+ * - `R2_MASKPEN` (P&D) → `'darken'` · `R2_MERGEPEN` (P|D) → `'lighten'`
+ * - `R2_MASKNOTPEN` (~P&D) / `R2_NOTMERGEPEN` (~(P|D)) → `'darken'` with ~P
+ * - `R2_MERGENOTPEN` (~P|D) / `R2_NOTMASKPEN` (~(P&D)) → `'lighten'` with ~P
+ * - `R2_MERGEPENNOT` (P|~D) → `'lighten'`
  *
  * @param rop2 - A ROP2 mode constant (R2_*); 13 (R2_COPYPEN) is the default.
- * @returns The closest `globalCompositeOperation` value.
+ */
+export function rop2Paint(rop2: number): Rop2Paint {
+	switch (rop2) {
+		case R2_BLACK:
+			return { gco: 'source-over', colorTransform: 'black', exact: true };
+		case R2_WHITE:
+			return { gco: 'source-over', colorTransform: 'white', exact: true };
+		case R2_NOP:
+			return { gco: 'source-over', colorTransform: 'skip', exact: true };
+		case R2_NOTCOPYPEN:
+			return { gco: 'source-over', colorTransform: 'invert', exact: true };
+		case R2_NOT:
+			return { gco: 'difference', colorTransform: 'white', exact: true };
+		case R2_XORPEN:
+		case R2_MASKPENNOT:
+			return { gco: 'difference', colorTransform: 'none', exact: false };
+		case R2_NOTXORPEN:
+			return { gco: 'difference', colorTransform: 'invert', exact: false };
+		case R2_MASKPEN:
+			return { gco: 'darken', colorTransform: 'none', exact: false };
+		case R2_MASKNOTPEN:
+		case R2_NOTMERGEPEN:
+			return { gco: 'darken', colorTransform: 'invert', exact: false };
+		case R2_MERGEPEN:
+		case R2_MERGEPENNOT:
+			return { gco: 'lighten', colorTransform: 'none', exact: false };
+		case R2_MERGENOTPEN:
+		case R2_NOTMASKPEN:
+			return { gco: 'lighten', colorTransform: 'invert', exact: false };
+		default:
+			// R2_COPYPEN and anything unrecognised: plain source-over drawing.
+			return { gco: 'source-over', colorTransform: 'none', exact: true };
+	}
+}
+
+/**
+ * Back-compat helper returning only the composite operation for a ROP2 mode.
+ * Prefer {@link rop2Paint}, which also carries the colour adjustment.
  */
 export function rop2ToGco(rop2: number): GlobalCompositeOperation {
-	switch (rop2) {
-		case R2_XORPEN:
-			return 'xor';
-		case R2_MASKPEN:
-			return 'multiply';
-		case R2_MERGEPEN:
-			return 'lighten';
-		case R2_NOT:
-			return 'difference';
+	return rop2Paint(rop2).gco;
+}
+
+/** Apply a ROP2 colour transform to a CSS colour. */
+export function rop2TransformColor(color: string, transform: Rop2ColorTransform): string {
+	switch (transform) {
+		case 'invert':
+			return invertCssColor(color);
+		case 'black':
+			return '#000000';
+		case 'white':
+			return '#ffffff';
+		case 'skip':
+			return 'rgba(0,0,0,0)';
 		default:
-			return 'source-over';
+			return color;
 	}
 }
 
 export function applyPen(ctx: CanvasContext, state: DrawState): void {
-	ctx.globalCompositeOperation = rop2ToGco(state.rop2);
+	const paint = rop2Paint(state.rop2);
+	ctx.globalCompositeOperation = paint.gco;
 	if (state.penStyle === 5) {
 		ctx.strokeStyle = 'rgba(0,0,0,0)';
 		ctx.lineWidth = 0;
 		return;
 	}
-	ctx.strokeStyle = state.penColor;
+	ctx.strokeStyle = rop2TransformColor(state.penColor, paint.colorTransform);
 	ctx.lineWidth = Math.max(state.penWidth, 1);
 	switch (state.penStyle) {
 		case 1:
@@ -196,12 +285,13 @@ export function applyPen(ctx: CanvasContext, state: DrawState): void {
 }
 
 export function applyBrush(ctx: CanvasContext, state: DrawState): void {
-	ctx.globalCompositeOperation = rop2ToGco(state.rop2);
+	const paint = rop2Paint(state.rop2);
+	ctx.globalCompositeOperation = paint.gco;
 	if (state.brushStyle === 1) {
 		ctx.fillStyle = 'rgba(0,0,0,0)';
 		return;
 	}
-	ctx.fillStyle = state.brushColor;
+	ctx.fillStyle = rop2TransformColor(state.brushColor, paint.colorTransform);
 }
 
 /**

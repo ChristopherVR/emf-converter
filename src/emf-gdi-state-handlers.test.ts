@@ -115,22 +115,28 @@ describe('emf-gdi-state-handlers', () => {
 		});
 
 		describe('eMR_RESTOREDC', () => {
-			it('restores a previously saved state with relative index -1', () => {
+			it('restores the most recent save with relative index -1', () => {
 				const rCtx = makeRCtx();
 				rCtx.state.penColor = '#111111';
 
-				// Save state twice so restore -1 pops to the first save
 				handleEmfGdiStateRecord(rCtx, EMR_SAVEDC, 0, 8, 8);
 				rCtx.state.penColor = '#222222';
 				handleEmfGdiStateRecord(rCtx, EMR_SAVEDC, 0, 8, 8);
 				rCtx.state.penColor = '#333333';
 
-				// Restore (relative -1): pops to stack index len-1 = 1
+				// RestoreDC(-1) pops exactly one level: back to the state saved by
+				// the most recent SaveDC ('#222222'), leaving the first save intact.
 				const dataOff = 8;
 				rCtx.view.setInt32(dataOff, -1, true);
 				handleEmfGdiStateRecord(rCtx, EMR_RESTOREDC, 0, dataOff, 12);
-				// Restores the state that was at position 0 in the stack
+				expect(rCtx.state.penColor).toBe('#222222');
+				expect(rCtx.stateStack).toHaveLength(1);
+
+				// A second RestoreDC(-1) unwinds to the outermost saved state.
+				rCtx.view.setInt32(dataOff, -1, true);
+				handleEmfGdiStateRecord(rCtx, EMR_RESTOREDC, 0, dataOff, 12);
 				expect(rCtx.state.penColor).toBe('#111111');
+				expect(rCtx.stateStack).toHaveLength(0);
 			});
 
 			it('ignores record if recSize < 12', () => {

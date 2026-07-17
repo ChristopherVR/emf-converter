@@ -17,7 +17,7 @@ import {
 	EMFPLUS_FILLPOLYGON,
 } from './emf-constants';
 import { readRectFromView, readPointFromView } from './emf-plus-read-helpers';
-import { resolveBrushColor, applyPlusWorldTransform } from './emf-plus-state-handlers';
+import { resolveBrushPaint, applyPlusWorldTransform } from './emf-plus-state-handlers';
 import type { CanvasContext, EmfPlusReplayCtx } from './emf-types';
 
 /**
@@ -65,7 +65,7 @@ export function handleEmfPlusDrawRecord(
 				const count = view.getUint32(dataOff + 4, true);
 				const compressed = (recFlags & 0x4000) !== 0;
 				const rectSize = compressed ? 8 : 16;
-				ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
+				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 				applyPlusWorldTransform(rCtx);
 				let rOff = dataOff + 8;
 				for (let i = 0; i < count && rOff + rectSize <= dataOff + recDataSize; i++) {
@@ -117,7 +117,7 @@ export function handleEmfPlusDrawRecord(
 					w = view.getFloat32(dataOff + 12, true);
 					h = view.getFloat32(dataOff + 16, true);
 				}
-				ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
+				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 				applyPlusWorldTransform(rCtx);
 				ctx.beginPath();
 				ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2);
@@ -166,7 +166,7 @@ export function handleEmfPlusDrawRecord(
 			let aOff = dataOff;
 			if (isFill) {
 				const brushVal = view.getUint32(aOff, true);
-				ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
+				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 				aOff += 4;
 			}
 			const startAngle = (view.getFloat32(aOff, true) * Math.PI) / 180;
@@ -252,7 +252,7 @@ export function handleEmfPlusDrawRecord(
 				const count = view.getUint32(dataOff + 4, true);
 				const compressed = (recFlags & 0x4000) !== 0;
 				const ptSize = compressed ? 4 : 8;
-				ctx.fillStyle = resolveBrushColor(rCtx, recFlags, brushVal);
+				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 				applyPlusWorldTransform(rCtx);
 				ctx.beginPath();
 				let pOff = dataOff + 8;
