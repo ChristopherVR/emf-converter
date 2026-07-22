@@ -188,6 +188,40 @@ describe('emf-gdi-draw-text-bitmap', () => {
 
 				expect(handleEmfGdiTextBitmapRecord(rCtx, EMR_BITBLT, 0, dataOff, 96)).toBeTruthy();
 			});
+
+			it('fills destination with current brush for source-less PATCOPY', () => {
+				const rCtx = makeRCtx();
+				rCtx.state.brushColor = '#ff00ff';
+				rCtx.state.brushStyle = 0; // BS_SOLID
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 16, 10, true); // dstX
+				rCtx.view.setInt32(dataOff + 20, 20, true); // dstY
+				rCtx.view.setInt32(dataOff + 24, 100, true); // dstW
+				rCtx.view.setInt32(dataOff + 28, 50, true); // dstH
+				rCtx.view.setUint32(dataOff + 32, 0x00f00021, true); // PATCOPY
+				rCtx.view.setUint32(dataOff + 76, 0, true); // offBmiSrc = 0
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_BITBLT, 0, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillRect).toHaveBeenCalledOnce();
+				expect(ctx.fillRect.mock.calls[0]).toEqual([5, 10, 50, 25]); // sx = sy = 0.5
+				// fillStyle is restored after the fill
+				expect((rCtx.ctx as unknown as Record<string, string>).fillStyle).toBe('#ffffff');
+			});
+
+			it('does not fill for source-less PATCOPY when the brush is BS_NULL', () => {
+				const rCtx = makeRCtx();
+				rCtx.state.brushStyle = 1; // BS_NULL
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 24, 100, true); // dstW
+				rCtx.view.setInt32(dataOff + 28, 50, true); // dstH
+				rCtx.view.setUint32(dataOff + 32, 0x00f00021, true); // PATCOPY
+				rCtx.view.setUint32(dataOff + 76, 0, true); // offBmiSrc = 0
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_BITBLT, 0, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillRect).not.toHaveBeenCalled();
+			});
 		});
 
 		// -----------------------------------------------------------------------

@@ -100,22 +100,38 @@ function handleExtTextOutW(
 // Bitmap operations
 // ---------------------------------------------------------------------------
 
+/** Ternary raster operation PATCOPY (MS-WMF 2.1.1.31): copy the brush to the destination. */
+const ROP_PATCOPY = 0x00f00021;
+/** BS_NULL brush style: brush that paints nothing. */
+const BS_NULL = 1;
+
 function handleBitBlt(
 	rCtx: EmfGdiReplayCtx,
 	offset: number,
 	dataOff: number,
 	recSize: number,
 ): boolean {
-	const { ctx, view } = rCtx;
+	const { ctx, view, state } = rCtx;
 	if (recSize >= 96) {
 		const dstX = view.getInt32(dataOff + 16, true);
 		const dstY = view.getInt32(dataOff + 20, true);
 		const dstW = view.getInt32(dataOff + 24, true);
 		const dstH = view.getInt32(dataOff + 28, true);
+		const rop = view.getUint32(dataOff + 32, true);
 		const offBmiSrc = view.getUint32(dataOff + 76, true);
 		const cbBmiSrc = view.getUint32(dataOff + 80, true);
 		const offBitsSrc = view.getUint32(dataOff + 84, true);
 		const cbBitsSrc = view.getUint32(dataOff + 88, true);
+		if (offBmiSrc === 0 && rop === ROP_PATCOPY) {
+			// Source-less PATCOPY: fill the destination rect with the current brush.
+			const prevFill = ctx.fillStyle;
+			if (state.brushStyle !== BS_NULL) {
+				ctx.fillStyle = state.brushColor;
+				ctx.fillRect(gmx(rCtx, dstX), gmy(rCtx, dstY), gmw(rCtx, dstW), gmh(rCtx, dstH));
+			}
+			ctx.fillStyle = prevFill;
+			return true;
+		}
 		if (offBmiSrc > 0 && cbBmiSrc > 0 && offBitsSrc > 0 && cbBitsSrc > 0) {
 			const imageData = decodeDibToImageData(
 				view,
