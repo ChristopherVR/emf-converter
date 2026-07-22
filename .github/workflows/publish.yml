@@ -1,12 +1,17 @@
 name: Publish to npm
 
-# On push to main: build + test, and if the package.json version is not yet on
-# npm, regenerate CHANGELOG.md (git-cliff), commit it back, publish to npm via
-# OIDC trusted publishing (with provenance), and cut a GitHub release whose body
-# is the new changelog section. To ship a release, bump "version" in
-# package.json and push to main.
+# On every push to main: build + test, compute the next semver version from the
+# Conventional Commits since the last tag (git-cliff), write it into
+# package.json, regenerate CHANGELOG.md, commit + tag, publish to npm via OIDC
+# trusted publishing (with provenance), and cut a GitHub release whose body is
+# the new changelog section.
 #
-# The CHANGELOG commit is pushed with GITHUB_TOKEN and marked [skip ci]; pushes
+# The version is derived from history, not from package.json — you do not bump
+# it by hand. breaking change -> major, feat -> minor, anything else -> patch.
+# If nothing conventional landed since the last tag, a patch release is still
+# cut, so every push to main ships.
+#
+# The release commit is pushed with GITHUB_TOKEN and marked [skip ci]; pushes
 # made with GITHUB_TOKEN do not retrigger workflows, so this does not loop.
 #
 # Auth: OIDC trusted publishing — no secrets. Configure a trusted publisher on
@@ -16,14 +21,24 @@ name: Publish to npm
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump to force (auto = derive from commits)
+        type: choice
+        default: auto
+        options: [auto, patch, minor, major]
 
 permissions:
-  contents: write # commit the changelog + create the release/tag
+  contents: write # commit the release + create the tag/release
   id-token: write # OIDC trusted publishing + provenance
 
 concurrency:
   group: publish
   cancel-in-progress: false
+
+env:
+  GIT_CLIFF_VERSION: 2.13.1
 
 jobs:
   publish:
@@ -51,59 +66,102 @@ jobs:
       - name: Test
         run: bun run test
 
-      - name: Read package version
+      # git-cliff derives the next version from the Conventional Commits since
+      # the most recent vX.Y.Z tag: breaking -> major, feat -> minor, else
+      # patch. Emits nothing when it finds no bumpable commits, in which case
+      # we still cut a patch release.
+      - name: Resolve release version
         id: v
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          set -euo pipefail
+          LAST_TAG="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null || echo '')"
+          if [ -n "$LAST_TAG" ]; then
+            NEW_COMMITS="$(git rev-list --count "${LAST_TAG}..HEAD")"
+          else
+            LAST_TAG="v0.0.0"
+            NEW_COMMITS="$(git rev-list --count HEAD)"
+          fi
+          echo "Last tag: $LAST_TAG ($NEW_COMMITS commits since)"
+
+          if [ "$NEW_COMMITS" -eq 0 ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "Nothing new since $LAST_TAG — skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE="${LAST_TAG#v}"
+          MAJOR="${BASE%%.*}"; REST="${BASE#*.}"; MINOR="${REST%%.*}"; PATCH="${REST#*.}"
+          FORCED="${{ github.event.inputs.bump || 'auto' }}"
+          CLIFF="$(npx --yes git-cliff@${GIT_CLIFF_VERSION} --config cliff.toml --bumped-version 2>/dev/null | tail -n1 || true)"
+          echo "git-cliff suggests: ${CLIFF:-<none>}"
+
+          case "$FORCED" in
+            major) VERSION="$((MAJOR + 1)).0.0" ;;
+            minor) VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            *)
+              VERSION="${CLIFF#v}"
+              # git-cliff found nothing to bump (unconventional commits only) —
+              # still ship, as a patch.
+              if [ -z "$VERSION" ] || [ "$VERSION" = "$BASE" ]; then
+                VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+              fi
+              ;;
+          esac
+
+          if [ "$(npm view "emf-converter@${VERSION}" version 2>/dev/null || true)" = "$VERSION" ]; then
+            echo "emf-converter@${VERSION} is already on npm — skipping release."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Releasing ${VERSION}"
+          echo "release=true" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Skip if this version is already on npm
-        id: check
-        run: |
-          VERSION="${{ steps.v.outputs.version }}"
-          if [ "$(npm view emf-converter@"$VERSION" version 2>/dev/null || true)" = "$VERSION" ]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "emf-converter@$VERSION already on npm — nothing to do."
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Write version into package.json
+        if: steps.v.outputs.release == 'true'
+        run: npm pkg set version="${{ steps.v.outputs.version }}"
 
       - name: Generate changelog
-        if: steps.check.outputs.publish == 'true'
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --tag ${{ steps.v.outputs.tag }} --output CHANGELOG.md
+        if: steps.v.outputs.release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Commit changelog
-        if: steps.check.outputs.publish == 'true'
         run: |
+          npx --yes git-cliff@${GIT_CLIFF_VERSION} \
+            --config cliff.toml \
+            --tag "${{ steps.v.outputs.tag }}" \
+            --output CHANGELOG.md
+
+      - name: Commit, tag and push
+        if: steps.v.outputs.release == 'true'
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if ! git diff --quiet -- CHANGELOG.md; then
-            git add CHANGELOG.md
-            git commit -m "docs(changelog): ${{ steps.v.outputs.tag }} [skip ci]"
-            git push origin HEAD:main
-          fi
+          git add package.json CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.v.outputs.tag }} [skip ci]"
+          git tag -a "${{ steps.v.outputs.tag }}" -m "${{ steps.v.outputs.tag }}"
+          git push origin HEAD:main
+          git push origin "${{ steps.v.outputs.tag }}"
 
       - name: Extract latest release notes
-        if: steps.check.outputs.publish == 'true'
+        if: steps.v.outputs.release == 'true'
         run: awk '/^## \[/{c++} c==1{print} c==2{exit}' CHANGELOG.md > "${RUNNER_TEMP}/notes.md"
 
       - name: Publish to npm
-        if: steps.check.outputs.publish == 'true'
+        if: steps.v.outputs.release == 'true'
         run: |
           npm install -g npm@latest
           npm publish --provenance --access public
 
       - name: Create GitHub release
-        if: steps.check.outputs.publish == 'true'
+        if: steps.v.outputs.release == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.v.outputs.tag }}
-          target_commitish: main
           name: ${{ steps.v.outputs.tag }}
           body_path: ${{ runner.temp }}/notes.md
