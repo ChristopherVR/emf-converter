@@ -138,6 +138,25 @@ describe('emf-gdi-draw-text-bitmap', () => {
 				expect((rCtx.ctx as unknown as Record<string, string>).textAlign).toBe('right');
 			});
 
+			it.each([
+				[0x00, 'top'], // TA_TOP
+				[0x08, 'bottom'], // TA_BOTTOM
+				[0x18, 'alphabetic'], // TA_BASELINE (includes the TA_BOTTOM bit)
+			] as const)('maps vertical alignment 0x%s to textBaseline %s', (textAlign, expected) => {
+				const rCtx = makeRCtx();
+				rCtx.state.textAlign = textAlign;
+				const offset = 0;
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 28, 50, true);
+				rCtx.view.setInt32(dataOff + 32, 50, true);
+				rCtx.view.setUint32(dataOff + 36, 1, true); // 1 char
+				rCtx.view.setUint32(dataOff + 40, 76, true);
+				rCtx.view.setUint16(offset + 76, 65, true); // 'A'
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, offset, dataOff, 80);
+				expect((rCtx.ctx as unknown as Record<string, string>).textBaseline).toBe(expected);
+			});
+
 			it('draws opaque background when bkMode is 2', () => {
 				const rCtx = makeRCtx();
 				rCtx.state.bkMode = 2; // OPAQUE

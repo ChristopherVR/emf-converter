@@ -55,14 +55,12 @@ function handleExtTextOutW(
 			if (text.length > 0) {
 				applyFont(ctx, state);
 				ctx.fillStyle = state.textColor;
-				let alignBaseline: CanvasTextBaseline = 'alphabetic';
+				// TA_BASELINE (0x18) includes the TA_BOTTOM (0x08) bit, so the
+				// vertical-alignment bits must be masked and compared as a unit.
+				const vAlign = state.textAlign & 0x18;
+				const alignBaseline: CanvasTextBaseline =
+					vAlign === 0x18 ? 'alphabetic' : vAlign === 0x08 ? 'bottom' : 'top';
 				let alignHoriz: CanvasTextAlign = 'left';
-				if (state.textAlign & 0x08) {
-					alignBaseline = 'bottom';
-				}
-				if (state.textAlign & 0x18) {
-					alignBaseline = 'alphabetic';
-				}
 				if (state.textAlign & 0x06) {
 					alignHoriz = 'center';
 				}
