@@ -20,7 +20,7 @@ body = """
     ### {{ group | striptags | trim | upper_first }}
     {% for commit in commits %}
         - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
-            {{ commit.message | upper_first }}\
+            {{ commit.message | split(pat="\n") | first | trim | upper_first }}\
             {% if commit.id %} ([{{ commit.id | truncate(length=7, end="") }}]({{ repo }}/commit/{{ commit.id }})){% endif %}\
     {% endfor %}
 {% endfor %}\n
@@ -30,9 +30,13 @@ trim = true
 
 [git]
 conventional_commits = true
-filter_unconventional = true
+# Keep non-conventional commits — they land in "Other" via the catch-all parser
+# below. Dropping them makes a release section vanish entirely when a PR is
+# merged without a conventional subject, which silently breaks release notes.
+filter_unconventional = false
 split_commits = false
 commit_parsers = [
+	{ message = "^[Mm]erge (pull request|branch|remote-tracking|tag) ", skip = true },
 	{ message = "^feat", group = "<!-- 0 -->Features" },
 	{ message = "^fix", group = "<!-- 1 -->Bug Fixes" },
 	{ message = "^perf", group = "<!-- 2 -->Performance" },
