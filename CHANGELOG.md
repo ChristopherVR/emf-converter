@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [2.0.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v2.0.2) - 2026-07-27
+
+### Bug Fixes
+
+- **ci:** Anchor release notes to the version being released ([b242a45](https://github.com/ChristopherVR/emf-converter/commit/b242a4551646a450079a6854b6a35d7633f9c434))
+
+## [2.0.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v2.0.1) - 2026-07-27
+
+### Other
+
+- Map the font height through the window/viewport transform ([c6aae7d](https://github.com/ChristopherVR/emf-converter/commit/c6aae7d66ea56574edf53d7eb066afaa99d1c151))
+
 ## [2.0.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v2.0.0) - 2026-07-22
 
 ### Bug Fixes
@@ -83,6 +95,10 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 - Enable vitest globals in all packages to fix expectTypeOf errors ([554e6d7](https://github.com/ChristopherVR/emf-converter/commit/554e6d76de79c65d785f6767493d6839619b4ea5))
 - **test:** Add i18n mocks to react tests and bump versions to 1.2.0 ([51d4a7e](https://github.com/ChristopherVR/emf-converter/commit/51d4a7ee6e3d1d915ea90443d8c67841393b7c11))
 - Close security & performance findings from full-codebase review ([6c3a354](https://github.com/ChristopherVR/emf-converter/commit/6c3a3544a3a70c8561b996d3ae7cc6bf582e2543))
+
+### Other
+
+- Initial commit ([e717c1b](https://github.com/ChristopherVR/emf-converter/commit/e717c1bf9e853e1a97e6363a0570fa91aeb58e8f))
 
 ### Refactor
 
