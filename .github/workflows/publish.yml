@@ -121,6 +121,7 @@ jobs:
           echo "release=true" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Write version into package.json
         if: steps.v.outputs.release == 'true'
@@ -136,6 +137,44 @@ jobs:
             --tag "${{ steps.v.outputs.tag }}" \
             --output CHANGELOG.md
 
+      # Anchored on the version being released, not on "the first section in the
+      # file". git-cliff omits a release entirely when every commit in it was
+      # skipped, and a positional grab would then publish the *previous*
+      # release's notes under the new tag without any error. Runs before the
+      # push so a failure here aborts the release instead of leaving a tag
+      # behind.
+      - name: Extract release notes
+        if: steps.v.outputs.release == 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          TAG: ${{ steps.v.outputs.tag }}
+          LAST_TAG: ${{ steps.v.outputs.last_tag }}
+        run: |
+          set -euo pipefail
+          NOTES="${RUNNER_TEMP}/notes.md"
+
+          awk -v hdr="## [${VERSION}]" '
+            index($0, hdr) == 1 { found = 1; print; next }
+            found && /^## \[/   { exit }
+            found               { print }
+          ' CHANGELOG.md > "$NOTES"
+
+          if [ ! -s "$NOTES" ]; then
+            echo "::warning::CHANGELOG.md has no '## [${VERSION}]' section — falling back to the raw commit list."
+            {
+              echo "## ${TAG}"
+              echo
+              if git rev-parse -q --verify "refs/tags/${LAST_TAG}" >/dev/null; then
+                git log --no-merges --format='- %s (%h)' "${LAST_TAG}..HEAD"
+              else
+                git log --no-merges --format='- %s (%h)' HEAD
+              fi
+            } > "$NOTES"
+          fi
+
+          echo "--- release notes ---"
+          cat "$NOTES"
+
       - name: Commit, tag and push
         if: steps.v.outputs.release == 'true'
         run: |
@@ -147,10 +186,6 @@ jobs:
           git tag -a "${{ steps.v.outputs.tag }}" -m "${{ steps.v.outputs.tag }}"
           git push origin HEAD:main
           git push origin "${{ steps.v.outputs.tag }}"
-
-      - name: Extract latest release notes
-        if: steps.v.outputs.release == 'true'
-        run: awk '/^## \[/{c++} c==1{print} c==2{exit}' CHANGELOG.md > "${RUNNER_TEMP}/notes.md"
 
       - name: Publish to npm
         if: steps.v.outputs.release == 'true'
