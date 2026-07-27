@@ -6,6 +6,7 @@
 import {
 	applyFont,
 	drawTextDecorations,
+	fontSizePx,
 	readUtf16LE,
 	createTempCanvas,
 } from './emf-canvas-helpers';
@@ -53,7 +54,9 @@ function handleExtTextOutW(
 		if (nChars > 0 && offString > 0 && offset + offString + nChars * 2 <= maxOffset) {
 			const text = readUtf16LE(view, offset + offString, nChars);
 			if (text.length > 0) {
-				applyFont(ctx, state);
+				// The font height is a LOGICAL height, so it maps like any other length.
+				const fontScale = Math.abs(gmh(rCtx, 1));
+				applyFont(ctx, state, fontScale);
 				ctx.fillStyle = state.textColor;
 				// TA_BASELINE (0x18) includes the TA_BOTTOM (0x08) bit, so the
 				// vertical-alignment bits must be masked and compared as a unit.
@@ -71,7 +74,7 @@ function handleExtTextOutW(
 				ctx.textAlign = alignHoriz;
 				if (state.bkMode === 2) {
 					const measured = ctx.measureText(text);
-					const bgH = state.fontHeight || 12;
+					const bgH = fontSizePx(state, fontScale);
 					ctx.fillStyle = state.bkColor;
 					ctx.fillRect(gmx(rCtx, refX), gmy(rCtx, refY) - bgH, measured.width, bgH);
 					ctx.fillStyle = state.textColor;
@@ -86,7 +89,7 @@ function handleExtTextOutW(
 							: alignHoriz === 'right'
 								? baseX - w
 								: baseX;
-					drawTextDecorations(ctx, state, startX, gmy(rCtx, refY), w);
+					drawTextDecorations(ctx, state, startX, gmy(rCtx, refY), w, fontScale);
 				}
 			}
 		}

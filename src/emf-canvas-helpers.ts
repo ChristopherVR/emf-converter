@@ -332,11 +332,28 @@ export function mapFontFamily(face: string, map?: Record<string, string>): strin
 	return resolved;
 }
 
-export function applyFont(ctx: CanvasContext, state: DrawState): void {
+/**
+ * The canvas font size a logical font height maps to.
+ *
+ * A font's height is in LOGICAL units, like every coordinate in the record
+ * stream, so it has to go through the same window/viewport mapping. Skipping
+ * that draws text at the file's logical scale: an EMF with a window extent of
+ * 2540 against a viewport extent of 132 renders its text about 19x too large,
+ * which paints over the rest of the picture.
+ *
+ * @param state - The active draw state (provides the logical font height).
+ * @param scale - Canvas pixels per logical unit of height; 1 when the mapping
+ *                is already the identity.
+ */
+export function fontSizePx(state: DrawState, scale = 1): number {
+	return Math.max(Math.abs(state.fontHeight) * Math.abs(scale || 1), 8);
+}
+
+export function applyFont(ctx: CanvasContext, state: DrawState, scale = 1): void {
 	const italic = state.fontItalic ? 'italic ' : '';
 	const weight = cssFontWeight(state.fontWeight);
 	const weightPart = weight ? `${weight} ` : '';
-	const size = Math.max(Math.abs(state.fontHeight), 8);
+	const size = fontSizePx(state, scale);
 	const family = mapFontFamily(state.fontFamily, state.fontFamilyMap);
 	ctx.font = `${italic}${weightPart}${size}px ${family}`;
 }
@@ -352,6 +369,7 @@ export function applyFont(ctx: CanvasContext, state: DrawState): void {
  * @param x     - The left edge of the text run, in the current user space.
  * @param y     - The text baseline Y coordinate.
  * @param width - The measured advance width of the text run.
+ * @param scale - Canvas pixels per logical unit of height, as for {@link applyFont}.
  */
 export function drawTextDecorations(
 	ctx: CanvasContext,
@@ -359,11 +377,12 @@ export function drawTextDecorations(
 	x: number,
 	y: number,
 	width: number,
+	scale = 1,
 ): void {
 	if (!state.fontUnderline && !state.fontStrikeOut) {
 		return;
 	}
-	const size = Math.max(Math.abs(state.fontHeight), 8);
+	const size = fontSizePx(state, scale);
 	const thickness = Math.max(1, Math.round(size / 14));
 	const prevFill = ctx.fillStyle;
 	ctx.fillStyle = state.textColor;
