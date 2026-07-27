@@ -257,7 +257,7 @@ export function handleWmfDrawRecord(
 					if (txOff + 4 <= offset + recSize) {
 						const ty2 = view.getInt16(txOff, true);
 						const txCoord = view.getInt16(txOff + 2, true);
-						applyFont(ctx, state);
+						applyFont(ctx, state, Math.abs(mh(1)));
 						ctx.fillStyle = state.textColor;
 						ctx.fillText(text, mx(txCoord), my(ty2));
 					}
@@ -281,7 +281,7 @@ export function handleWmfDrawRecord(
 						}
 						text += String.fromCharCode(ch);
 					}
-					applyFont(ctx, state);
+					applyFont(ctx, state, Math.abs(mh(1)));
 					ctx.fillStyle = state.textColor;
 					ctx.fillText(text, mx(txCoord), my(ty2));
 				}

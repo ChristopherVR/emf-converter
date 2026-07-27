@@ -191,6 +191,31 @@ describe('applyFont', () => {
 		expect(ctx.font).toContain('8px');
 	});
 
+	it('scales the logical height by the mapping factor', () => {
+		// A font height is a logical height like any other length, so it goes through the
+		// window/viewport mapping. An EMF with a window extent of 2540 against a viewport
+		// extent of 132 maps one logical unit to ~0.052 canvas pixels, so lfHeight -635
+		// is a 33px font - not a 635px one painted over the rest of the picture.
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({ fontHeight: -635, fontFamily: 'Arial' });
+		applyFont(asCtx(ctx), state, 132 / 2540);
+		expect(ctx.font).toBe('33px Arial');
+	});
+
+	it('leaves the size alone when the mapping is the identity', () => {
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({ fontHeight: 16, fontFamily: 'Arial' });
+		applyFont(asCtx(ctx), state, 1);
+		expect(ctx.font).toBe('16px Arial');
+	});
+
+	it('keeps the 8px floor after scaling', () => {
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({ fontHeight: 100, fontFamily: 'Arial' });
+		applyFont(asCtx(ctx), state, 0.01);
+		expect(ctx.font).toBe('8px Arial');
+	});
+
 	it('handles negative fontHeight by taking absolute value', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({ fontHeight: -20, fontFamily: 'Helvetica' });
