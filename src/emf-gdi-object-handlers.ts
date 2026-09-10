@@ -74,20 +74,33 @@ export function handleEmfObjectRecord(
 		case EMR_EXTCREATEFONTINDIRECTW: {
 			if (recSize >= 332) {
 				const ihFont = view.getUint32(dataOff, true);
+				// LOGFONTW starts right after ihFont, at dataOff+4:
+				//   lfHeight(4) lfWidth(4) lfEscapement(4) lfOrientation(4)
+				//   lfWeight(4) lfItalic/lfUnderline/lfStrikeOut/lfCharSet/
+				//   lfOutPrecision/lfClipPrecision/lfQuality/lfPitchAndFamily
+				//   (1 byte each, 8 bytes) lfFaceName WCHAR[32] (64 bytes).
+				// lfFaceName sits at LOGFONTW offset 28, i.e. dataOff+4+28 =
+				// dataOff+32 (previously misread from dataOff+28, four bytes
+				// into lfOutPrecision/lfClipPrecision/lfQuality/
+				// lfPitchAndFamily, corrupting or blanking the face name).
 				const height = view.getInt32(dataOff + 4, true);
+				const escapementTenthDeg = view.getInt32(dataOff + 12, true);
 				const weight = view.getInt32(dataOff + 20, true);
 				const italic = view.getUint8(dataOff + 24);
 				const underline = view.getUint8(dataOff + 25);
 				const strikeOut = view.getUint8(dataOff + 26);
-				const family = readUtf16LE(view, dataOff + 28, 32) || 'sans-serif';
+				const family = readUtf16LE(view, dataOff + 32, 32) || 'sans-serif';
 				rCtx.objectTable.set(ihFont, {
 					kind: 'font',
-					height: Math.abs(height),
+					// Sign kept (not Math.abs'd): resolveFontPixelHeight() needs it
+					// to distinguish GDI's cell-height vs character-height convention.
+					height,
 					weight,
 					italic: italic !== 0,
 					underline: underline !== 0,
 					strikeOut: strikeOut !== 0,
 					family,
+					escapementTenthDeg,
 				});
 			}
 			return true;
@@ -117,6 +130,7 @@ export function handleEmfObjectRecord(
 							state.fontUnderline = obj.underline;
 							state.fontStrikeOut = obj.strikeOut;
 							state.fontFamily = obj.family;
+							state.fontEscapementTenthDeg = obj.escapementTenthDeg ?? 0;
 							break;
 					}
 				}

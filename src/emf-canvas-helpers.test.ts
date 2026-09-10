@@ -157,7 +157,7 @@ describe('applyFont', () => {
 	it('sets basic font string', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({
-			fontHeight: 16,
+			fontHeight: -16, // negative = character height, exact 1:1 with CSS px
 			fontWeight: 400,
 			fontItalic: false,
 			fontFamily: 'Arial',
@@ -204,7 +204,7 @@ describe('applyFont', () => {
 
 	it('leaves the size alone when the mapping is the identity', () => {
 		const ctx = createMockCtx();
-		const state = createDefaultDrawState({ fontHeight: 16, fontFamily: 'Arial' });
+		const state = createDefaultDrawState({ fontHeight: -16, fontFamily: 'Arial' });
 		applyFont(asCtx(ctx), state, 1);
 		expect(ctx.font).toBe('16px Arial');
 	});
@@ -226,7 +226,7 @@ describe('applyFont', () => {
 	it('combines italic and numeric weight for heavy italic font', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({
-			fontHeight: 18,
+			fontHeight: -18,
 			fontWeight: 800,
 			fontItalic: true,
 			fontFamily: 'Georgia',
@@ -237,7 +237,7 @@ describe('applyFont', () => {
 
 	it('quotes multi-word face names', () => {
 		const ctx = createMockCtx();
-		const state = createDefaultDrawState({ fontHeight: 10, fontFamily: 'Times New Roman' });
+		const state = createDefaultDrawState({ fontHeight: -10, fontFamily: 'Times New Roman' });
 		applyFont(asCtx(ctx), state);
 		expect(ctx.font).toBe('10px "Times New Roman"');
 	});
@@ -245,12 +245,20 @@ describe('applyFont', () => {
 	it('applies a fontFamilyMap override (case-insensitive)', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({
-			fontHeight: 10,
+			fontHeight: -10,
 			fontFamily: 'Calibri',
 			fontFamilyMap: { calibri: 'Carlito' },
 		});
 		applyFont(asCtx(ctx), state);
 		expect(ctx.font).toBe('10px Carlito');
+	});
+
+	it('approximates a positive (cell-height) fontHeight via the documented ratio', () => {
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({ fontHeight: 23, fontFamily: 'Arial' });
+		applyFont(asCtx(ctx), state);
+		// 23 / 1.15 = 20 exactly, chosen so the approximation ratio is easy to verify.
+		expect(ctx.font).toBe('20px Arial');
 	});
 });
 

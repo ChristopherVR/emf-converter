@@ -55,6 +55,26 @@ export const R2_MERGEPENNOT = 14;
 export const R2_MERGEPEN = 15;
 export const R2_WHITE = 16;
 
+// Ternary raster-operation (ROP3) codes used by EMR_BITBLT / EMR_STRETCHDIBITS
+// (MS-WMF 2.1.1.28 lists the full 256-code table; only the common subset GDI
+// itself actually emits from BitBlt/StretchBlt is named here). See
+// `classifyRop3` in emf-rop3.ts for how each is emulated on Canvas 2D.
+export const ROP3_SRCCOPY = 0x00cc0020;
+export const ROP3_SRCPAINT = 0x00ee0086;
+export const ROP3_SRCAND = 0x008800c6;
+export const ROP3_SRCINVERT = 0x00660046;
+export const ROP3_SRCERASE = 0x00440328;
+export const ROP3_NOTSRCCOPY = 0x00330008;
+export const ROP3_NOTSRCERASE = 0x001100a6;
+export const ROP3_MERGECOPY = 0x00c000ca;
+export const ROP3_MERGEPAINT = 0x00bb0226;
+export const ROP3_PATCOPY = 0x00f00021;
+export const ROP3_PATPAINT = 0x00fb0a09;
+export const ROP3_PATINVERT = 0x005a0049;
+export const ROP3_DSTINVERT = 0x00550009;
+export const ROP3_BLACKNESS = 0x00000042;
+export const ROP3_WHITENESS = 0x00ff0062;
+
 /**
  * Hard cap on the output canvas width/height in pixels. Guards against
  * pathological metafiles requesting gigantic surfaces. Overridable per call via

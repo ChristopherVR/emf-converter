@@ -201,14 +201,16 @@ describe('emf-gdi-object-handlers', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				rCtx.view.setUint32(dataOff, 4, true); // ihFont
-				rCtx.view.setInt32(dataOff + 4, -24, true); // height (negative = cell height)
+				rCtx.view.setInt32(dataOff + 4, -24, true); // height (negative = character height)
+				rCtx.view.setInt32(dataOff + 12, 900, true); // escapement: 90.0 degrees
 				rCtx.view.setInt32(dataOff + 20, 700, true); // weight (bold)
 				rCtx.view.setUint8(dataOff + 24, 1); // italic
 
-				// Write "Arial" in UTF-16LE at dataOff + 28
+				// Write "Arial" in UTF-16LE at dataOff + 32 (lfFaceName, LOGFONTW
+				// offset 28, right after ihFont(4)+lfHeight..lfPitchAndFamily(28)).
 				const name = 'Arial';
 				for (let i = 0; i < name.length; i++) {
-					rCtx.view.setUint16(dataOff + 28 + i * 2, name.charCodeAt(i), true);
+					rCtx.view.setUint16(dataOff + 32 + i * 2, name.charCodeAt(i), true);
 				}
 
 				const result = handleEmfObjectRecord(rCtx, EMR_EXTCREATEFONTINDIRECTW, dataOff, 332);
@@ -217,10 +219,11 @@ describe('emf-gdi-object-handlers', () => {
 				expect(font).toBeDefined();
 				expect(font!.kind).toBe('font');
 				if (font!.kind === 'font') {
-					expect(font!.height).toBe(24); // abs(-24)
+					expect(font!.height).toBe(-24); // sign preserved, not abs()
 					expect(font!.weight).toBe(700);
 					expect(font!.italic).toBeTruthy();
 					expect(font!.family).toBe('Arial');
+					expect(font!.escapementTenthDeg).toBe(900);
 				}
 			});
 
@@ -283,6 +286,7 @@ describe('emf-gdi-object-handlers', () => {
 					weight: 700,
 					italic: true,
 					family: 'Courier',
+					escapementTenthDeg: 450,
 				});
 				const dataOff = 8;
 				rCtx.view.setUint32(dataOff, 3, true);
@@ -292,6 +296,7 @@ describe('emf-gdi-object-handlers', () => {
 				expect(rCtx.state.fontWeight).toBe(700);
 				expect(rCtx.state.fontItalic).toBeTruthy();
 				expect(rCtx.state.fontFamily).toBe('Courier');
+				expect(rCtx.state.fontEscapementTenthDeg).toBe(450);
 			});
 
 			it('selects a stock object when handle >= STOCK_OBJECT_BASE', () => {

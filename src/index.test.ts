@@ -81,10 +81,13 @@ describe('emf-types', () => {
 
 		it('returns correct default font values', () => {
 			const s = defaultState();
-			expect(s.fontHeight).toBe(12);
+			// Negative = character-height convention, so this resolves to exactly
+			// 12px (see resolveFontPixelHeight in emf-gdi-text-layout.ts).
+			expect(s.fontHeight).toBe(-12);
 			expect(s.fontWeight).toBe(400);
 			expect(s.fontItalic).toBeFalsy();
 			expect(s.fontFamily).toBe('sans-serif');
+			expect(s.fontEscapementTenthDeg).toBe(0);
 		});
 
 		it('returns identity world transform', () => {
@@ -121,7 +124,7 @@ describe('emf-types', () => {
 			expect(original.penColor).toBe('#000000');
 			expect(original.penWidth).toBe(1);
 			expect(original.brushColor).toBe('#ffffff');
-			expect(original.fontHeight).toBe(12);
+			expect(original.fontHeight).toBe(-12);
 		});
 
 		it('deep-copies worldTransform', () => {

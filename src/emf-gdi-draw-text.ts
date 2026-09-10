@@ -1,0 +1,177 @@
+/**
+ * EMR_EXTTEXTOUTW record handler.
+ *
+ * Honours the record's optional Dx array (per-glyph advance widths) exactly
+ * when present, and the font's LOGFONT escapement (baseline rotation). See
+ * `emf-gdi-text-layout.ts` for the pure layout math and the documented
+ * limits of both.
+ *
+ * @module emf-gdi-draw-text
+ */
+
+import {
+	applyFont,
+	drawTextDecorations,
+	fontSizePx,
+	readUtf16LE,
+} from './emf-canvas-helpers';
+import { EMR_EXTTEXTOUTW } from './emf-constants';
+import { gmx, gmy, gmw, gmh } from './emf-gdi-coord';
+import {
+	cumulativeGlyphOffsets,
+	totalGlyphAdvance,
+	alignmentStartOffset,
+	escapementToCanvasRadians,
+} from './emf-gdi-text-layout';
+import type { CanvasContext, DrawState, EmfGdiReplayCtx } from './emf-types';
+
+type HAlign = 'left' | 'center' | 'right';
+
+/** Reads the record's Dx array (one UINT32 advance per character), if present and in bounds. */
+function readDxArray(
+	view: DataView,
+	offset: number,
+	dataOff: number,
+	nChars: number,
+	viewEnd: number,
+): number[] | null {
+	const offDx = view.getUint32(dataOff + 64, true);
+	if (offDx === 0) {
+		return null;
+	}
+	const start = offset + offDx;
+	const end = start + nChars * 4;
+	if (start < 0 || end > viewEnd) {
+		return null;
+	}
+	const dx: number[] = [];
+	for (let i = 0; i < nChars; i++) {
+		dx.push(view.getUint32(start + i * 4, true));
+	}
+	return dx;
+}
+
+function horizontalAlign(textAlign: number): HAlign {
+	if (textAlign & 0x02) {
+		return 'right';
+	}
+	if (textAlign & 0x06) {
+		return 'center';
+	}
+	return 'left';
+}
+
+function verticalBaseline(textAlign: number): CanvasTextBaseline {
+	// TA_BASELINE (0x18) includes the TA_BOTTOM (0x08) bit, so the
+	// vertical-alignment bits must be masked and compared as a unit.
+	const vAlign = textAlign & 0x18;
+	return vAlign === 0x18 ? 'alphabetic' : vAlign === 0x08 ? 'bottom' : 'top';
+}
+
+/** Paints the opaque text background and, per-glyph or as one run, the glyphs and decorations. */
+function paintRun(
+	ctx: CanvasContext,
+	state: DrawState,
+	text: string,
+	dxDevice: number[] | null,
+	startX: number,
+	y: number,
+	align: HAlign,
+	fontScale: number,
+): void {
+	const totalWidth = dxDevice ? totalGlyphAdvance(dxDevice) : ctx.measureText(text).width;
+	const runStartX = dxDevice ? startX + alignmentStartOffset(totalWidth, align) : startX;
+
+	if (state.bkMode === 2) {
+		const bgH = fontSizePx(state, fontScale);
+		const prevFill = ctx.fillStyle;
+		ctx.fillStyle = state.bkColor;
+		ctx.fillRect(runStartX, y - bgH, totalWidth, bgH);
+		ctx.fillStyle = prevFill;
+	}
+
+	ctx.fillStyle = state.textColor;
+	if (dxDevice) {
+		const offsets = cumulativeGlyphOffsets(dxDevice);
+		const prevAlign = ctx.textAlign;
+		ctx.textAlign = 'left';
+		for (let i = 0; i < text.length && i < offsets.length; i++) {
+			ctx.fillText(text[i], runStartX + offsets[i], y);
+		}
+		ctx.textAlign = prevAlign;
+	} else {
+		ctx.fillText(text, startX, y);
+	}
+
+	if (state.fontUnderline || state.fontStrikeOut) {
+		drawTextDecorations(ctx, state, runStartX, y, totalWidth, fontScale);
+	}
+}
+
+function handleExtTextOutW(
+	rCtx: EmfGdiReplayCtx,
+	offset: number,
+	dataOff: number,
+	recSize: number,
+): boolean {
+	const { ctx, view, state } = rCtx;
+	if (recSize < 76) {
+		return true;
+	}
+	const refX = view.getInt32(dataOff + 28, true);
+	const refY = view.getInt32(dataOff + 32, true);
+	const nChars = view.getUint32(dataOff + 36, true);
+	const offString = view.getUint32(dataOff + 40, true);
+	const viewEnd = view.byteLength;
+	if (nChars === 0 || offString === 0 || offset + offString + nChars * 2 > viewEnd) {
+		return true;
+	}
+	const text = readUtf16LE(view, offset + offString, nChars);
+	if (text.length === 0) {
+		return true;
+	}
+
+	// The font height is a LOGICAL height, so it maps like any other length.
+	const fontScale = Math.abs(gmh(rCtx, 1));
+	applyFont(ctx, state, fontScale);
+
+	const align = horizontalAlign(state.textAlign);
+	ctx.textBaseline = verticalBaseline(state.textAlign);
+	ctx.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
+
+	const dxLogical = readDxArray(view, offset, dataOff, nChars, viewEnd);
+	const dxDevice = dxLogical ? dxLogical.map((v) => gmw(rCtx, v)) : null;
+	// Per-glyph placement always anchors left; the run-level alignment is
+	// folded into `runStartX` inside paintRun instead.
+	if (dxDevice) {
+		ctx.textAlign = 'left';
+	}
+
+	const baseX = gmx(rCtx, refX);
+	const baseY = gmy(rCtx, refY);
+	const radians = escapementToCanvasRadians(state.fontEscapementTenthDeg);
+
+	if (radians !== 0) {
+		ctx.save();
+		ctx.translate(baseX, baseY);
+		ctx.rotate(radians);
+		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale);
+		ctx.restore();
+	} else {
+		paintRun(ctx, state, text, dxDevice, baseX, baseY, align, fontScale);
+	}
+	return true;
+}
+
+export function handleEmfGdiDrawTextRecord(
+	rCtx: EmfGdiReplayCtx,
+	recType: number,
+	offset: number,
+	dataOff: number,
+	recSize: number,
+): boolean {
+	if (recType === EMR_EXTTEXTOUTW) {
+		return handleExtTextOutW(rCtx, offset, dataOff, recSize);
+	}
+	return false;
+}

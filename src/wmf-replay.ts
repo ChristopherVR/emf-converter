@@ -1,7 +1,7 @@
 /**
  * WMF (Windows Metafile) record replay.
  *
- * Simpler than EMF `u2014` 16-bit records with a smaller set of drawing primitives.
+ * Simpler than EMF: 16-bit records with a smaller set of drawing primitives.
  */
 
 import { readColorRef } from './emf-color-helpers';
@@ -194,9 +194,15 @@ export function replayWmfRecords(
 				break;
 			case META_CREATEFONTINDIRECT:
 				if (recSize >= 24) {
+					// WMF's (16-bit) LOGFONT: lfHeight(2) lfWidth(2) lfEscapement(2)
+					// lfOrientation(2) lfWeight(2) lfItalic/lfUnderline/lfStrikeOut/
+					// lfCharSet/lfOutPrecision/lfClipPrecision/lfQuality/
+					// lfPitchAndFamily (1 byte each, 8 bytes) = 18 bytes fixed, then
+					// lfFaceName (ANSI CHAR[32]) at offset 18 - not 14, which landed
+					// in lfOutPrecision..lfPitchAndFamily and corrupted the name.
 					let family = '';
-					for (let i = 0; i < 32 && dataOff + 14 + i < offset + recSize; i++) {
-						const ch = view.getUint8(dataOff + 14 + i);
+					for (let i = 0; i < 32 && dataOff + 18 + i < offset + recSize; i++) {
+						const ch = view.getUint8(dataOff + 18 + i);
 						if (ch === 0) {
 							break;
 						}
@@ -205,12 +211,15 @@ export function replayWmfRecords(
 					const slot = allocObjectSlot();
 					objectTable.set(slot, {
 						kind: 'font',
-						height: Math.abs(view.getInt16(dataOff, true)),
+						// Sign kept (not Math.abs'd): resolveFontPixelHeight() needs it
+						// to distinguish GDI's cell-height vs character-height convention.
+						height: view.getInt16(dataOff, true),
 						weight: view.getInt16(dataOff + 8, true),
 						italic: view.getUint8(dataOff + 10) !== 0,
 						underline: view.getUint8(dataOff + 11) !== 0,
 						strikeOut: view.getUint8(dataOff + 12) !== 0,
 						family: family || 'sans-serif',
+						escapementTenthDeg: view.getInt16(dataOff + 4, true),
 					});
 				}
 				break;
@@ -235,6 +244,7 @@ export function replayWmfRecords(
 								state.fontUnderline = obj.underline;
 								state.fontStrikeOut = obj.strikeOut;
 								state.fontFamily = obj.family;
+								state.fontEscapementTenthDeg = obj.escapementTenthDeg ?? 0;
 								break;
 						}
 					}

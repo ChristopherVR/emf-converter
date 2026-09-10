@@ -26,6 +26,7 @@ import { parseEmfPlusPath } from './emf-plus-path';
 import type {
 	EmfPlusBrush,
 	EmfPlusGradientStop,
+	EmfPlusGradientWrapMode,
 	TransformMatrix,
 } from './emf-types';
 
@@ -67,6 +68,22 @@ function applyMatrix(m: TransformMatrix, x: number, y: number): { x: number; y: 
 
 function clamp01(v: number): number {
 	return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+}
+
+/** GDI+ WrapMode enum (MS-EMFPLUS 2.1.1.42): 0=Tile, 1=TileFlipX, 2=TileFlipY, 3=TileFlipXY, 4=Clamp. */
+function readWrapMode(raw: number): EmfPlusGradientWrapMode {
+	switch (raw) {
+		case 0:
+			return 'tile';
+		case 1:
+			return 'tile-flip-x';
+		case 2:
+			return 'tile-flip-y';
+		case 3:
+			return 'tile-flip-xy';
+		default:
+			return 'clamp';
+	}
 }
 
 /** Normalise stops: clamp offsets, sort ascending. */
@@ -150,6 +167,7 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 		return null;
 	}
 	const flags = view.getUint32(b, true);
+	const wrapMode = readWrapMode(view.getUint32(b + 4, true));
 	const rx = view.getFloat32(b + 8, true);
 	const ry = view.getFloat32(b + 12, true);
 	const rw = view.getFloat32(b + 16, true);
@@ -206,6 +224,7 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 			x2: p2.x,
 			y2: p2.y,
 			stops: normaliseStops(stops),
+			wrapMode,
 		},
 	};
 }
@@ -216,6 +235,7 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 		return null;
 	}
 	const flags = view.getUint32(b, true);
+	const wrapMode = readWrapMode(view.getUint32(b + 4, true));
 	const centerArgb = view.getUint32(b + 8, true);
 	let cx = view.getFloat32(b + 12, true);
 	let cy = view.getFloat32(b + 16, true);
@@ -310,7 +330,7 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 	return {
 		kind: 'plus-brush',
 		color: argbToRgba(centerArgb),
-		gradient: { type: 'radial', cx, cy, r, stops: normaliseStops(stops) },
+		gradient: { type: 'radial', cx, cy, r, stops: normaliseStops(stops), wrapMode },
 	};
 }
 

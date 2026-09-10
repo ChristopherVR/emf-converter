@@ -3,6 +3,7 @@
  */
 
 import { invertCssColor } from './emf-color-helpers';
+import { resolveFontPixelHeight } from './emf-gdi-text-layout';
 import {
 	MAX_CANVAS_DIMENSION,
 	R2_BLACK,
@@ -432,7 +433,7 @@ export function mapFontFamily(face: string, map?: Record<string, string>): strin
  *                is already the identity.
  */
 export function fontSizePx(state: DrawState, scale = 1): number {
-	return Math.max(Math.abs(state.fontHeight) * Math.abs(scale || 1), 8);
+	return Math.max(resolveFontPixelHeight(state.fontHeight) * Math.abs(scale || 1), 8);
 }
 
 export function applyFont(ctx: CanvasContext, state: DrawState, scale = 1): void {
@@ -705,4 +706,35 @@ export function canvasDrawImage(
 		dh: number,
 	) => void;
 	draw.call(ctx, image, dx, dy, dw, dh);
+}
+
+/**
+ * Calls `ctx.getImageData(x, y, w, h)` and returns the result typed as the
+ * DOM `ImageData`.
+ *
+ * `@napi-rs/canvas` returns its own `ImageData` class, which is structurally
+ * identical for every member this package touches (`data`, `width`,
+ * `height`) but lacks the DOM-only `colorSpace` field, so the
+ * `CanvasContext` union does not type-check against DOM-typed helpers. Like
+ * {@link canvasDrawImage}, this is the single intentional escape hatch.
+ */
+export function canvasGetImageData(ctx: CanvasContext, x: number, y: number, w: number, h: number): ImageData {
+	const get = ctx.getImageData as unknown as (x: number, y: number, w: number, h: number) => ImageData;
+	return get.call(ctx, x, y, w, h);
+}
+
+/** Calls `ctx.putImageData(data, x, y)`; see {@link canvasGetImageData}. */
+export function canvasPutImageData(ctx: CanvasContext, data: ImageData, x: number, y: number): void {
+	const put = ctx.putImageData as unknown as (data: ImageData, x: number, y: number) => void;
+	put.call(ctx, data, x, y);
+}
+
+/** Calls `ctx.createPattern(image, repetition)`; see {@link canvasDrawImage}. */
+export function canvasCreatePattern(
+	ctx: CanvasContext,
+	image: Drawable,
+	repetition: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat',
+): CanvasPattern | null {
+	const create = ctx.createPattern as unknown as (img: Drawable, rep: string) => CanvasPattern | null;
+	return create.call(ctx, image, repetition);
 }

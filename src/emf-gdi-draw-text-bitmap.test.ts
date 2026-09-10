@@ -39,6 +39,9 @@ function makeCtxStub(): Record<string, unknown> {
 		fillText: vi.fn<() => void>(),
 		drawImage: vi.fn<() => void>(),
 		putImageData: vi.fn<() => void>(),
+		getImageData: vi.fn<() => void>(),
+		translate: vi.fn<() => void>(),
+		rotate: vi.fn<() => void>(),
 		measureText: vi.fn(() => ({ width: 50 })),
 		strokeStyle: '#000000',
 		fillStyle: '#ffffff',
@@ -46,6 +49,7 @@ function makeCtxStub(): Record<string, unknown> {
 		font: '12px sans-serif',
 		textBaseline: 'top' as string,
 		textAlign: 'left' as string,
+		globalCompositeOperation: 'source-over' as string,
 	};
 }
 
@@ -187,6 +191,99 @@ describe('emf-gdi-draw-text-bitmap', () => {
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
 				expect(ctx.fillText).not.toHaveBeenCalled();
 			});
+
+			it('honours an explicit Dx array, drawing one fillText call per glyph at cumulative offsets', () => {
+				const rCtx = makeRCtx(); // sx = sy = 0.5
+				const offset = 0;
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 28, 100, true); // refX
+				rCtx.view.setInt32(dataOff + 32, 200, true); // refY
+				rCtx.view.setUint32(dataOff + 36, 2, true); // nChars = 2
+				rCtx.view.setUint32(dataOff + 40, 76, true); // offString
+				rCtx.view.setUint32(dataOff + 64, 80, true); // offDx (relative to record start)
+				rCtx.view.setUint16(offset + 76, 72, true); // 'H'
+				rCtx.view.setUint16(offset + 78, 105, true); // 'i'
+				rCtx.view.setUint32(offset + 80, 20, true); // Dx[0]: advance after 'H' (logical units)
+				rCtx.view.setUint32(offset + 84, 15, true); // Dx[1]: advance after 'i'
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, offset, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				// gmx(100) = 50, gmy(200) = 100; Dx scaled by sx=0.5 -> device advances 10, 7.5;
+				// cumulative glyph offsets are [0, 10].
+				expect(ctx.fillText.mock.calls).toEqual([
+					['H', 50, 100],
+					['i', 60, 100],
+				]);
+			});
+
+			it('anchors a Dx-driven right-aligned run by the Dx array total width, not the browser measurement', () => {
+				const rCtx = makeRCtx();
+				rCtx.state.textAlign = 0x02; // TA_RIGHT
+				const offset = 0;
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 28, 100, true); // refX -> gmx = 50
+				rCtx.view.setInt32(dataOff + 32, 200, true); // refY -> gmy = 100
+				rCtx.view.setUint32(dataOff + 36, 1, true); // nChars = 1
+				rCtx.view.setUint32(dataOff + 40, 76, true);
+				rCtx.view.setUint32(dataOff + 64, 80, true); // offDx
+				rCtx.view.setUint16(offset + 76, 65, true); // 'A'
+				rCtx.view.setUint32(offset + 80, 40, true); // Dx[0] -> device width 20
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, offset, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				// Right-aligned: the run's right edge sits at gmx(100)=50, so the
+				// single glyph (width 20) starts at 50 - 20 = 30.
+				expect(ctx.fillText.mock.calls).toEqual([['A', 30, 100]]);
+			});
+
+			it('rotates the text draw around the reference point for a nonzero escapement', () => {
+				const rCtx = makeRCtx();
+				rCtx.state.fontEscapementTenthDeg = 900; // 90.0 degrees
+				const offset = 0;
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 28, 100, true); // refX -> gmx = 50
+				rCtx.view.setInt32(dataOff + 32, 200, true); // refY -> gmy = 100
+				rCtx.view.setUint32(dataOff + 36, 1, true);
+				rCtx.view.setUint32(dataOff + 40, 76, true);
+				rCtx.view.setUint16(offset + 76, 65, true); // 'A'
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, offset, dataOff, 80);
+				const ctx = rCtx.ctx as unknown as Record<
+					string,
+					{ mock: { calls: unknown[][]; invocationCallOrder: number[] } }
+				>;
+				expect(ctx.translate.mock.calls).toEqual([[50, 100]]);
+				expect(ctx.rotate.mock.calls[0][0]).toBeCloseTo(-Math.PI / 2, 10);
+				// The glyph is drawn in the translated/rotated frame, at the origin.
+				expect(ctx.fillText.mock.calls).toEqual([['A', 0, 0]]);
+				// save() -> translate() -> rotate() -> fillText() -> restore(), in order.
+				expect(ctx.save.mock.invocationCallOrder[0]).toBeLessThan(
+					ctx.translate.mock.invocationCallOrder[0],
+				);
+				expect(ctx.rotate.mock.invocationCallOrder[0]).toBeLessThan(
+					ctx.fillText.mock.invocationCallOrder[0],
+				);
+				expect(ctx.restore.mock.invocationCallOrder[0]).toBeGreaterThan(
+					ctx.fillText.mock.invocationCallOrder[0],
+				);
+			});
+
+			it('does not rotate when escapement is 0 (the default)', () => {
+				const rCtx = makeRCtx();
+				const offset = 0;
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 28, 100, true);
+				rCtx.view.setInt32(dataOff + 32, 200, true);
+				rCtx.view.setUint32(dataOff + 36, 1, true);
+				rCtx.view.setUint32(dataOff + 40, 76, true);
+				rCtx.view.setUint16(offset + 76, 65, true); // 'A'
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, offset, dataOff, 80);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.rotate).not.toHaveBeenCalled();
+				expect(ctx.translate).not.toHaveBeenCalled();
+				expect(ctx.fillText.mock.calls).toEqual([['A', 50, 100]]);
+			});
 		});
 
 		// -----------------------------------------------------------------------
@@ -241,6 +338,76 @@ describe('emf-gdi-draw-text-bitmap', () => {
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
 				expect(ctx.fillRect).not.toHaveBeenCalled();
 			});
+
+			it('fills the destination black for BLACKNESS, ignoring any source bitmap', () => {
+				const rCtx = makeRCtx();
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 16, 10, true); // dstX
+				rCtx.view.setInt32(dataOff + 20, 20, true); // dstY
+				rCtx.view.setInt32(dataOff + 24, 100, true); // dstW
+				rCtx.view.setInt32(dataOff + 28, 50, true); // dstH
+				rCtx.view.setUint32(dataOff + 32, 0x00000042, true); // BLACKNESS
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_BITBLT, 0, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillRect.mock.calls[0]).toEqual([5, 10, 50, 25]);
+				expect((rCtx.ctx as unknown as Record<string, string>).fillStyle).toBe('#ffffff');
+			});
+
+			it('fills the destination for WHITENESS at the mapped rect, restoring fillStyle after', () => {
+				const rCtx = makeRCtx();
+				rCtx.state.brushColor = '#123456'; // WHITENESS ignores the brush too
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 24, 20, true); // dstW
+				rCtx.view.setInt32(dataOff + 28, 20, true); // dstH
+				rCtx.view.setUint32(dataOff + 32, 0x00ff0062, true); // WHITENESS
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_BITBLT, 0, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillRect).toHaveBeenCalledOnce();
+				expect(ctx.fillRect.mock.calls[0]).toEqual([0, 0, 10, 10]);
+				expect((rCtx.ctx as unknown as Record<string, string>).fillStyle).toBe('#ffffff');
+			});
+
+			it('inverts the destination in place for DSTINVERT via a difference blend', () => {
+				const rCtx = makeRCtx();
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 16, 10, true);
+				rCtx.view.setInt32(dataOff + 20, 20, true);
+				rCtx.view.setInt32(dataOff + 24, 100, true);
+				rCtx.view.setInt32(dataOff + 28, 50, true);
+				rCtx.view.setUint32(dataOff + 32, 0x00550009, true); // DSTINVERT
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_BITBLT, 0, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillRect.mock.calls[0]).toEqual([5, 10, 50, 25]);
+				// globalCompositeOperation is restored to its previous value afterwards.
+				expect((rCtx.ctx as unknown as Record<string, string>).globalCompositeOperation).toBe(
+					'source-over',
+				);
+			});
+
+			it('does not decode a source bitmap for PATCOPY even when one is present', () => {
+				const rCtx = makeRCtx();
+				rCtx.state.brushColor = '#123456';
+				rCtx.state.brushStyle = 0; // BS_SOLID
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 16, 0, true);
+				rCtx.view.setInt32(dataOff + 20, 0, true);
+				rCtx.view.setInt32(dataOff + 24, 10, true);
+				rCtx.view.setInt32(dataOff + 28, 10, true);
+				rCtx.view.setUint32(dataOff + 32, 0x00f00021, true); // PATCOPY
+				// A (bogus but present) source bitmap descriptor - GDI ignores it for PATCOPY.
+				rCtx.view.setUint32(dataOff + 76, 200, true); // offBmiSrc
+				rCtx.view.setUint32(dataOff + 80, 40, true); // cbBmiSrc
+				rCtx.view.setUint32(dataOff + 84, 240, true); // offBitsSrc
+				rCtx.view.setUint32(dataOff + 88, 4, true); // cbBitsSrc
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_BITBLT, 0, dataOff, 96);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillRect).toHaveBeenCalledOnce();
+				expect(ctx.drawImage).not.toHaveBeenCalled();
+			});
 		});
 
 		// -----------------------------------------------------------------------
@@ -259,6 +426,20 @@ describe('emf-gdi-draw-text-bitmap', () => {
 				rCtx.view.setUint32(dataOff + 40, 0, true); // offBmiSrc = 0
 
 				expect(handleEmfGdiTextBitmapRecord(rCtx, EMR_STRETCHDIBITS, 0, dataOff, 80)).toBeTruthy();
+			});
+
+			it('honours the record ROP field for BLACKNESS, ignoring any source bitmap', () => {
+				const rCtx = makeRCtx();
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 16, 10, true); // dstX
+				rCtx.view.setInt32(dataOff + 20, 20, true); // dstY
+				rCtx.view.setUint32(dataOff + 60, 0x00000042, true); // dwRop: BLACKNESS
+				rCtx.view.setInt32(dataOff + 64, 100, true); // cxDest
+				rCtx.view.setInt32(dataOff + 68, 50, true); // cyDest
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_STRETCHDIBITS, 0, dataOff, 80);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillRect.mock.calls[0]).toEqual([5, 10, 50, 25]);
 			});
 		});
 

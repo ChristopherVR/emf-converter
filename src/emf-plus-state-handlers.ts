@@ -40,13 +40,9 @@ import {
 	EMFPLUS_OFFSETCLIP,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
+import { createBrushGradient } from './emf-plus-brush-gradient';
 import { emfPlusPathToClipCmds } from './emf-plus-path';
-import type {
-	EmfPlusGradient,
-	EmfPlusRegionNode,
-	EmfPlusReplayCtx,
-	TransformMatrix,
-} from './emf-types';
+import type { EmfPlusRegionNode, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
 // ---------------------------------------------------------------------------
 // Shared utilities
@@ -81,56 +77,25 @@ export function resolveBrushColor(
 }
 
 /**
- * Build a CanvasGradient from a parsed EMF+ gradient descriptor. Returns
- * null when the context lacks gradient support (e.g. test stubs) or the
- * geometry is degenerate, in which case callers fall back to the flat colour.
- */
-function createBrushGradient(rCtx: EmfPlusReplayCtx, grad: EmfPlusGradient): CanvasGradient | null {
-	const ctx = rCtx.ctx;
-	try {
-		let g: CanvasGradient | null = null;
-		if (grad.type === 'linear' && typeof ctx.createLinearGradient === 'function') {
-			if (grad.x1 === grad.x2 && grad.y1 === grad.y2) {
-				return null;
-			}
-			g = ctx.createLinearGradient(grad.x1, grad.y1, grad.x2, grad.y2);
-		} else if (grad.type === 'radial' && typeof ctx.createRadialGradient === 'function') {
-			if (!(grad.r > 0)) {
-				return null;
-			}
-			g = ctx.createRadialGradient(grad.cx, grad.cy, 0, grad.cx, grad.cy, grad.r);
-		}
-		if (!g) {
-			return null;
-		}
-		for (const stop of grad.stops) {
-			g.addColorStop(stop.offset, stop.color);
-		}
-		return g;
-	} catch {
-		return null;
-	}
-}
-
-/**
  * Resolve a brush to a canvas paint style: an inline ARGB colour, a solid
- * brush colour, or a CanvasGradient for linear/path gradient brushes.
- * Gradient geometry is defined in brush (world) space, the same space fills
- * execute in after {@link applyPlusWorldTransform}, so the gradient can be
- * assigned directly to `fillStyle`.
+ * brush colour, or a CanvasGradient/CanvasPattern for linear/path gradient
+ * brushes (see `emf-plus-brush-gradient.ts`). Gradient geometry is defined
+ * in brush (world) space, the same space fills execute in after
+ * {@link applyPlusWorldTransform}, so the result can be assigned directly
+ * to `fillStyle`.
  */
 export function resolveBrushPaint(
 	rCtx: EmfPlusReplayCtx,
 	flags: number,
 	brushIdOrColor: number,
-): string | CanvasGradient {
+): string | CanvasGradient | CanvasPattern {
 	if (flags & 0x8000) {
 		return argbToRgba(brushIdOrColor);
 	}
 	const obj = rCtx.objectTable.get(brushIdOrColor & 0xff);
 	if (obj && obj.kind === 'plus-brush') {
 		if (obj.gradient) {
-			const g = createBrushGradient(rCtx, obj.gradient);
+			const g = createBrushGradient(rCtx.ctx, obj.gradient);
 			if (g) {
 				return g;
 			}

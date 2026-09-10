@@ -399,23 +399,24 @@ describe('wmf-replay', () => {
 				const view = buildWmf(header, [
 					{
 						type: META_CREATEFONTINDIRECT,
-						dataSize: 20,
+						dataSize: 24,
 						writer: (v, d) => {
-							v.setInt16(d, -16, true); // height (negative = use absolute)
+							v.setInt16(d, -16, true); // height (negative = character height)
 							v.setInt16(d + 2, 0, true); // width
-							v.setInt16(d + 4, 0, true); // escapement
+							v.setInt16(d + 4, 450, true); // escapement: 45.0 degrees
 							v.setInt16(d + 6, 0, true); // orientation
 							v.setInt16(d + 8, 700, true); // weight = bold
 							v.setUint8(d + 10, 1); // italic = true
 							v.setUint8(d + 11, 0); // underline
 							v.setUint8(d + 12, 0); // strikeout
 							v.setUint8(d + 13, 1); // charset
-							// family name starting at offset 14
+							// lfOutPrecision..lfPitchAndFamily occupy offsets 14-17;
+							// lfFaceName (ANSI) starts at offset 18.
 							const name = 'Times';
 							for (let i = 0; i < name.length; i++) {
-								v.setUint8(d + 14 + i, name.charCodeAt(i));
+								v.setUint8(d + 18 + i, name.charCodeAt(i));
 							}
-							v.setUint8(d + 14 + name.length, 0); // null terminator
+							v.setUint8(d + 18 + name.length, 0); // null terminator
 						},
 					},
 					{

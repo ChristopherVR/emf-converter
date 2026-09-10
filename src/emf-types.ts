@@ -83,7 +83,13 @@ export interface GdiBrush {
  */
 export interface GdiFont {
 	kind: 'font';
-	/** Font height in logical units (always stored as absolute value). */
+	/**
+	 * Signed LOGFONT `lfHeight`, in logical units. Negative means "character
+	 * height" (matches directly against the font's em size); positive means
+	 * "cell height" (ascent + descent + internal leading). See
+	 * `resolveFontPixelHeight` in `emf-gdi-text-layout.ts` for how the sign
+	 * is resolved to a CSS pixel size.
+	 */
 	height: number;
 	/** Font weight (400 = normal, 700 = bold). */
 	weight: number;
@@ -95,6 +101,12 @@ export interface GdiFont {
 	strikeOut: boolean;
 	/** Font family name (e.g. `"Arial"`, `"sans-serif"`). */
 	family: string;
+	/**
+	 * LOGFONT `lfEscapement`: angle, in tenths of a degree, between the text
+	 * baseline and the device x-axis (GDI documents this as measured
+	 * counterclockwise). Defaults to 0 (no rotation) when absent.
+	 */
+	escapementTenthDeg?: number;
 }
 
 /**
@@ -131,7 +143,10 @@ export interface DrawState {
 	bkColor: string;
 	/** Background mode: 1 = TRANSPARENT, 2 = OPAQUE. */
 	bkMode: number;
-	/** Current font height in logical units. */
+	/**
+	 * Current signed LOGFONT `lfHeight`, in logical units. See
+	 * {@link GdiFont.height} for the sign convention.
+	 */
 	fontHeight: number;
 	/** Current font weight (400 = normal, 700 = bold). */
 	fontWeight: number;
@@ -143,6 +158,8 @@ export interface DrawState {
 	fontUnderline: boolean;
 	/** Whether the current font is struck out. */
 	fontStrikeOut: boolean;
+	/** Current LOGFONT `lfEscapement`, in tenths of a degree. See {@link GdiFont.escapementTenthDeg}. */
+	fontEscapementTenthDeg: number;
 	/**
 	 * Optional map from lowercased Windows face name to a CSS font family that
 	 * is available in the rendering environment (e.g. `{ calibri: 'Carlito' }`).
@@ -182,12 +199,15 @@ export function defaultState(): DrawState {
 		textColor: '#000000',
 		bkColor: '#ffffff',
 		bkMode: 1,
-		fontHeight: 12,
+		// Negative (character-height convention) so the no-font-selected default
+		// resolves to exactly 12px, matching this library's historical fallback.
+		fontHeight: -12,
 		fontWeight: 400,
 		fontItalic: false,
 		fontFamily: 'sans-serif',
 		fontUnderline: false,
 		fontStrikeOut: false,
+		fontEscapementTenthDeg: 0,
 		rop2: 13,
 		curX: 0,
 		curY: 0,
@@ -252,6 +272,17 @@ export interface EmfPlusGradientStop {
 	color: string;
 }
 
+/**
+ * GDI+ WrapMode (MS-EMFPLUS 2.1.1.42), read from a gradient brush's
+ * BrushDataFlags-adjacent WrapMode field. Determines how the brush paints
+ * beyond the area its own geometry defines:
+ * - `'clamp'`: extend the end colours indefinitely (Canvas 2D's native
+ *   gradient behaviour outside its 0..1 stop range - no extra work needed).
+ * - `'tile'` / `'tile-flip-x'` / `'tile-flip-y'` / `'tile-flip-xy'`: repeat
+ *   the gradient, optionally mirroring alternate copies on one or both axes.
+ */
+export type EmfPlusGradientWrapMode = 'tile' | 'tile-flip-x' | 'tile-flip-y' | 'tile-flip-xy' | 'clamp';
+
 /** Geometry + colour stops of a GDI+ linear gradient brush. */
 export interface EmfPlusLinearGradient {
 	type: 'linear';
@@ -263,6 +294,14 @@ export interface EmfPlusLinearGradient {
 	y2: number;
 	/** Colour stops ordered by offset (0 = start colour, 1 = end colour). */
 	stops: EmfPlusGradientStop[];
+	/**
+	 * How the brush paints beyond its `(x1,y1)`-`(x2,y2)` segment. Applied as
+	 * a repeating `CanvasPattern` for an axis-aligned gradient (see
+	 * `createBrushGradient` in emf-plus-state-handlers.ts); an angled
+	 * gradient with a non-`'clamp'` wrap mode falls back to the plain
+	 * clamped `CanvasGradient` (documented, not implemented).
+	 */
+	wrapMode: EmfPlusGradientWrapMode;
 }
 
 /**
@@ -278,6 +317,14 @@ export interface EmfPlusRadialGradient {
 	r: number;
 	/** Colour stops ordered by offset (0 = centre colour, 1 = boundary colour). */
 	stops: EmfPlusGradientStop[];
+	/**
+	 * How the brush paints beyond its boundary path, parsed from the record
+	 * but not yet applied: a path gradient's boundary is approximated as a
+	 * bounding circle (see {@link EmfPlusRadialGradient}), and repeating a
+	 * non-circular tiled pattern across that approximation is not
+	 * implemented. Kept for completeness and to document the gap honestly.
+	 */
+	wrapMode: EmfPlusGradientWrapMode;
 }
 
 /** Union of the gradient descriptors an EMF+ brush can carry. */
