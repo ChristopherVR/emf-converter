@@ -18,6 +18,21 @@ Windows Metafiles store a sequence of GDI drawing commands and are commonly embe
 
 ---
 
+## Breaking change: `convertEmfToDataUrl` / `convertWmfToDataUrl` removed
+
+Versions before 3.0.0 exported two functions, `convertEmfToDataUrl(buffer, options?)` and `convertWmfToDataUrl(buffer, options?)`. They have been replaced by a single auto-detecting function:
+
+```diff
+-import { convertEmfToDataUrl, convertWmfToDataUrl } from 'emf-converter';
+-const emfPng = await convertEmfToDataUrl(emfBuffer);
+-const wmfPng = await convertWmfToDataUrl(wmfBuffer);
++import { convertMetafileToDataUrl } from 'emf-converter';
++const emfPng = await convertMetafileToDataUrl(emfBuffer);
++const wmfPng = await convertMetafileToDataUrl(wmfBuffer);
+```
+
+`convertMetafileToDataUrl` detects the format from the buffer itself, so the same call works for either. See "Quick start" below.
+
 ## Demo
 
 Try it right in your browser: drop in an `.emf` or `.wmf` file and see the rendered PNG, conversion time, and output size:
