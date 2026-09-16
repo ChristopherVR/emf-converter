@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [2.0.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v2.0.3) - 2026-09-16
+
+### Chores
+
+- **deps-dev:** Bump vitest from 4.1.11 to 5.0.0 ([036c06a](https://github.com/ChristopherVR/emf-converter/commit/036c06ae498ff40f3fffc32cd8f9bd53c497e17b))
+- **deps-dev:** Update lockfile for vitest 5.0.0 ([62dc37b](https://github.com/ChristopherVR/emf-converter/commit/62dc37b55325205927ea9c1938ee335f4d2b9f55))
+
 ## [2.0.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v2.0.2) - 2026-07-27
 
 ### Bug Fixes
