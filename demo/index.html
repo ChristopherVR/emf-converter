@@ -3,10 +3,10 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>emf-converter — EMF/WMF → PNG in the browser</title>
+		<title>emf-converter: EMF/WMF → PNG in the browser</title>
 		<meta
 			name="description"
-			content="A zero-dependency TypeScript library that converts EMF and WMF metafile binaries into PNG data URLs using Canvas. Try the interactive demo."
+			content="A zero-dependency TypeScript library that converts EMF and WMF metafile binaries into PNG data URLs using Canvas, in the browser or Node.js. Try the interactive demo."
 		/>
 		<style>
 			:root {
@@ -44,17 +44,17 @@
 				padding: 0 20px;
 			}
 			header.hero {
-				padding: 64px 0 40px;
+				padding: 64px 0 32px;
 				border-bottom: 1px solid var(--border);
 				background: radial-gradient(
 					900px 400px at 50% -120px,
-					rgba(88, 166, 255, 0.18),
+					rgba(88, 166, 255, 0.16),
 					transparent
 				);
 			}
 			.hero h1 {
 				font-size: clamp(2rem, 5vw, 3rem);
-				margin: 0 0 8px;
+				margin: 0 0 10px;
 				letter-spacing: -0.02em;
 			}
 			.hero .tag {
@@ -78,6 +78,37 @@
 				font-size: 0.85rem;
 				font-family: var(--mono);
 			}
+			.badge.accent {
+				border-color: rgba(126, 231, 135, 0.45);
+				color: var(--accent-2);
+			}
+			a.badge:hover {
+				border-color: var(--accent);
+				color: var(--text);
+			}
+			.tape {
+				margin-top: 24px;
+				padding: 10px 14px;
+				border-top: 1px solid var(--border);
+				border-bottom: 1px solid var(--border);
+				display: flex;
+				flex-wrap: wrap;
+				align-items: center;
+				gap: 5px 6px;
+				font-family: var(--mono);
+				font-size: 0.78rem;
+			}
+			.tape .label {
+				color: var(--muted);
+				margin-right: 4px;
+			}
+			.tape b {
+				color: var(--accent-2);
+				font-weight: 500;
+			}
+			.tape .arrow {
+				color: #465063;
+			}
 			section {
 				padding: 40px 0;
 				border-bottom: 1px solid var(--border);
@@ -88,11 +119,13 @@
 				letter-spacing: -0.01em;
 			}
 			h3 {
-				font-size: 1rem;
-				color: var(--muted);
-				margin: 24px 0 8px;
-				text-transform: uppercase;
-				letter-spacing: 0.06em;
+				font-size: 1.05rem;
+				color: var(--text);
+				font-weight: 600;
+				margin: 28px 0 10px;
+			}
+			h3:first-of-type {
+				margin-top: 22px;
 			}
 			p {
 				color: var(--text);
@@ -114,6 +147,8 @@
 				font-family: var(--mono);
 			}
 			.fmt span {
+				display: block;
+				margin-top: 4px;
 				color: var(--muted);
 				font-size: 0.9rem;
 			}
@@ -271,17 +306,41 @@
 				font-family: var(--mono);
 				word-break: break-word;
 			}
+			ul.caps,
 			ul.lims {
-				color: var(--muted);
 				padding-left: 20px;
+				margin: 0;
 			}
+			ul.caps li,
 			ul.lims li {
-				margin: 6px 0;
+				margin: 8px 0;
+				color: var(--muted);
+			}
+			ul.caps li strong,
+			ul.lims li strong {
+				color: var(--text);
+			}
+			ul.caps li::marker {
+				color: var(--accent-2);
+			}
+			ul.lims li::marker {
+				color: var(--danger);
 			}
 			footer {
-				padding: 32px 0 56px;
+				padding: 28px 0 56px;
+			}
+			footer .wrap {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				flex-wrap: wrap;
+				gap: 10px;
 				color: var(--muted);
 				font-size: 0.88rem;
+			}
+			footer .links {
+				display: flex;
+				gap: 16px;
 			}
 		</style>
 	</head>
@@ -293,13 +352,15 @@
 					A zero-dependency TypeScript library that converts
 					<strong>EMF</strong> (Enhanced Metafile) and
 					<strong>WMF</strong> (Windows Metafile) binaries into
-					<strong>PNG data URLs</strong> — entirely in the browser, by
-					replaying their GDI/GDI+ drawing records onto a Canvas.
+					<strong>PNG data URLs</strong>, replaying their GDI and GDI+
+					drawing records onto a Canvas, entirely in the browser.
 				</p>
 				<div class="badges">
 					<span class="badge">zero dependencies</span>
-					<span class="badge">Canvas 2D</span>
-					<span class="badge">EMF · EMF+ · WMF</span>
+					<span class="badge">EMF</span>
+					<span class="badge">EMF+</span>
+					<span class="badge">WMF</span>
+					<span class="badge accent">Node.js (optional)</span>
 					<span class="badge">Apache-2.0</span>
 				</div>
 				<div class="badges">
@@ -311,6 +372,18 @@
 					>
 					<a class="badge" href="#demo">Jump to demo ↓</a>
 				</div>
+				<div class="tape" aria-hidden="true">
+					<span class="label">replays record streams like</span>
+					<b>EMR_HEADER</b>
+					<span class="arrow">→</span>
+					<b>EMR_SETWORLDTRANSFORM</b>
+					<span class="arrow">→</span>
+					<b>EMR_SELECTOBJECT</b>
+					<span class="arrow">→</span>
+					<b>EMR_STRETCHDIBITS</b>
+					<span class="arrow">→</span>
+					<b>EMR_EOF</b>
+				</div>
 			</div>
 		</header>
 
@@ -319,27 +392,44 @@
 				<h2>Install</h2>
 				<pre><code>npm install emf-converter</code></pre>
 				<p>
-					No runtime dependencies. Requires a Canvas API —
-					<code class="inline">OffscreenCanvas</code> (Web Workers) or
-					<code class="inline">HTMLCanvasElement</code>.
+					No required dependencies. In a browser or Web Worker,
+					<code class="inline">OffscreenCanvas</code> or
+					<code class="inline">HTMLCanvasElement</code> is picked up
+					automatically.
+				</p>
+
+				<h3>Node.js</h3>
+				<p>
+					Plain Node.js has neither of those, so install the optional
+					<a href="https://www.npmjs.com/package/@napi-rs/canvas"
+						><code class="inline">@napi-rs/canvas</code></a
+					>
+					package and conversion uses it instead:
+				</p>
+				<pre><code>npm install @napi-rs/canvas</code></pre>
+				<p>
+					It's a prebuilt, Skia-based native module, no
+					<code class="inline">node-gyp</code> build step. Skip it and a
+					call in plain Node.js resolves to <code class="inline">null</code>
+					instead of throwing.
 				</p>
 
 				<h3>Usage</h3>
-				<pre><code><span class="tok-key">import</span> { convertEmfToDataUrl, convertWmfToDataUrl } <span class="tok-key">from</span> <span class="tok-str">'emf-converter'</span>;
+				<pre><code><span class="tok-key">import</span> { convertMetafileToDataUrl } <span class="tok-key">from</span> <span class="tok-str">'emf-converter'</span>;
 
 <span class="tok-com">// `buffer` is an ArrayBuffer loaded from a file, fetch(), or an Office doc.</span>
-<span class="tok-key">const</span> pngDataUrl = <span class="tok-key">await</span> <span class="tok-fn">convertEmfToDataUrl</span>(buffer);
-<span class="tok-com">// => "data:image/png;base64,iVBORw0KGgo…"  (or null on failure)</span>
+<span class="tok-key">const</span> pngDataUrl = <span class="tok-key">await</span> <span class="tok-fn">convertMetafileToDataUrl</span>(buffer);
+<span class="tok-com">// => "data:image/png;base64,iVBORw0KGgo..."  (or null on failure)</span>
 
-<span class="tok-key">const</span> wmfPng = <span class="tok-key">await</span> <span class="tok-fn">convertWmfToDataUrl</span>(wmfBuffer);
+<span class="tok-com">// Works the same for WMF; the format is detected from the bytes.</span>
+<span class="tok-key">const</span> wmfPng = <span class="tok-key">await</span> <span class="tok-fn">convertMetafileToDataUrl</span>(wmfBuffer);
 
 <span class="tok-com">// Optional: clamp output dimensions (aspect ratio preserved).</span>
-<span class="tok-key">const</span> scaled = <span class="tok-key">await</span> <span class="tok-fn">convertEmfToDataUrl</span>(buffer, <span class="tok-str">1024</span>, <span class="tok-str">768</span>);</code></pre>
+<span class="tok-key">const</span> scaled = <span class="tok-key">await</span> <span class="tok-fn">convertMetafileToDataUrl</span>(buffer, { maxWidth: <span class="tok-str">1024</span>, maxHeight: <span class="tok-str">768</span> });</code></pre>
 				<p>
-					Both functions are <code class="inline">async</code> and return
-					<code class="inline">Promise&lt;string | null&gt;</code> — the PNG
-					data URL, or <code class="inline">null</code> when the buffer is
-					invalid or no Canvas API is available.
+					Returns <code class="inline">Promise&lt;string | null&gt;</code>,
+					the PNG data URL, or <code class="inline">null</code> when the
+					buffer is invalid or no Canvas backend is available.
 				</p>
 			</div>
 		</section>
@@ -348,17 +438,17 @@
 			<div class="wrap">
 				<h2>Interactive demo</h2>
 				<p>
-					Everything below runs <strong>client-side in your browser</strong> —
+					Everything below runs <strong>client-side in your browser</strong>:
 					no upload, no server. Pick or drop an
 					<code class="inline">.emf</code> or
-					<code class="inline">.wmf</code> file and it is converted to a PNG
+					<code class="inline">.wmf</code> file and it's converted to a PNG
 					on the spot.
 				</p>
 				<div class="demo-grid">
 					<div>
 						<label class="drop-zone" id="drop-zone" for="file-input">
 							<strong>Drop a file here</strong>
-							<span>or click to browse — .emf / .wmf</span>
+							<span>or click to browse, .emf / .wmf</span>
 							<input
 								type="file"
 								id="file-input"
@@ -381,17 +471,16 @@
 						</div>
 						<dl class="meta" id="meta-panel" hidden>
 							<dt>File</dt>
-							<dd id="meta-name">—</dd>
+							<dd id="meta-name">–</dd>
 							<dt>Size</dt>
-							<dd id="meta-size">—</dd>
+							<dd id="meta-size">–</dd>
 							<dt>Convert time</dt>
-							<dd id="meta-time">—</dd>
+							<dd id="meta-time">–</dd>
 							<dt>Data-URL length</dt>
-							<dd id="meta-url-len">—</dd>
+							<dd id="meta-url-len">–</dd>
 						</dl>
 					</div>
 				</div>
-				<!-- screenshots: add images to demo/assets/ and reference them here -->
 			</div>
 		</section>
 
@@ -399,29 +488,62 @@
 			<div class="wrap">
 				<h2>How it works</h2>
 				<p>
-					A three-phase pipeline: <strong>parse → replay → export</strong>.
-					The header parser extracts the drawing bounds, a Canvas is created
-					(clamped to 4096×4096), then records are scanned sequentially and
-					dispatched to GDI, EMF+, or WMF handlers that drive the Canvas 2D
-					context. Embedded bitmaps (DIB and GDI+ pixel formats) and
-					recursively embedded metafiles are resolved asynchronously after the
-					synchronous replay completes, then the canvas is exported as a
+					A three-phase pipeline: <strong>parse, replay, export</strong>.
+					The header parser reads the drawing bounds, a Canvas is created
+					and capped at 8192×8192 pixels (raise it with
+					<code class="inline">maxCanvasDimension</code>), then records are
+					scanned in order and dispatched to GDI, EMF+, or WMF handlers
+					that drive the Canvas 2D context. Embedded bitmaps (DIB and GDI+
+					pixel formats) and recursively embedded metafiles resolve
+					asynchronously once the synchronous replay finishes, then the
+					canvas is exported as a
 					<code class="inline">data:image/png;base64,…</code> URL.
 				</p>
 				<div class="formats">
 					<div class="fmt">
-						<b>WMF</b><br />
-						<span>Windows Metafile (16-bit) — window/viewport mapping.</span>
+						<b>WMF</b>
+						<span>Windows Metafile (16-bit), window/viewport mapping.</span>
 					</div>
 					<div class="fmt">
-						<b>EMF</b><br />
-						<span>Enhanced Metafile (32-bit GDI) — bounds-based scaling.</span>
+						<b>EMF</b>
+						<span>Enhanced Metafile (32-bit GDI), bounds-based scaling.</span>
 					</div>
 					<div class="fmt">
-						<b>EMF+</b><br />
-						<span>GDI+ extension embedded in EMF — world transform matrix.</span>
+						<b>EMF+</b>
+						<span>GDI+ extension embedded in EMF, world transform matrix.</span>
 					</div>
 				</div>
+
+				<h3>Capabilities</h3>
+				<ul class="caps">
+					<li>
+						<strong>Full clip combine modes.</strong> Intersect, Union, Xor,
+						Exclude, Complement, and Replace all work, for classic GDI
+						region ops and for EMF+ clip records with nested region-node
+						trees.
+					</li>
+					<li>
+						<strong>Gradient brushes.</strong> GDI+ linear gradients render
+						as real Canvas linear gradients with their full colour-stop
+						list; path gradients render as radial gradients.
+					</li>
+					<li>
+						<strong>Raster operations (ROP2).</strong> Every
+						<code class="inline">SetROP2</code> mode is mapped: six map to
+						pixel-exact Canvas compositing, the rest use the closest
+						arithmetic approximation.
+					</li>
+					<li>
+						<strong>World transforms.</strong> EMF+ affine transforms are
+						fully supported; GDI world-transform scale and translation are
+						applied to every drawing record.
+					</li>
+					<li>
+						<strong>300+ EMF record types</strong>, the full EMF+ (GDI+)
+						record set, and legacy WMF records: state, objects, shapes,
+						paths, text, bitmaps, and clipping.
+					</li>
+				</ul>
 			</div>
 		</section>
 
@@ -430,29 +552,45 @@
 				<h2>Limitations</h2>
 				<ul class="lims">
 					<li>
-						<strong>EMF+ region objects</strong> are not parsed (no Canvas 2D
-						equivalent for boolean region clipping).
+						<strong>Region-op edge cases are approximated.</strong> All six
+						combine modes are exact while the tracked clip is one
+						composable shape, the common case. A clip that's already an
+						intersection of several shapes, or was set from a live path
+						bracket, falls back to the nearest conservative
+						approximation.
 					</li>
 					<li>
-						<strong>Gradient brushes are simplified</strong> — GDI+
-						linear/path gradients use the primary colour only.
+						<strong>Bitwise ROP2 modes are arithmetic approximations.</strong>
+						Canvas compositing can't reproduce true bitwise AND/OR/XOR
+						against the destination, so those modes use
+						<code class="inline">darken</code> /
+						<code class="inline">lighten</code> /
+						<code class="inline">difference</code> stand-ins.
 					</li>
 					<li>
-						<strong>No raster operations (ROP)</strong> —
-						<code class="inline">SetROP2</code> blend modes are not applied.
+						<strong>Gradient details.</strong> Wrap/tile modes clamp
+						instead of tiling, path gradients approximate the true
+						boundary-shaped falloff, and texture (image) brushes fall
+						back to solid black.
 					</li>
 					<li>
-						<strong>Limited clipping</strong> — single rect/path clipping is
-						supported; combined regions are not.
+						<strong>GDI rotation/skew is ignored.</strong> Rotation and
+						shear components of the plain-GDI world transform are dropped
+						(EMF+ transforms are unaffected); rotated GDI world transforms
+						are rare in practice.
 					</li>
 					<li>
-						<strong>Safety limits</strong> — output is clamped to 4096×4096;
-						processing stops after 50,000 records (EMF/WMF) or 100,000
-						(EMF+).
+						<strong>Safety limits.</strong> Output is clamped to 8192×8192
+						and replay stops after 200,000 records (EMF/WMF) or 500,000
+						(EMF+), all overridable via
+						<code class="inline">maxCanvasDimension</code> /
+						<code class="inline">maxRecords</code>.
 					</li>
 					<li>
-						<strong>Font rendering</strong> uses the browser's font engine, so
-						glyph metrics may differ from Windows GDI.
+						<strong>Font rendering</strong> uses the host Canvas font
+						engine, so glyph metrics may differ from Windows GDI. Supply
+						<code class="inline">fontFamilyMap</code> to remap Windows face
+						names to fonts available in your environment.
 					</li>
 				</ul>
 			</div>
@@ -460,9 +598,11 @@
 
 		<footer>
 			<div class="wrap">
-				emf-converter — Apache-2.0 ·
-				<a href="https://www.npmjs.com/package/emf-converter">npm</a> ·
-				<a href="https://github.com/ChristopherVR/emf-converter">source</a>
+				<span>emf-converter, Apache-2.0 licensed</span>
+				<span class="links">
+					<a href="https://www.npmjs.com/package/emf-converter">npm</a>
+					<a href="https://github.com/ChristopherVR/emf-converter">source</a>
+				</span>
 			</div>
 		</footer>
 

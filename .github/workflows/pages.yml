@@ -32,7 +32,11 @@ jobs:
         run: bun install
 
       - name: Bundle demo into site/
-        run: bun build demo/main.ts --outdir site --target browser --minify
+        # --external keeps the optional @napi-rs/canvas Node.js backend out of the
+        # browser bundle; it's only ever reached via a runtime dynamic import() in
+        # plain Node.js, and bun's bundler otherwise tries to inline its native
+        # .node binding and fails with a browser target.
+        run: bun build demo/main.ts --outdir site --target browser --minify --external @napi-rs/canvas
 
       - name: Copy static assets
         run: |
