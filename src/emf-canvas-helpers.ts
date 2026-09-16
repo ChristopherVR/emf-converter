@@ -22,7 +22,65 @@ import {
 	R2_XORPEN,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
-import type { CanvasContext, DrawState, GdiObject } from './emf-types';
+import type { AnyCanvas, CanvasContext, DrawState, GdiObject } from './emf-types';
+
+// ---------------------------------------------------------------------------
+// Node.js canvas backend (optional @napi-rs/canvas)
+// ---------------------------------------------------------------------------
+
+/**
+ * The dynamic-import shape of the optional `@napi-rs/canvas` package. Only
+ * referenced via `import type`, so it never pulls the package in at runtime;
+ * loading happens exclusively through the `import()` in {@link ensureNodeCanvasModule}.
+ */
+type NodeCanvasModule = typeof import('@napi-rs/canvas');
+
+/**
+ * Memoized result of attempting to load `@napi-rs/canvas`. `undefined` means
+ * "not yet attempted"; `null` means "attempted (or skipped) and unavailable".
+ */
+let nodeCanvasModule: NodeCanvasModule | null | undefined;
+
+/**
+ * Attempts to dynamically import `@napi-rs/canvas`, caching the outcome
+ * (including failure) so the attempt is made at most once per process.
+ *
+ * Skips the attempt entirely when a browser/worker canvas API is present
+ * (`OffscreenCanvas` or `document`), since the Node backend is only needed
+ * as a last resort in plain Node.js with no DOM and no Worker.
+ *
+ * Must be awaited once, before any synchronous replay work begins, so that
+ * the synchronous {@link createCanvas} / {@link createTempCanvas} calls made
+ * deep inside record replay can consult the already-resolved cache.
+ */
+export async function ensureNodeCanvasModule(): Promise<NodeCanvasModule | null> {
+	if (nodeCanvasModule !== undefined) {
+		return nodeCanvasModule;
+	}
+	if (typeof OffscreenCanvas !== 'undefined' || typeof document !== 'undefined') {
+		nodeCanvasModule = null;
+		return nodeCanvasModule;
+	}
+	if (typeof process === 'undefined' || !process.versions?.node) {
+		nodeCanvasModule = null;
+		return nodeCanvasModule;
+	}
+	try {
+		nodeCanvasModule = await import('@napi-rs/canvas');
+	} catch {
+		emfWarn(
+			'createCanvas: no OffscreenCanvas/document and @napi-rs/canvas is not installed. ' +
+				'Install it (`npm install @napi-rs/canvas`) to enable EMF/WMF conversion in plain Node.js.',
+		);
+		nodeCanvasModule = null;
+	}
+	return nodeCanvasModule;
+}
+
+/** True once {@link ensureNodeCanvasModule} has resolved to a usable module. */
+export function isNodeCanvasBackendReady(): boolean {
+	return !!nodeCanvasModule;
+}
 
 // ---------------------------------------------------------------------------
 // Canvas setup
@@ -43,7 +101,7 @@ export function createCanvas(
 	dpiScale: number = DEFAULT_DPI_SCALE,
 	maxCanvasDimension: number = MAX_CANVAS_DIMENSION,
 ): {
-	canvas: OffscreenCanvas | HTMLCanvasElement;
+	canvas: AnyCanvas;
 	ctx: CanvasContext;
 	scaleX: number;
 	scaleY: number;
@@ -94,23 +152,38 @@ export function createCanvas(
 			return { canvas, ctx, scaleX, scaleY };
 		}
 
-		if (typeof document === 'undefined') {
-			emfWarn('createCanvas: no OffscreenCanvas and no document — cannot create canvas');
-			return null;
+		if (typeof document !== 'undefined') {
+			emfLog(
+				`createCanvas: using HTMLCanvasElement ${w}×${h}, scale=(${scaleX.toFixed(3)},${scaleY.toFixed(3)})`,
+			);
+			const canvas = document.createElement('canvas');
+			canvas.width = w;
+			canvas.height = h;
+			const ctx = canvas.getContext('2d');
+			if (!ctx) {
+				emfWarn('createCanvas: HTMLCanvasElement.getContext("2d") returned null');
+				return null;
+			}
+			return { canvas, ctx, scaleX, scaleY };
 		}
 
-		emfLog(
-			`createCanvas: using HTMLCanvasElement ${w}×${h}, scale=(${scaleX.toFixed(3)},${scaleY.toFixed(3)})`,
-		);
-		const canvas = document.createElement('canvas');
-		canvas.width = w;
-		canvas.height = h;
-		const ctx = canvas.getContext('2d');
-		if (!ctx) {
-			emfWarn('createCanvas: HTMLCanvasElement.getContext("2d") returned null');
-			return null;
+		if (nodeCanvasModule) {
+			emfLog(
+				`createCanvas: using @napi-rs/canvas ${w}×${h}, scale=(${scaleX.toFixed(3)},${scaleY.toFixed(3)})`,
+			);
+			const canvas = nodeCanvasModule.createCanvas(w, h);
+			const ctx = canvas.getContext('2d');
+			if (!ctx) {
+				emfWarn('createCanvas: @napi-rs/canvas getContext("2d") returned null');
+				return null;
+			}
+			return { canvas, ctx, scaleX, scaleY };
 		}
-		return { canvas, ctx, scaleX, scaleY };
+
+		emfWarn(
+			'createCanvas: no OffscreenCanvas, no document, and no @napi-rs/canvas, cannot create canvas',
+		);
+		return null;
 	} catch (err) {
 		emfWarn('createCanvas: exception:', err);
 		return null;
@@ -121,7 +194,7 @@ export function createTempCanvas(
 	width: number,
 	height: number,
 ): {
-	canvas: OffscreenCanvas | HTMLCanvasElement;
+	canvas: AnyCanvas;
 	ctx: CanvasContext;
 } | null {
 	if (width <= 0 || height <= 0) {
@@ -141,6 +214,14 @@ export function createTempCanvas(
 		const canvas = document.createElement('canvas');
 		canvas.width = width;
 		canvas.height = height;
+		const ctx = canvas.getContext('2d');
+		if (!ctx) {
+			return null;
+		}
+		return { canvas, ctx };
+	}
+	if (nodeCanvasModule) {
+		const canvas = nodeCanvasModule.createCanvas(width, height);
 		const ctx = canvas.getContext('2d');
 		if (!ctx) {
 			return null;
@@ -522,9 +603,7 @@ export async function blobToDataUrl(blob: Blob): Promise<string> {
 	});
 }
 
-export async function exportCanvasToPngDataUrl(
-	canvas: OffscreenCanvas | HTMLCanvasElement,
-): Promise<string | null> {
+export async function exportCanvasToPngDataUrl(canvas: AnyCanvas): Promise<string | null> {
 	if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
 		emfLog(
 			`exportCanvasToPngDataUrl: using OffscreenCanvas.convertToBlob (${canvas.width}×${canvas.height})`,
@@ -541,6 +620,84 @@ export async function exportCanvasToPngDataUrl(
 		return canvas.toDataURL('image/png');
 	}
 
-	emfWarn('exportCanvasToPngDataUrl: no canvas type matched — returning null');
+	if (nodeCanvasModule && canvas instanceof nodeCanvasModule.Canvas) {
+		emfLog(
+			`exportCanvasToPngDataUrl: using @napi-rs/canvas toDataURLAsync (${canvas.width}×${canvas.height})`,
+		);
+		return canvas.toDataURLAsync();
+	}
+
+	emfWarn('exportCanvasToPngDataUrl: no canvas type matched, returning null');
 	return null;
+}
+
+// ---------------------------------------------------------------------------
+// Deferred-image decoding (browser createImageBitmap, or Node @napi-rs/canvas)
+// ---------------------------------------------------------------------------
+
+/** A decoded, drawable image ready to hand to `ctx.drawImage`. */
+export type DecodedDrawable = ImageBitmap | InstanceType<NodeCanvasModule['Image']>;
+
+/**
+ * Decodes raw image bytes (PNG/BMP/etc.) into something `ctx.drawImage` can
+ * consume, using whichever canvas backend is active:
+ * - Node backend active: `@napi-rs/canvas`'s `loadImage`, which auto-detects
+ *   the format from the bytes (no explicit MIME type needed).
+ * - Otherwise: the standard `Blob` + `createImageBitmap` browser/worker path.
+ *
+ * Returns `null` when neither decoding path is available.
+ *
+ * @param bytes - Raw encoded image bytes.
+ * @param mime  - Optional MIME type hint used only for the Blob path.
+ */
+export async function decodeDeferredImageBytes(
+	bytes: ArrayBuffer,
+	mime?: string,
+): Promise<{ drawable: DecodedDrawable; width: number; height: number; close: () => void } | null> {
+	if (nodeCanvasModule) {
+		const image = await nodeCanvasModule.loadImage(new Uint8Array(bytes));
+		return { drawable: image, width: image.width, height: image.height, close: () => {} };
+	}
+	if (typeof createImageBitmap !== 'function') {
+		return null;
+	}
+	const blob = mime !== undefined ? new Blob([bytes], { type: mime }) : new Blob([bytes]);
+	const bitmap = await createImageBitmap(blob);
+	return { drawable: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+}
+
+// ---------------------------------------------------------------------------
+// drawImage across the CanvasContext union
+// ---------------------------------------------------------------------------
+
+/** Anything any of the three {@link CanvasContext} backends can draw. */
+export type Drawable = CanvasImageSource | AnyCanvas | DecodedDrawable;
+
+/**
+ * Calls `ctx.drawImage(image, dx, dy, dw, dh)`.
+ *
+ * `@napi-rs/canvas`'s `SKRSContext2D` declares a narrower `drawImage`
+ * overload set (`Image | Canvas`) than the DOM `CanvasRenderingContext2D`
+ * (`CanvasImageSource`), and TypeScript does not merge differing overload
+ * sets across a union type, so calling `drawImage` directly through the
+ * `CanvasContext` union does not type-check even though every backend
+ * accepts the actual drawable value passed at runtime. This helper is the
+ * single, intentional escape hatch for that gap.
+ */
+export function canvasDrawImage(
+	ctx: CanvasContext,
+	image: Drawable,
+	dx: number,
+	dy: number,
+	dw: number,
+	dh: number,
+): void {
+	const draw = ctx.drawImage as unknown as (
+		img: Drawable,
+		dx: number,
+		dy: number,
+		dw: number,
+		dh: number,
+	) => void;
+	draw.call(ctx, image, dx, dy, dw, dh);
 }

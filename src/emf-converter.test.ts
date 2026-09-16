@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { createCanvas, exportCanvasToPngDataUrl } from './emf-canvas-helpers';
-import { convertEmfToDataUrl, convertWmfToDataUrl } from './emf-converter';
+import { convertMetafileToDataUrl } from './emf-converter';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
 import { replayEmfRecords } from './emf-record-replay';
 import { replayWmfRecords } from './wmf-replay';
@@ -21,6 +21,8 @@ vi.mock<typeof import('./emf-header-parser')>(import('./emf-header-parser'), () 
 vi.mock<typeof import('./emf-canvas-helpers')>(import('./emf-canvas-helpers'), () => ({
 	createCanvas: vi.fn<() => void>(),
 	exportCanvasToPngDataUrl: vi.fn<() => void>(),
+	ensureNodeCanvasModule: vi.fn<() => Promise<null>>().mockResolvedValue(null),
+	decodeDeferredImageBytes: vi.fn<() => Promise<null>>().mockResolvedValue(null),
 	DEFAULT_DPI_SCALE: 2,
 }));
 
@@ -79,6 +81,10 @@ function setupWmfMocks(options?: {
 	dataUrl?: string | null;
 }) {
 	const opts = options ?? {};
+	// Detection tries the EMF path first, so force it to fail here regardless
+	// of what an earlier test left `parseEmfHeader` mocked to return.
+	(parseEmfHeader as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
 	const header = opts.headerNull
 		? null
 		: {
@@ -105,10 +111,10 @@ function setupWmfMocks(options?: {
 }
 
 // ---------------------------------------------------------------------------
-// Tests: convertEmfToDataUrl
+// Tests: convertMetafileToDataUrl (EMF-shaped input)
 // ---------------------------------------------------------------------------
 
-describe('convertEmfToDataUrl', () => {
+describe('convertMetafileToDataUrl (EMF path)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
@@ -116,37 +122,37 @@ describe('convertEmfToDataUrl', () => {
 	it('returns a data URL on success', async () => {
 		setupEmfMocks();
 		const buf = new ArrayBuffer(100);
-		const result = await convertEmfToDataUrl(buf);
+		const result = await convertMetafileToDataUrl(buf);
 		expect(result).toBe('data:image/png;base64,AAAA');
 	});
 
 	it('returns null when parseEmfHeader returns null', async () => {
 		setupEmfMocks({ headerNull: true });
-		const result = await convertEmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('returns null when getRenderableEmfBounds returns null', async () => {
 		setupEmfMocks({ boundsNull: true });
-		const result = await convertEmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('returns null when createCanvas returns null', async () => {
 		setupEmfMocks({ canvasNull: true });
-		const result = await convertEmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('passes maxWidth and maxHeight to createCanvas', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), { maxWidth: 500, maxHeight: 400 });
+		await convertMetafileToDataUrl(new ArrayBuffer(100), { maxWidth: 500, maxHeight: 400 });
 		expect(createCanvas).toHaveBeenCalledWith(100, 100, 500, 400, 2, undefined);
 	});
 
 	it('accepts options object with dpiScale', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), {
+		await convertMetafileToDataUrl(new ArrayBuffer(100), {
 			dpiScale: 4,
 		});
 		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 4, undefined);
@@ -154,7 +160,7 @@ describe('convertEmfToDataUrl', () => {
 
 	it('accepts options object with maxWidth/maxHeight', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), {
+		await convertMetafileToDataUrl(new ArrayBuffer(100), {
 			maxWidth: 300,
 			maxHeight: 250,
 		});
@@ -163,7 +169,7 @@ describe('convertEmfToDataUrl', () => {
 
 	it('forwards maxCanvasDimension to createCanvas', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), {
+		await convertMetafileToDataUrl(new ArrayBuffer(100), {
 			maxCanvasDimension: 2048,
 		});
 		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 2, 2048);
@@ -171,7 +177,7 @@ describe('convertEmfToDataUrl', () => {
 
 	it('threads maxRecords and fontFamilyMap into replayEmfRecords', async () => {
 		setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100), {
+		await convertMetafileToDataUrl(new ArrayBuffer(100), {
 			maxRecords: 1234,
 			fontFamilyMap: { calibri: 'Carlito' },
 		});
@@ -192,14 +198,14 @@ describe('convertEmfToDataUrl', () => {
 
 	it('calls ctx.save before replay and ctx.restore after', async () => {
 		const { ctx } = setupEmfMocks();
-		await convertEmfToDataUrl(new ArrayBuffer(100));
+		await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(ctx.save).toHaveBeenCalled();
 		expect(ctx.restore).toHaveBeenCalled();
 	});
 
 	it('returns null when exportCanvasToPngDataUrl returns null', async () => {
 		setupEmfMocks({ dataUrl: null });
-		const result = await convertEmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
@@ -207,59 +213,59 @@ describe('convertEmfToDataUrl', () => {
 		(parseEmfHeader as ReturnType<typeof vi.fn>).mockImplementation(() => {
 			throw new Error('parse boom');
 		});
-		const result = await convertEmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('handles small buffer (< 16 bytes) without crashing', async () => {
 		setupEmfMocks({ headerNull: true });
-		const result = await convertEmfToDataUrl(new ArrayBuffer(4));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(4));
 		expect(result).toBeNull();
 	});
 });
 
 // ---------------------------------------------------------------------------
-// Tests: convertWmfToDataUrl
+// Tests: convertMetafileToDataUrl (WMF-shaped input)
 // ---------------------------------------------------------------------------
 
-describe('convertWmfToDataUrl', () => {
+describe('convertMetafileToDataUrl (WMF path)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
 	it('returns a data URL on success', async () => {
 		setupWmfMocks();
-		const result = await convertWmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBe('data:image/png;base64,BBBB');
 	});
 
 	it('returns null when parseWmfHeader returns null', async () => {
 		setupWmfMocks({ headerNull: true });
-		const result = await convertWmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('returns null when dimensions are invalid (zero)', async () => {
 		setupWmfMocks({ invalidDims: true });
-		const result = await convertWmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('returns null when createCanvas returns null', async () => {
 		setupWmfMocks({ canvasNull: true });
-		const result = await convertWmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('passes maxWidth, maxHeight, and dpiScale to createCanvas', async () => {
 		setupWmfMocks();
-		await convertWmfToDataUrl(new ArrayBuffer(100), { maxWidth: 600, maxHeight: 500, dpiScale: 3 });
+		await convertMetafileToDataUrl(new ArrayBuffer(100), { maxWidth: 600, maxHeight: 500, dpiScale: 3 });
 		expect(createCanvas).toHaveBeenCalledWith(200, 200, 600, 500, 3, undefined);
 	});
 
 	it('calls replayWmfRecords with correct parameters', async () => {
 		setupWmfMocks();
-		await convertWmfToDataUrl(new ArrayBuffer(100));
+		await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(replayWmfRecords).toHaveBeenCalledOnce();
 	});
 
@@ -267,17 +273,51 @@ describe('convertWmfToDataUrl', () => {
 		(parseWmfHeader as ReturnType<typeof vi.fn>).mockImplementation(() => {
 			throw new Error('wmf boom');
 		});
-		const result = await convertWmfToDataUrl(new ArrayBuffer(100));
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
 
 	it('accepts options object', async () => {
 		setupWmfMocks();
-		await convertWmfToDataUrl(new ArrayBuffer(100), {
+		await convertMetafileToDataUrl(new ArrayBuffer(100), {
 			dpiScale: 1,
 			maxWidth: 100,
 			maxHeight: 80,
 		});
 		expect(createCanvas).toHaveBeenCalledWith(200, 200, 100, 80, 1, undefined);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: format auto-detection
+// ---------------------------------------------------------------------------
+
+describe('convertMetafileToDataUrl (format auto-detection)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('routes EMF-shaped input (parseEmfHeader succeeds) to the EMF replay path', async () => {
+		setupEmfMocks();
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
+		expect(result).toBe('data:image/png;base64,AAAA');
+		expect(replayEmfRecords).toHaveBeenCalled();
+		expect(replayWmfRecords).not.toHaveBeenCalled();
+	});
+
+	it('routes WMF-shaped input (parseEmfHeader fails, parseWmfHeader succeeds) to the WMF replay path', async () => {
+		setupWmfMocks();
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
+		expect(result).toBe('data:image/png;base64,BBBB');
+		expect(replayWmfRecords).toHaveBeenCalled();
+		expect(replayEmfRecords).not.toHaveBeenCalled();
+	});
+
+	it('returns null for garbage bytes that match neither header format', async () => {
+		(parseEmfHeader as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		(parseWmfHeader as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
+		expect(result).toBeNull();
+		expect(createCanvas).not.toHaveBeenCalled();
 	});
 });

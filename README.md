@@ -30,32 +30,42 @@ Try it right in your browser — drop in an `.emf` or `.wmf` file and see the re
 npm install emf-converter
 ```
 
-No dependencies. Requires a Canvas API at runtime — `OffscreenCanvas` (Web Workers) or `HTMLCanvasElement`.
+No required dependencies. Requires a Canvas API at runtime:
+
+- **Browser / Web Worker**: nothing else to install, `OffscreenCanvas` or `HTMLCanvasElement` is used automatically.
+- **Node.js** (no DOM, no Worker): install the optional [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas) package as well:
+
+  ```bash
+  npm install @napi-rs/canvas
+  ```
+
+  It's a prebuilt, Skia-based native module (no `node-gyp` required). When it's not installed, conversion in plain Node.js returns `null` instead of throwing.
 
 ## Quick start
 
 ```typescript
-import { convertEmfToDataUrl, convertWmfToDataUrl } from 'emf-converter';
+import { convertMetafileToDataUrl } from 'emf-converter';
 
 const emfBuffer: ArrayBuffer = /* loaded from file or network */;
-const pngDataUrl = await convertEmfToDataUrl(emfBuffer);
+const pngDataUrl = await convertMetafileToDataUrl(emfBuffer);
 // => "data:image/png;base64,iVBORw0KGgo..."
 
-const wmfPng = await convertWmfToDataUrl(wmfBuffer);
+// Works the same for WMF, the format is auto-detected from the bytes.
+const wmfPng = await convertMetafileToDataUrl(wmfBuffer);
 
 // Optional: limit output dimensions (aspect ratio preserved)
-const scaled = await convertEmfToDataUrl(emfBuffer, { maxWidth: 1024, maxHeight: 768 });
+const scaled = await convertMetafileToDataUrl(emfBuffer, { maxWidth: 1024, maxHeight: 768 });
 ```
 
-Both functions return `Promise<string | null>` — `null` if the buffer is invalid or no Canvas API is available.
+Returns `Promise<string | null>`, `null` if the buffer is invalid or no Canvas API is available.
 
 ## API
 
-### `convertEmfToDataUrl(buffer, options?)` · `convertWmfToDataUrl(buffer, options?)`
+### `convertMetafileToDataUrl(buffer, options?)`
 
 | Parameter   | Type                          | Description                                          |
 | ----------- | ----------------------------- | ---------------------------------------------------- |
-| `buffer`    | `ArrayBuffer`                 | Raw EMF/WMF file bytes                               |
+| `buffer`    | `ArrayBuffer`                 | Raw EMF or WMF file bytes (format is auto-detected)  |
 | `options`   | `EmfConvertOptions` (optional)| Output size, DPI scale, record limits, font mapping |
 | **Returns** | `Promise<string \| null>`     | PNG data URL or `null` on failure                   |
 
@@ -63,15 +73,15 @@ Both functions return `Promise<string | null>` — `null` if the buffer is inval
 
 | Field                | Type                       | Default        | Description                                                                 |
 | -------------------- | -------------------------- | -------------- | --------------------------------------------------------------------------- |
-| `maxWidth`           | `number`                   | —              | Maximum output width in pixels (aspect ratio preserved)                     |
-| `maxHeight`          | `number`                   | —              | Maximum output height in pixels                                             |
+| `maxWidth`           | `number`                   | none           | Maximum output width in pixels (aspect ratio preserved)                     |
+| `maxHeight`          | `number`                   | none           | Maximum output height in pixels                                             |
 | `dpiScale`           | `number`                   | `1`            | Resolution multiplier for sharper output; clamped to `4`                    |
 | `maxCanvasDimension` | `number`                   | `8192`         | Hard cap on canvas width/height in pixels                                   |
 | `maxRecords`         | `number`                   | `200000`/`500000` | Cap on records processed per stream before replay stops (EMF+ uses the higher default unless overridden) |
-| `fontFamilyMap`      | `Record<string, string>`   | —              | Maps Windows face names (case-insensitive) to fonts available locally, e.g. `{ calibri: 'Carlito' }` |
+| `fontFamilyMap`      | `Record<string, string>`   | none           | Maps Windows face names (case-insensitive) to fonts available locally, e.g. `{ calibri: 'Carlito' }` |
 
 ```ts
-const png = await convertEmfToDataUrl(buffer, {
+const png = await convertMetafileToDataUrl(buffer, {
 	dpiScale: 2,
 	fontFamilyMap: { calibri: 'Carlito', 'ms shell dlg': 'Tahoma' },
 });

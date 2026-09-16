@@ -2,11 +2,14 @@
  * Type definitions for the EMF/WMF metafile converter.
  *
  * This module centralises every interface, type alias, and factory function
- * used across the converter. It has no runtime dependencies so it can be
- * imported freely without risk of circular imports.
+ * used across the converter. It has no runtime dependencies (the `@napi-rs/canvas`
+ * reference below is `import type` only) so it can be imported freely without
+ * risk of circular imports.
  *
  * @module emf-types
  */
+
+import type { Canvas as NodeCanvas, SKRSContext2D } from '@napi-rs/canvas';
 
 import type { ClipRegion } from './emf-clip-region';
 
@@ -15,11 +18,20 @@ import type { ClipRegion } from './emf-clip-region';
 // ---------------------------------------------------------------------------
 
 /**
- * Union of the two 2D rendering context types the converter can target.
+ * Union of the three 2D rendering context types the converter can target.
  * OffscreenCanvas is preferred (works in Web Workers); HTMLCanvasElement
- * is used as a fallback in older browsers.
+ * is used as a fallback in older browsers; SKRSContext2D (from the optional
+ * `@napi-rs/canvas` package) is used in plain Node.js with no DOM. All three
+ * types are only referenced via `import type`, so nothing is pulled in at
+ * runtime unless the Node backend is actually loaded.
  */
-export type CanvasContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+export type CanvasContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | SKRSContext2D;
+
+/**
+ * Union of the three canvas element/object types the converter can create.
+ * See {@link CanvasContext} for the matching rendering-context union.
+ */
+export type AnyCanvas = OffscreenCanvas | HTMLCanvasElement | NodeCanvas;
 
 /**
  * A 2x3 affine transformation matrix stored as a flat 6-element tuple

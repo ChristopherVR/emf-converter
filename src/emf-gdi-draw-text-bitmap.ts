@@ -5,6 +5,7 @@
 
 import {
 	applyFont,
+	canvasDrawImage,
 	drawTextDecorations,
 	fontSizePx,
 	readUtf16LE,
@@ -144,8 +145,9 @@ function handleBitBlt(
 				const temp = createTempCanvas(imageData.width, imageData.height);
 				if (temp) {
 					temp.ctx.putImageData(imageData, 0, 0);
-					ctx.drawImage(
-						temp.canvas as CanvasImageSource,
+					canvasDrawImage(
+						ctx,
+						temp.canvas,
 						gmx(rCtx, dstX),
 						gmy(rCtx, dstY),
 						gmw(rCtx, dstW),
@@ -185,8 +187,9 @@ function handleStretchDibits(
 				const temp = createTempCanvas(imageData.width, imageData.height);
 				if (temp) {
 					temp.ctx.putImageData(imageData, 0, 0);
-					ctx.drawImage(
-						temp.canvas as CanvasImageSource,
+					canvasDrawImage(
+						ctx,
+						temp.canvas,
 						gmx(rCtx, dstX),
 						gmy(rCtx, dstY),
 						gmw(rCtx, dstW),

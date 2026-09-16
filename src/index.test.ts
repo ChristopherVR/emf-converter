@@ -33,7 +33,7 @@ import { parseEmfPlusPenObject, parseEmfPlusFontObject } from './emf-plus-object
 import { parseEmfPlusPath } from './emf-plus-path';
 import { defaultState, cloneState, createEmfPlusState } from './emf-types';
 import type { EmfGdiReplayCtx } from './emf-types';
-import { convertEmfToDataUrl, convertWmfToDataUrl } from './index';
+import { convertMetafileToDataUrl } from './index';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1433,32 +1433,27 @@ describe('emf-gdi-coord', () => {
 // ============================================================================
 
 describe('record replay edge cases', () => {
-	it('convertEmfToDataUrl returns null for zero-length buffer', async () => {
-		const result = await convertEmfToDataUrl(new ArrayBuffer(0));
+	it('convertMetafileToDataUrl returns null for zero-length buffer', async () => {
+		const result = await convertMetafileToDataUrl(new ArrayBuffer(0));
 		expect(result).toBeNull();
 	});
 
-	it('convertWmfToDataUrl returns null for zero-length buffer', async () => {
-		const result = await convertWmfToDataUrl(new ArrayBuffer(0));
-		expect(result).toBeNull();
-	});
-
-	it('convertEmfToDataUrl returns null for buffer too small for header', async () => {
+	it('convertMetafileToDataUrl returns null for buffer too small for any header', async () => {
 		const buf = new ArrayBuffer(20);
-		const result = await convertEmfToDataUrl(buf);
+		const result = await convertMetafileToDataUrl(buf);
 		expect(result).toBeNull();
 	});
 
-	it('convertWmfToDataUrl returns null for buffer with invalid magic', async () => {
+	it('convertMetafileToDataUrl returns null for buffer with invalid magic (neither EMF nor WMF)', async () => {
 		const buf = new ArrayBuffer(50);
 		const view = new DataView(buf);
-		// Invalid file type (0) at offset 0
+		// Invalid file type (0) at offset 0, and no valid EMR_HEADER either.
 		view.setUint16(0, 0, true);
-		const result = await convertWmfToDataUrl(buf);
+		const result = await convertMetafileToDataUrl(buf);
 		expect(result).toBeNull();
 	});
 
-	it('convertEmfToDataUrl returns null for valid header but no canvas available', async () => {
+	it('convertMetafileToDataUrl converts a minimal valid EMF header + EOF record using the Node canvas backend', async () => {
 		// Build a minimal EMF file with header + EOF record
 		const headerSize = 108;
 		const eofRecordSize = 20;
@@ -1487,9 +1482,12 @@ describe('record replay edge cases', () => {
 		view.setUint32(headerSize, EMR_EOF, true);
 		view.setUint32(headerSize + 4, eofRecordSize, true);
 
-		// Should return null because no canvas is available in Node test environment
-		const result = await convertEmfToDataUrl(buf);
-		expect(result).toBeNull();
+		// vitest's default environment here is plain Node (no jsdom), so this
+		// exercises the optional @napi-rs/canvas backend end-to-end rather than
+		// returning null the way it would without that package installed.
+		const result = await convertMetafileToDataUrl(buf);
+		expect(result).not.toBeNull();
+		expect(result).toMatch(/^data:image\/png;base64,/);
 	});
 });
 
@@ -1631,11 +1629,7 @@ describe('continuation records tracking', () => {
 // ============================================================================
 
 describe('emf-converter exports', () => {
-	it('should export convertEmfToDataUrl as a function', () => {
-		expectTypeOf(convertEmfToDataUrl).toBeFunction();
-	});
-
-	it('should export convertWmfToDataUrl as a function', () => {
-		expectTypeOf(convertWmfToDataUrl).toBeFunction();
+	it('should export convertMetafileToDataUrl as a function', () => {
+		expectTypeOf(convertMetafileToDataUrl).toBeFunction();
 	});
 });

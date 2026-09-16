@@ -1,22 +1,33 @@
 /**
- * Public API — the two entry points consumed by the rest of the application.
+ * Public API, a single auto-detecting entry point consumed by the rest of
+ * the application.
  *
  * The conversion pipeline for both formats follows the same high-level steps:
- * 1. Parse the file header to determine logical bounds and canvas dimensions.
- * 2. Create an in-memory canvas (OffscreenCanvas preferred, HTMLCanvasElement fallback).
+ * 1. Parse the file header to determine logical bounds and canvas dimensions
+ *    (tried as EMF first, then WMF, to auto-detect the format).
+ * 2. Create an in-memory canvas (OffscreenCanvas preferred, HTMLCanvasElement
+ *    fallback, or the optional `@napi-rs/canvas` Node.js backend).
  * 3. Replay every metafile record onto the canvas context in order.
- * 4. Resolve "deferred images" — bitmap / embedded-metafile draws that require
- *    async image decoding (via {@link createImageBitmap}).
- * 5. Export the canvas contents as a `data:image/png;base64,…` URL.
+ * 4. Resolve "deferred images", bitmap / embedded-metafile draws that require
+ *    async image decoding (via {@link createImageBitmap} or, in Node.js, the
+ *    `@napi-rs/canvas` `loadImage` helper).
+ * 5. Export the canvas contents as a `data:image/png;base64,...` URL.
  *
  * @module emf-converter
  */
 
-import { createCanvas, exportCanvasToPngDataUrl, DEFAULT_DPI_SCALE } from './emf-canvas-helpers';
+import {
+	canvasDrawImage,
+	createCanvas,
+	decodeDeferredImageBytes,
+	ensureNodeCanvasModule,
+	exportCanvasToPngDataUrl,
+	DEFAULT_DPI_SCALE,
+} from './emf-canvas-helpers';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
 import { emfLog, emfWarn } from './emf-logging';
 import { replayEmfRecords } from './emf-record-replay';
-import type { DeferredImageDraw } from './emf-types';
+import type { CanvasContext, DeferredImageDraw } from './emf-types';
 import { replayWmfRecords } from './wmf-replay';
 
 /**
@@ -71,7 +82,7 @@ export interface EmfConvertOptions {
 const MAX_METAFILE_RECURSION = 3;
 
 async function processDeferredImages(
-	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+	ctx: CanvasContext,
 	deferredImages: DeferredImageDraw[],
 	recursionDepth: number = 0,
 ): Promise<void> {
@@ -106,20 +117,22 @@ async function processDeferredImages(
 
 			if (img.isMetafile) {
 				// Embedded metafiles must be recursively converted to a raster image
-				// before they can be drawn — try EMF first, then fall back to WMF.
+				// before they can be drawn.
 				if (recursionDepth >= MAX_METAFILE_RECURSION) {
 					emfWarn(
-						`  Deferred image [${idx}]: skipping embedded metafile — recursion depth ${recursionDepth} >= ${MAX_METAFILE_RECURSION}`,
+						`  Deferred image [${idx}]: skipping embedded metafile, recursion depth ${recursionDepth} >= ${MAX_METAFILE_RECURSION}`,
 					);
 					continue;
 				}
 				emfLog(`  Deferred image [${idx}]: recursively converting embedded metafile...`);
-				const metafileDataUrl =
-					(await convertEmfToDataUrl(plainBuffer, undefined, recursionDepth + 1)) ??
-					(await convertWmfToDataUrl(plainBuffer, undefined, recursionDepth + 1));
+				const metafileDataUrl = await convertMetafileToDataUrl(
+					plainBuffer,
+					undefined,
+					recursionDepth + 1,
+				);
 				if (metafileDataUrl) {
-					// Decode the data-URL back to raw bytes so we can build a Blob
-					// and hand it to createImageBitmap for drawing.
+					// Decode the data-URL back to raw bytes so it can be handed to the
+					// active canvas backend's image decoder.
 					emfLog(
 						`  Deferred image [${idx}]: metafile converted, dataUrl length=${metafileDataUrl.length}`,
 					);
@@ -131,26 +144,28 @@ async function processDeferredImages(
 					for (let i = 0; i < byteString.length; i++) {
 						ia[i] = byteString.charCodeAt(i);
 					}
-					const metaBlob = new Blob([ab], { type: mime });
-					emfLog(
-						`  Deferred image [${idx}]: creating ImageBitmap from ${metaBlob.size} byte blob (${mime})...`,
-					);
-					const bitmap = await createImageBitmap(metaBlob);
-					emfLog(`  Deferred image [${idx}]: ImageBitmap created ${bitmap.width}×${bitmap.height}`);
-					ctx.drawImage(bitmap, img.dx, img.dy, img.dw, img.dh);
-					bitmap.close();
+					emfLog(`  Deferred image [${idx}]: decoding ${ab.byteLength} byte image (${mime})...`);
+					const decoded = await decodeDeferredImageBytes(ab, mime);
+					if (decoded) {
+						emfLog(`  Deferred image [${idx}]: decoded ${decoded.width}×${decoded.height}`);
+						canvasDrawImage(ctx, decoded.drawable, img.dx, img.dy, img.dw, img.dh);
+						decoded.close();
+					} else {
+						emfWarn(`  Deferred image [${idx}]: no image decoder available`);
+					}
 				} else {
 					emfWarn(`  Deferred image [${idx}]: metafile conversion returned null`);
 				}
 			} else {
-				emfLog(
-					`  Deferred image [${idx}]: creating ImageBitmap from ${plainBuffer.byteLength} byte blob...`,
-				);
-				const blob = new Blob([plainBuffer]);
-				const bitmap = await createImageBitmap(blob);
-				emfLog(`  Deferred image [${idx}]: ImageBitmap created ${bitmap.width}×${bitmap.height}`);
-				ctx.drawImage(bitmap, img.dx, img.dy, img.dw, img.dh);
-				bitmap.close();
+				emfLog(`  Deferred image [${idx}]: decoding ${plainBuffer.byteLength} byte image...`);
+				const decoded = await decodeDeferredImageBytes(plainBuffer);
+				if (decoded) {
+					emfLog(`  Deferred image [${idx}]: decoded ${decoded.width}×${decoded.height}`);
+					canvasDrawImage(ctx, decoded.drawable, img.dx, img.dy, img.dw, img.dh);
+					decoded.close();
+				} else {
+					emfWarn(`  Deferred image [${idx}]: no image decoder available`);
+				}
 			}
 		} catch (imgErr) {
 			const errMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
@@ -167,40 +182,100 @@ async function processDeferredImages(
 }
 
 // ---------------------------------------------------------------------------
-// convertEmfToDataUrl
+// convertMetafileToDataUrl
 // ---------------------------------------------------------------------------
 
 /**
- * Converts an EMF (Enhanced Metafile) binary buffer to a PNG data-URL string
- * by parsing the EMF header, iterating over all EMR records, and replaying
+ * Converts an EMF (Enhanced Metafile) or WMF (Windows Metafile) binary buffer
+ * to a PNG data-URL string, auto-detecting which of the two formats it is.
+ *
+ * Detection tries the EMF path first: {@link parseEmfHeader} is a cheap,
+ * side-effect-free probe that returns `null` immediately unless the buffer
+ * starts with a valid `EMR_HEADER` record, so it doubles as a safe format
+ * sniff. When that probe fails, the buffer is parsed as WMF instead.
+ *
+ * For EMF: parses the EMF header, iterates over all EMR records, and replays
  * them onto an in-memory canvas. Embedded EMF+ (GDI+) records found inside
  * EMR_COMMENT payloads are handled transparently.
  *
- * The canvas is rendered at a configurable DPI scale (default 2x) to produce
- * sharper output when displayed at CSS logical-pixel sizes. This is important
- * for presentations viewed on HiDPI/Retina displays.
+ * For WMF: parses the optional Aldus placeable header and the standard WMF
+ * header, then replays all META_* records onto a canvas.
+ *
+ * The canvas is rendered at a configurable DPI scale (default 1x, 1:1 pixel
+ * mapping) via {@link EmfConvertOptions.dpiScale}. On the first call in a
+ * given process, the optional Node.js canvas backend (`@napi-rs/canvas`) is
+ * loaded once and cached; see {@link ensureNodeCanvasModule}.
  *
  * Returns `null` when:
- * - The buffer does not begin with a valid EMR_HEADER record.
+ * - The buffer matches neither a valid EMF header nor a valid WMF header.
  * - The logical bounds are zero-sized or negative.
- * - No canvas API is available (e.g. headless test environment).
+ * - No canvas API is available (browser/worker canvas, or the optional
+ *   `@napi-rs/canvas` package in plain Node.js).
  *
- * @param buffer  - The raw EMF file bytes.
+ * @param buffer  - The raw EMF or WMF file bytes.
  * @param options - Optional {@link EmfConvertOptions} controlling output size,
  *   DPI scale, record limits, and font mapping.
- * @returns A `data:image/png;base64,…` string, or `null` on failure.
+ * @param recursionDepth - Internal: tracks nested embedded-metafile depth.
+ * @returns A `data:image/png;base64,...` string, or `null` on failure.
  */
-export async function convertEmfToDataUrl(
+export async function convertMetafileToDataUrl(
 	buffer: ArrayBuffer,
 	options?: EmfConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<string | null> {
+	// Resolve (and cache) the optional Node.js canvas backend once, up front,
+	// before any synchronous replay work begins. createCanvas/createTempCanvas
+	// are called synchronously deep inside the replay pipeline and consult the
+	// cached result rather than awaiting anything themselves.
+	await ensureNodeCanvasModule();
+
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
 		emfWarn(
-			`convertEmfToDataUrl: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION} — refusing to convert`,
+			`convertMetafileToDataUrl: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION}, refusing to convert`,
 		);
 		return null;
 	}
+
+	emfLog(`convertMetafileToDataUrl: input buffer ${buffer.byteLength} bytes`);
+	if (buffer.byteLength >= 16) {
+		const hdrBytes = new Uint8Array(buffer, 0, 16);
+		emfLog(
+			`convertMetafileToDataUrl: first 16 bytes: [${Array.from(hdrBytes)
+				.map((b) => b.toString(16).padStart(2, '0'))
+				.join(' ')}]`,
+		);
+	}
+
+	const view = new DataView(buffer);
+	let emfHeader: ReturnType<typeof parseEmfHeader> = null;
+	try {
+		emfHeader = parseEmfHeader(view);
+	} catch (err) {
+		emfWarn(
+			'convertMetafileToDataUrl: parseEmfHeader threw during detection:',
+			err instanceof Error ? err.message : err,
+		);
+		emfHeader = null;
+	}
+	if (emfHeader) {
+		emfLog('convertMetafileToDataUrl: detected EMF (valid EMR_HEADER)');
+		return convertEmfInternal(buffer, view, emfHeader, options, recursionDepth);
+	}
+	emfLog('convertMetafileToDataUrl: not EMF, trying WMF');
+	return convertWmfInternal(buffer, view, options, recursionDepth);
+}
+
+// ---------------------------------------------------------------------------
+// EMF path
+// ---------------------------------------------------------------------------
+
+async function convertEmfInternal(
+	buffer: ArrayBuffer,
+	view: DataView,
+	header: NonNullable<ReturnType<typeof parseEmfHeader>>,
+	options: EmfConvertOptions | undefined,
+	recursionDepth: number,
+): Promise<string | null> {
 	const opts = options ?? {};
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
 	const effectiveMaxWidth = opts.maxWidth;
@@ -212,35 +287,20 @@ export async function convertEmfToDataUrl(
 	};
 
 	try {
-		emfLog('=== convertEmfToDataUrl START ===');
+		emfLog('=== convertEmfInternal START ===');
 		emfLog(
 			`Input buffer: ${buffer.byteLength} bytes, maxWidth=${effectiveMaxWidth}, maxHeight=${effectiveMaxHeight}, dpiScale=${dpiScale}`,
 		);
 
-		if (buffer.byteLength >= 16) {
-			const hdrBytes = new Uint8Array(buffer, 0, 16);
-			emfLog(
-				`First 16 bytes: [${Array.from(hdrBytes)
-					.map((b) => b.toString(16).padStart(2, '0'))
-					.join(' ')}]`,
-			);
-		}
-
-		const view = new DataView(buffer);
-		const header = parseEmfHeader(view);
-		if (!header) {
-			emfLog('convertEmfToDataUrl: parseEmfHeader returned null — returning null');
-			return null;
-		}
 		const renderBounds = getRenderableEmfBounds(header);
 		if (!renderBounds) {
-			emfLog('convertEmfToDataUrl: getRenderableEmfBounds returned null — returning null');
+			emfLog('convertEmfInternal: getRenderableEmfBounds returned null, returning null');
 			return null;
 		}
 
 		const logicalW = renderBounds.right - renderBounds.left;
 		const logicalH = renderBounds.bottom - renderBounds.top;
-		emfLog(`convertEmfToDataUrl: logicalSize=${logicalW}×${logicalH}`);
+		emfLog(`convertEmfInternal: logicalSize=${logicalW}×${logicalH}`);
 
 		const setup = createCanvas(
 			logicalW,
@@ -251,18 +311,18 @@ export async function convertEmfToDataUrl(
 			opts.maxCanvasDimension,
 		);
 		if (!setup) {
-			emfLog('convertEmfToDataUrl: createCanvas returned null — returning null');
+			emfLog('convertEmfInternal: createCanvas returned null, returning null');
 			return null;
 		}
 
 		const { canvas, ctx } = setup;
 		emfLog(
-			`convertEmfToDataUrl: canvas created ${canvas.width}×${canvas.height} (dpiScale=${dpiScale})`,
+			`convertEmfInternal: canvas created ${canvas.width}×${canvas.height} (dpiScale=${dpiScale})`,
 		);
 
 		ctx.save();
 
-		emfLog('convertEmfToDataUrl: starting replayEmfRecords...');
+		emfLog('convertEmfInternal: starting replayEmfRecords...');
 		const deferredImages = replayEmfRecords(
 			view,
 			ctx,
@@ -272,66 +332,40 @@ export async function convertEmfToDataUrl(
 			dpiScale,
 			replayOptions,
 		);
-		emfLog(
-			`convertEmfToDataUrl: replayEmfRecords returned ${deferredImages.length} deferred images`,
-		);
+		emfLog(`convertEmfInternal: replayEmfRecords returned ${deferredImages.length} deferred images`);
 
-		// Restore the canvas state saved before replay — this clears any
+		// Restore the canvas state saved before replay, this clears any
 		// clipping regions that GDI record handlers may have installed.
 		ctx.restore();
 
-		await processDeferredImages(ctx, deferredImages);
+		await processDeferredImages(ctx, deferredImages, recursionDepth);
 
-		emfLog('convertEmfToDataUrl: exporting canvas to PNG data URL...');
+		emfLog('convertEmfInternal: exporting canvas to PNG data URL...');
 		const result = await exportCanvasToPngDataUrl(canvas);
 		if (result) {
-			emfLog(`convertEmfToDataUrl: SUCCESS — data URL length=${result.length}`);
+			emfLog(`convertEmfInternal: SUCCESS, data URL length=${result.length}`);
 		} else {
-			emfWarn('convertEmfToDataUrl: exportCanvasToPngDataUrl returned null');
+			emfWarn('convertEmfInternal: exportCanvasToPngDataUrl returned null');
 		}
-		emfLog('=== convertEmfToDataUrl END ===');
+		emfLog('=== convertEmfInternal END ===');
 		return result;
 	} catch (err) {
-		emfWarn('convertEmfToDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
-		console.warn('[pptx-editor] EMF conversion failed:', err instanceof Error ? err.message : err);
+		emfWarn('convertEmfInternal: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] EMF conversion failed:', err instanceof Error ? err.message : err);
 		return null;
 	}
 }
 
 // ---------------------------------------------------------------------------
-// convertWmfToDataUrl
+// WMF path
 // ---------------------------------------------------------------------------
 
-/**
- * Converts a WMF (Windows Metafile) binary buffer to a PNG data-URL string.
- *
- * WMF is the older 16-bit metafile format with simpler record types than EMF.
- * This function parses the optional Aldus placeable header, the WMF header,
- * and then replays all META_* records onto a canvas.
- *
- * The canvas is rendered at a configurable DPI scale (default 2x) for
- * sharper output on HiDPI displays.
- *
- * Returns `null` when:
- * - The header cannot be parsed or reports invalid dimensions.
- * - No canvas API is available.
- *
- * @param buffer  - The raw WMF file bytes.
- * @param options - Optional {@link EmfConvertOptions} controlling output size,
- *   DPI scale, record limits, and font mapping.
- * @returns A `data:image/png;base64,…` string, or `null` on failure.
- */
-export async function convertWmfToDataUrl(
+async function convertWmfInternal(
 	buffer: ArrayBuffer,
-	options?: EmfConvertOptions,
-	recursionDepth: number = 0,
+	view: DataView,
+	options: EmfConvertOptions | undefined,
+	recursionDepth: number,
 ): Promise<string | null> {
-	if (recursionDepth > MAX_METAFILE_RECURSION) {
-		emfWarn(
-			`convertWmfToDataUrl: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION} — refusing to convert`,
-		);
-		return null;
-	}
 	const opts = options ?? {};
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
 	const effectiveMaxWidth = opts.maxWidth;
@@ -343,22 +377,21 @@ export async function convertWmfToDataUrl(
 
 	try {
 		emfLog(
-			'=== convertWmfToDataUrl START ===',
+			'=== convertWmfInternal START ===',
 			`buffer=${buffer.byteLength} bytes, dpiScale=${dpiScale}`,
 		);
-		const view = new DataView(buffer);
 		const header = parseWmfHeader(view);
 		if (!header) {
-			emfLog('convertWmfToDataUrl: parseWmfHeader returned null');
+			emfLog('convertWmfInternal: parseWmfHeader returned null');
 			return null;
 		}
 
 		const logicalW = header.boundsRight - header.boundsLeft;
 		const logicalH = header.boundsBottom - header.boundsTop;
-		emfLog(`convertWmfToDataUrl: logicalSize=${logicalW}×${logicalH}`);
+		emfLog(`convertWmfInternal: logicalSize=${logicalW}×${logicalH}`);
 
 		if (logicalW <= 0 || logicalH <= 0) {
-			emfLog('convertWmfToDataUrl: invalid dimensions — returning null');
+			emfLog('convertWmfInternal: invalid dimensions, returning null');
 			return null;
 		}
 
@@ -381,12 +414,12 @@ export async function convertWmfToDataUrl(
 		ctx.restore();
 
 		const result = await exportCanvasToPngDataUrl(canvas);
-		emfLog(`convertWmfToDataUrl: result=${result ? `dataUrl len=${result.length}` : 'null'}`);
-		emfLog('=== convertWmfToDataUrl END ===');
+		emfLog(`convertWmfInternal: result=${result ? `dataUrl len=${result.length}` : 'null'}`);
+		emfLog('=== convertWmfInternal END ===');
 		return result;
 	} catch (err) {
-		emfWarn('convertWmfToDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
-		console.warn('[pptx-editor] WMF conversion failed:', err instanceof Error ? err.message : err);
+		emfWarn('convertWmfInternal: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] WMF conversion failed:', err instanceof Error ? err.message : err);
 		return null;
 	}
 }

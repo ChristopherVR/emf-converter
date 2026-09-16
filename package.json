@@ -45,8 +45,18 @@
 		"pack": "bun run build && bun pm pack"
 	},
 	"devDependencies": {
+		"@napi-rs/canvas": "^1.0.9",
+		"@types/node": "^22.20.3",
 		"tsup": "^8.5.1",
 		"typescript": "^6.0.3",
 		"vitest": "^5.0.0"
+	},
+	"peerDependencies": {
+		"@napi-rs/canvas": "^1.0.9"
+	},
+	"peerDependenciesMeta": {
+		"@napi-rs/canvas": {
+			"optional": true
+		}
 	}
 }

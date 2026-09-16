@@ -11,7 +11,7 @@
  * @module demo/main
  */
 
-import { convertEmfToDataUrl, convertWmfToDataUrl } from '../src/index';
+import { convertMetafileToDataUrl } from '../src/index';
 
 // ---------------------------------------------------------------------------
 // Element lookup helpers
@@ -61,14 +61,16 @@ function formatBytes(bytes: number): string {
 	return `${(kb / 1024).toFixed(2)} MB`;
 }
 
-/** Detect the metafile kind from the EMF signature, falling back to the name. */
-function detectKind(buffer: ArrayBuffer, fileName: string): 'emf' | 'wmf' {
+/**
+ * Sniff the metafile kind purely for the status label, the actual format
+ * detection used for conversion lives in {@link convertMetafileToDataUrl}.
+ */
+function sniffKindForDisplay(buffer: ArrayBuffer, fileName: string): 'emf' | 'wmf' {
 	const bytes = new Uint8Array(buffer);
 	// EMF records begin with iType=1 (EMR_HEADER) then nSize; offset 40 holds
 	// the ASCII signature " EMF" (0x464D4520 little-endian).
 	if (bytes.length >= 44) {
-		const sig =
-			bytes[40] | (bytes[41] << 8) | (bytes[42] << 16) | (bytes[43] << 24);
+		const sig = bytes[40] | (bytes[41] << 8) | (bytes[42] << 16) | (bytes[43] << 24);
 		if (sig === 0x464d4520) {
 			return 'emf';
 		}
@@ -112,19 +114,14 @@ async function convertSelectedFile(): Promise<void> {
 
 	try {
 		const buffer = await file.arrayBuffer();
-		const kind = detectKind(buffer, file.name);
+		const kind = sniffKindForDisplay(buffer, file.name);
 
 		const start = performance.now();
-		const dataUrl =
-			kind === 'wmf'
-				? await convertWmfToDataUrl(buffer)
-				: await convertEmfToDataUrl(buffer);
+		const dataUrl = await convertMetafileToDataUrl(buffer);
 		const elapsed = performance.now() - start;
 
 		if (dataUrl === null) {
-			showError(
-				`Conversion returned null — the file may not be a valid ${kind.toUpperCase()} metafile.`,
-			);
+			showError('Conversion returned null. The file may not be a valid EMF/WMF metafile.');
 			return;
 		}
 
