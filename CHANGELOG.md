@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [2.0.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v2.0.4) - 2026-09-16
+
+### Other
+
+- Merge EMF/WMF converters into one auto-detecting function, add optional Node.js canvas backend ([767d155](https://github.com/ChristopherVR/emf-converter/commit/767d1555bc4a3e900a770282a6dd5ecaeb9c54dc))
+- Refresh demo landing page for the unified convertMetafileToDataUrl API ([05edd31](https://github.com/ChristopherVR/emf-converter/commit/05edd31f3b6aa8f47659c7c206a25709ba38d8a1))
+
+### Chores
+
+- Remove em dashes from source, docs, and workflow files ([8ee3852](https://github.com/ChristopherVR/emf-converter/commit/8ee3852cfce61c1055101daacd39c437f0a17e1a))
+- Ignore .claude/worktrees/ ([d2fabbf](https://github.com/ChristopherVR/emf-converter/commit/d2fabbfd6e1f4bfb6ec827e5089b7dbc6f794116))
+
 ## [2.0.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v2.0.3) - 2026-09-16
 
 ### Chores
@@ -58,7 +70,7 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
 ### Features
 
-- Address README limitations: fonts, ROP2, configurable limits ([0513ec6](https://github.com/ChristopherVR/emf-converter/commit/0513ec6db1df6e17d32bb2b00c2c23e724e58076))
+- Address README limitations — fonts, ROP2, configurable limits ([0513ec6](https://github.com/ChristopherVR/emf-converter/commit/0513ec6db1df6e17d32bb2b00c2c23e724e58076))
 
 ## [1.4.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v1.4.3) - 2026-06-24
 
