@@ -141,7 +141,7 @@ describe('wmf-replay', () => {
 
 		it('stops at META_EOF', () => {
 			const header = defaultHeader();
-			// Put a rectangle after EOF — it should not be drawn
+			// Put a rectangle after EOF: it should not be drawn
 			const buf = new ArrayBuffer(200);
 			const view = new DataView(buf);
 			let off = header.headerSize;

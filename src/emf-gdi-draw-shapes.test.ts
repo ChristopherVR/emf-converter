@@ -111,7 +111,7 @@ describe('emf-gdi-draw-shapes', () => {
 				expect(result).toBeTruthy();
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
 				expect(ctx.fillRect).toHaveBeenCalledOnce();
-				// fillRect(gmx(50), gmy(75), 1, 1) — gmx/gmy apply scaling
+				// fillRect(gmx(50), gmy(75), 1, 1): gmx/gmy apply scaling
 			});
 
 			it('ignores if recSize < 20', () => {

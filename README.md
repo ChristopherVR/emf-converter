@@ -20,7 +20,7 @@ Windows Metafiles store a sequence of GDI drawing commands and are commonly embe
 
 ## Demo
 
-Try it right in your browser — drop in an `.emf` or `.wmf` file and see the rendered PNG, conversion time, and output size:
+Try it right in your browser: drop in an `.emf` or `.wmf` file and see the rendered PNG, conversion time, and output size:
 
 **https://christophervr.github.io/emf-converter/**
 
@@ -73,12 +73,12 @@ Returns `Promise<string | null>`, `null` if the buffer is invalid or no Canvas A
 
 | Field                | Type                       | Default        | Description                                                                 |
 | -------------------- | -------------------------- | -------------- | --------------------------------------------------------------------------- |
-| `maxWidth`           | `number`                   | none           | Maximum output width in pixels (aspect ratio preserved)                     |
-| `maxHeight`          | `number`                   | none           | Maximum output height in pixels                                             |
+| `maxWidth`           | `number`                   | None           | Maximum output width in pixels (aspect ratio preserved)                     |
+| `maxHeight`          | `number`                   | None           | Maximum output height in pixels                                             |
 | `dpiScale`           | `number`                   | `1`            | Resolution multiplier for sharper output; clamped to `4`                    |
 | `maxCanvasDimension` | `number`                   | `8192`         | Hard cap on canvas width/height in pixels                                   |
 | `maxRecords`         | `number`                   | `200000`/`500000` | Cap on records processed per stream before replay stops (EMF+ uses the higher default unless overridden) |
-| `fontFamilyMap`      | `Record<string, string>`   | none           | Maps Windows face names (case-insensitive) to fonts available locally, e.g. `{ calibri: 'Carlito' }` |
+| `fontFamilyMap`      | `Record<string, string>`   | None           | Maps Windows face names (case-insensitive) to fonts available locally, e.g. `{ calibri: 'Carlito' }` |
 
 ```ts
 const png = await convertMetafileToDataUrl(buffer, {
@@ -93,20 +93,20 @@ A three-phase pipeline: **parse → replay → export**. The header parser extra
 
 It supports 300+ EMF GDI record types, the EMF+ (GDI+) record set, and legacy WMF records, including state, transforms, objects, shapes, poly/path operations, text, bitmaps, gradients, raster operations, and clipping:
 
-- **Clip regions with full boolean combine modes** — the converter tracks the active clip as a list of path shapes, so `Intersect`, `Union`, `Xor`, `Exclude`, `Complement`, and `Replace` combine modes work for `EMR_INTERSECTCLIPRECT` / `EMR_EXCLUDECLIPRECT` / `EMR_EXTSELECTCLIPRGN` (all `RGN_*` modes), the EMF+ `SetClipRect` / `SetClipPath` / `SetClipRegion` records (all `CombineMode` values, including nested region-node trees), and clip translation via `EMR_OFFSETCLIPRGN` / EMF+ `OffsetClip`. Subtraction and symmetric difference are expressed through even-odd fill-rule clipping, which Canvas 2D cannot do with plain `clip()` stacking.
-- **Gradient brushes** — GDI+ linear gradients render as Canvas linear gradients with their full colour-stop list (preset blend colours and blend factors are expanded into stops, and the optional brush transform rotates the gradient axis). Path gradients render as radial gradients from the centre colour to the surrounding colour across the boundary radius.
-- **Raster operations (ROP2)** — every `SetROP2` mode is mapped: `R2_BLACK`, `R2_WHITE`, `R2_NOP`, `R2_COPYPEN`, `R2_NOTCOPYPEN`, and `R2_NOT` are emulated exactly (via colour inversion and `difference` compositing); the remaining bitwise AND/OR/XOR-family modes are approximated with the nearest arithmetic composite (`difference` / `darken` / `lighten`), combined with pen-colour inversion for the NOT variants.
-- **GDI world transforms** — the scale and translation set by `EMR_SETWORLDTRANSFORM` / `EMR_MODIFYWORLDTRANSFORM` are applied to all GDI drawing, which is required for GDI+-exported EMF files (they record coordinates at 16× sub-pixel precision with a compensating transform). EMF+ records support the full affine transform set.
+- **Clip regions with full boolean combine modes**: the converter tracks the active clip as a list of path shapes, so `Intersect`, `Union`, `Xor`, `Exclude`, `Complement`, and `Replace` combine modes work for `EMR_INTERSECTCLIPRECT` / `EMR_EXCLUDECLIPRECT` / `EMR_EXTSELECTCLIPRGN` (all `RGN_*` modes), the EMF+ `SetClipRect` / `SetClipPath` / `SetClipRegion` records (all `CombineMode` values, including nested region-node trees), and clip translation via `EMR_OFFSETCLIPRGN` / EMF+ `OffsetClip`. Subtraction and symmetric difference are expressed through even-odd fill-rule clipping, which Canvas 2D cannot do with plain `clip()` stacking.
+- **Gradient brushes**: GDI+ linear gradients render as Canvas linear gradients with their full colour-stop list (preset blend colours and blend factors are expanded into stops, and the optional brush transform rotates the gradient axis). Path gradients render as radial gradients from the centre colour to the surrounding colour across the boundary radius.
+- **Raster operations (ROP2)**: every `SetROP2` mode is mapped: `R2_BLACK`, `R2_WHITE`, `R2_NOP`, `R2_COPYPEN`, `R2_NOTCOPYPEN`, and `R2_NOT` are emulated exactly (via colour inversion and `difference` compositing); the remaining bitwise AND/OR/XOR-family modes are approximated with the nearest arithmetic composite (`difference` / `darken` / `lighten`), combined with pen-colour inversion for the NOT variants.
+- **GDI world transforms**: the scale and translation set by `EMR_SETWORLDTRANSFORM` / `EMR_MODIFYWORLDTRANSFORM` are applied to all GDI drawing, which is required for GDI+-exported EMF files (they record coordinates at 16× sub-pixel precision with a compensating transform). EMF+ records support the full affine transform set.
 
 ## Limitations
 
-- **Approximated edge cases in region ops** — all six combine modes are exact while the tracked clip is at most one composable shape (the overwhelmingly common case). When the clip is already an intersection of several shapes, or was set from a live path bracket (`EMR_SELECTCLIPPATH`), `Union` / `Xor` / `Complement` degrade to the nearest conservative approximation (a console log notes when this happens).
-- **Bitwise ROP2 modes are arithmetic approximations** — Canvas compositing cannot reproduce true bitwise AND/OR/XOR against the destination, so those modes use `darken` / `lighten` / `difference` stand-ins; only the modes listed above as exact are pixel-faithful.
-- **Gradient details** — gradient wrap/tile modes clamp instead of tiling, path gradients are radial approximations of the true boundary-shaped falloff, and texture (image) brushes fall back to solid black.
-- **GDI rotation/skew** — rotation and shear components of the *GDI* world transform are ignored (EMF+ transforms are unaffected); plain-GDI metafiles using rotated world transforms are rare.
-- **Safety limits** — output is clamped to 8192×8192 and replay stops after 200,000 records (EMF/WMF) or 500,000 (EMF+). All three are overridable via `maxCanvasDimension` / `maxRecords`.
+- **Approximated edge cases in region ops**: all six combine modes are exact while the tracked clip is at most one composable shape (the overwhelmingly common case). When the clip is already an intersection of several shapes, or was set from a live path bracket (`EMR_SELECTCLIPPATH`), `Union` / `Xor` / `Complement` degrade to the nearest conservative approximation (a console log notes when this happens).
+- **Bitwise ROP2 modes are arithmetic approximations**: Canvas compositing cannot reproduce true bitwise AND/OR/XOR against the destination, so those modes use `darken` / `lighten` / `difference` stand-ins; only the modes listed above as exact are pixel-faithful.
+- **Gradient details**: gradient wrap/tile modes clamp instead of tiling, path gradients are radial approximations of the true boundary-shaped falloff, and texture (image) brushes fall back to solid black.
+- **GDI rotation/skew**: rotation and shear components of the *GDI* world transform are ignored (EMF+ transforms are unaffected); plain-GDI metafiles using rotated world transforms are rare.
+- **Safety limits**: output is clamped to 8192×8192 and replay stops after 200,000 records (EMF/WMF) or 500,000 (EMF+). All three are overridable via `maxCanvasDimension` / `maxRecords`.
 - **Font rendering** uses the host Canvas font engine, so glyph metrics may differ from Windows GDI. Weight, italic, underline, and strike-out are honoured; supply `fontFamilyMap` to remap Windows face names to fonts available in your environment.
 
 ## License
 
-[Apache-2.0](LICENSE) — free for commercial and closed-source use, with an explicit patent grant.
+[Apache-2.0](LICENSE), free for commercial and closed-source use, with an explicit patent grant.

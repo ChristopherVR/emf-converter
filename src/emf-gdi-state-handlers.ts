@@ -66,7 +66,7 @@ export function handleEmfGdiStateRecord(
 			rCtx.stateStack.push(cloneState(state));
 			ctx.save();
 			if (rCtx.clipUntracked) {
-				emfLog('EMR_SAVEDC: untracked clip (SELECTCLIPPATH) cannot be re-applied — dropped');
+				emfLog('EMR_SAVEDC: untracked clip (SELECTCLIPPATH) cannot be re-applied, dropped');
 				rCtx.clipUntracked = false;
 				rCtx.clipRegion = null;
 			} else if (rCtx.clipRegion) {

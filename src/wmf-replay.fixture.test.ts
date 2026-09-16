@@ -91,7 +91,7 @@ describe('wmf-replay fixture: sample-crown.wmf', () => {
 
 		// The crown's signature colours must all reach the canvas. If slot
 		// reuse regresses, the coloured brushes never get selected and these
-		// fills collapse to black/white — exactly the bug this guards.
+		// fills collapse to black/white, exactly the bug this guards.
 		expect(used.has('#cc0000')).toBe(true); // royal red velvet
 		expect(used.has('#f4c316')).toBe(true); // gold frame
 		expect(used.has('#990000')).toBe(true); // deep-red shadow

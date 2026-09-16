@@ -19,7 +19,7 @@ function buildBuffer(size: number, writer: (view: DataView) => void): DataView {
 
 describe('emf-plus-read-helpers', () => {
 	// -----------------------------------------------------------------------
-	// readRectFromView — compressed (Int16)
+	// readRectFromView: compressed (Int16)
 	// -----------------------------------------------------------------------
 	describe('readRectFromView() compressed (Int16)', () => {
 		it('reads positive values', () => {
@@ -64,7 +64,7 @@ describe('emf-plus-read-helpers', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// readRectFromView — uncompressed (Float32)
+	// readRectFromView: uncompressed (Float32)
 	// -----------------------------------------------------------------------
 	describe('readRectFromView() uncompressed (Float32)', () => {
 		it('reads positive float values', () => {
@@ -109,7 +109,7 @@ describe('emf-plus-read-helpers', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// readPointFromView — compressed (Int16)
+	// readPointFromView: compressed (Int16)
 	// -----------------------------------------------------------------------
 	describe('readPointFromView() compressed (Int16)', () => {
 		it('reads a positive point', () => {
@@ -141,7 +141,7 @@ describe('emf-plus-read-helpers', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// readPointFromView — uncompressed (Float32)
+	// readPointFromView: uncompressed (Float32)
 	// -----------------------------------------------------------------------
 	describe('readPointFromView() uncompressed (Float32)', () => {
 		it('reads a float point', () => {

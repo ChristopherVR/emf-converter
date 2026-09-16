@@ -2,7 +2,7 @@
  * End-to-end regression tests driven by real GDI+/GDI EMF files.
  *
  * Both fixtures were produced on Windows by System.Drawing (GDI+), i.e. they
- * use the genuine on-disk record layouts — including the leading
+ * use the genuine on-disk record layouts, including the leading
  * EmfPlusGraphicsVersion field in EMF+ objects that synthetic test buffers
  * historically omitted.
  *
@@ -33,7 +33,7 @@ interface RecordedGradient {
 
 /**
  * Mock 2D context recording gradient creation, fill styles at fill time, and
- * clip fill rules — enough to verify gradient + clip behaviour without a real
+ * clip fill rules: enough to verify gradient + clip behaviour without a real
  * canvas.
  */
 function makeRecordingCtx() {

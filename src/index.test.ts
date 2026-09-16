@@ -499,7 +499,7 @@ describe('emf-header-parser', () => {
 				v.setUint16(22, opts.fileType ?? 1, true); // type (1=memory, 2=disk)
 				v.setUint16(24, 9, true); // headerSize (in 16-bit words)
 				v.setUint16(26, 0x0300, true); // version
-				v.setUint32(28, 20, true); // fileSize (in 16-bit words) — overlaps +8
+				v.setUint32(28, 20, true); // fileSize (in 16-bit words), overlaps +8
 				// maxRecordSize at headerOffset+8 = offset 30 (Uint32)
 				v.setUint32(30, opts.maxRecordSizeWords ?? 10, true);
 				v.setUint16(34, 0, true); // numObjects
@@ -581,7 +581,7 @@ describe('emf-header-parser', () => {
 			// Standard WMF header only (no Aldus prefix).
 			// The magic won't match 0x9ac6cdd7, so headerOffset stays 0.
 			const view = buildBuffer(22, (v) => {
-				// No Aldus magic — standard header starts at offset 0
+				// No Aldus magic: standard header starts at offset 0
 				v.setUint16(0, 1, true); // type
 				v.setUint16(2, 9, true); // headerSize in 16-bit words
 				v.setUint16(4, 0x0300, true); // version

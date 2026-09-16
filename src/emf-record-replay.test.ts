@@ -249,7 +249,7 @@ describe('emf-record-replay', () => {
 			const bounds: EmfBounds = { left: 0, top: 0, right: 0, bottom: 0 };
 			const view = buildEmf([]);
 			const ctx = makeCtxStub() as unknown as CanvasRenderingContext2D;
-			// Should not throw — uses || 1 fallback
+			// Should not throw: uses || 1 fallback
 			const result = replayEmfRecords(view, ctx, bounds, 500, 500);
 			expect(result).toStrictEqual([]);
 		});

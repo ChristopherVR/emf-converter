@@ -98,7 +98,7 @@ async function processDeferredImages(
 				`transform=[${img.transform.map((v) => v.toFixed(3)).join(',')}]`,
 		);
 		try {
-			// Copy to a plain ArrayBuffer — SharedArrayBuffer is not accepted
+			// Copy to a plain ArrayBuffer, since SharedArrayBuffer is not accepted
 			// as a BlobPart by the Blob constructor in TypeScript 5.x strict mode.
 			const plainBuffer = new ArrayBuffer(img.imageData.byteLength);
 			const dstBytes = new Uint8Array(plainBuffer);

@@ -163,7 +163,7 @@ describe('emf-plus-bitmap-decoder', () => {
 
 				const result = decodeEmfPlusBitmapPixels(view, 0, 1, 1, 4, PIXELFORMAT_32BPP_PARGB);
 				expect(result).not.toBeNull();
-				// Should not crash — alpha=0 skips un-premultiply
+				// Should not crash: alpha=0 skips un-premultiply
 			});
 		});
 

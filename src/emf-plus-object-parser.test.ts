@@ -263,7 +263,7 @@ describe('emf-plus-object-parser', () => {
 			rCtx.view.setUint32(d, 0xdbc01002, true); // version
 			rCtx.view.setUint32(d + 4, 0, true); // penFlags = 0 (no optional data)
 			rCtx.view.setUint32(d + 8, 0, true); // unit
-			rCtx.view.setFloat32(d + 12, 0, true); // not penWidth — skip 4 bytes for version field alignment
+			rCtx.view.setFloat32(d + 12, 0, true); // not penWidth: skip 4 bytes for version field alignment
 			rCtx.view.setFloat32(d + 16, 2.5, true); // penWidth at offset 16
 
 			// Brush at offset 20: brushType(4) + ARGB(4)
@@ -563,7 +563,7 @@ describe('emf-plus-object-parser', () => {
 			const rCtx = makeRCtx();
 			const d = 0;
 			rCtx.view.setUint32(d, 0xdbc01002, true);
-			rCtx.view.setUint32(d + 4, 0, true); // 0 nodes — invalid
+			rCtx.view.setUint32(d + 4, 0, true); // 0 nodes, invalid
 
 			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_REGION, 0), d, 8);
 			expect(rCtx.objectTable.has(0)).toBeFalsy();

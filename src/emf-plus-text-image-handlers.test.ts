@@ -245,7 +245,7 @@ describe('emf-plus-text-image-handlers', () => {
 				// glyphs at d + 16 (UTF-16LE)
 				rCtx.view.setUint16(d + 16, 65, true); // 'A'
 				rCtx.view.setUint16(d + 18, 66, true); // 'B'
-				// positions at d + 20 (aligned to 4 bytes — already aligned)
+				// positions at d + 20 (aligned to 4 bytes, already aligned)
 				rCtx.view.setFloat32(d + 20, 5, true); // gx
 				rCtx.view.setFloat32(d + 24, 15, true); // gy
 				rCtx.view.setFloat32(d + 28, 20, true); // gx2 (unused, we only use first)

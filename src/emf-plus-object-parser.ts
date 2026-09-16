@@ -243,7 +243,7 @@ function parseRegionNode(
 		return { node: { type: 'infinite' }, bytesRead: 4 };
 	}
 
-	// Unknown node type — treat as empty
+	// Unknown node type: treat as empty
 	emfWarn(`parseRegionNode: unknown node type 0x${nodeType.toString(16)}`);
 	return { node: { type: 'empty' }, bytesRead: 4 };
 }

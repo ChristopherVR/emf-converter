@@ -214,7 +214,7 @@ export function handleEmfPlusTextImageRecord(
 					});
 					emfLog(`DrawImage: queued deferred image (total=${rCtx.deferredImages.length})`);
 				} else {
-					emfWarn(`DrawImage: SKIPPED — no valid image data for id=${imgId}`);
+					emfWarn(`DrawImage: SKIPPED, no valid image data for id=${imgId}`);
 				}
 			}
 			return true;
@@ -281,7 +281,7 @@ export function handleEmfPlusTextImageRecord(
 				} else {
 					const hasData = imgObj && imgObj.kind === 'plus-image' && imgObj.data;
 					emfWarn(
-						`DrawImagePoints: SKIPPED — imgId=${imgId}, count=${count}, hasObj=${Boolean(imgObj)}, hasData=${Boolean(hasData)}`,
+						`DrawImagePoints: SKIPPED, imgId=${imgId}, count=${count}, hasObj=${Boolean(imgObj)}, hasData=${Boolean(hasData)}`,
 					);
 				}
 			}

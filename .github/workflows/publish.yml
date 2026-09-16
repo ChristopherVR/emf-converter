@@ -6,7 +6,7 @@ name: Publish to npm
 # trusted publishing (with provenance), and cut a GitHub release whose body is
 # the new changelog section.
 #
-# The version is derived from history, not from package.json — you do not bump
+# The version is derived from history, not from package.json. You do not bump
 # it by hand. breaking change -> major, feat -> minor, anything else -> patch.
 # If nothing conventional landed since the last tag, a patch release is still
 # cut, so every push to main ships.
@@ -14,7 +14,7 @@ name: Publish to npm
 # The release commit is pushed with GITHUB_TOKEN and marked [skip ci]; pushes
 # made with GITHUB_TOKEN do not retrigger workflows, so this does not loop.
 #
-# Auth: OIDC trusted publishing — no secrets. Configure a trusted publisher on
+# Auth: OIDC trusted publishing, no secrets. Configure a trusted publisher on
 # npmjs.com: GitHub Actions; owner ChristopherVR; repo emf-converter; workflow
 # publish.yml; environment npm. Requires a public repo.
 
@@ -86,7 +86,7 @@ jobs:
           echo "Last tag: $LAST_TAG ($NEW_COMMITS commits since)"
 
           if [ "$NEW_COMMITS" -eq 0 ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
-            echo "Nothing new since $LAST_TAG — skipping release."
+            echo "Nothing new since $LAST_TAG, skipping release."
             echo "release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -103,8 +103,8 @@ jobs:
             patch) VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
             *)
               VERSION="${CLIFF#v}"
-              # git-cliff found nothing to bump (unconventional commits only) —
-              # still ship, as a patch.
+              # git-cliff found nothing to bump (unconventional commits only),
+              # so still ship, as a patch.
               if [ -z "$VERSION" ] || [ "$VERSION" = "$BASE" ]; then
                 VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
               fi
@@ -112,7 +112,7 @@ jobs:
           esac
 
           if [ "$(npm view "emf-converter@${VERSION}" version 2>/dev/null || true)" = "$VERSION" ]; then
-            echo "emf-converter@${VERSION} is already on npm — skipping release."
+            echo "emf-converter@${VERSION} is already on npm, skipping release."
             echo "release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -160,7 +160,7 @@ jobs:
           ' CHANGELOG.md > "$NOTES"
 
           if [ ! -s "$NOTES" ]; then
-            echo "::warning::CHANGELOG.md has no '## [${VERSION}]' section — falling back to the raw commit list."
+            echo "::warning::CHANGELOG.md has no '## [${VERSION}]' section, falling back to the raw commit list."
             {
               echo "## ${TAG}"
               echo

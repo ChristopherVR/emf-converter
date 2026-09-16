@@ -238,10 +238,10 @@ export function createTempCanvas(
 /**
  * How the pen/brush colour must be adjusted before drawing to emulate a
  * ROP2 mode on top of Canvas compositing:
- * - `'none'`       — use the colour as-is
- * - `'invert'`     — use the ones-complement of the colour (~pen)
- * - `'black'`/`'white'` — replace the colour entirely
- * - `'skip'`       — draw nothing (fully transparent colour)
+ * - `'none'`: use the colour as-is
+ * - `'invert'`: use the ones-complement of the colour (~pen)
+ * - `'black'`/`'white'`: replace the colour entirely
+ * - `'skip'`: draw nothing (fully transparent colour)
  */
 export type Rop2ColorTransform = 'none' | 'invert' | 'black' | 'white' | 'skip';
 

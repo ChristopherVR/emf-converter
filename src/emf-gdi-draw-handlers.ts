@@ -11,7 +11,7 @@ import { handleEmfGdiTextBitmapRecord } from './emf-gdi-draw-text-bitmap';
 import type { EmfGdiReplayCtx } from './emf-types';
 
 // ---------------------------------------------------------------------------
-// Main handler — tries shape records first, then text/bitmap/clip records.
+// Main handler: tries shape records first, then text/bitmap/clip records.
 // ---------------------------------------------------------------------------
 
 export function handleEmfGdiDrawRecord(

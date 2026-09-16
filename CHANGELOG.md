@@ -58,7 +58,7 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
 ### Features
 
-- Address README limitations — fonts, ROP2, configurable limits ([0513ec6](https://github.com/ChristopherVR/emf-converter/commit/0513ec6db1df6e17d32bb2b00c2c23e724e58076))
+- Address README limitations: fonts, ROP2, configurable limits ([0513ec6](https://github.com/ChristopherVR/emf-converter/commit/0513ec6db1df6e17d32bb2b00c2c23e724e58076))
 
 ## [1.4.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v1.4.3) - 2026-06-24
 

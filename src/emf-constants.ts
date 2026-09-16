@@ -13,7 +13,7 @@
 // EMF record type constants (32-bit, from [MS-EMF] section 2.1.1)
 // ---------------------------------------------------------------------------
 
-/** EMR_HEADER — the mandatory first record of every EMF file. */
+/** EMR_HEADER: the mandatory first record of every EMF file. */
 export const EMR_HEADER = 1;
 export const EMR_POLYBEZIER = 2;
 export const EMR_POLYGON = 3;
@@ -35,7 +35,7 @@ export const EMR_SETPOLYFILLMODE = 19;
 export const EMR_SETROP2 = 20;
 export const EMR_SETSTRETCHBLTMODE = 21;
 
-// Binary raster-operation (ROP2) modes — the 1..16 wire values shared by
+// Binary raster-operation (ROP2) modes: the 1..16 wire values shared by
 // EMR_SETROP2 and META_SETROP2 (MS-WMF 2.1.1.31). Only a subset has a faithful
 // Canvas globalCompositeOperation equivalent; see `rop2ToGco` in emf-canvas-helpers.
 export const R2_BLACK = 1;

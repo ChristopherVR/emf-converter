@@ -300,7 +300,7 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 		}
 	}
 	if (!(r > 0)) {
-		// No usable boundary — fall back to the centre colour.
+		// No usable boundary, so fall back to the centre colour.
 		return { kind: 'plus-brush', color: argbToRgba(centerArgb) };
 	}
 
@@ -320,7 +320,7 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 
 /**
  * Parse an EMF+ Brush object. Never returns null for structurally valid
- * input — unknown brush types degrade to a solid black brush, matching GDI+
+ * input: unknown brush types degrade to a solid black brush, matching GDI+
  * fallback behaviour.
  */
 export function parseEmfPlusBrushObject(

@@ -1,5 +1,5 @@
 /**
- * EMF+ record stream replay — main loop.
+ * EMF+ record stream replay: main loop.
  *
  * Iterates over EMF+ records embedded inside EMR_COMMENT records and
  * dispatches to the appropriate handler modules.
@@ -142,7 +142,7 @@ export function replayEmfPlusRecords(
 				if (isContinuation) {
 					// Start or continue accumulating data
 					if (rCtx.continuationBuffer === null) {
-						// First continuation record — has totalObjectSize (UINT32) at start
+						// First continuation record: has totalObjectSize (UINT32) at start
 						if (recDataSize >= 4) {
 							const totalSize = view.getUint32(dataOff, true);
 							const objectType = (recFlags >> 8) & 0x7f;
@@ -178,7 +178,7 @@ export function replayEmfPlusRecords(
 							}
 						}
 					} else {
-						// Subsequent continuation record — append raw data
+						// Subsequent continuation record: append raw data
 						const remaining = rCtx.continuationTotalSize - rCtx.continuationOffset;
 						const chunk = new Uint8Array(
 							view.buffer,
@@ -189,7 +189,7 @@ export function replayEmfPlusRecords(
 						rCtx.continuationOffset += chunk.length;
 					}
 				} else if (rCtx.continuationBuffer !== null && objectId === rCtx.continuationObjectId) {
-					// Final record of a continuation sequence — append last chunk & parse
+					// Final record of a continuation sequence: append last chunk & parse
 					const remaining = rCtx.continuationTotalSize - rCtx.continuationOffset;
 					const chunk = new Uint8Array(
 						view.buffer,

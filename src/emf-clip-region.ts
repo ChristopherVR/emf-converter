@@ -7,8 +7,8 @@
  * Exclude, and Complement semantics, plus translation (OffsetClipRgn).
  *
  * This module makes those operations possible by tracking the active clip as a
- * list of {@link ClipShape}s — device-space path-command lists that are
- * replayed with `ctx.clip(fillRule)` — instead of relying on the opaque canvas
+ * list of {@link ClipShape}s (device-space path-command lists) that are
+ * replayed with `ctx.clip(fillRule)`, instead of relying on the opaque canvas
  * clip state. Two properties of the even-odd fill rule do the heavy lifting:
  *
  * - **Subtraction**: clipping with `[huge covering rect] + [shape]` under the
@@ -398,7 +398,7 @@ export function applyClipShapes(ctx: CanvasContext, shapes: ClipShape[]): void {
  * Rebuild the canvas clip state from a tracked region.
  *
  * Unwinds every save made for clipping (restoring the pre-clip canvas state),
- * then — when a region is active — opens a single fresh save bracket and
+ * then, when a region is active, opens a single fresh save bracket and
  * replays all clip shapes into it. Contexts that never touch clipping keep a
  * `clipSaveDepth` of 0 and are unaffected.
  */

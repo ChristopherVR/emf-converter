@@ -121,7 +121,9 @@ async function convertSelectedFile(): Promise<void> {
 		const elapsed = performance.now() - start;
 
 		if (dataUrl === null) {
-			showError('Conversion returned null. The file may not be a valid EMF/WMF metafile.');
+			showError(
+				`Conversion returned null: the file may not be a valid ${kind.toUpperCase()} metafile.`,
+			);
 			return;
 		}
 
@@ -189,4 +191,4 @@ dropZone.addEventListener('drop', (event) => {
 	}
 });
 
-setStatus('Ready — pick or drop an EMF/WMF file to convert.', 'idle');
+setStatus('Ready: pick or drop an EMF/WMF file to convert.', 'idle');

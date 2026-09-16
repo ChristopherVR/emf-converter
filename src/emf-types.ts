@@ -315,7 +315,7 @@ export interface EmfPlusFont {
 }
 
 /**
- * An EMF+ (GDI+) path object — an ordered list of points with per-point
+ * An EMF+ (GDI+) path object: an ordered list of points with per-point
  * type bytes that specify move-to (0), line-to (1), or bezier (3) segments.
  */
 export interface EmfPlusPath {
@@ -329,7 +329,7 @@ export interface EmfPlusPath {
 	types: Uint8Array;
 }
 
-/** An EMF+ (GDI+) image object — either a raster bitmap or an embedded metafile. */
+/** An EMF+ (GDI+) image object: either a raster bitmap or an embedded metafile. */
 export interface EmfPlusImage {
 	kind: 'plus-image';
 	/** Raw image bytes, or `null` when decoding failed / data was out of bounds. */

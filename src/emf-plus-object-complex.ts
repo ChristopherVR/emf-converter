@@ -84,7 +84,7 @@ export function parseEmfPlusPenObject(
 	}
 
 	// The pen's colour comes from an embedded brush object (with or without
-	// its own leading version field — parseEmfPlusBrushObject sniffs both).
+	// its own leading version field: parseEmfPlusBrushObject sniffs both).
 	let penColor = 'rgba(0,0,0,1)';
 	if (brushOff + 8 <= dataOff + recDataSize) {
 		const brush = parseEmfPlusBrushObject(view, brushOff, dataOff + recDataSize - brushOff);

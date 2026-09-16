@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # npm dependencies (package.json) — tsup / typescript / vitest, etc.
+  # npm dependencies (package.json): tsup / typescript / vitest, etc.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:

@@ -115,8 +115,8 @@ function createBrushGradient(rCtx: EmfPlusReplayCtx, grad: EmfPlusGradient): Can
 /**
  * Resolve a brush to a canvas paint style: an inline ARGB colour, a solid
  * brush colour, or a CanvasGradient for linear/path gradient brushes.
- * Gradient geometry is defined in brush (world) space — the same space fills
- * execute in after {@link applyPlusWorldTransform} — so the gradient can be
+ * Gradient geometry is defined in brush (world) space, the same space fills
+ * execute in after {@link applyPlusWorldTransform}, so the gradient can be
  * assigned directly to `fillStyle`.
  */
 export function resolveBrushPaint(
@@ -214,7 +214,7 @@ function popState(rCtx: EmfPlusReplayCtx, stackId: number): void {
 
 /**
  * The effective device matrix for EMF+ drawing: world transform × page-unit
- * multiplier × DPI scale — the same matrix {@link applyPlusWorldTransform}
+ * multiplier × DPI scale, the same matrix {@link applyPlusWorldTransform}
  * installs on the canvas. Clip shapes are recorded in this (device) space so
  * they survive later transform changes, exactly like a native canvas clip.
  */
@@ -517,7 +517,7 @@ export function handleEmfPlusStateRecord(
 					reapplyPlusClip(rCtx);
 					emfLog(`OffsetClip: clip translated by world (${dx},${dy}) → device (${ddx},${ddy})`);
 				} else {
-					emfLog(`OffsetClip: dx=${dx}, dy=${dy} — no active clip, nothing to offset`);
+					emfLog(`OffsetClip: dx=${dx}, dy=${dy}, no active clip, nothing to offset`);
 				}
 			}
 			return true;

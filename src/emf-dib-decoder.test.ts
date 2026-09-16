@@ -147,9 +147,9 @@ describe('emf-dib-uncompressed', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// decodeUncompressedRows — 24 bpp
+	// decodeUncompressedRows: 24 bpp
 	// -----------------------------------------------------------------------
-	describe('decodeUncompressedRows() — 24 bpp', () => {
+	describe('decodeUncompressedRows(): 24 bpp', () => {
 		it('decodes a 1x1 bottom-up 24bpp pixel (BGR -> RGBA)', () => {
 			// 24bpp row stride: ceil((24*1+31)/32)*4 = 4 bytes
 			const view = buildBuffer(4, (v) => {
@@ -219,9 +219,9 @@ describe('emf-dib-uncompressed', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// decodeUncompressedRows — 32 bpp
+	// decodeUncompressedRows: 32 bpp
 	// -----------------------------------------------------------------------
-	describe('decodeUncompressedRows() — 32 bpp', () => {
+	describe('decodeUncompressedRows(): 32 bpp', () => {
 		it('decodes a 1x1 32bpp pixel (BGRA -> RGBA, alpha=0 becomes 255)', () => {
 			const view = buildBuffer(4, (v) => {
 				v.setUint8(0, 0x11); // B
@@ -252,9 +252,9 @@ describe('emf-dib-uncompressed', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// decodeUncompressedRows — 8 bpp (indexed)
+	// decodeUncompressedRows: 8 bpp (indexed)
 	// -----------------------------------------------------------------------
-	describe('decodeUncompressedRows() — 8 bpp (indexed)', () => {
+	describe('decodeUncompressedRows(): 8 bpp (indexed)', () => {
 		it('maps index to colour table', () => {
 			// 1x1 8bpp, row stride = 4
 			const colorTable: Array<[number, number, number]> = [
@@ -275,9 +275,9 @@ describe('emf-dib-uncompressed', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// decodeUncompressedRows — 1 bpp (monochrome)
+	// decodeUncompressedRows: 1 bpp (monochrome)
 	// -----------------------------------------------------------------------
-	describe('decodeUncompressedRows() — 1 bpp (monochrome)', () => {
+	describe('decodeUncompressedRows(): 1 bpp (monochrome)', () => {
 		it('decodes a 1-bit-per-pixel image using colour table', () => {
 			const colorTable: Array<[number, number, number]> = [
 				[0, 0, 0], // bit 0: black
@@ -303,9 +303,9 @@ describe('emf-dib-uncompressed', () => {
 	});
 
 	// -----------------------------------------------------------------------
-	// decodeUncompressedRows — top-down
+	// decodeUncompressedRows: top-down
 	// -----------------------------------------------------------------------
-	describe('decodeUncompressedRows() — top-down', () => {
+	describe('decodeUncompressedRows(): top-down', () => {
 		it('preserves row order for top-down image', () => {
 			const view = buildBuffer(8, (v) => {
 				// Row 0: B=0xff, G=0, R=0 => blue

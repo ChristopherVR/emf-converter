@@ -75,7 +75,7 @@ export function getRenderableEmfBounds(header: {
 		return { left: 0, top: 0, right: header.frameW, bottom: header.frameH };
 	}
 
-	emfWarn('getRenderableEmfBounds: no valid bounds or frame — returning null');
+	emfWarn('getRenderableEmfBounds: no valid bounds or frame, returning null');
 	return null;
 }
 

@@ -229,7 +229,7 @@ export function gdiCombineClip(rCtx: EmfGdiReplayCtx, shape: ClipShape, op: Clip
 				rCtx.clipSaveDepth++;
 				applyClipShapes(ctx, [shape]);
 				if (op === 'complement') {
-					emfLog('gdiCombineClip: complement on untracked clip — approximated as intersect');
+					emfLog('gdiCombineClip: complement on untracked clip, approximated as intersect');
 				}
 				return;
 			}
@@ -242,12 +242,12 @@ export function gdiCombineClip(rCtx: EmfGdiReplayCtx, shape: ClipShape, op: Clip
 				rCtx.clipSaveDepth++;
 				applyClipShapes(ctx, inv.region ?? [shape]);
 				if (op === 'xor') {
-					emfLog('gdiCombineClip: xor on untracked clip — approximated as exclude');
+					emfLog('gdiCombineClip: xor on untracked clip, approximated as exclude');
 				}
 				return;
 			}
 			case 'union':
-				emfLog('gdiCombineClip: union on untracked clip — clip left unchanged');
+				emfLog('gdiCombineClip: union on untracked clip, clip left unchanged');
 				return;
 		}
 	}
@@ -317,7 +317,7 @@ function handleExtSelectClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize:
 	const op = RGN_MODE_OPS[iMode];
 
 	if (!op) {
-		emfLog(`EMR_EXTSELECTCLIPRGN: unknown RegionMode ${iMode} — ignored`);
+		emfLog(`EMR_EXTSELECTCLIPRGN: unknown RegionMode ${iMode}, ignored`);
 		return true;
 	}
 
@@ -327,7 +327,7 @@ function handleExtSelectClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize:
 			rCtx.clipRegion = null;
 			rCtx.clipUntracked = false;
 			reapplyClipRegion(rCtx, null);
-			emfLog('EMR_EXTSELECTCLIPRGN: RGN_COPY with empty region — clip reset');
+			emfLog('EMR_EXTSELECTCLIPRGN: RGN_COPY with empty region, clip reset');
 		}
 		return true;
 	}
@@ -379,7 +379,7 @@ function handleOffsetClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: nu
 		const dx = rCtx.view.getInt32(dataOff, true);
 		const dy = rCtx.view.getInt32(dataOff + 4, true);
 		if (rCtx.clipUntracked) {
-			emfLog(`EMR_OFFSETCLIPRGN: offset=(${dx},${dy}) skipped — active clip is untracked`);
+			emfLog(`EMR_OFFSETCLIPRGN: offset=(${dx},${dy}) skipped, active clip is untracked`);
 			return true;
 		}
 		if (rCtx.clipRegion) {

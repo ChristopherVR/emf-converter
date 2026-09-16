@@ -79,7 +79,7 @@ function makeRCtx(bufSize = 512): EmfGdiReplayCtx {
 
 /** Write a 32-bit poly record body: bounds(16) + count(4) + points(count*8). */
 function writePoly32(view: DataView, dataOff: number, points: Array<[number, number]>): void {
-	// Bounds (left, top, right, bottom) — dummy
+	// Bounds (left, top, right, bottom): dummy
 	view.setInt32(dataOff, 0, true);
 	view.setInt32(dataOff + 4, 0, true);
 	view.setInt32(dataOff + 8, 100, true);

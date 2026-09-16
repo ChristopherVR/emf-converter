@@ -192,7 +192,7 @@ export function replayEmfRecords(
 			break;
 		}
 
-		// Ignored records — safe to skip
+		// Ignored records: safe to skip
 		if (
 			recType === EMR_SETBRUSHORGEX ||
 			recType === EMR_SETMETARGN ||
