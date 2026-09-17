@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.0.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.0.1) - 2026-09-17
+
+### Chores
+
+- **deps-dev:** Bump @types/node from 22.20.3 to 26.5.1 (#12) ([7774a4a](https://github.com/ChristopherVR/emf-converter/commit/7774a4af5eb8382822d1e84b9b5cb168cba73989))
+
 ## [3.0.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.0.0) - 2026-09-16
 
 ### Features
