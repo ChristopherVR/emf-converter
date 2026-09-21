@@ -66,7 +66,12 @@ export async function ensureNodeCanvasModule(): Promise<NodeCanvasModule | null>
 		return nodeCanvasModule;
 	}
 	try {
-		nodeCanvasModule = await import('@napi-rs/canvas');
+		// The magic comments keep webpack/Turbopack and Vite from statically
+		// resolving the optional Node.js backend into a browser bundle; the
+		// guards above mean this line never runs there.
+		nodeCanvasModule = await import(
+			/* webpackIgnore: true */ /* @vite-ignore */ '@napi-rs/canvas'
+		);
 	} catch {
 		emfWarn(
 			'createCanvas: no OffscreenCanvas/document and @napi-rs/canvas is not installed. ' +
