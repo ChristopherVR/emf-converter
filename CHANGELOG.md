@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.0.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.0.2) - 2026-09-21
+
+### Bug Fixes
+
+- Keep bundlers from resolving the @napi-rs/canvas fallback (#14) ([558e806](https://github.com/ChristopherVR/emf-converter/commit/558e806e660572755e0c41a7c226eeed704272ad))
+
 ## [3.0.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.0.1) - 2026-09-17
 
 ### Chores
