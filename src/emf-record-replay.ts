@@ -9,7 +9,6 @@ import {
 	EMR_HEADER,
 	EMR_EOF,
 	EMR_COMMENT,
-	EMR_SETBRUSHORGEX,
 	EMR_SETMETARGN,
 	EMR_SETICMMODE,
 	EMR_SETLAYOUT,
@@ -194,7 +193,6 @@ export function replayEmfRecords(
 
 		// Ignored records: safe to skip
 		if (
-			recType === EMR_SETBRUSHORGEX ||
 			recType === EMR_SETMETARGN ||
 			recType === EMR_SETICMMODE ||
 			recType === EMR_SETLAYOUT ||

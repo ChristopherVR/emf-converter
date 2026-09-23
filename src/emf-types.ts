@@ -72,11 +72,24 @@ export interface GdiPen {
  */
 export interface GdiBrush {
 	kind: 'brush';
-	/** Brush style constant: BS_SOLID=0, BS_NULL=1 (hollow), BS_HATCHED=2. */
+	/** Brush style constant: BS_SOLID=0, BS_NULL=1 (hollow), BS_HATCHED=2, BS_PATTERN=3, BS_DIBPATTERNPT=6. */
 	style: number;
 	/** CSS hex colour string. */
 	color: string;
+	/** Repeating pattern for hatched / pattern brushes; absent for solid and null brushes. */
+	pattern?: GdiBrushPattern;
 }
+
+/**
+ * The repeating bitmap behind a non-solid GDI brush (see
+ * `emf-gdi-brush-pattern.ts`): an HS_* hatch (brush colour over the DC
+ * background colour), a monochrome pattern (0 bits = text colour, 1 bits =
+ * background colour), or a colour DIB pattern.
+ */
+export type GdiBrushPattern =
+	| { kind: 'hatch'; hatch: number }
+	| { kind: 'mono'; width: number; height: number; bits: Uint8Array }
+	| { kind: 'bitmap'; width: number; height: number; rgb: Uint32Array };
 
 /**
  * Represents a GDI font object created by EMR_EXTCREATEFONTINDIRECTW.
@@ -137,6 +150,13 @@ export interface DrawState {
 	brushColor: string;
 	/** Current brush style constant. */
 	brushStyle: number;
+	/** Pattern of the selected brush, or `null` for a solid / null brush. */
+	brushPattern: GdiBrushPattern | null;
+	/** Brush origin (EMR_SETBRUSHORGEX), in device pixels. */
+	brushOrgX: number;
+	brushOrgY: number;
+	/** EMR_SETSTRETCHBLTMODE mode; 1 = BLACKONWHITE (GDI's default), 4 = HALFTONE. */
+	stretchBltMode: number;
 	/** Current text foreground colour (CSS hex). */
 	textColor: string;
 	/** Current background colour used for opaque text backgrounds. */
@@ -196,6 +216,10 @@ export function defaultState(): DrawState {
 		penStyle: 0,
 		brushColor: '#ffffff',
 		brushStyle: 0,
+		brushPattern: null,
+		brushOrgX: 0,
+		brushOrgY: 0,
+		stretchBltMode: 1,
 		textColor: '#000000',
 		bkColor: '#ffffff',
 		bkMode: 1,

@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 
 import {
 	classifyRop3,
-	applyRop3Bitwise,
-	invertImageDataRgb,
+	applyRop3,
+	evalRop3,
+	rop3Index,
+	rop3Operands,
 	clampPositiveRect,
 } from './emf-rop3';
 import {
@@ -14,12 +16,14 @@ import {
 	ROP3_SRCERASE,
 	ROP3_NOTSRCCOPY,
 	ROP3_NOTSRCERASE,
+	ROP3_MERGECOPY,
+	ROP3_MERGEPAINT,
 	ROP3_PATCOPY,
+	ROP3_PATPAINT,
+	ROP3_PATINVERT,
 	ROP3_DSTINVERT,
 	ROP3_BLACKNESS,
 	ROP3_WHITENESS,
-	ROP3_MERGEPAINT,
-	ROP3_MERGECOPY,
 } from './emf-constants';
 
 function makeImageData(pixels: Array<[number, number, number, number]>, width: number): ImageData {
@@ -33,114 +37,120 @@ function makeImageData(pixels: Array<[number, number, number, number]>, width: n
 	return { data, width, height: pixels.length / width, colorSpace: 'srgb' } as ImageData;
 }
 
+const P = 0xf0;
+const S = 0xcc;
+const D = 0xaa;
+const mask8 = (v: number): number => v & 0xff;
+
+describe('evalRop3', () => {
+	// Evaluating a code on the canonical operand bytes P=0xF0, S=0xCC, D=0xAA
+	// must reproduce its own truth-table index: the defining identity of the
+	// ROP3 encoding, so every one of the 256 functions is checked.
+	it('reproduces the truth-table index for all 256 functions', () => {
+		for (let index = 0; index < 256; index++) {
+			expect(evalRop3(index, P, S, D, 0xff)).toBe(index);
+		}
+	});
+
+	it.each([
+		[ROP3_SRCCOPY, (p: number, s: number) => s],
+		[ROP3_SRCPAINT, (_p: number, s: number, d: number) => s | d],
+		[ROP3_SRCAND, (_p: number, s: number, d: number) => s & d],
+		[ROP3_SRCINVERT, (_p: number, s: number, d: number) => s ^ d],
+		[ROP3_SRCERASE, (_p: number, s: number, d: number) => s & ~d],
+		[ROP3_NOTSRCCOPY, (_p: number, s: number) => ~s],
+		[ROP3_NOTSRCERASE, (_p: number, s: number, d: number) => ~(s | d)],
+		[ROP3_MERGECOPY, (p: number, s: number) => p & s],
+		[ROP3_MERGEPAINT, (_p: number, s: number, d: number) => ~s | d],
+		[ROP3_PATCOPY, (p: number) => p],
+		[ROP3_PATPAINT, (p: number, s: number, d: number) => p | ~s | d],
+		[ROP3_PATINVERT, (p: number, _s: number, d: number) => p ^ d],
+		[ROP3_DSTINVERT, (_p: number, _s: number, d: number) => ~d],
+		[ROP3_BLACKNESS, () => 0],
+		[ROP3_WHITENESS, () => 0xff],
+	] as const)('matches the documented expression of 0x%s', (rop, fn) => {
+		const index = rop3Index(rop);
+		for (const [p, s, d] of [
+			[0x12, 0x34, 0x56],
+			[0xff, 0x00, 0x5a],
+			[0x0f, 0xf0, 0x99],
+		]) {
+			expect(evalRop3(index, p, s, d, 0xff)).toBe(mask8(fn(p, s, d)));
+		}
+	});
+
+	it('evaluates all three packed channels at once', () => {
+		expect(evalRop3(rop3Index(ROP3_SRCINVERT), 0, 0xff00ff, 0x0f0f0f)).toBe(0xf00ff0);
+	});
+});
+
+describe('rop3Operands', () => {
+	it('detects which operands a function reads', () => {
+		expect(rop3Operands(rop3Index(ROP3_PATINVERT))).toEqual({ usesP: true, usesS: false, usesD: true });
+		expect(rop3Operands(rop3Index(ROP3_MERGECOPY))).toEqual({ usesP: true, usesS: true, usesD: false });
+		expect(rop3Operands(rop3Index(ROP3_SRCPAINT))).toEqual({ usesP: false, usesS: true, usesD: true });
+		expect(rop3Operands(rop3Index(ROP3_BLACKNESS))).toEqual({ usesP: false, usesS: false, usesD: false });
+	});
+});
+
 describe('classifyRop3', () => {
 	it.each([
 		[ROP3_SRCCOPY, { kind: 'copy' }],
 		[ROP3_BLACKNESS, { kind: 'solid', color: 'black' }],
 		[ROP3_WHITENESS, { kind: 'solid', color: 'white' }],
-		[ROP3_PATCOPY, { kind: 'pattern' }],
-		[ROP3_NOTSRCCOPY, { kind: 'invert-source' }],
 		[ROP3_DSTINVERT, { kind: 'invert-dest' }],
-		[ROP3_SRCPAINT, { kind: 'bitwise', op: 'or' }],
-		[ROP3_SRCAND, { kind: 'bitwise', op: 'and' }],
-		[ROP3_SRCINVERT, { kind: 'bitwise', op: 'xor' }],
-		[ROP3_SRCERASE, { kind: 'bitwise', op: 'src-and-not-dst' }],
-		[ROP3_NOTSRCERASE, { kind: 'bitwise', op: 'not-src-and-not-dst' }],
-		[ROP3_MERGEPAINT, { kind: 'bitwise', op: 'not-src-or-dst' }],
-	] as const)('classifies 0x%s correctly', (rop, expected) => {
+		[0x00aa0029, { kind: 'noop' }],
+	] as const)('uses a Canvas-native plan for 0x%s', (rop, expected) => {
 		expect(classifyRop3(rop)).toEqual(expected);
 	});
 
-	it('degrades an unrecognised code to a plain copy', () => {
-		expect(classifyRop3(0x12345678)).toEqual({ kind: 'copy' });
+	it('routes every other code, including the pattern ops, to the exact evaluator', () => {
+		for (const rop of [ROP3_MERGECOPY, ROP3_PATPAINT, ROP3_PATINVERT, ROP3_SRCPAINT, ROP3_PATCOPY]) {
+			const plan = classifyRop3(rop);
+			expect(plan.kind).toBe('ternary');
+		}
 	});
 
-	it('degrades MERGECOPY (a pattern-bitmap op this converter does not realise) to a plain copy', () => {
-		expect(classifyRop3(ROP3_MERGECOPY)).toEqual({ kind: 'copy' });
+	it('ignores the low word, as Windows does', () => {
+		expect(classifyRop3(0x00cc0000)).toEqual({ kind: 'copy' });
+		expect(classifyRop3(0x005a0000)).toEqual(classifyRop3(ROP3_PATINVERT));
 	});
 });
 
-describe('applyRop3Bitwise', () => {
-	it('computes OR (SRCPAINT) per channel and forces alpha to 255', () => {
-		const dst = makeImageData([[0b1100, 0, 0, 128]], 1);
-		const src = makeImageData([[0b1010, 0, 0, 0]], 1);
-		applyRop3Bitwise(dst, src, 'or');
-		expect(Array.from(dst.data)).toEqual([0b1110, 0, 0, 255]);
+describe('applyRop3', () => {
+	it('combines P, S and D per pixel and forces alpha opaque', () => {
+		const dst = makeImageData([[0b1100, 0, 0x10, 0]], 1);
+		const src = makeImageData([[0b1010, 0xff, 0x01, 0]], 1);
+		applyRop3(dst, src, 0x0f00ff, rop3Index(ROP3_PATPAINT), 0, 0);
+		// P | ~S | D per channel.
+		expect(Array.from(dst.data)).toEqual([0x0f | (~0b1010 & 0xff) | 0b1100, 0, 0xff, 255]);
 	});
 
-	it('computes AND (SRCAND) per channel', () => {
-		const dst = makeImageData([[0b1100, 255, 0, 255]], 1);
-		const src = makeImageData([[0b1010, 0, 255, 255]], 1);
-		applyRop3Bitwise(dst, src, 'and');
-		expect(Array.from(dst.data)).toEqual([0b1000, 0, 0, 255]);
-	});
-
-	it('computes XOR (SRCINVERT)', () => {
-		const dst = makeImageData([[0b1100, 0, 0, 255]], 1);
-		const src = makeImageData([[0b1010, 0, 0, 255]], 1);
-		applyRop3Bitwise(dst, src, 'xor');
-		expect(dst.data[0]).toBe(0b0110);
-	});
-
-	it('computes src & ~dst (SRCERASE)', () => {
-		const dst = makeImageData([[0b1100, 0, 0, 255]], 1);
-		const src = makeImageData([[0b1010, 0, 0, 255]], 1);
-		applyRop3Bitwise(dst, src, 'src-and-not-dst');
-		// src=1010, ~dst=~1100=...0011 (mod 256) -> 1010 & 0x03 low bits considered via &0xff
-		expect(dst.data[0]).toBe(0b1010 & (~0b1100 & 0xff));
-	});
-
-	it('computes ~src | dst (MERGEPAINT)', () => {
-		const dst = makeImageData([[0b1100, 0, 0, 255]], 1);
-		const src = makeImageData([[0b1010, 0, 0, 255]], 1);
-		applyRop3Bitwise(dst, src, 'not-src-or-dst');
-		expect(dst.data[0]).toBe((~0b1010 & 0xff) | 0b1100);
-	});
-
-	it('computes ~(src | dst) (NOTSRCERASE)', () => {
-		const dst = makeImageData([[0b1100, 0, 0, 255]], 1);
-		const src = makeImageData([[0b1010, 0, 0, 255]], 1);
-		applyRop3Bitwise(dst, src, 'not-src-and-not-dst');
-		expect(dst.data[0]).toBe(~(0b1010 | 0b1100) & 0xff);
-	});
-
-	it('combines every pixel when src/dst have more than one', () => {
+	it('samples a pattern function at canvas coordinates offset by the rect origin', () => {
 		const dst = makeImageData(
 			[
-				[255, 0, 0, 255],
-				[0, 255, 0, 255],
-			],
-			2,
-		);
-		const src = makeImageData(
-			[
-				[0, 255, 0, 255],
-				[255, 0, 0, 255],
-			],
-			2,
-		);
-		applyRop3Bitwise(dst, src, 'or');
-		expect(Array.from(dst.data)).toEqual([255, 255, 0, 255, 255, 255, 0, 255]);
-	});
-});
-
-describe('invertImageDataRgb', () => {
-	it('inverts RGB and leaves alpha untouched', () => {
-		const data = makeImageData([[0, 100, 255, 200]], 1);
-		invertImageDataRgb(data);
-		expect(Array.from(data.data)).toEqual([255, 155, 0, 200]);
-	});
-
-	it('inverts every pixel', () => {
-		const data = makeImageData(
-			[
 				[0, 0, 0, 255],
-				[255, 255, 255, 255],
+				[0, 0, 0, 255],
 			],
 			2,
 		);
-		invertImageDataRgb(data);
-		expect(Array.from(data.data)).toEqual([255, 255, 255, 255, 0, 0, 0, 255]);
+		const seen: Array<[number, number]> = [];
+		applyRop3(
+			dst,
+			null,
+			(x, y) => {
+				seen.push([x, y]);
+				return x === 11 ? 0xffffff : 0;
+			},
+			rop3Index(ROP3_PATINVERT),
+			10,
+			5,
+		);
+		expect(seen).toEqual([
+			[10, 5],
+			[11, 5],
+		]);
+		expect(Array.from(dst.data)).toEqual([0, 0, 0, 255, 255, 255, 255, 255]);
 	});
 });
 

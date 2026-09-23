@@ -17,6 +17,7 @@ import {
 	EMR_SETPOLYFILLMODE,
 	EMR_SETROP2,
 	EMR_SETSTRETCHBLTMODE,
+	EMR_SETBRUSHORGEX,
 	EMR_SETMITERLIMIT,
 	EMR_SETTEXTALIGN,
 } from './emf-constants';
@@ -140,7 +141,19 @@ export function handleEmfGdiStateRecord(
 			}
 			return true;
 		}
-		case EMR_SETSTRETCHBLTMODE:
+		case EMR_SETSTRETCHBLTMODE: {
+			if (recSize >= 12) {
+				state.stretchBltMode = view.getUint32(dataOff, true);
+			}
+			return true;
+		}
+		case EMR_SETBRUSHORGEX: {
+			if (recSize >= 16) {
+				state.brushOrgX = view.getInt32(dataOff, true);
+				state.brushOrgY = view.getInt32(dataOff + 4, true);
+			}
+			return true;
+		}
 		case EMR_SETMITERLIMIT:
 		case EMR_SETTEXTALIGN: {
 			if (recType === EMR_SETTEXTALIGN && recSize >= 12) {

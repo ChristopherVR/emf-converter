@@ -4,10 +4,13 @@
 
 import { readUtf16LE, getStockObject } from './emf-canvas-helpers';
 import { readColorRef } from './emf-color-helpers';
+import { parsePatternBrush } from './emf-gdi-brush-pattern';
 import {
 	EMR_CREATEPEN,
 	EMR_EXTCREATEPEN,
 	EMR_CREATEBRUSHINDIRECT,
+	EMR_CREATEMONOBRUSH,
+	EMR_CREATEDIBPATTERNBRUSHPT,
 	EMR_EXTCREATEFONTINDIRECTW,
 	EMR_SELECTOBJECT,
 	EMR_DELETEOBJECT,
@@ -63,10 +66,28 @@ export function handleEmfObjectRecord(
 				const ihBrush = view.getUint32(dataOff, true);
 				const brushStyle = view.getUint32(dataOff + 4, true);
 				const color = readColorRef(view, dataOff + 8);
+				const hatch = view.getUint32(dataOff + 12, true);
 				rCtx.objectTable.set(ihBrush, {
 					kind: 'brush',
 					style: brushStyle,
 					color,
+					...(brushStyle === 2 && hatch <= 5 ? { pattern: { kind: 'hatch' as const, hatch } } : {}),
+				});
+			}
+			return true;
+		}
+		case EMR_CREATEMONOBRUSH:
+		case EMR_CREATEDIBPATTERNBRUSHPT: {
+			if (recSize >= 32) {
+				const ihBrush = view.getUint32(dataOff, true);
+				const mono = recType === EMR_CREATEMONOBRUSH;
+				const pattern = parsePatternBrush(view, dataOff - 8, dataOff, mono);
+				rCtx.objectTable.set(ihBrush, {
+					kind: 'brush',
+					style: pattern ? (mono ? 3 : 6) : 0,
+					// Flat stand-in for fills that do not realise the pattern.
+					color: '#808080',
+					...(pattern ? { pattern } : {}),
 				});
 			}
 			return true;
@@ -122,6 +143,7 @@ export function handleEmfObjectRecord(
 						case 'brush':
 							state.brushStyle = obj.style;
 							state.brushColor = obj.color;
+							state.brushPattern = obj.pattern ?? null;
 							break;
 						case 'font':
 							state.fontHeight = obj.height;
