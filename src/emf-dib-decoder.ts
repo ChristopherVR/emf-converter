@@ -7,6 +7,7 @@
 
 import { decodeRleBitmap } from './emf-dib-rle-decoder';
 import { decodeUncompressedRows, parseBitfieldMasks } from './emf-dib-uncompressed';
+import { createImageDataCompat } from './emf-canvas-helpers';
 
 export function decodeDibToImageData(
 	view: DataView,
@@ -140,5 +141,5 @@ export function decodeDibToImageData(
 		out,
 	);
 
-	return new ImageData(out, width, height);
+	return createImageDataCompat(out, width, height);
 }

@@ -1,6 +1,7 @@
 /**
  * RLE decoder for DIB bitmaps (BI_RLE4 / BI_RLE8).
  */
+import { createImageDataCompat } from './emf-canvas-helpers';
 
 export type SetPixelFn = (x: number, y: number, r: number, g: number, b: number, a: number) => void;
 
@@ -111,7 +112,7 @@ export function decodeRleBitmap(
 			}
 		}
 	}
-	return new ImageData(
+	return createImageDataCompat(
 		new Uint8ClampedArray(out.buffer as ArrayBuffer, out.byteOffset, out.byteLength),
 		width,
 		height,

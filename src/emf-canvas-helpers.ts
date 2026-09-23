@@ -738,3 +738,25 @@ export function canvasCreatePattern(
 	const create = ctx.createPattern as unknown as (img: Drawable, rep: string) => CanvasPattern | null;
 	return create.call(ctx, image, repetition);
 }
+
+/**
+ * Constructs an `ImageData` in whichever backend is active: the global DOM /
+ * worker constructor when present, otherwise `@napi-rs/canvas`'s own class
+ * (plain Node.js has no global `ImageData`, so every decoded DIB used to throw
+ * there and fail the whole conversion). Throws only when neither exists,
+ * which matches the old behaviour in that environment.
+ */
+export function createImageDataCompat(data: Uint8ClampedArray, width: number, height: number): ImageData {
+	if (typeof ImageData !== 'undefined') {
+		return new ImageData(data as Uint8ClampedArray<ArrayBuffer>, width, height);
+	}
+	if (nodeCanvasModule) {
+		const Ctor = nodeCanvasModule.ImageData as unknown as new (
+			data: Uint8ClampedArray,
+			width: number,
+			height: number,
+		) => ImageData;
+		return new Ctor(data, width, height);
+	}
+	throw new ReferenceError('ImageData is not defined');
+}
