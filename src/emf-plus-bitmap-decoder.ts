@@ -95,6 +95,103 @@ export function decodeEmfPlusBitmapPixels(
 	}
 
 	// Build a minimal BMP file (BITMAPFILEHEADER + BITMAPV4HEADER + pixels)
+	return wrapBmpFile(bmpData, bmpRowStride, width, height, pixelDataSize);
+}
+
+/**
+ * Decodes raw EMF+ pixel-format bitmap data (MS-EMFPLUS 2.2.2.9
+ * EmfPlusBitmapData with `BitmapDataType` Pixel) straight into a top-down,
+ * non-premultiplied RGBA buffer, for callers that build a Canvas `ImageData`
+ * directly rather than round-tripping through a synthetic BMP file (which
+ * requires an async `createImageBitmap`/`loadImage` decode). Used by the
+ * EMF+ texture brush parser, which needs the pixels synchronously so a
+ * `FillPath`/`FillRectangle` executed in the same replay pass can paint with
+ * them immediately. Returns `null` for an unsupported pixel format.
+ */
+export function decodeEmfPlusBitmapPixelsToRgba(
+	view: DataView,
+	pixelStart: number,
+	width: number,
+	height: number,
+	stride: number,
+	pixelFormat: number,
+): Uint8ClampedArray | null {
+	const absStride = Math.abs(stride);
+	const topDown = stride > 0;
+	const rgba = new Uint8ClampedArray(width * height * 4);
+
+	for (let y = 0; y < height; y++) {
+		const srcRow = topDown ? y : height - 1 - y;
+		const rowOff = pixelStart + srcRow * absStride;
+		const dstRow = y * width * 4;
+
+		switch (pixelFormat) {
+			case PIXELFORMAT_32BPP_ARGB:
+			case PIXELFORMAT_32BPP_PARGB: {
+				for (let x = 0; x < width; x++) {
+					const off = rowOff + x * 4;
+					if (off + 3 >= view.byteLength) {
+						break;
+					}
+					let b = view.getUint8(off);
+					let g = view.getUint8(off + 1);
+					let r = view.getUint8(off + 2);
+					const a = view.getUint8(off + 3);
+					if (pixelFormat === PIXELFORMAT_32BPP_PARGB && a > 0 && a < 255) {
+						r = Math.min(255, Math.round((r * 255) / a));
+						g = Math.min(255, Math.round((g * 255) / a));
+						b = Math.min(255, Math.round((b * 255) / a));
+					}
+					const di = dstRow + x * 4;
+					rgba[di] = r;
+					rgba[di + 1] = g;
+					rgba[di + 2] = b;
+					rgba[di + 3] = a;
+				}
+				break;
+			}
+			case PIXELFORMAT_32BPP_RGB: {
+				for (let x = 0; x < width; x++) {
+					const off = rowOff + x * 4;
+					if (off + 3 >= view.byteLength) {
+						break;
+					}
+					const di = dstRow + x * 4;
+					rgba[di] = view.getUint8(off + 2);
+					rgba[di + 1] = view.getUint8(off + 1);
+					rgba[di + 2] = view.getUint8(off);
+					rgba[di + 3] = 255;
+				}
+				break;
+			}
+			case PIXELFORMAT_24BPP_RGB: {
+				for (let x = 0; x < width; x++) {
+					const off = rowOff + x * 3;
+					if (off + 2 >= view.byteLength) {
+						break;
+					}
+					const di = dstRow + x * 4;
+					rgba[di] = view.getUint8(off + 2);
+					rgba[di + 1] = view.getUint8(off + 1);
+					rgba[di + 2] = view.getUint8(off);
+					rgba[di + 3] = 255;
+				}
+				break;
+			}
+			default:
+				return null;
+		}
+	}
+	return rgba;
+}
+
+function wrapBmpFile(
+	bmpData: Uint8Array,
+	bmpRowStride: number,
+	width: number,
+	height: number,
+	pixelDataSize: number,
+): ArrayBuffer {
 	const fileHeaderSize = 14;
 	const dibHeaderSize = 108; // BITMAPV4HEADER
 	const fileSize = fileHeaderSize + dibHeaderSize + pixelDataSize;

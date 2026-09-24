@@ -41,6 +41,7 @@ import {
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { createBrushGradient } from './emf-plus-brush-gradient';
+import { createBrushTexture } from './emf-plus-brush-texture';
 import { emfPlusPathToClipCmds } from './emf-plus-path';
 import type { EmfPlusRegionNode, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
@@ -98,6 +99,12 @@ export function resolveBrushPaint(
 			const g = createBrushGradient(rCtx.ctx, obj.gradient, plusWorldMatrix(rCtx));
 			if (g) {
 				return g;
+			}
+		}
+		if (obj.texture) {
+			const p = createBrushTexture(rCtx.ctx, obj.texture, plusWorldMatrix(rCtx));
+			if (p) {
+				return p;
 			}
 		}
 		return obj.color;

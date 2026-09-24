@@ -18,16 +18,19 @@ import { argbToRgba, lerpArgbToRgba } from './emf-color-helpers';
 import {
 	EMFPLUS_BRUSHTYPE_SOLID,
 	EMFPLUS_BRUSHTYPE_HATCHFILL,
+	EMFPLUS_BRUSHTYPE_TEXTUREFILL,
 	EMFPLUS_BRUSHTYPE_LINEARGRADIENT,
 	EMFPLUS_BRUSHTYPE_PATHGRADIENT,
 } from './emf-constants';
-import { emfLog } from './emf-logging';
+import { emfLog, emfWarn } from './emf-logging';
+import { decodeEmfPlusBitmapPixelsToRgba } from './emf-plus-bitmap-decoder';
 import { parseEmfPlusPath } from './emf-plus-path';
 import type {
 	EmfPlusBrush,
 	EmfPlusGradientStop,
 	EmfPlusGradientWrapMode,
 	EmfPlusPathGradientShape,
+	EmfPlusTexture,
 	TransformMatrix,
 } from './emf-types';
 
@@ -234,6 +237,99 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 			transform,
 		},
 	};
+}
+
+/**
+ * Parse an EmfPlusTextureBrushData's embedded EmfPlusImage (MS-EMFPLUS
+ * 2.2.1.4) at `off`: a 4-byte EmfPlusGraphicsVersion, a 4-byte
+ * ImageDataType, then the type-specific bitmap/metafile data, in the same
+ * unconditional layout `parseEmfPlusImageObject` (`emf-plus-object-complex.ts`)
+ * uses for a standalone Image object (the version field is always present
+ * here; unlike brush/pen objects, there is no legacy synthetic layout to
+ * sniff for).
+ *
+ * Only an uncompressed pixel-format bitmap decodes: that is a layout GDI+
+ * CAN emit for an in-memory `Bitmap` recorded into a TextureBrush, and the
+ * only one a brush fill can use synchronously. Real GDI+ output was
+ * measured (see the fixture generator) to leave `BitmapDataType`'s numeric
+ * value ambiguous between the two conventions this format has used, and to
+ * zero Width/Height/Stride/PixelFormat for a compressed image rather than
+ * describing the pixels it does not (yet) have; validating on an actually
+ * decodable, in-bounds pixel bitmap (`width`/`height` > 0 and a pixel format
+ * this package supports) is what actually distinguishes the two, not the
+ * `BitmapDataType` value itself. A compressed (PNG/JPEG) embedded image, or
+ * an embedded metafile, returns `null`: decoding those needs an async image
+ * decode this synchronous brush-object parse cannot perform, a documented
+ * residual (see the README).
+ */
+function decodeTextureImage(
+	view: DataView,
+	off: number,
+	end: number,
+): { width: number; height: number; rgba: Uint8ClampedArray } | null {
+	if (off + 28 > end) {
+		return null;
+	}
+	const imageDataType = view.getUint32(off + 4, true);
+	if (imageDataType !== 1) {
+		return null; // Metafile (or unknown): not decodable synchronously.
+	}
+	const width = view.getInt32(off + 8, true);
+	const height = view.getInt32(off + 12, true);
+	const stride = view.getInt32(off + 16, true);
+	const pixelFormat = view.getUint32(off + 20, true);
+	const pixelStart = off + 28;
+	const absStride = Math.abs(stride);
+	if (width <= 0 || height <= 0 || width > 8192 || height > 8192 || pixelStart + absStride * height > end) {
+		return null; // Zeroed dimensions: a compressed image, needing an async decode.
+	}
+	const rgba = decodeEmfPlusBitmapPixelsToRgba(view, pixelStart, width, height, stride, pixelFormat);
+	return rgba ? { width, height, rgba } : null;
+}
+
+/** Parse EmfPlusTextureBrushData (MS-EMFPLUS 2.2.2.45, brush type 2). */
+function parseTextureBrush(view: DataView, b: number, end: number): EmfPlusBrush | null {
+	if (b + 8 > end) {
+		return null;
+	}
+	const flags = view.getUint32(b, true);
+	const wrapMode = readWrapMode(view.getUint32(b + 4, true));
+	let o = b + 8;
+
+	let transform: TransformMatrix | null = null;
+	if (flags & BRUSH_DATA_TRANSFORM && o + 24 <= end) {
+		transform = readTransform(view, o);
+		o += 24;
+	}
+
+	const image = decodeTextureImage(view, o, end);
+	if (!image) {
+		emfWarn(
+			'parseEmfPlusBrushObject: TextureFill brush has no synchronously-decodable pixel bitmap (compressed image or metafile texture); falling back to black',
+		);
+		return null;
+	}
+	const texture: EmfPlusTexture = {
+		width: image.width,
+		height: image.height,
+		rgba: image.rgba,
+		wrapMode,
+		transform,
+	};
+	// Average colour as a flat fallback, matching the "primary colour" role
+	// `color` plays for gradient brushes when a paint style cannot be built.
+	let r = 0;
+	let g = 0;
+	let bl = 0;
+	const n = image.width * image.height;
+	for (let i = 0; i < n; i++) {
+		r += image.rgba[i * 4];
+		g += image.rgba[i * 4 + 1];
+		bl += image.rgba[i * 4 + 2];
+	}
+	const avg = n > 0 ? `rgba(${Math.round(r / n)},${Math.round(g / n)},${Math.round(bl / n)},1)` : 'rgba(128,128,128,1)';
+	emfLog(`parseEmfPlusBrushObject: texture fill ${image.width}x${image.height}, wrapMode=${wrapMode}`);
+	return { kind: 'plus-brush', color: avg, texture };
 }
 
 /** Parse EmfPlusPathGradientBrushData (MS-EMFPLUS 2.2.2.29). */
@@ -490,6 +586,11 @@ export function parseEmfPlusBrushObject(
 				return { kind: 'plus-brush', color: argbToRgba(view.getUint32(b + 4, true)) };
 			}
 			return { kind: 'plus-brush', color: 'rgba(0,0,0,1)' };
+
+		case EMFPLUS_BRUSHTYPE_TEXTUREFILL: {
+			const brush = parseTextureBrush(view, b, end);
+			return brush ?? { kind: 'plus-brush', color: 'rgba(0,0,0,1)' };
+		}
 
 		case EMFPLUS_BRUSHTYPE_LINEARGRADIENT: {
 			const brush = parseLinearGradient(view, b, end);

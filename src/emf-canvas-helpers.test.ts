@@ -147,6 +147,35 @@ describe('applyBrush', () => {
 		applyBrush(asCtx(ctx), state);
 		expect(ctx.fillStyle).toBe('#123456');
 	});
+
+	it('falls back to the flat brush colour when a pattern brush cannot be realised as a CanvasPattern (no canvas backend)', () => {
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({
+			brushColor: '#123456',
+			brushStyle: 2,
+			brushPattern: { kind: 'hatch', hatch: 0 },
+		});
+		applyBrush(asCtx(ctx), state);
+		// The test environment has no OffscreenCanvas/document/@napi-rs/canvas,
+		// so createTempCanvas() returns null and buildGdiPatternFill bails;
+		// this must never throw, and must still produce a usable fill colour.
+		expect(ctx.fillStyle).toBe('#123456');
+	});
+
+	it('does not throw for a DIB pattern brush (bitmap kind) with no canvas backend available', () => {
+		const ctx = createMockCtx();
+		const state = createDefaultDrawState({
+			brushStyle: 6,
+			brushPattern: {
+				kind: 'bitmap',
+				width: 2,
+				height: 2,
+				rgb: new Uint32Array([0xff0000, 0x00ff00, 0x0000ff, 0xffffff]),
+			},
+		});
+		expect(() => applyBrush(asCtx(ctx), state)).not.toThrow();
+		expect(typeof ctx.fillStyle).toBe('string');
+	});
 });
 
 // ---------------------------------------------------------------------------

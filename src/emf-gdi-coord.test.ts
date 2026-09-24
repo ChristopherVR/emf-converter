@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 
-import { gmx, gmy, gmw, gmh, activateGdiMappingMode } from './emf-gdi-coord';
+import {
+	gmx,
+	gmy,
+	gmw,
+	gmh,
+	activateGdiMappingMode,
+	gmapPoint,
+	gdiEllipseParams,
+	hasWorldRotation,
+} from './emf-gdi-coord';
 import { defaultState } from './emf-types';
 import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
 
@@ -198,6 +207,92 @@ describe('emf-gdi-coord', () => {
 			const r = makeCtx({ useMappingMode: true });
 			activateGdiMappingMode(r);
 			expect(r.useMappingMode).toBeTruthy();
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// hasWorldRotation
+	// -----------------------------------------------------------------------
+	describe('hasWorldRotation()', () => {
+		it('is false for a pure scale/translate world transform', () => {
+			const r = makeCtx();
+			r.state.worldTransform = [2, 0, 0, 3, 5, 7];
+			expect(hasWorldRotation(r)).toBe(false);
+		});
+
+		it('is true when the b component is non-zero', () => {
+			const r = makeCtx();
+			r.state.worldTransform = [1, 0.5, 0, 1, 0, 0];
+			expect(hasWorldRotation(r)).toBe(true);
+		});
+
+		it('is true when the c component is non-zero', () => {
+			const r = makeCtx();
+			r.state.worldTransform = [1, 0, 0.5, 1, 0, 0];
+			expect(hasWorldRotation(r)).toBe(true);
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// gmapPoint
+	// -----------------------------------------------------------------------
+	describe('gmapPoint()', () => {
+		it('matches gmx/gmy for a non-rotated transform', () => {
+			const r = makeCtx();
+			const p = gmapPoint(r, 30, 40);
+			expect(p.x).toBeCloseTo(gmx(r, 30));
+			expect(p.y).toBeCloseTo(gmy(r, 40));
+		});
+
+		it('applies a 90-degree rotation about the origin', () => {
+			const r = makeCtx({ bounds: { left: 0, top: 0, right: 100, bottom: 100 }, sx: 1, sy: 1 });
+			// worldX = -y, worldY = x (90-degree CCW-in-math rotation).
+			r.state.worldTransform = [0, 1, -1, 0, 0, 0];
+			const p = gmapPoint(r, 10, 0);
+			expect(p.x).toBeCloseTo(0);
+			expect(p.y).toBeCloseTo(10);
+		});
+
+		it('applies translation from a rotated+translated transform', () => {
+			const r = makeCtx({ bounds: { left: 0, top: 0, right: 100, bottom: 100 }, sx: 1, sy: 1 });
+			r.state.worldTransform = [0, 1, -1, 0, 5, 5];
+			const p = gmapPoint(r, 0, 0);
+			expect(p.x).toBeCloseTo(5);
+			expect(p.y).toBeCloseTo(5);
+		});
+	});
+
+	// -----------------------------------------------------------------------
+	// gdiEllipseParams
+	// -----------------------------------------------------------------------
+	describe('gdiEllipseParams()', () => {
+		it('returns the plain radii and zero rotation for an identity-ish transform', () => {
+			const r = makeCtx({ bounds: { left: 0, top: 0, right: 100, bottom: 100 }, sx: 1, sy: 1 });
+			const params = gdiEllipseParams(r, 50, 50, 20, 10);
+			expect(params.cx).toBeCloseTo(50);
+			expect(params.cy).toBeCloseTo(50);
+			expect(params.rx).toBeCloseTo(20);
+			expect(params.ry).toBeCloseTo(10);
+			expect(params.rotation).toBeCloseTo(0);
+		});
+
+		it('keeps a circle a circle under pure rotation', () => {
+			const r = makeCtx({ bounds: { left: 0, top: 0, right: 100, bottom: 100 }, sx: 1, sy: 1 });
+			const angle = Math.PI / 6;
+			r.state.worldTransform = [Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), 0, 0];
+			const params = gdiEllipseParams(r, 0, 0, 5, 5);
+			expect(params.rx).toBeCloseTo(5);
+			expect(params.ry).toBeCloseTo(5);
+		});
+
+		it('rotates an ellipse 90 degrees: its major axis swaps from x to y', () => {
+			const r = makeCtx({ bounds: { left: 0, top: 0, right: 100, bottom: 100 }, sx: 1, sy: 1 });
+			// worldX = -y, worldY = x: a 90-degree rotation.
+			r.state.worldTransform = [0, 1, -1, 0, 0, 0];
+			const params = gdiEllipseParams(r, 0, 0, 2, 1);
+			expect(params.rx).toBeCloseTo(2);
+			expect(params.ry).toBeCloseTo(1);
+			expect(Math.abs(params.rotation)).toBeCloseTo(Math.PI / 2);
 		});
 	});
 });

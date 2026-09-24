@@ -3,6 +3,8 @@
  */
 
 import { invertCssColor } from './emf-color-helpers';
+import { realizeBrush } from './emf-gdi-brush-pattern';
+import type { RealizedBrush } from './emf-gdi-brush-pattern';
 import { resolveFontPixelHeight } from './emf-gdi-text-layout';
 import {
 	MAX_CANVAS_DIMENSION,
@@ -371,10 +373,26 @@ export function applyPen(ctx: CanvasContext, state: DrawState): void {
 	}
 }
 
+/**
+ * Sets `ctx.fillStyle` for the current brush: transparent for a hollow
+ * brush, or the flat brush colour otherwise. A hatch/monochrome/DIB pattern
+ * brush (`realizeBrush` returning `'tile'`) is deliberately NOT turned into a
+ * `CanvasPattern` here: every tested canvas backend samples a `CanvasPattern`
+ * with a filter regardless of `imageSmoothingEnabled` (which only affects
+ * `drawImage`), smearing a small tile's hard-edged texels across several
+ * device pixels even at an identity (1:1) pattern transform. Callers that
+ * can act on a shape's already-built path (`fillCurrentPathWithGdiPattern`,
+ * `emf-gdi-shape-paint.ts`) fill a pattern brush exactly instead, per pixel,
+ * reusing the same `sampleTile` sampler the exact ROP3 blit evaluator uses;
+ * this function's flat-colour fallback (the pre-existing, less accurate
+ * behaviour) only remains live for the few bracketed-path call sites that
+ * do not yet route through that helper.
+ */
 export function applyBrush(ctx: CanvasContext, state: DrawState): void {
 	const paint = rop2Paint(state.rop2);
 	ctx.globalCompositeOperation = paint.gco;
-	if (state.brushStyle === 1) {
+	const realized: RealizedBrush = realizeBrush(state);
+	if (realized.kind === 'none') {
 		ctx.fillStyle = 'rgba(0,0,0,0)';
 		return;
 	}

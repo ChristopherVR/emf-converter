@@ -211,7 +211,7 @@ function mirrorFlags(wrap: EmfPlusGradientWrapMode): { x: boolean; y: boolean } 
 }
 
 /** How a tile's texels sample the brush (see {@link buildPattern}). */
-interface TileSampling {
+export interface TileSampling {
 	/**
 	 * Extra texel offset along x at which texels sample. 0.5 samples each
 	 * texel at its right edge, so a point exactly on a period boundary reads
@@ -233,7 +233,7 @@ interface TileSampling {
  * ARGB, or null for transparent), mirrored per `wrap`, and mapped to user
  * space through `brush` plus the GDI+ half-pixel offset `delta`.
  */
-function buildPattern(
+export function buildPattern(
 	ctx: CanvasContext,
 	rect: EmfPlusRectF,
 	tw: number,
@@ -300,7 +300,7 @@ function buildPattern(
  * World-space offset equivalent to half a device pixel, so a canvas pixel
  * centre samples the brush where GDI+ would (at the pixel's integer origin).
  */
-function halfPixelDelta(device: TransformMatrix): { x: number; y: number } {
+export function halfPixelDelta(device: TransformMatrix): { x: number; y: number } {
 	const inv = invertLinear(device);
 	if (!inv) {
 		return { x: 0, y: 0 };

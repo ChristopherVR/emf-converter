@@ -12,6 +12,7 @@ import {
 	EMFPLUS_BRUSHTYPE_LINEARGRADIENT,
 	EMFPLUS_BRUSHTYPE_PATHGRADIENT,
 	EMFPLUS_BRUSHTYPE_HATCHFILL,
+	EMFPLUS_BRUSHTYPE_TEXTUREFILL,
 } from './emf-constants';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
 import type { EmfPlusReplayCtx, TransformMatrix } from './emf-types';
@@ -228,6 +229,65 @@ describe('emf-plus-object-parser', () => {
 			const brush = rCtx.objectTable.get(3);
 			expect(brush).toBeDefined();
 			expect(brush!.kind).toBe('plus-brush');
+		});
+
+		it('parses a texture fill brush with an uncompressed pixel bitmap', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			rCtx.view.setUint32(d, EMFPLUS_BRUSHTYPE_TEXTUREFILL, true); // brushType
+			rCtx.view.setUint32(d + 4, 0, true); // BrushDataFlags: no transform
+			rCtx.view.setUint32(d + 8, 1, true); // WrapMode: TileFlipX
+			// Embedded EmfPlusImage at d+12 (version + ImageDataType=Bitmap)
+			rCtx.view.setUint32(d + 12, 0xdbc01002, true); // version
+			rCtx.view.setUint32(d + 16, 1, true); // ImageDataType = Bitmap
+			rCtx.view.setInt32(d + 20, 2, true); // width
+			rCtx.view.setInt32(d + 24, 2, true); // height
+			rCtx.view.setInt32(d + 28, 8, true); // stride (top-down, 2px * 4 bytes)
+			rCtx.view.setUint32(d + 32, 0x0026200a, true); // pixelFormat = 32bppARGB
+			rCtx.view.setUint32(d + 36, 1, true); // bmpType = Pixel
+			// 2x2 opaque pixels (BGRA per pixel): red, green, blue, white
+			const px = d + 40;
+			rCtx.view.setUint32(px, 0xff0000ff, true); // B=ff,G=00,R=00,A=ff -> stored bytes little-endian BGRA
+			rCtx.view.setUint32(px + 4, 0xff00ff00, true);
+			rCtx.view.setUint32(px + 8, 0xffff0000, true);
+			rCtx.view.setUint32(px + 12, 0xffffffff, true);
+
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 6), d, 56);
+			const brush = rCtx.objectTable.get(6);
+			expect(brush).toBeDefined();
+			expect(brush!.kind).toBe('plus-brush');
+			if (brush!.kind === 'plus-brush') {
+				expect(brush.texture).toBeTruthy();
+				expect(brush.texture!.width).toBe(2);
+				expect(brush.texture!.height).toBe(2);
+				expect(brush.texture!.wrapMode).toBe('tile-flip-x');
+				expect(brush.texture!.rgba.length).toBe(2 * 2 * 4);
+				// Not the "unknown brush type" fallback colour.
+				expect(brush.color).not.toBe('rgba(0,0,0,1)');
+			}
+		});
+
+		it('falls back to solid black for a texture brush with a compressed (non-Pixel) bitmap', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			rCtx.view.setUint32(d, EMFPLUS_BRUSHTYPE_TEXTUREFILL, true);
+			rCtx.view.setUint32(d + 4, 0, true);
+			rCtx.view.setUint32(d + 8, 0, true);
+			rCtx.view.setUint32(d + 12, 0xdbc01002, true);
+			rCtx.view.setUint32(d + 16, 1, true); // Bitmap
+			rCtx.view.setInt32(d + 20, 2, true);
+			rCtx.view.setInt32(d + 24, 2, true);
+			rCtx.view.setInt32(d + 28, 8, true);
+			rCtx.view.setUint32(d + 32, 0x0026200a, true);
+			rCtx.view.setUint32(d + 36, 2, true); // bmpType = Compressed
+
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_BRUSH, 7), d, 40);
+			const brush = rCtx.objectTable.get(7);
+			expect(brush).toBeDefined();
+			if (brush!.kind === 'plus-brush') {
+				expect(brush.texture).toBeUndefined();
+				expect(brush.color).toBe('rgba(0,0,0,1)');
+			}
 		});
 
 		it('ignores brush with recDataSize < 8', () => {

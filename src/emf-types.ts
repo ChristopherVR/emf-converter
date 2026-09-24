@@ -388,13 +388,32 @@ export interface EmfPlusRadialGradient {
 /** Union of the gradient descriptors an EMF+ brush can carry. */
 export type EmfPlusGradient = EmfPlusLinearGradient | EmfPlusRadialGradient;
 
-/** An EMF+ (GDI+) brush object (solid colour, hatch, or gradient). */
+/**
+ * A parsed EMF+ TextureFill brush (brush type 2, MS-EMFPLUS 2.2.2.45): an
+ * embedded pixel-format bitmap tiled per `wrapMode`, optionally sheared by a
+ * brush transform. Only pixel-format (uncompressed) embedded images decode
+ * synchronously into `rgba`; a compressed (PNG/JPEG) embedded image cannot be
+ * decoded within a synchronous fill and leaves the brush without a texture,
+ * so callers fall back to the solid colour.
+ */
+export interface EmfPlusTexture {
+	width: number;
+	height: number;
+	/** Top-down, non-premultiplied RGBA pixels, `width * height * 4` bytes. */
+	rgba: Uint8ClampedArray;
+	wrapMode: EmfPlusGradientWrapMode;
+	transform: TransformMatrix | null;
+}
+
+/** An EMF+ (GDI+) brush object (solid colour, hatch, gradient, or texture). */
 export interface EmfPlusBrush {
 	kind: 'plus-brush';
-	/** Primary CSS rgba() colour (solid colour, or gradient fallback). */
+	/** Primary CSS rgba() colour (solid colour, or gradient/texture fallback). */
 	color: string;
 	/** Present for linear/path gradient brushes; rendered as a CanvasGradient. */
 	gradient?: EmfPlusGradient;
+	/** Present for a texture-fill brush with a decodable embedded bitmap. */
+	texture?: EmfPlusTexture | null;
 }
 
 /** An EMF+ (GDI+) pen object used for stroking shapes. */

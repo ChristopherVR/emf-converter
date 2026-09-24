@@ -1,7 +1,7 @@
 # Regenerates the real-GDI/GDI+ ground-truth fixtures under
 # src/__fixtures__/gdi/. Windows only (it calls gdi32/GDI+ directly).
 #
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/gdi-fixtures/generate.ps1 [all|rop|gradient|text]
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/gdi-fixtures/generate.ps1 [all|rop|gradient|text|pattern|rotation|rop2]
 #
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself.

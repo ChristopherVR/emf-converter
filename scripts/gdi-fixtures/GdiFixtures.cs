@@ -37,6 +37,13 @@ public static class GdiFixtures
 		[MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string lfFaceName;
 	}
 
+	[StructLayout(LayoutKind.Sequential)]
+	public struct POINT { public int X, Y; }
+
+	/** GDI world-transform matrix: worldX = eM11*x + eM21*y + eDx, worldY = eM12*x + eM22*y + eDy. */
+	[StructLayout(LayoutKind.Sequential)]
+	public struct XFORM { public float eM11, eM12, eM21, eM22, eDx, eDy; }
+
 	[DllImport("gdi32.dll")] static extern IntPtr CreateEnhMetaFileW(IntPtr hdcRef, [MarshalAs(UnmanagedType.LPWStr)] string file, ref RECT frame, [MarshalAs(UnmanagedType.LPWStr)] string desc);
 	[DllImport("gdi32.dll")] static extern IntPtr CloseEnhMetaFile(IntPtr hdc);
 	[DllImport("gdi32.dll")] static extern bool DeleteEnhMetaFile(IntPtr hemf);
@@ -50,6 +57,7 @@ public static class GdiFixtures
 	[DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
 	[DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
 	[DllImport("gdi32.dll")] static extern IntPtr CreateSolidBrush(int color);
+	[DllImport("gdi32.dll")] static extern IntPtr CreatePen(int style, int width, int color);
 	[DllImport("gdi32.dll")] static extern IntPtr CreateHatchBrush(int style, int color);
 	[DllImport("gdi32.dll")] static extern IntPtr CreatePatternBrush(IntPtr hbm);
 	[DllImport("gdi32.dll")] static extern IntPtr CreateBitmap(int w, int h, uint planes, uint bpp, byte[] bits);
@@ -65,6 +73,13 @@ public static class GdiFixtures
 	[DllImport("gdi32.dll")] static extern int SetStretchBltMode(IntPtr hdc, int mode);
 	[DllImport("gdi32.dll")] static extern bool SetBrushOrgEx(IntPtr hdc, int x, int y, IntPtr prev);
 	[DllImport("gdi32.dll")] static extern bool GdiFlush();
+	[DllImport("gdi32.dll")] static extern int SetROP2(IntPtr hdc, int mode);
+	[DllImport("gdi32.dll")] static extern int SetGraphicsMode(IntPtr hdc, int mode);
+	[DllImport("gdi32.dll")] static extern bool SetWorldTransform(IntPtr hdc, ref XFORM xform);
+	[DllImport("gdi32.dll")] static extern bool Rectangle(IntPtr hdc, int l, int t, int r, int b);
+	[DllImport("gdi32.dll")] static extern bool Ellipse(IntPtr hdc, int l, int t, int r, int b);
+	[DllImport("gdi32.dll")] static extern bool Polygon(IntPtr hdc, [In] POINT[] pts, int count);
+	[DllImport("gdi32.dll")] static extern bool RoundRect(IntPtr hdc, int l, int t, int r, int b, int w, int h);
 	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateFontIndirectW(ref LOGFONT lf);
 	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern bool TextOutW(IntPtr hdc, int x, int y, string s, int n);
 	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern bool GetTextExtentExPointW(IntPtr hdc, string s, int n, int max, IntPtr fit, [Out] int[] dx, out Size size);
@@ -532,6 +547,229 @@ public static class GdiFixtures
 		File.WriteAllText(Path.Combine(outDir, "text-gdi-extents.json"), json.ToString());
 	}
 
+	// -----------------------------------------------------------------------
+	// Pattern-brush FILL cases (Rectangle/Ellipse/Polygon/RoundRect, not blits):
+	// exercises applyBrush's tiled-pattern branch, not the ROP3 blit evaluator
+	// the rop3-grid-pattern-* fixtures already cover.
+	// -----------------------------------------------------------------------
+
+	static void PatternFillCases()
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+
+		GdiCase("pattern-fill-rect-mono", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			IntPtr brush = MakePatternBrush();
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x10, 0x20, 0x30));
+			IntPtr op = SelectObject(hdc, pen);
+			Rectangle(hdc, 20, 20, 140, 100);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("pattern-fill-rect-color", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			IntPtr brush = MakeColorPatternBrush(screen);
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0xF0, 0xF0, 0xF0));
+			IntPtr op = SelectObject(hdc, pen);
+			SetBrushOrgEx(hdc, 3, 5, IntPtr.Zero);
+			Rectangle(hdc, 20, 20, 140, 100);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("pattern-fill-ellipse-color", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			IntPtr brush = MakeColorPatternBrush(screen);
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x10, 0x10, 0x10));
+			IntPtr op = SelectObject(hdc, pen);
+			Ellipse(hdc, 15, 10, 145, 110);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("pattern-fill-polygon-color", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			IntPtr brush = MakeColorPatternBrush(screen);
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x10, 0x10, 0x10));
+			IntPtr op = SelectObject(hdc, pen);
+			var pts = new POINT[] {
+				new POINT { X = 80, Y = 8 }, new POINT { X = 150, Y = 45 }, new POINT { X = 125, Y = 112 },
+				new POINT { X = 35, Y = 112 }, new POINT { X = 10, Y = 45 },
+			};
+			Polygon(hdc, pts, pts.Length);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("pattern-fill-roundrect-mono", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			IntPtr brush = MakePatternBrush();
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x20, 0x20, 0x20));
+			IntPtr op = SelectObject(hdc, pen);
+			RoundRect(hdc, 20, 15, 140, 105, 30, 30);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	// NOTE: an EMF+ TextureFill ground-truth fixture (a `TextureBrush` built
+	// from an in-memory `Bitmap`) was attempted here and removed: measured
+	// against real GDI+ output, .NET's EMF+ recorder always serialises the
+	// brush's embedded image as a compressed PNG blob (its BitmapDataType
+	// value was even observed ambiguous between the two enum values this
+	// format has used, with Width/Height/Stride/PixelFormat all zeroed for
+	// the compressed case), never as raw pixels, even for a bitmap built
+	// with no source file involved. Decoding that needs an async image
+	// decode (`createImageBitmap`/`@napi-rs/canvas`), which the synchronous,
+	// per-record EMF+ brush-object parse this package uses cannot perform.
+	// `decodeTextureImage` (`emf-plus-brush-parser.ts`) still decodes a
+	// genuinely uncompressed pixel-format embedded bitmap synchronously
+	// (exercised by a hand-built fixture in
+	// `emf-plus-object-parser.test.ts`, since no real GDI+ output was found
+	// that takes this path), and the compressed case is now honestly
+	// detected (zeroed/invalid dimensions) and falls back to a flat colour
+	// instead of misreading the PNG bytes as raw pixels. See the README's
+	// Limitations section.
+
+	// -----------------------------------------------------------------------
+	// GDI world-transform rotation/skew cases (plain GDI, not EMF+): a
+	// rotated/skewed EMR_SETWORLDTRANSFORM applied to Rectangle/Ellipse/
+	// Polygon/RoundRect fills and strokes.
+	// -----------------------------------------------------------------------
+
+	static XFORM RotationXform(double degrees, float dx, float dy)
+	{
+		double rad = degrees * Math.PI / 180.0;
+		return new XFORM
+		{
+			eM11 = (float)Math.Cos(rad), eM12 = (float)Math.Sin(rad),
+			eM21 = -(float)Math.Sin(rad), eM22 = (float)Math.Cos(rad),
+			eDx = dx, eDy = dy,
+		};
+	}
+
+	static void RotationCases()
+	{
+		GdiCase("rotate-rect-25deg", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = RotationXform(25, 40, 20);
+			SetWorldTransform(hdc, ref xf);
+			IntPtr brush = CreateSolidBrush(Rgb(0x30, 0x80, 0xD0));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x10, 0x10, 0x40));
+			IntPtr op = SelectObject(hdc, pen);
+			Rectangle(hdc, -30, -15, 30, 15);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("rotate-ellipse-40deg", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = RotationXform(40, 80, 60);
+			SetWorldTransform(hdc, ref xf);
+			IntPtr brush = CreateSolidBrush(Rgb(0xD0, 0x50, 0x20));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x30, 0x10, 0x10));
+			IntPtr op = SelectObject(hdc, pen);
+			Ellipse(hdc, -50, -25, 50, 25);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("rotate-polygon-15deg", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = RotationXform(15, 80, 60);
+			SetWorldTransform(hdc, ref xf);
+			IntPtr brush = CreateSolidBrush(Rgb(0x20, 0xA0, 0x60));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x10, 0x30, 0x10));
+			IntPtr op = SelectObject(hdc, pen);
+			var pts = new POINT[] {
+				new POINT { X = 0, Y = -50 }, new POINT { X = 45, Y = 25 }, new POINT { X = -45, Y = 25 },
+			};
+			Polygon(hdc, pts, pts.Length);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("rotate-roundrect-30deg", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = RotationXform(30, 80, 60);
+			SetWorldTransform(hdc, ref xf);
+			IntPtr brush = CreateSolidBrush(Rgb(0x90, 0x40, 0xB0));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x20, 0x10, 0x30));
+			IntPtr op = SelectObject(hdc, pen);
+			RoundRect(hdc, -45, -30, 45, 30, 20, 20);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+
+		GdiCase("skew-rect", 160, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 160, 120);
+			SetGraphicsMode(hdc, 2);
+			// A general affine (skew, no pure rotation): b/c both non-zero and unequal.
+			XFORM xf = new XFORM { eM11 = 1f, eM12 = 0.35f, eM21 = 0.25f, eM22 = 1f, eDx = 20, eDy = 15 };
+			SetWorldTransform(hdc, ref xf);
+			IntPtr brush = CreateSolidBrush(Rgb(0xE0, 0xC0, 0x20));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr pen = CreatePen(0, 1, Rgb(0x40, 0x30, 0x00));
+			IntPtr op = SelectObject(hdc, pen);
+			Rectangle(hdc, 0, 0, 60, 40);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+	}
+
+	// -----------------------------------------------------------------------
+	// Exact bitwise ROP2 cases: every SetROP2 mode (1..16) applied to a
+	// filled + stroked Rectangle over a striped background.
+	// -----------------------------------------------------------------------
+
+	static void Rop2Cases()
+	{
+		GdiCase("rop2-bitwise-grid", 4 * 44, 4 * 44, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 4 * 44, 4 * 44);
+			IntPtr brush = CreateSolidBrush(Rgb(0x33, 0x99, 0xCC));
+			IntPtr pen = CreatePen(0, 1, Rgb(0x0F, 0x0F, 0x0F));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr op = SelectObject(hdc, pen);
+			for (int mode = 1; mode <= 16; mode++)
+			{
+				SetROP2(hdc, mode);
+				int col = (mode - 1) % 4, row = (mode - 1) / 4;
+				int x = col * 44, y = row * 44;
+				Rectangle(hdc, x + 4, y + 4, x + 40, y + 40);
+			}
+			SetROP2(hdc, 13); // R2_COPYPEN: restore default before cleanup
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
@@ -539,5 +777,8 @@ public static class GdiFixtures
 		if (which == "all" || which == "rop") { RopCases(); }
 		if (which == "all" || which == "gradient") { GradientCases(); }
 		if (which == "all" || which == "text") { TextCases(); }
+		if (which == "all" || which == "pattern") { PatternFillCases(); }
+		if (which == "all" || which == "rotation") { RotationCases(); }
+		if (which == "all" || which == "rop2") { Rop2Cases(); }
 	}
 }

@@ -106,6 +106,58 @@ const PATH_TILE_CASES: ParityCase[] = [
 	close('grad-path-triangle-flipxy', 0.03),
 ];
 
+/**
+ * GDI DIB/monochrome pattern-brush FILLS (Rectangle/Ellipse/Polygon/
+ * RoundRect), not blits: exercises `fillCurrentPathWithGdiPattern`
+ * (`emf-gdi-shape-paint.ts`), which fills the shape's path exactly, one
+ * device pixel at a time, using the same `sampleTile` sampler the exact
+ * ROP3 blit evaluator uses. Not `exact()`/tolerance-0 because a non-hatch
+ * pattern-fill vector shape's own boundary (an ellipse's curve, a rotated
+ * polygon's diagonal edge, a rounded rectangle's corner arc) is still drawn
+ * by Canvas's own anti-aliased `fill()`/`stroke()`, which does not exactly
+ * match GDI's non-antialiased edge rasterisation; the pattern itself is
+ * pixel-exact in the interior. `maxMismatch` is set from the ratio measured
+ * against real GDI fixtures (see `src/__fixtures__/gdi/pattern-fill-*`),
+ * with headroom.
+ */
+const PATTERN_FILL_CASES: ParityCase[] = [
+	close('pattern-fill-rect-mono', 0.06),
+	close('pattern-fill-rect-color', 0.05),
+	close('pattern-fill-ellipse-color', 0.05),
+	close('pattern-fill-polygon-color', 0.05),
+	close('pattern-fill-roundrect-mono', 0.06),
+];
+
+/**
+ * GDI world-transform rotation/skew (`EMR_SETWORLDTRANSFORM`) applied to
+ * plain-GDI vector drawing: Rectangle, Ellipse, Polygon, and RoundRect,
+ * under a rotated or skewed (non-axis-aligned) transform. Exercises
+ * `gmapPoint` (full-affine point mapping) and `gdiEllipseParams` (affine
+ * ellipse decomposition via eigendecomposition) in `emf-gdi-coord.ts`.
+ * `maxMismatch` reflects the same Canvas-anti-aliasing-vs-GDI residual as
+ * the pattern-fill cases above, now compounded by the rotation itself
+ * touching every boundary pixel (there are no axis-aligned edges left to
+ * rasterise exactly); see `src/__fixtures__/gdi/rotate-*` and `skew-rect`.
+ */
+const ROTATION_CASES: ParityCase[] = [
+	close('rotate-rect-25deg', 0.15),
+	close('rotate-ellipse-40deg', 0.05),
+	close('rotate-polygon-15deg', 0.05),
+	close('rotate-roundrect-30deg', 0.06),
+	close('skew-rect', 0.05),
+];
+
+/**
+ * Exact bitwise `SetROP2` combine (`emf-rop2-exact.ts`) for the AND/OR/XOR
+ * family of modes (`R2_MASKPEN`, `R2_MERGEPEN`, `R2_XORPEN`, and their
+ * `NOT*` variants), a single grid fixture covering all 16 `SetROP2` modes
+ * as a filled + stroked Rectangle over a striped background. Not
+ * `exact()`/tolerance-0: each cell's 1px pen stroke is still Canvas's own
+ * anti-aliased line, not GDI's non-antialiased one; the bitwise-combined
+ * fill interior is pixel-exact. See `src/__fixtures__/gdi/rop2-bitwise-grid`.
+ */
+const ROP2_EXACT_CASES: ParityCase[] = [close('rop2-bitwise-grid', 0.15)];
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -125,6 +177,30 @@ describe('GDI ground-truth parity', () => {
 
 	describe('path gradient boundary shape + WrapMode tiling', () => {
 		it.each(PATH_TILE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('GDI pattern-brush fills (Rectangle/Ellipse/Polygon/RoundRect)', () => {
+		it.each(PATTERN_FILL_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('GDI world-transform rotation/skew', () => {
+		it.each(ROTATION_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('exact bitwise ROP2 modes', () => {
+		it.each(ROP2_EXACT_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);

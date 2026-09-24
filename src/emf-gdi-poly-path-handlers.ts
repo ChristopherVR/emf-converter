@@ -25,13 +25,14 @@ import {
 	EMR_STROKEPATH,
 	EMR_SELECTCLIPPATH,
 } from './emf-constants';
-import { gmx, gmy } from './emf-gdi-coord';
+import { gmapPoint } from './emf-gdi-coord';
+import { fillCurrentPathWithGdiPattern, fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
 import {
 	handlePolyPolygon32,
 	handlePolyPolyline32,
 	handlePolyPolygon16,
 } from './emf-gdi-polypolygon-helpers';
-import type { EmfGdiReplayCtx } from './emf-types';
+import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
 
 // ---------------------------------------------------------------------------
 // 32-bit poly helper
@@ -58,46 +59,46 @@ function handlePoly32(
 	const isPolygon = recType === EMR_POLYGON;
 	const isBezier = recType === EMR_POLYBEZIER || recType === EMR_POLYBEZIERTO;
 	const isTo = recType === EMR_POLYBEZIERTO || recType === EMR_POLYLINETO;
+	const pt = (i: number) => gmapPoint(rCtx, view.getInt32(ptOff + i * 8, true), view.getInt32(ptOff + i * 8 + 4, true));
+
+	const build = (target: CanvasContext) => {
+		if (!isTo) {
+			const p0 = pt(0);
+			target.moveTo(p0.x, p0.y);
+		}
+		let i = isTo ? 0 : 1;
+		if (isBezier) {
+			while (i + 2 < count) {
+				const p1 = pt(i);
+				const p2 = pt(i + 1);
+				const p3 = pt(i + 2);
+				target.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+				i += 3;
+			}
+		} else {
+			for (; i < count; i++) {
+				const p = pt(i);
+				target.lineTo(p.x, p.y);
+			}
+		}
+		if (isPolygon) {
+			target.closePath();
+		}
+	};
 
 	if (!inPath) {
 		ctx.beginPath();
 	}
-	if (!isTo) {
-		ctx.moveTo(gmx(rCtx, view.getInt32(ptOff, true)), gmy(rCtx, view.getInt32(ptOff + 4, true)));
-	}
-
-	let i = isTo ? 0 : 1;
-	if (isBezier) {
-		while (i + 2 < count) {
-			ctx.bezierCurveTo(
-				gmx(rCtx, view.getInt32(ptOff + i * 8, true)),
-				gmy(rCtx, view.getInt32(ptOff + i * 8 + 4, true)),
-				gmx(rCtx, view.getInt32(ptOff + (i + 1) * 8, true)),
-				gmy(rCtx, view.getInt32(ptOff + (i + 1) * 8 + 4, true)),
-				gmx(rCtx, view.getInt32(ptOff + (i + 2) * 8, true)),
-				gmy(rCtx, view.getInt32(ptOff + (i + 2) * 8 + 4, true)),
-			);
-			i += 3;
-		}
-	} else {
-		for (; i < count; i++) {
-			ctx.lineTo(
-				gmx(rCtx, view.getInt32(ptOff + i * 8, true)),
-				gmy(rCtx, view.getInt32(ptOff + i * 8 + 4, true)),
-			);
-		}
-	}
-
-	if (isPolygon) {
-		ctx.closePath();
-	}
+	build(ctx);
 	if (!inPath) {
+		const buildWithPath = (target: CanvasContext) => {
+			target.beginPath();
+			build(target);
+		};
 		if (isPolygon) {
-			applyBrush(ctx, state);
-			ctx.fill(state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
+			fillShapeExactOrFast(rCtx, buildWithPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
 		}
-		applyPen(ctx, state);
-		ctx.stroke();
+		strokeShapeExactOrFast(rCtx, buildWithPath);
 	}
 
 	if (count > 0) {
@@ -133,46 +134,46 @@ function handlePoly16(
 	const isPolygon = recType === EMR_POLYGON16;
 	const isBezier = recType === EMR_POLYBEZIER16 || recType === EMR_POLYBEZIERTO16;
 	const isTo = recType === EMR_POLYBEZIERTO16 || recType === EMR_POLYLINETO16;
+	const pt = (i: number) => gmapPoint(rCtx, view.getInt16(ptOff + i * 4, true), view.getInt16(ptOff + i * 4 + 2, true));
+
+	const build = (target: CanvasContext) => {
+		if (!isTo) {
+			const p0 = pt(0);
+			target.moveTo(p0.x, p0.y);
+		}
+		let i = isTo ? 0 : 1;
+		if (isBezier) {
+			while (i + 2 < count) {
+				const p1 = pt(i);
+				const p2 = pt(i + 1);
+				const p3 = pt(i + 2);
+				target.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+				i += 3;
+			}
+		} else {
+			for (; i < count; i++) {
+				const p = pt(i);
+				target.lineTo(p.x, p.y);
+			}
+		}
+		if (isPolygon) {
+			target.closePath();
+		}
+	};
 
 	if (!inPath) {
 		ctx.beginPath();
 	}
-	if (!isTo) {
-		ctx.moveTo(gmx(rCtx, view.getInt16(ptOff, true)), gmy(rCtx, view.getInt16(ptOff + 2, true)));
-	}
-
-	let i = isTo ? 0 : 1;
-	if (isBezier) {
-		while (i + 2 < count) {
-			ctx.bezierCurveTo(
-				gmx(rCtx, view.getInt16(ptOff + i * 4, true)),
-				gmy(rCtx, view.getInt16(ptOff + i * 4 + 2, true)),
-				gmx(rCtx, view.getInt16(ptOff + (i + 1) * 4, true)),
-				gmy(rCtx, view.getInt16(ptOff + (i + 1) * 4 + 2, true)),
-				gmx(rCtx, view.getInt16(ptOff + (i + 2) * 4, true)),
-				gmy(rCtx, view.getInt16(ptOff + (i + 2) * 4 + 2, true)),
-			);
-			i += 3;
-		}
-	} else {
-		for (; i < count; i++) {
-			ctx.lineTo(
-				gmx(rCtx, view.getInt16(ptOff + i * 4, true)),
-				gmy(rCtx, view.getInt16(ptOff + i * 4 + 2, true)),
-			);
-		}
-	}
-
-	if (isPolygon) {
-		ctx.closePath();
-	}
+	build(ctx);
 	if (!inPath) {
+		const buildWithPath = (target: CanvasContext) => {
+			target.beginPath();
+			build(target);
+		};
 		if (isPolygon) {
-			applyBrush(ctx, state);
-			ctx.fill(state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
+			fillShapeExactOrFast(rCtx, buildWithPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
 		}
-		applyPen(ctx, state);
-		ctx.stroke();
+		strokeShapeExactOrFast(rCtx, buildWithPath);
 	}
 
 	if (count > 0) {
@@ -241,16 +242,24 @@ export function handleEmfGdiPolyPathRecord(
 		case EMR_CLOSEFIGURE:
 			ctx.closePath();
 			return true;
-		case EMR_FILLPATH:
-			applyBrush(ctx, state);
-			ctx.fill(state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
+		case EMR_FILLPATH: {
+			const fillRule = state.polyFillMode === 2 ? 'nonzero' : 'evenodd';
+			if (!fillCurrentPathWithGdiPattern(rCtx, fillRule)) {
+				applyBrush(ctx, state);
+				ctx.fill(fillRule);
+			}
 			return true;
-		case EMR_STROKEANDFILLPATH:
-			applyBrush(ctx, state);
-			ctx.fill(state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
+		}
+		case EMR_STROKEANDFILLPATH: {
+			const fillRule = state.polyFillMode === 2 ? 'nonzero' : 'evenodd';
+			if (!fillCurrentPathWithGdiPattern(rCtx, fillRule)) {
+				applyBrush(ctx, state);
+				ctx.fill(fillRule);
+			}
 			applyPen(ctx, state);
 			ctx.stroke();
 			return true;
+		}
 		case EMR_STROKEPATH:
 			applyPen(ctx, state);
 			ctx.stroke();
