@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.2.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.2.0) - 2026-09-24
+
+### Features
+
+- Exact GDI pattern-brush fills, world-transform rotation, and bitwise ROP2 ([1cf9ab3](https://github.com/ChristopherVR/emf-converter/commit/1cf9ab38d20d6bbaa223e9a758ad3095a0aa2474))
+
 ## [3.1.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.1.0) - 2026-09-24
 
 ### Features
