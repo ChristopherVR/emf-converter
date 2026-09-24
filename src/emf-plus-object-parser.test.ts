@@ -436,18 +436,18 @@ describe('emf-plus-object-parser', () => {
 	// ---------------------------------------------------------------------------
 
 	describe('image objects', () => {
-		it('parses a compressed bitmap image (type 2)', () => {
+		it('parses a compressed bitmap image (BitmapDataType=1 per MS-EMFPLUS 2.1.1.2)', () => {
 			const rCtx = makeRCtx();
 			const d = 0;
 			rCtx.view.setUint32(d, 0xdbc01002, true); // version
 			rCtx.view.setUint32(d + 4, 1, true); // imgType = Bitmap
 
-			// Bitmap fields
+			// Bitmap fields (meaningless for the compressed layout, but present)
 			rCtx.view.setInt32(d + 8, 2, true); // width
 			rCtx.view.setInt32(d + 12, 2, true); // height
 			rCtx.view.setInt32(d + 16, 8, true); // stride
 			rCtx.view.setUint32(d + 20, 0x00021808, true); // pixelFormat = 24bpp
-			rCtx.view.setUint32(d + 24, 2, true); // bmpType = 2 (compressed)
+			rCtx.view.setUint32(d + 24, 1, true); // BitmapDataType = Compressed (1)
 			// Write some fake PNG header bytes at d+28
 			rCtx.view.setUint8(d + 28, 0x89); // PNG magic
 			rCtx.view.setUint8(d + 29, 0x50);
@@ -462,6 +462,61 @@ describe('emf-plus-object-parser', () => {
 			if (img!.kind === 'plus-image') {
 				expect(img.data).not.toBeNull();
 				expect(img.type).toBe(1);
+				// The compressed bytes are passed through untouched: they start
+				// with the PNG magic we wrote, not a decoded/re-wrapped format.
+				const bytes = new Uint8Array(img.data!);
+				expect(Array.from(bytes.slice(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
+			}
+		});
+
+		it('parses an uncompressed pixel bitmap image (BitmapDataType=0 per MS-EMFPLUS 2.1.1.2)', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			rCtx.view.setUint32(d, 0xdbc01002, true); // version
+			rCtx.view.setUint32(d + 4, 1, true); // imgType = Bitmap
+
+			rCtx.view.setInt32(d + 8, 2, true); // width
+			rCtx.view.setInt32(d + 12, 2, true); // height
+			rCtx.view.setInt32(d + 16, 8, true); // stride (top-down, 2px * 4 bytes)
+			rCtx.view.setUint32(d + 20, 0x0026200a, true); // pixelFormat = 32bppARGB
+			rCtx.view.setUint32(d + 24, 0, true); // BitmapDataType = Pixel (0)
+			// 2x2 opaque pixels (BGRA per pixel)
+			const px = d + 28;
+			rCtx.view.setUint32(px, 0xff0000ff, true);
+			rCtx.view.setUint32(px + 4, 0xff00ff00, true);
+			rCtx.view.setUint32(px + 8, 0xffff0000, true);
+			rCtx.view.setUint32(px + 12, 0xffffffff, true);
+
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_IMAGE, 0), d, 44);
+			expect(rCtx.totalImageObjects).toBe(1);
+			const img = rCtx.objectTable.get(0);
+			expect(img).toBeDefined();
+			if (img!.kind === 'plus-image') {
+				expect(img.data).not.toBeNull();
+				// decodeEmfPlusBitmapPixels wraps the raw pixels into a BMP file
+				// (BITMAPFILEHEADER 'BM' magic), not a pass-through of the raw bytes.
+				const bytes = new Uint8Array(img.data!);
+				expect(bytes[0]).toBe(0x42); // 'B'
+				expect(bytes[1]).toBe(0x4d); // 'M'
+			}
+		});
+
+		it('drops an image with an unrecognised BitmapDataType', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			rCtx.view.setUint32(d, 0xdbc01002, true);
+			rCtx.view.setUint32(d + 4, 1, true); // imgType = Bitmap
+			rCtx.view.setInt32(d + 8, 2, true);
+			rCtx.view.setInt32(d + 12, 2, true);
+			rCtx.view.setInt32(d + 16, 8, true);
+			rCtx.view.setUint32(d + 20, 0x0026200a, true);
+			rCtx.view.setUint32(d + 24, 7, true); // unrecognised BitmapDataType
+
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_IMAGE, 0), d, 44);
+			const img = rCtx.objectTable.get(0);
+			expect(img).toBeDefined();
+			if (img!.kind === 'plus-image') {
+				expect(img.data).toBeNull();
 			}
 		});
 

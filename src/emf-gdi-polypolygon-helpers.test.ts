@@ -69,6 +69,7 @@ function makeCtx(
 		canvasH: 100,
 		sx: 1,
 		sy: 1,
+		pathCmds: [],
 	};
 	return { rCtx, ctx };
 }

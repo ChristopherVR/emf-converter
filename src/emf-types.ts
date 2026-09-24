@@ -267,6 +267,13 @@ export interface ReplayOptions {
 	maxRecordsEmfPlus?: number;
 	/** Lowercased Windows-face → CSS-family overrides applied to text. */
 	fontFamilyMap?: Record<string, string>;
+	/**
+	 * Pre-decoded EMF+ TextureFill brush images (see
+	 * {@link preDecodeEmfPlusTextures} / `emf-plus-texture-predecode.ts`),
+	 * threaded down into every `EmfPlusReplayCtx` so a compressed texture
+	 * brush's fill uses the real image instead of falling back to black.
+	 */
+	textureCache?: EmfPlusTextureCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -404,6 +411,17 @@ export interface EmfPlusTexture {
 	wrapMode: EmfPlusGradientWrapMode;
 	transform: TransformMatrix | null;
 }
+
+/** A texture brush's embedded image, decoded ahead of replay (see {@link EmfPlusReplayCtx.textureCache}). */
+export interface EmfPlusDecodedTexture {
+	width: number;
+	height: number;
+	/** Top-down, non-premultiplied RGBA pixels, `width * height * 4` bytes. */
+	rgba: Uint8ClampedArray;
+}
+
+/** Maps an `EMFPLUS_OBJECT` record's `dataOff` to its pre-decoded texture image. */
+export type EmfPlusTextureCache = Map<number, EmfPlusDecodedTexture>;
 
 /** An EMF+ (GDI+) brush object (solid colour, hatch, gradient, or texture). */
 export interface EmfPlusBrush {
@@ -711,6 +729,16 @@ export interface EmfPlusReplayCtx {
 	 * cannot express through successive `clip()` calls alone.
 	 */
 	clipRegion?: ClipRegion;
+	/**
+	 * Pre-decoded EMF+ TextureFill brush images, keyed by the enclosing
+	 * `EMFPLUS_OBJECT` record's `dataOff` (stable across the async pre-scan
+	 * pass and this synchronous replay pass, since both walk the same raw
+	 * buffer at the same offsets for a non-continuation object record). Set
+	 * once by {@link preDecodeEmfPlusTextures} before replay begins; consulted
+	 * by `parseEmfPlusBrushObject` when a TextureFill brush's embedded image
+	 * is a compressed (PNG/JPEG) bitmap the synchronous parse cannot decode.
+	 */
+	textureCache?: EmfPlusTextureCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -776,4 +804,11 @@ export interface EmfGdiReplayCtx {
 	sx: number;
 	/** Vertical scale factor: `canvasH / logicalHeight`. */
 	sy: number;
+	/**
+	 * Recorded geometry for the CURRENT `BeginPath`/`EndPath` bracket (reset
+	 * on `EMR_BEGINPATH`), device-space, so `EMR_FILLPATH`/
+	 * `EMR_STROKEANDFILLPATH`/`EMR_STROKEPATH` can replay it onto a scratch
+	 * canvas for the exact bitwise ROP2 combine. See `emf-gdi-path-record.ts`.
+	 */
+	pathCmds: import('./emf-gdi-path-record').GdiPathCmd[];
 }

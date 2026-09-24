@@ -115,8 +115,19 @@ export function parseEmfPlusImageObject(
 	);
 
 	if (imgType === 1 && recDataSize >= 28) {
+		// EmfPlusBitmap.Type (BitmapDataType, [MS-EMFPLUS] 2.1.1.2):
+		// BitmapDataTypePixel = 0x00000000, BitmapDataTypeCompressed = 0x00000001.
+		// Measured against a real GDI+-recorded DrawImage of a PNG-backed
+		// Bitmap: BitmapDataType is 1 (Compressed) there, and the pixel-shaped
+		// fields (Width/Height/Stride/PixelFormat) are meaningless for that
+		// layout. An earlier version of this parser had the two values
+		// swapped (treating 1 as Pixel and an unspecified 2 as Compressed),
+		// which fed compressed PNG/JPEG bytes into the raw-pixel decoder as if
+		// they were an uncompressed pixel array, corrupting the image, while a
+		// genuine BitmapDataTypePixel (0) image fell through both branches and
+		// was silently dropped.
 		const bmpType = view.getUint32(dataOff + 24, true);
-		if (bmpType === 1) {
+		if (bmpType === 0) {
 			const bmpW = view.getInt32(dataOff + 8, true);
 			const bmpH = view.getInt32(dataOff + 12, true);
 			const bmpStride = view.getInt32(dataOff + 16, true);
@@ -148,7 +159,7 @@ export function parseEmfPlusImageObject(
 					emfWarn(`  Bitmap(Pixel): decodeEmfPlusBitmapPixels returned null`);
 				}
 			}
-		} else if (bmpType === 2) {
+		} else if (bmpType === 1) {
 			const imgStart = dataOff + 28;
 			const imgLen = recDataSize - 28;
 			emfLog(`  Bitmap(Compressed): imgLen=${imgLen}, imgStart=0x${imgStart.toString(16)}`);
@@ -168,6 +179,8 @@ export function parseEmfPlusImageObject(
 			} else {
 				emfWarn(`  Bitmap(Compressed): out of bounds or empty`);
 			}
+		} else {
+			emfWarn(`  Bitmap: unrecognised BitmapDataType ${bmpType}`);
 		}
 	} else if (imgType === 2 && recDataSize >= 12) {
 		const mfType = view.getUint32(dataOff + 8, true);

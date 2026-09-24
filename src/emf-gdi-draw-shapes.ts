@@ -37,6 +37,7 @@ import {
 } from './emf-constants';
 import { realizeBrush } from './emf-gdi-brush-pattern';
 import { gmx, gmy, gmw, gmh, gmapPoint, gdiEllipseParams, hasWorldRotation } from './emf-gdi-coord';
+import { gdiPathRecorder } from './emf-gdi-path-record';
 import { fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
 import { isExactRop2Bitwise } from './emf-rop2-exact';
 import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
@@ -70,7 +71,7 @@ function handleSetPixelV(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 }
 
 function handleMoveToEx(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): boolean {
-	const { ctx, view, state, inPath } = rCtx;
+	const { view, state, inPath } = rCtx;
 	if (recSize >= 16) {
 		state.curX = view.getInt32(dataOff, true);
 		state.curY = view.getInt32(dataOff + 4, true);
@@ -78,7 +79,7 @@ function handleMoveToEx(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number)
 			const p = hasWorldRotation(rCtx)
 				? gmapPoint(rCtx, state.curX, state.curY)
 				: { x: gmx(rCtx, state.curX), y: gmy(rCtx, state.curY) };
-			ctx.moveTo(p.x, p.y);
+			gdiPathRecorder(rCtx).moveTo(p.x, p.y);
 		}
 	}
 	return true;
@@ -92,7 +93,7 @@ function handleLineTo(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): 
 		const rotated = hasWorldRotation(rCtx);
 		const to = rotated ? gmapPoint(rCtx, lx, ly) : { x: gmx(rCtx, lx), y: gmy(rCtx, ly) };
 		if (inPath) {
-			ctx.lineTo(to.x, to.y);
+			gdiPathRecorder(rCtx).lineTo(to.x, to.y);
 		} else {
 			const from = rotated
 				? gmapPoint(rCtx, state.curX, state.curY)
@@ -124,8 +125,11 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 			const p2 = gmapPoint(rCtx, r, t);
 			const p3 = gmapPoint(rCtx, r, b);
 			const p4 = gmapPoint(rCtx, l, b);
-			const build = (c: CanvasContext) => {
-				c.beginPath();
+			// Appends the rectangle's outline to whatever path is already open;
+			// the caller decides whether that is a fresh path (immediate shape)
+			// or the CURRENT BeginPath/EndPath bracket (inPath), which must NOT
+			// be reset here.
+			const appendRect = (c: CanvasContext) => {
 				c.moveTo(p1.x, p1.y);
 				c.lineTo(p2.x, p2.y);
 				c.lineTo(p3.x, p3.y);
@@ -133,8 +137,12 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 				c.closePath();
 			};
 			if (inPath) {
-				build(ctx);
+				appendRect(gdiPathRecorder(rCtx));
 			} else {
+				const build = (c: CanvasContext) => {
+					c.beginPath();
+					appendRect(c);
+				};
 				build(ctx);
 				fillShapeExactOrFast(rCtx, build);
 				strokeShapeExactOrFast(rCtx, build);
@@ -142,7 +150,7 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 			return true;
 		}
 		if (inPath) {
-			ctx.rect(gmx(rCtx, l), gmy(rCtx, t), gmw(rCtx, r - l), gmh(rCtx, b - t));
+			gdiPathRecorder(rCtx).rect(gmx(rCtx, l), gmy(rCtx, t), gmw(rCtx, r - l), gmh(rCtx, b - t));
 		} else {
 			const x = gmx(rCtx, l);
 			const y = gmy(rCtx, t);
@@ -232,7 +240,7 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 			c.closePath();
 		};
 		if (inPath) {
-			drawRoundRect(ctx);
+			drawRoundRect(gdiPathRecorder(rCtx));
 		} else {
 			const build = (c: CanvasContext) => {
 				c.beginPath();
@@ -263,7 +271,7 @@ function handleEllipse(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number):
 					rotation: 0,
 				};
 		if (inPath) {
-			ctx.ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, 0, Math.PI * 2);
+			gdiPathRecorder(rCtx).ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, 0, Math.PI * 2);
 		} else {
 			const build = (c: CanvasContext) => {
 				c.beginPath();
@@ -323,11 +331,11 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 				c.closePath();
 			}
 		};
-		if (!inPath) {
+		if (inPath) {
+			build(gdiPathRecorder(rCtx));
+		} else {
 			ctx.beginPath();
-		}
-		build(ctx);
-		if (!inPath) {
+			build(ctx);
 			const buildWithPath = (c: CanvasContext) => {
 				c.beginPath();
 				build(c);

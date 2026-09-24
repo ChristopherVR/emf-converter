@@ -19,14 +19,14 @@ import {
 	createImageDataCompat,
 	createTempCanvas,
 } from './emf-canvas-helpers';
-import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS } from './emf-constants';
+import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } from './emf-constants';
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { gmx, gmy, gmw, gmh } from './emf-gdi-coord';
+import { gmx, gmy, gmw, gmh, gdiDeviceMatrix, gmapPoint, hasWorldRotation } from './emf-gdi-coord';
 import { HALFTONE, stretchGdi } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
-import { applyRop3, classifyRop3, clampPositiveRect } from './emf-rop3';
+import { applyRop3, classifyRop3, clampPositiveRect, evalRop3, rop3Index, rop3Operands } from './emf-rop3';
 import type { Rop3Pattern, Rop3Plan } from './emf-rop3';
 import type { AnyCanvas, CanvasContext, EmfGdiReplayCtx } from './emf-types';
 
@@ -245,6 +245,169 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 }
 
 /**
+ * Full-affine (rotated/skewed `EMR_SETWORLDTRANSFORM`) bitmap blit for
+ * BitBlt/StretchBlt/StretchDIBits. Real GDI DOES rotate a blit's destination
+ * under a rotated world transform (measured against a real fixture:
+ * `probe-rotate-bitblt-25deg` under `src/__fixtures__/gdi`, where the
+ * blitted source's horizontal colour bands come out visibly tilted); the
+ * axis-aligned `runTernary` above only carries the transform's scale and
+ * translation, since its exact per-pixel evaluator assumes a destination
+ * rectangle it can `getImageData`/`putImageData` directly.
+ *
+ * Technique ("draw to a scratch canvas in device space then combine"): the
+ * exact per-pixel ROP3 combine still runs on an UNROTATED local raster
+ * (sized from the transform's true per-axis magnitude via `Math.hypot`, not
+ * just `a`/`d`, so a rotated blit is not mis-sized), but each local pixel's
+ * destination operand (D) is sampled from its actual rotated DEVICE
+ * position (nearest-neighbour, read once from a single bounding-box
+ * `getImageData`) rather than from the same local index `applyRop3` assumes.
+ * The finished local raster is then placed with `ctx.setTransform` using the
+ * same per-step device deltas, so `drawImage` performs the (unavoidable,
+ * since a rotated raster blit cannot stay nearest-neighbour-exact at every
+ * output pixel) final resample; the brush pattern (P) is sampled at the true
+ * device position too, matching `SetBrushOrgEx`'s device-space anchor.
+ */
+function executeRotatedBlit(
+	rCtx: EmfGdiReplayCtx,
+	logDx: number,
+	logDy: number,
+	logDw: number,
+	logDh: number,
+	rop: number,
+	source: BlitRequest['source'],
+	sx: number,
+	sy: number,
+	sw: number,
+	sh: number,
+	dibOrigin: 'top-left' | 'bottom-left',
+): void {
+	const { ctx } = rCtx;
+	const index = rop3Index(rop);
+	if (index === 0xaa) {
+		return; // D: leaves the destination untouched.
+	}
+	const operands = rop3Operands(index);
+	if (typeof ctx.getImageData !== 'function') {
+		emfWarn('executeRotatedBlit: context cannot read pixels back; rotated ROP3 skipped');
+		return;
+	}
+
+	const m = gdiDeviceMatrix(rCtx);
+	const origin = gmapPoint(rCtx, logDx, logDy);
+	const scaleX = Math.hypot(m[0], m[1]);
+	const scaleY = Math.hypot(m[2], m[3]);
+	const dw = Math.max(1, Math.min(MAX_CANVAS_DIMENSION, Math.round(scaleX * Math.abs(logDw)) || 1));
+	const dh = Math.max(1, Math.min(MAX_CANVAS_DIMENSION, Math.round(scaleY * Math.abs(logDh)) || 1));
+	// Device-space delta per local step (one step per output pixel); the sign
+	// of the logical width/height folds GDI's mirrored-destination convention
+	// directly into the basis vectors.
+	const signDw = logDw < 0 ? -1 : 1;
+	const signDh = logDh < 0 ? -1 : 1;
+	const exX = (m[0] * signDw * Math.abs(logDw)) / dw;
+	const exY = (m[1] * signDw * Math.abs(logDw)) / dw;
+	const eyX = (m[2] * signDh * Math.abs(logDh)) / dh;
+	const eyY = (m[3] * signDh * Math.abs(logDh)) / dh;
+
+	const corners = [
+		origin,
+		{ x: origin.x + exX * dw, y: origin.y + exY * dw },
+		{ x: origin.x + eyX * dh, y: origin.y + eyY * dh },
+		{ x: origin.x + exX * dw + eyX * dh, y: origin.y + exY * dw + eyY * dh },
+	];
+	let minX = Infinity;
+	let minY = Infinity;
+	let maxX = -Infinity;
+	let maxY = -Infinity;
+	for (const c of corners) {
+		minX = Math.min(minX, c.x);
+		minY = Math.min(minY, c.y);
+		maxX = Math.max(maxX, c.x);
+		maxY = Math.max(maxY, c.y);
+	}
+	const bx = Math.max(0, Math.floor(minX));
+	const by = Math.max(0, Math.floor(minY));
+	const bw = Math.min(rCtx.canvasW, Math.ceil(maxX)) - bx;
+	const bh = Math.min(rCtx.canvasH, Math.ceil(maxY)) - by;
+	if (bw <= 0 || bh <= 0) {
+		return;
+	}
+
+	const brush = realizeBrush(rCtx.state);
+	if (operands.usesP && brush.kind === 'none') {
+		return;
+	}
+	const pattern = patternOperand(rCtx, brush);
+
+	// Build S in LOCAL (unrotated) raster space: source stretch-mode sampling
+	// is unaffected by the destination's rotation, only its placement is.
+	let src: ImageData | null = null;
+	if (operands.usesS) {
+		const localReq: BlitRequest = {
+			plan: { kind: 'ternary', index, operands },
+			dx: 0,
+			dy: 0,
+			dw: signDw * dw,
+			dh: signDh * dh,
+			source,
+			sx,
+			sy,
+			sw,
+			sh,
+			dibOrigin,
+		};
+		const decoded = decodeSource(rCtx, localReq);
+		if (!decoded) {
+			return;
+		}
+		const srcLayer = createTempCanvas(dw, dh);
+		if (!srcLayer) {
+			return;
+		}
+		drawSourceMapped(srcLayer.ctx, decoded.decoded, decoded.req, 0, 0, rCtx.state.stretchBltMode);
+		src = canvasGetImageData(srcLayer.ctx, 0, 0, dw, dh);
+	}
+
+	const destBBox = canvasGetImageData(ctx, bx, by, bw, bh);
+	const dd = destBBox.data;
+	const out = new Uint8ClampedArray(dw * dh * 4);
+	for (let ly = 0; ly < dh; ly++) {
+		for (let lx = 0; lx < dw; lx++) {
+			const devX = origin.x + exX * lx + eyX * ly;
+			const devY = origin.y + exY * lx + eyY * ly;
+			const oi = (ly * dw + lx) * 4;
+			const ix = Math.round(devX) - bx;
+			const iy = Math.round(devY) - by;
+			if (ix < 0 || iy < 0 || ix >= bw || iy >= bh) {
+				continue; // Leaves this output texel transparent: outside the canvas.
+			}
+			const di = (iy * bw + ix) * 4;
+			const dv = (dd[di] << 16) | (dd[di + 1] << 8) | dd[di + 2];
+			const si = (ly * dw + lx) * 4;
+			const sv = src ? (src.data[si] << 16) | (src.data[si + 1] << 8) | src.data[si + 2] : 0;
+			const pv = typeof pattern === 'function' ? pattern(Math.round(devX), Math.round(devY)) : pattern;
+			const r = evalRop3(index, pv, sv, dv);
+			out[oi] = (r >> 16) & 0xff;
+			out[oi + 1] = (r >> 8) & 0xff;
+			out[oi + 2] = r & 0xff;
+			out[oi + 3] = 255;
+		}
+	}
+
+	const outLayer = createTempCanvas(dw, dh);
+	if (!outLayer) {
+		return;
+	}
+	canvasPutImageData(outLayer.ctx, createImageDataCompat(out, dw, dh), 0, 0);
+	ctx.save();
+	ctx.setTransform(exX, exY, eyX, eyY, origin.x, origin.y);
+	ctx.imageSmoothingEnabled = false;
+	ctx.globalCompositeOperation = 'source-over';
+	ctx.globalAlpha = 1;
+	canvasDrawImage(ctx, outLayer.canvas, 0, 0, dw, dh);
+	ctx.restore();
+}
+
+/**
  * GDI addresses a mirrored destination from its anchor pixel inward: a
  * negative extent `w` at `x` covers device pixels `x+w+1 .. x`, one pixel
  * right of Canvas's `[x+w, x)`. Shift by one device pixel to match.
@@ -356,6 +519,29 @@ function handleBlt(
 	const identity = m11 === 0 && m22 === 0 && m12 === 0 && m21 === 0;
 	const a = identity ? 1 : m11;
 	const d = identity ? 1 : m22;
+	const srcRect = {
+		sx: a * xSrc + (identity ? 0 : m21 * ySrc + mdx),
+		sy: d * ySrc + (identity ? 0 : m12 * xSrc + mdy),
+		sw: a * cxSrc,
+		sh: d * cySrc,
+	};
+	if (hasWorldRotation(rCtx)) {
+		executeRotatedBlit(
+			rCtx,
+			xDest,
+			yDest,
+			cxDest,
+			cyDest,
+			rop,
+			source,
+			srcRect.sx,
+			srcRect.sy,
+			srcRect.sw,
+			srcRect.sh,
+			'top-left',
+		);
+		return true;
+	}
 	executeBlit(rCtx, {
 		plan: classifyRop3(rop),
 		dx: gmx(rCtx, xDest),
@@ -363,10 +549,7 @@ function handleBlt(
 		dw: gmw(rCtx, cxDest),
 		dh: gmh(rCtx, cyDest),
 		source,
-		sx: a * xSrc + (identity ? 0 : m21 * ySrc + mdx),
-		sy: d * ySrc + (identity ? 0 : m12 * xSrc + mdy),
-		sw: a * cxSrc,
-		sh: d * cySrc,
+		...srcRect,
 		dibOrigin: 'top-left',
 	});
 	return true;
@@ -383,23 +566,37 @@ function handleStretchDibits(
 	if (recSize < 80) {
 		return true;
 	}
+	const xDest = view.getInt32(dataOff + 16, true);
+	const yDest = view.getInt32(dataOff + 20, true);
+	const cxDest = view.getInt32(dataOff + 64, true);
+	const cyDest = view.getInt32(dataOff + 68, true);
+	const rop = view.getUint32(dataOff + 60, true);
+	const source = sourceOf(
+		offset,
+		view.getUint32(dataOff + 40, true),
+		view.getUint32(dataOff + 44, true),
+		view.getUint32(dataOff + 48, true),
+		view.getUint32(dataOff + 52, true),
+	);
+	const sx = view.getInt32(dataOff + 24, true);
+	const sy = view.getInt32(dataOff + 28, true);
+	const sw = view.getInt32(dataOff + 32, true);
+	const sh = view.getInt32(dataOff + 36, true);
+	if (hasWorldRotation(rCtx)) {
+		executeRotatedBlit(rCtx, xDest, yDest, cxDest, cyDest, rop, source, sx, sy, sw, sh, 'bottom-left');
+		return true;
+	}
 	executeBlit(rCtx, {
-		plan: classifyRop3(view.getUint32(dataOff + 60, true)),
-		dx: gmx(rCtx, view.getInt32(dataOff + 16, true)),
-		dy: gmy(rCtx, view.getInt32(dataOff + 20, true)),
-		dw: gmw(rCtx, view.getInt32(dataOff + 64, true)),
-		dh: gmh(rCtx, view.getInt32(dataOff + 68, true)),
-		source: sourceOf(
-			offset,
-			view.getUint32(dataOff + 40, true),
-			view.getUint32(dataOff + 44, true),
-			view.getUint32(dataOff + 48, true),
-			view.getUint32(dataOff + 52, true),
-		),
-		sx: view.getInt32(dataOff + 24, true),
-		sy: view.getInt32(dataOff + 28, true),
-		sw: view.getInt32(dataOff + 32, true),
-		sh: view.getInt32(dataOff + 36, true),
+		plan: classifyRop3(rop),
+		dx: gmx(rCtx, xDest),
+		dy: gmy(rCtx, yDest),
+		dw: gmw(rCtx, cxDest),
+		dh: gmh(rCtx, cyDest),
+		source,
+		sx,
+		sy,
+		sw,
+		sh,
 		dibOrigin: 'bottom-left',
 	});
 	return true;

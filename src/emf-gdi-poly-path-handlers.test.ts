@@ -74,6 +74,7 @@ function makeRCtx(bufSize = 512): EmfGdiReplayCtx {
 		canvasH: 100,
 		sx: 1,
 		sy: 1,
+		pathCmds: [],
 	};
 }
 

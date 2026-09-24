@@ -16,7 +16,7 @@ import {
 	readUtf16LE,
 } from './emf-canvas-helpers';
 import { EMR_EXTTEXTOUTW } from './emf-constants';
-import { gmx, gmy, gmw, gmh } from './emf-gdi-coord';
+import { gmx, gmy, gmw, gmh, gdiDeviceMatrix, gmapPoint, hasWorldRotation } from './emf-gdi-coord';
 import {
 	cumulativeGlyphOffsets,
 	totalGlyphAdvance,
@@ -131,8 +131,22 @@ function handleExtTextOutW(
 		return true;
 	}
 
-	// The font height is a LOGICAL height, so it maps like any other length.
-	const fontScale = Math.abs(gmh(rCtx, 1));
+	// A rotated/skewed EMR_SETWORLDTRANSFORM rotates ExtTextOutW's placement
+	// AND its glyphs on real GDI (measured against a real fixture: see
+	// `probe-rotate-text-25deg` under `src/__fixtures__/gdi`), the same as it
+	// does for vector shapes. `gmx`/`gmy`/`gmw`/`gmh` only carry the
+	// transform's scale/translation, so the rotated case maps the reference
+	// point through the full affine (`gmapPoint`) and folds the transform's
+	// own rotation angle into the same `ctx.rotate()` call already used for
+	// the font's escapement, and scales the font size / advances from the
+	// device matrix's actual per-axis magnitudes instead of just `d`/`a`
+	// (exact for a pure rotation + uniform scale; skew is approximated by
+	// this magnitude, consistent with the rest of this module's rotation
+	// support).
+	const rotated = hasWorldRotation(rCtx);
+	const m = rotated ? gdiDeviceMatrix(rCtx) : null;
+	const fontScale = m ? Math.hypot(m[2], m[3]) : Math.abs(gmh(rCtx, 1));
+	const advanceScale = m ? Math.hypot(m[0], m[1]) : null;
 	applyFont(ctx, state, fontScale);
 
 	const align = horizontalAlign(state.textAlign);
@@ -140,25 +154,25 @@ function handleExtTextOutW(
 	ctx.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
 
 	const dxLogical = readDxArray(view, offset, dataOff, nChars, viewEnd);
-	const dxDevice = dxLogical ? dxLogical.map((v) => gmw(rCtx, v)) : null;
+	const dxDevice = dxLogical ? dxLogical.map((v) => (advanceScale !== null ? v * advanceScale : gmw(rCtx, v))) : null;
 	// Per-glyph placement always anchors left; the run-level alignment is
 	// folded into `runStartX` inside paintRun instead.
 	if (dxDevice) {
 		ctx.textAlign = 'left';
 	}
 
-	const baseX = gmx(rCtx, refX);
-	const baseY = gmy(rCtx, refY);
-	const radians = escapementToCanvasRadians(state.fontEscapementTenthDeg);
+	const basePoint = m ? gmapPoint(rCtx, refX, refY) : { x: gmx(rCtx, refX), y: gmy(rCtx, refY) };
+	const worldAngle = m ? Math.atan2(m[1], m[0]) : 0;
+	const radians = worldAngle + escapementToCanvasRadians(state.fontEscapementTenthDeg);
 
 	if (radians !== 0) {
 		ctx.save();
-		ctx.translate(baseX, baseY);
+		ctx.translate(basePoint.x, basePoint.y);
 		ctx.rotate(radians);
 		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale);
 		ctx.restore();
 	} else {
-		paintRun(ctx, state, text, dxDevice, baseX, baseY, align, fontScale);
+		paintRun(ctx, state, text, dxDevice, basePoint.x, basePoint.y, align, fontScale);
 	}
 	return true;
 }

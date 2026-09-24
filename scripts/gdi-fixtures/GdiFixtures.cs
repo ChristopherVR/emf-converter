@@ -80,6 +80,15 @@ public static class GdiFixtures
 	[DllImport("gdi32.dll")] static extern bool Ellipse(IntPtr hdc, int l, int t, int r, int b);
 	[DllImport("gdi32.dll")] static extern bool Polygon(IntPtr hdc, [In] POINT[] pts, int count);
 	[DllImport("gdi32.dll")] static extern bool RoundRect(IntPtr hdc, int l, int t, int r, int b, int w, int h);
+	[DllImport("gdi32.dll")] static extern bool BeginPath(IntPtr hdc);
+	[DllImport("gdi32.dll")] static extern bool EndPath(IntPtr hdc);
+	[DllImport("gdi32.dll")] static extern bool CloseFigure(IntPtr hdc);
+	[DllImport("gdi32.dll")] static extern bool MoveToEx(IntPtr hdc, int x, int y, IntPtr prev);
+	[DllImport("gdi32.dll")] static extern bool LineTo(IntPtr hdc, int x, int y);
+	[DllImport("gdi32.dll")] static extern bool FillPath(IntPtr hdc);
+	[DllImport("gdi32.dll")] static extern bool StrokeAndFillPath(IntPtr hdc);
+	[DllImport("gdi32.dll")] static extern bool StrokePath(IntPtr hdc);
+	[DllImport("gdi32.dll")] static extern int SetPolyFillMode(IntPtr hdc, int mode);
 	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateFontIndirectW(ref LOGFONT lf);
 	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern bool TextOutW(IntPtr hdc, int x, int y, string s, int n);
 	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern bool GetTextExtentExPointW(IntPtr hdc, string s, int n, int max, IntPtr fit, [Out] int[] dx, out Size size);
@@ -94,6 +103,12 @@ public static class GdiFixtures
 	static string outDir;
 
 	static int Rgb(int r, int g, int b) { return r | (g << 8) | (b << 16); }
+
+	/** Unpacks a `Rgb()`-packed int (r | g&lt;&lt;8 | b&lt;&lt;16) back into an opaque `Color`. */
+	static Color PalColor(int packed)
+	{
+		return Color.FromArgb(255, packed & 0xff, (packed >> 8) & 0xff, (packed >> 16) & 0xff);
+	}
 
 	/** A top-down 32bpp DIB section selected into a fresh memory DC. */
 	sealed class Dib : IDisposable
@@ -645,6 +660,131 @@ public static class GdiFixtures
 	// Limitations section.
 
 	// -----------------------------------------------------------------------
+	// EMF+ DrawImage of a real PNG-backed Bitmap: verifies BitmapDataType
+	// ([MS-EMFPLUS] 2.1.1.2) against real GDI+ output for the standalone
+	// Image object (not a TextureFill brush's embedded image, see below).
+	// -----------------------------------------------------------------------
+
+	static void ImageDrawCases()
+	{
+		string tmpPng = Path.Combine(outDir, "_tmp_image_draw_source.png");
+		using (var src = new Bitmap(24, 20, PixelFormat.Format32bppArgb))
+		{
+			for (int y = 0; y < 20; y++)
+			{
+				for (int x = 0; x < 24; x++)
+				{
+					src.SetPixel(x, y, PalColor(Palette[(x / 3 + y / 3) % Palette.Length]));
+				}
+			}
+			src.Save(tmpPng, ImageFormat.Png);
+		}
+		using (var bmp = new Bitmap(tmpPng))
+		{
+			GpCase("image-draw-png", 120, 90, delegate (Graphics g)
+			{
+				// EMF+'s recorded rclBounds is the tight bounding box of what was
+				// actually drawn, not the frame passed to the Metafile constructor;
+				// a corner-to-corner background keeps that bbox equal to the full
+				// canvas so it lines up with the reference PNG (painted onto a
+				// full-size Bitmap) pixel-for-pixel, the same convention the
+				// gradient GpCase fixtures above use with their full-canvas fill.
+				g.FillRectangle(Brushes.White, 0, 0, 120, 90);
+				g.DrawImage(bmp, 8, 8, 48, 40);
+				g.DrawImage(bmp, 64, 20, 40, 34);
+			});
+		}
+		File.Delete(tmpPng);
+	}
+
+	// -----------------------------------------------------------------------
+	// EMF+ TextureFill brush whose embedded image is a real PNG-backed
+	// Bitmap: .NET's EMF+ recorder always serialises this as a compressed
+	// image (see the note this replaces below), so this fixture exercises
+	// the async pre-decode pass instead of the synchronous pixel-bitmap path
+	// the uncompressed unit-test fixture already covers.
+	// -----------------------------------------------------------------------
+
+	static void TextureFillCompressedCase()
+	{
+		// Coarse (8px) blocks rather than a fine checkerboard: GDI+'s TextureBrush
+		// tile is resampled through a Canvas `CanvasPattern`, which every tested
+		// canvas backend filters regardless of `imageSmoothingEnabled` (see the
+		// pattern-brush-fill note in emf-gdi-shape-paint.ts); a fine, hard-edged
+		// test pattern would measure that pre-existing, separately-documented
+		// residual rather than this fixture's actual purpose (does the compressed
+		// image decode and paint the right content at all).
+		string tmpPng = Path.Combine(outDir, "_tmp_texture_source.png");
+		using (var src = new Bitmap(16, 16, PixelFormat.Format32bppArgb))
+		{
+			for (int y = 0; y < 16; y++)
+			{
+				for (int x = 0; x < 16; x++)
+				{
+					src.SetPixel(x, y, PalColor(Palette[(x / 8 + y / 8) % Palette.Length]));
+				}
+			}
+			src.Save(tmpPng, ImageFormat.Png);
+		}
+		using (var bmp = new Bitmap(tmpPng))
+		{
+			GpCase("texture-fill-compressed", 160, 100, delegate (Graphics g)
+			{
+				using (var b = new TextureBrush(bmp))
+				{
+					b.WrapMode = WrapMode.Tile;
+					// Full-canvas fill: see the comment in ImageDrawCases about why
+					// rclBounds must match the frame exactly.
+					g.FillRectangle(b, 0, 0, 160, 100);
+				}
+			});
+		}
+		File.Delete(tmpPng);
+	}
+
+	// -----------------------------------------------------------------------
+	// Full-affine world-transform cases for bitmap blits and raster text:
+	// real GDI rotates BOTH a BitBlt destination and ExtTextOutW/TextOutW
+	// placement under a rotated EMR_SETWORLDTRANSFORM (confirmed against
+	// these exact fixtures: the reference PNG is painted by the same GDI
+	// calls under the same transform, so it IS the ground truth here).
+	// -----------------------------------------------------------------------
+
+	static void RotationAffineBlitTextCases()
+	{
+		GdiCase("rotate-bitblt-25deg", 160, 120, delegate (IntPtr hdc)
+		{
+			IntPtr screen = GetDC(IntPtr.Zero);
+			Stripes(hdc, 160, 120);
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = RotationXform(25, 60, 50);
+			SetWorldTransform(hdc, ref xf);
+			using (var src = SourceBitmap(screen, 24, 24))
+			{
+				BitBlt(hdc, -12, -12, 24, 24, src.Dc, 0, 0, 0x00CC0020); // SRCCOPY
+			}
+			ReleaseDC(IntPtr.Zero, screen);
+		});
+
+		GdiCase("rotate-text-25deg", 200, 140, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 140);
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = RotationXform(25, 40, 60);
+			SetWorldTransform(hdc, ref xf);
+			var lf = new LOGFONT();
+			lf.lfHeight = -20; lf.lfWeight = 400; lf.lfCharSet = 1; lf.lfFaceName = "Arial"; lf.lfQuality = 3;
+			IntPtr font = CreateFontIndirectW(ref lf);
+			IntPtr of = SelectObject(hdc, font);
+			SetBkMode(hdc, 1);
+			SetTextColor(hdc, 0);
+			TextOutW(hdc, 0, 0, "Rotated", 7);
+			SelectObject(hdc, of);
+			DeleteObject(font);
+		});
+	}
+
+	// -----------------------------------------------------------------------
 	// GDI world-transform rotation/skew cases (plain GDI, not EMF+): a
 	// rotated/skewed EMR_SETWORLDTRANSFORM applied to Rectangle/Ellipse/
 	// Polygon/RoundRect fills and strokes.
@@ -768,6 +908,38 @@ public static class GdiFixtures
 			SelectObject(hdc, op); DeleteObject(pen);
 			SelectObject(hdc, ob); DeleteObject(brush);
 		});
+
+		// Same 16 SetROP2 modes, but the shape is built as a BeginPath/EndPath
+		// bracket (MoveToEx/LineTo/CloseFigure) instead of an immediate
+		// Rectangle: exercises the bitwise ROP2 combine for a bracketed path
+		// fill+stroke (StrokeAndFillPath), not just an immediate shape.
+		GdiCase("rop2-bitwise-path-bracket", 4 * 44, 4 * 44, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 4 * 44, 4 * 44);
+			IntPtr brush = CreateSolidBrush(Rgb(0xCC, 0x66, 0x22));
+			IntPtr pen = CreatePen(0, 1, Rgb(0x10, 0x10, 0x10));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr op = SelectObject(hdc, pen);
+			SetPolyFillMode(hdc, 2); // WINDING
+			for (int mode = 1; mode <= 16; mode++)
+			{
+				int col = (mode - 1) % 4, row = (mode - 1) / 4;
+				int cx = col * 44 + 22, cy = row * 44 + 22;
+				BeginPath(hdc);
+				MoveToEx(hdc, cx, cy - 16, IntPtr.Zero);
+				LineTo(hdc, cx + 16, cy - 5);
+				LineTo(hdc, cx + 10, cy + 16);
+				LineTo(hdc, cx - 10, cy + 16);
+				LineTo(hdc, cx - 16, cy - 5);
+				CloseFigure(hdc);
+				EndPath(hdc);
+				SetROP2(hdc, mode);
+				StrokeAndFillPath(hdc);
+			}
+			SetROP2(hdc, 13);
+			SelectObject(hdc, op); DeleteObject(pen);
+			SelectObject(hdc, ob); DeleteObject(brush);
+		});
 	}
 
 	public static void Run(string dir, string which)
@@ -780,5 +952,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "pattern") { PatternFillCases(); }
 		if (which == "all" || which == "rotation") { RotationCases(); }
 		if (which == "all" || which == "rop2") { Rop2Cases(); }
+		if (which == "all" || which == "image") { ImageDrawCases(); TextureFillCompressedCase(); }
+		if (which == "all" || which == "rotation-affine") { RotationAffineBlitTextCases(); }
 	}
 }

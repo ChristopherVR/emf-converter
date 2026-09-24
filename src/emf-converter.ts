@@ -26,6 +26,7 @@ import {
 } from './emf-canvas-helpers';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
 import { emfLog, emfWarn } from './emf-logging';
+import { preDecodeEmfPlusTextures } from './emf-plus-texture-predecode';
 import { replayEmfRecords } from './emf-record-replay';
 import type { CanvasContext, DeferredImageDraw } from './emf-types';
 import { replayWmfRecords } from './wmf-replay';
@@ -280,17 +281,26 @@ async function convertEmfInternal(
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
 	const effectiveMaxWidth = opts.maxWidth;
 	const effectiveMaxHeight = opts.maxHeight;
-	const replayOptions = {
-		maxRecords: opts.maxRecords,
-		maxRecordsEmfPlus: opts.maxRecords,
-		fontFamilyMap: opts.fontFamilyMap,
-	};
 
 	try {
 		emfLog('=== convertEmfInternal START ===');
 		emfLog(
 			`Input buffer: ${buffer.byteLength} bytes, maxWidth=${effectiveMaxWidth}, maxHeight=${effectiveMaxHeight}, dpiScale=${dpiScale}`,
 		);
+
+		// Decode any compressed EMF+ TextureFill brush images up front: the
+		// replay pass below is synchronous end-to-end and cannot perform the
+		// async image decode a compressed brush needs mid-fill (unlike
+		// DrawImage, whose actual draw is deferred to processDeferredImages).
+		// A no-op (empty map, resolves immediately) for the overwhelmingly
+		// common case of a file with no such brushes.
+		const textureCache = await preDecodeEmfPlusTextures(view);
+		const replayOptions = {
+			maxRecords: opts.maxRecords,
+			maxRecordsEmfPlus: opts.maxRecords,
+			fontFamilyMap: opts.fontFamilyMap,
+			textureCache,
+		};
 
 		const renderBounds = getRenderableEmfBounds(header);
 		if (!renderBounds) {

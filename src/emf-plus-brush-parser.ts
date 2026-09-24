@@ -27,10 +27,12 @@ import { decodeEmfPlusBitmapPixelsToRgba } from './emf-plus-bitmap-decoder';
 import { parseEmfPlusPath } from './emf-plus-path';
 import type {
 	EmfPlusBrush,
+	EmfPlusDecodedTexture,
 	EmfPlusGradientStop,
 	EmfPlusGradientWrapMode,
 	EmfPlusPathGradientShape,
 	EmfPlusTexture,
+	EmfPlusTextureCache,
 	TransformMatrix,
 } from './emf-types';
 
@@ -287,8 +289,58 @@ function decodeTextureImage(
 	return rgba ? { width, height, rgba } : null;
 }
 
+/**
+ * Locates a TextureFill brush's embedded compressed (PNG/JPEG) image bytes,
+ * for the async pre-decode pass ({@link module:emf-plus-texture-predecode}).
+ * `off` is the same "start of the embedded EmfPlusImage" offset
+ * {@link decodeTextureImage} takes; `end` is the enclosing Brush object
+ * record's end. Returns `null` when this is a Metafile-type image (not a
+ * Bitmap) or already a decodable uncompressed pixel bitmap (the synchronous
+ * path above already handles that case, so there is nothing to pre-decode).
+ */
+export function findCompressedTextureImageBytes(
+	view: DataView,
+	off: number,
+	end: number,
+): { start: number; end: number } | null {
+	if (off + 28 > end) {
+		return null;
+	}
+	if (view.getUint32(off + 4, true) !== 1) {
+		return null; // Metafile: not a Bitmap image at all.
+	}
+	if (decodeTextureImage(view, off, end)) {
+		return null; // Already a decodable uncompressed pixel bitmap.
+	}
+	const start = off + 28;
+	return start < end ? { start, end } : null;
+}
+
+/**
+ * Locates a TextureFill brush's embedded-image offset (the position
+ * `decodeTextureImage`/{@link findCompressedTextureImageBytes} both expect),
+ * given the brush-type-specific data start `b` (right after the 4-byte
+ * BrushType field `parseEmfPlusBrushObject` has already consumed).
+ */
+export function textureBrushImageOffset(view: DataView, b: number, end: number): number | null {
+	if (b + 8 > end) {
+		return null;
+	}
+	const flags = view.getUint32(b, true);
+	let o = b + 8;
+	if (flags & BRUSH_DATA_TRANSFORM && o + 24 <= end) {
+		o += 24;
+	}
+	return o;
+}
+
 /** Parse EmfPlusTextureBrushData (MS-EMFPLUS 2.2.2.45, brush type 2). */
-function parseTextureBrush(view: DataView, b: number, end: number): EmfPlusBrush | null {
+function parseTextureBrush(
+	view: DataView,
+	b: number,
+	end: number,
+	predecoded?: EmfPlusDecodedTexture,
+): EmfPlusBrush | null {
 	if (b + 8 > end) {
 		return null;
 	}
@@ -302,10 +354,10 @@ function parseTextureBrush(view: DataView, b: number, end: number): EmfPlusBrush
 		o += 24;
 	}
 
-	const image = decodeTextureImage(view, o, end);
+	const image = decodeTextureImage(view, o, end) ?? predecoded ?? null;
 	if (!image) {
 		emfWarn(
-			'parseEmfPlusBrushObject: TextureFill brush has no synchronously-decodable pixel bitmap (compressed image or metafile texture); falling back to black',
+			'parseEmfPlusBrushObject: TextureFill brush has no synchronously-decodable pixel bitmap (compressed image or metafile texture, and no pre-decoded result was cached); falling back to black',
 		);
 		return null;
 	}
@@ -563,6 +615,7 @@ export function parseEmfPlusBrushObject(
 	view: DataView,
 	dataOff: number,
 	recDataSize: number,
+	textureCache?: EmfPlusTextureCache,
 ): EmfPlusBrush | null {
 	if (recDataSize < 8) {
 		return null;
@@ -588,7 +641,11 @@ export function parseEmfPlusBrushObject(
 			return { kind: 'plus-brush', color: 'rgba(0,0,0,1)' };
 
 		case EMFPLUS_BRUSHTYPE_TEXTUREFILL: {
-			const brush = parseTextureBrush(view, b, end);
+			// Keyed by the enclosing OBJECT record's dataOff: see
+			// EmfPlusReplayCtx.textureCache and the async pre-decode pass
+			// (emf-plus-texture-predecode.ts) that populates it.
+			const predecoded = textureCache?.get(dataOff);
+			const brush = parseTextureBrush(view, b, end, predecoded);
 			return brush ?? { kind: 'plus-brush', color: 'rgba(0,0,0,1)' };
 		}
 

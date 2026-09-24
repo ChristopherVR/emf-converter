@@ -3,6 +3,7 @@
  */
 
 import { gmapPoint } from './emf-gdi-coord';
+import { gdiPathRecorder } from './emf-gdi-path-record';
 import { fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
 import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
 
@@ -57,11 +58,11 @@ export function handlePolyPolygon32(
 	const build = (target: CanvasContext) => {
 		buildPolyPolygonPath(target, rCtx, readPoint, countsOff, numPolys, totalPoints, true);
 	};
-	if (!inPath) {
+	if (inPath) {
+		build(gdiPathRecorder(rCtx));
+	} else {
 		ctx.beginPath();
-	}
-	build(ctx);
-	if (!inPath) {
+		build(ctx);
 		const buildWithPath = (target: CanvasContext) => {
 			target.beginPath();
 			build(target);
@@ -93,11 +94,11 @@ export function handlePolyPolyline32(
 	const build = (target: CanvasContext) => {
 		buildPolyPolygonPath(target, rCtx, readPoint, countsOff, numPolys, totalPoints, false);
 	};
-	if (!inPath) {
+	if (inPath) {
+		build(gdiPathRecorder(rCtx));
+	} else {
 		ctx.beginPath();
-	}
-	build(ctx);
-	if (!inPath) {
+		build(ctx);
 		const buildWithPath = (target: CanvasContext) => {
 			target.beginPath();
 			build(target);
@@ -128,11 +129,11 @@ export function handlePolyPolygon16(
 	const build = (target: CanvasContext) => {
 		buildPolyPolygonPath(target, rCtx, readPoint, countsOff, numPolys, totalPoints, true);
 	};
-	if (!inPath) {
+	if (inPath) {
+		build(gdiPathRecorder(rCtx));
+	} else {
 		ctx.beginPath();
-	}
-	build(ctx);
-	if (!inPath) {
+		build(ctx);
 		const buildWithPath = (target: CanvasContext) => {
 			target.beginPath();
 			build(target);

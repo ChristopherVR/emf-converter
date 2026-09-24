@@ -2,7 +2,6 @@
  * EMF GDI polygon, polyline, and path-operation record handlers.
  */
 
-import { applyPen, applyBrush } from './emf-canvas-helpers';
 import {
 	EMR_POLYLINE,
 	EMR_POLYGON,
@@ -26,7 +25,8 @@ import {
 	EMR_SELECTCLIPPATH,
 } from './emf-constants';
 import { gmapPoint } from './emf-gdi-coord';
-import { fillCurrentPathWithGdiPattern, fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
+import { gdiPathRecorder, replayGdiPathCmds } from './emf-gdi-path-record';
+import { fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
 import {
 	handlePolyPolygon32,
 	handlePolyPolyline32,
@@ -86,11 +86,11 @@ function handlePoly32(
 		}
 	};
 
-	if (!inPath) {
+	if (inPath) {
+		build(gdiPathRecorder(rCtx));
+	} else {
 		ctx.beginPath();
-	}
-	build(ctx);
-	if (!inPath) {
+		build(ctx);
 		const buildWithPath = (target: CanvasContext) => {
 			target.beginPath();
 			build(target);
@@ -161,11 +161,11 @@ function handlePoly16(
 		}
 	};
 
-	if (!inPath) {
+	if (inPath) {
+		build(gdiPathRecorder(rCtx));
+	} else {
 		ctx.beginPath();
-	}
-	build(ctx);
-	if (!inPath) {
+		build(ctx);
 		const buildWithPath = (target: CanvasContext) => {
 			target.beginPath();
 			build(target);
@@ -234,6 +234,7 @@ export function handleEmfGdiPolyPathRecord(
 		// ---- path operations ----
 		case EMR_BEGINPATH:
 			rCtx.inPath = true;
+			rCtx.pathCmds = [];
 			ctx.beginPath();
 			return true;
 		case EMR_ENDPATH:
@@ -241,29 +242,43 @@ export function handleEmfGdiPolyPathRecord(
 			return true;
 		case EMR_CLOSEFIGURE:
 			ctx.closePath();
+			if (rCtx.inPath) {
+				rCtx.pathCmds.push({ op: 'closePath' });
+			}
 			return true;
 		case EMR_FILLPATH: {
-			const fillRule = state.polyFillMode === 2 ? 'nonzero' : 'evenodd';
-			if (!fillCurrentPathWithGdiPattern(rCtx, fillRule)) {
-				applyBrush(ctx, state);
-				ctx.fill(fillRule);
-			}
+			// `buildPath` replays the commands recorded during the preceding
+			// BeginPath/EndPath bracket (`rCtx.pathCmds`), so the exact bitwise
+			// ROP2 combine (`emf-rop2-exact.ts`) can run on a scratch canvas the
+			// same way it already does for an immediate (non-bracketed) shape;
+			// the fast/pattern branches inside `fillShapeExactOrFast` act on
+			// `ctx`'s own current path (already built live while the bracket's
+			// MoveTo/LineTo/etc. records ran), so `buildPath` is only actually
+			// invoked for the exact-ROP2 case.
+			const buildPath = (target: CanvasContext) => {
+				target.beginPath();
+				replayGdiPathCmds(target, rCtx.pathCmds);
+			};
+			fillShapeExactOrFast(rCtx, buildPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
 			return true;
 		}
 		case EMR_STROKEANDFILLPATH: {
-			const fillRule = state.polyFillMode === 2 ? 'nonzero' : 'evenodd';
-			if (!fillCurrentPathWithGdiPattern(rCtx, fillRule)) {
-				applyBrush(ctx, state);
-				ctx.fill(fillRule);
-			}
-			applyPen(ctx, state);
-			ctx.stroke();
+			const buildPath = (target: CanvasContext) => {
+				target.beginPath();
+				replayGdiPathCmds(target, rCtx.pathCmds);
+			};
+			fillShapeExactOrFast(rCtx, buildPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
+			strokeShapeExactOrFast(rCtx, buildPath);
 			return true;
 		}
-		case EMR_STROKEPATH:
-			applyPen(ctx, state);
-			ctx.stroke();
+		case EMR_STROKEPATH: {
+			const buildPath = (target: CanvasContext) => {
+				target.beginPath();
+				replayGdiPathCmds(target, rCtx.pathCmds);
+			};
+			strokeShapeExactOrFast(rCtx, buildPath);
 			return true;
+		}
 
 		case EMR_SELECTCLIPPATH: {
 			// The bracketed path lives only in the canvas' current path, so it

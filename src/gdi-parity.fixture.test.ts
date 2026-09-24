@@ -156,7 +156,63 @@ const ROTATION_CASES: ParityCase[] = [
  * anti-aliased line, not GDI's non-antialiased one; the bitwise-combined
  * fill interior is pixel-exact. See `src/__fixtures__/gdi/rop2-bitwise-grid`.
  */
-const ROP2_EXACT_CASES: ParityCase[] = [close('rop2-bitwise-grid', 0.15)];
+const ROP2_EXACT_CASES: ParityCase[] = [
+	close('rop2-bitwise-grid', 0.15),
+	/**
+	 * Same 16 modes, but the shape is a `BeginPath`/`EndPath` bracket
+	 * (`MoveToEx`/`LineTo`/`CloseFigure`) filled+stroked via
+	 * `StrokeAndFillPath`, not an immediate `Rectangle`. Exercises the path
+	 * recording in `emf-gdi-path-record.ts` that lets `EMR_FILLPATH`/
+	 * `EMR_STROKEANDFILLPATH`/`EMR_STROKEPATH` replay a bracketed path onto
+	 * the exact-ROP2 scratch canvas the same way an immediate shape already
+	 * could; before that, a bracketed path never reached the exact bitwise
+	 * combine and used the `darken`/`lighten`/`difference` approximation
+	 * unconditionally (a documented residual, now closed).
+	 */
+	close('rop2-bitwise-path-bracket', 0.12),
+];
+
+/**
+ * Rotated/skewed `EMR_SETWORLDTRANSFORM` applied to bitmap blits and raster
+ * text placement (`emf-gdi-draw-bitmap.ts`'s `executeRotatedBlit`,
+ * `emf-gdi-draw-text.ts`'s `handleExtTextOutW`). Real GDI DOES rotate both
+ * under a rotated world transform (confirmed against these exact fixtures:
+ * the reference PNG is painted by the identical GDI calls under the same
+ * transform). Not `exact()`: a rotated raster necessarily resamples at
+ * every output pixel (`rotate-bitblt-25deg`), and glyph rasterisation
+ * already differs from GDI's own font engine even without rotation
+ * (`rotate-text-25deg`).
+ */
+const ROTATION_AFFINE_CASES: ParityCase[] = [
+	close('rotate-bitblt-25deg', 0.02),
+	close('rotate-text-25deg', 0.05),
+];
+
+/**
+ * EMF+ `DrawImage` of a standalone Image object recorded as a real,
+ * PNG-backed `Bitmap` (`BitmapDataType` = Compressed per [MS-EMFPLUS]
+ * 2.1.1.2; see `parseEmfPlusImageObject`, `emf-plus-object-complex.ts`).
+ * `close()` rather than `exact()`: DrawImage resamples the source bitmap
+ * (a 2x and a non-integer scale here), and the two DrawImage calls are
+ * verified to land in the right place with the right content, not to be
+ * byte-identical to GDI+'s own resampler.
+ */
+const IMAGE_DRAW_CASES: ParityCase[] = [close('image-draw-png', 0.22)];
+
+/**
+ * An EMF+ TextureFill brush (`emf-plus-brush-parser.ts`) whose embedded
+ * image is a real, PNG-backed `Bitmap`: .NET's EMF+ recorder always
+ * serialises this as a compressed image (see the note in `GdiFixtures.cs`),
+ * exercising the async pre-decode pass (`emf-plus-texture-predecode.ts`)
+ * rather than the synchronous uncompressed-pixel-bitmap path the unit tests
+ * already cover. `close()`, not `exact()`: the tile is painted through a
+ * Canvas `CanvasPattern`, which every tested canvas backend filters at tile
+ * seams regardless of `imageSmoothingEnabled` (the same pre-existing,
+ * separately-documented residual as the GDI pattern-brush-fill cases
+ * above); a coarse (8px) test block keeps this measurement about the
+ * decode-and-paint path working, not that residual.
+ */
+const TEXTURE_FILL_CASES: ParityCase[] = [close('texture-fill-compressed', 0.28)];
 
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
@@ -201,6 +257,30 @@ describe('GDI ground-truth parity', () => {
 
 	describe('exact bitwise ROP2 modes', () => {
 		it.each(ROP2_EXACT_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('rotated world-transform bitmap blits and text placement', () => {
+		it.each(ROTATION_AFFINE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('EMF+ DrawImage of a real PNG-backed Bitmap', () => {
+		it.each(IMAGE_DRAW_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('EMF+ TextureFill brush with a compressed embedded image', () => {
+		it.each(TEXTURE_FILL_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);

@@ -1320,6 +1320,7 @@ describe('emf-gdi-coord', () => {
 			canvasH: 400,
 			sx: 0.5, // canvasW / (right - left) = 500 / 1000
 			sy: 0.5, // canvasH / (bottom - top) = 400 / 800
+			pathCmds: [],
 			...overrides,
 		};
 	}

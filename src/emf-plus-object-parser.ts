@@ -43,7 +43,7 @@ export function handleEmfPlusObjectRecord(
 		// Brush
 		// ---------------------------------------------------------------
 		case EMFPLUS_OBJECTTYPE_BRUSH: {
-			const brush = parseEmfPlusBrushObject(view, dataOff, recDataSize);
+			const brush = parseEmfPlusBrushObject(view, dataOff, recDataSize, rCtx.textureCache);
 			if (brush) {
 				objectTable.set(objectId, brush);
 			}

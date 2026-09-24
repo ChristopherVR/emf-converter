@@ -118,6 +118,7 @@ export function replayEmfRecords(
 		canvasH,
 		sx,
 		sy,
+		pathCmds: [],
 	};
 
 	let offset = 0;
@@ -158,6 +159,7 @@ export function replayEmfRecords(
 						dpiScale,
 						maxRecordsEmfPlus,
 						replayOptions.fontFamilyMap,
+						replayOptions.textureCache,
 					);
 					emfLog(
 						`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} returned ${deferred.length} deferred images`,

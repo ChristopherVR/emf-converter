@@ -39,6 +39,7 @@ function makeCtx(overrides: Partial<EmfGdiReplayCtx> = {}): EmfGdiReplayCtx {
 		canvasH: 200,
 		sx: 2,
 		sy: 2,
+		pathCmds: [],
 		...overrides,
 	} as EmfGdiReplayCtx;
 }

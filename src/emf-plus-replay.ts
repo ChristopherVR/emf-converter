@@ -17,7 +17,13 @@ import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
 import { handleEmfPlusStateRecord } from './emf-plus-state-handlers';
 import { handleEmfPlusTextImageRecord } from './emf-plus-text-image-handlers';
-import type { CanvasContext, DeferredImageDraw, EmfPlusReplayCtx, EmfPlusState } from './emf-types';
+import type {
+	CanvasContext,
+	DeferredImageDraw,
+	EmfPlusReplayCtx,
+	EmfPlusState,
+	EmfPlusTextureCache,
+} from './emf-types';
 import { createEmfPlusState } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -72,6 +78,7 @@ export function replayEmfPlusRecords(
 	dpiScale: number = 1,
 	maxRecords: number = MAX_RECORDS_EMFPLUS_DEFAULT,
 	fontFamilyMap?: Record<string, string>,
+	textureCache?: EmfPlusTextureCache,
 ): DeferredImageDraw[] {
 	const s = state ?? createEmfPlusState();
 	const rCtx: EmfPlusReplayCtx = {
@@ -95,6 +102,7 @@ export function replayEmfPlusRecords(
 		continuationOffset: 0,
 		dpiScale,
 		fontFamilyMap,
+		textureCache,
 	};
 
 	const end = offset + length;
