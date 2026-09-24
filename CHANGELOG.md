@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.1.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.1.0) - 2026-09-24
+
+### Features
+
+- Exact ROP3 raster operations, GDI text layout and gradient wrap modes ([9ee23ea](https://github.com/ChristopherVR/emf-converter/commit/9ee23eaf0841915179d2e3a81e21a5f76d67c9ec))
+- Evaluate all 256 ROP3 codes exactly against real brush patterns ([8ffa864](https://github.com/ChristopherVR/emf-converter/commit/8ffa864654fb33e8660e6147fe594dccbaf8cecb))
+- Tile wrapped angled linear gradients and exact path gradients ([59d0060](https://github.com/ChristopherVR/emf-converter/commit/59d0060aba3a18c3e136d9c06f3e65032c245257))
+
+### Bug Fixes
+
+- Build DIB ImageData through the active canvas backend ([082737b](https://github.com/ChristopherVR/emf-converter/commit/082737b099a7fc34298eef1716c4dbec22307727))
+
 ## [3.0.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.0.2) - 2026-09-21
 
 ### Bug Fixes
