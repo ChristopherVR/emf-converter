@@ -126,8 +126,8 @@ describe('emf-plus-object-parser', () => {
 					expect(brush.gradient.x2).toBe(110);
 					expect(brush.gradient.y2).toBe(45);
 					expect(brush.gradient.stops).toEqual([
-						{ offset: 0, color: 'rgba(0,255,0,1.000)' },
-						{ offset: 1, color: 'rgba(255,0,0,1.000)' },
+						{ offset: 0, color: 'rgba(0,255,0,1.000)', argb: 0xff00ff00 },
+						{ offset: 1, color: 'rgba(255,0,0,1.000)', argb: 0xffff0000 },
 					]);
 				}
 			}
@@ -160,9 +160,9 @@ describe('emf-plus-object-parser', () => {
 			expect(brush!.kind).toBe('plus-brush');
 			if (brush!.kind === 'plus-brush' && brush.gradient) {
 				expect(brush.gradient.stops).toEqual([
-					{ offset: 0, color: 'rgba(255,0,0,1.000)' },
-					{ offset: 0.5, color: 'rgba(0,255,0,1.000)' },
-					{ offset: 1, color: 'rgba(0,0,255,1.000)' },
+					{ offset: 0, color: 'rgba(255,0,0,1.000)', argb: 0xffff0000 },
+					{ offset: 0.5, color: 'rgba(0,255,0,1.000)', argb: 0xff00ff00 },
+					{ offset: 1, color: 'rgba(0,0,255,1.000)', argb: 0xff0000ff },
 				]);
 			}
 		});

@@ -95,7 +95,7 @@ export function resolveBrushPaint(
 	const obj = rCtx.objectTable.get(brushIdOrColor & 0xff);
 	if (obj && obj.kind === 'plus-brush') {
 		if (obj.gradient) {
-			const g = createBrushGradient(rCtx.ctx, obj.gradient);
+			const g = createBrushGradient(rCtx.ctx, obj.gradient, plusWorldMatrix(rCtx));
 			if (g) {
 				return g;
 			}
@@ -132,19 +132,17 @@ export function getPageUnitMultiplier(pageUnit: number, pageScale: number): numb
 	return unitToPixel * pageScale;
 }
 
+/** The world-to-device matrix EMF+ drawing runs under (world transform, page units, DPI scale). */
+export function plusWorldMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
+	const wt = rCtx.worldTransform;
+	const k = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale) * rCtx.dpiScale;
+	return [wt[0] * k, wt[1] * k, wt[2] * k, wt[3] * k, wt[4] * k, wt[5] * k];
+}
+
 /** Apply the current EMF+ world transform to the canvas, incorporating page units and DPI scale. */
 export function applyPlusWorldTransform(rCtx: EmfPlusReplayCtx): void {
-	const wt = rCtx.worldTransform;
-	const m = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale);
-	const d = rCtx.dpiScale;
-	rCtx.ctx.setTransform(
-		wt[0] * m * d,
-		wt[1] * m * d,
-		wt[2] * m * d,
-		wt[3] * m * d,
-		wt[4] * m * d,
-		wt[5] * m * d,
-	);
+	const m = plusWorldMatrix(rCtx);
+	rCtx.ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
 }
 
 // ---------------------------------------------------------------------------

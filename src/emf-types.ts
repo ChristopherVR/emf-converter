@@ -294,61 +294,95 @@ export interface EmfPlusGradientStop {
 	offset: number;
 	/** CSS rgba() colour string. */
 	color: string;
+	/** The same colour as packed ARGB, for per-pixel evaluation. */
+	argb?: number;
 }
 
 /**
- * GDI+ WrapMode (MS-EMFPLUS 2.1.1.42), read from a gradient brush's
- * BrushDataFlags-adjacent WrapMode field. Determines how the brush paints
- * beyond the area its own geometry defines:
- * - `'clamp'`: extend the end colours indefinitely (Canvas 2D's native
- *   gradient behaviour outside its 0..1 stop range - no extra work needed).
+ * GDI+ WrapMode (MS-EMFPLUS 2.1.1.42): how a gradient brush paints beyond
+ * the area its own geometry defines.
+ * - `'clamp'`: a path gradient paints nothing outside its boundary; a linear
+ *   gradient (which GDI+ itself never records as Clamp) extends its end
+ *   colours.
  * - `'tile'` / `'tile-flip-x'` / `'tile-flip-y'` / `'tile-flip-xy'`: repeat
- *   the gradient, optionally mirroring alternate copies on one or both axes.
+ *   the brush's tile (the gradient rectangle, or the boundary path's bounding
+ *   box) in brush space, mirroring alternate copies on the flipped axes.
  */
 export type EmfPlusGradientWrapMode = 'tile' | 'tile-flip-x' | 'tile-flip-y' | 'tile-flip-xy' | 'clamp';
+
+/** Axis-aligned rectangle in brush space. */
+export interface EmfPlusRectF {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
 
 /** Geometry + colour stops of a GDI+ linear gradient brush. */
 export interface EmfPlusLinearGradient {
 	type: 'linear';
-	/** Gradient start point in brush (world) space. */
+	/** Gradient start point in world space (`rect`'s left-middle through `transform`). */
 	x1: number;
 	y1: number;
-	/** Gradient end point in brush (world) space. */
+	/** Gradient end point in world space (`rect`'s right-middle through `transform`). */
 	x2: number;
 	y2: number;
 	/** Colour stops ordered by offset (0 = start colour, 1 = end colour). */
 	stops: EmfPlusGradientStop[];
-	/**
-	 * How the brush paints beyond its `(x1,y1)`-`(x2,y2)` segment. Applied as
-	 * a repeating `CanvasPattern` for an axis-aligned gradient (see
-	 * `createBrushGradient` in emf-plus-state-handlers.ts); an angled
-	 * gradient with a non-`'clamp'` wrap mode falls back to the plain
-	 * clamped `CanvasGradient` (documented, not implemented).
-	 */
+	/** How the brush paints beyond one gradient period. */
 	wrapMode: EmfPlusGradientWrapMode;
+	/**
+	 * The brush's own rectangle in brush space: colour varies along its x
+	 * axis only, and it is the tile the wrap mode repeats. Absent on
+	 * descriptors built by hand (older callers); rendering then falls back
+	 * to the `x1..y2` segment.
+	 */
+	rect?: EmfPlusRectF;
+	/** Brush space to world space (GDI+ encodes the gradient angle here). */
+	transform?: TransformMatrix | null;
 }
 
 /**
- * Geometry + colour stops of a GDI+ path gradient brush, approximated as a
- * radial gradient from the centre point to the boundary's bounding radius.
+ * The exact geometry of a GDI+ path gradient, in brush space: colours
+ * interpolate from `center` out to the flattened `boundary` along each ray.
+ */
+export interface EmfPlusPathGradientShape {
+	/** Centre point (brush space). */
+	center: { x: number; y: number };
+	/** Centre colour, packed ARGB. */
+	centerArgb: number;
+	/** Flattened closed boundary polygon (brush space). */
+	boundary: Array<{ x: number; y: number }>;
+	/** Surround colour at each boundary vertex, packed ARGB. */
+	boundaryArgb: number[];
+	/** Blend factors: positions run boundary (0) to centre (1); factor = share of centre colour. */
+	blend: { positions: number[]; factors: number[] } | null;
+	/** Preset colours (InterpolationColors): positions run boundary (0) to centre (1). */
+	preset: { positions: number[]; argb: number[] } | null;
+	/** Focus scales (inner region painted in the centre colour), when present. */
+	focus: { x: number; y: number } | null;
+	/** Brush space to world space. */
+	transform: TransformMatrix | null;
+}
+
+/**
+ * A GDI+ path gradient brush. `cx`/`cy`/`r`/`stops` describe a radial
+ * approximation used only where the exact renderer cannot run (no pattern
+ * support); `shape` carries the exact boundary-shaped geometry.
  */
 export interface EmfPlusRadialGradient {
 	type: 'radial';
-	/** Centre point in brush (world) space. */
+	/** Centre point in world space. */
 	cx: number;
 	cy: number;
-	/** Radius reaching the farthest boundary point. */
+	/** Radius reaching the farthest boundary point (world space). */
 	r: number;
 	/** Colour stops ordered by offset (0 = centre colour, 1 = boundary colour). */
 	stops: EmfPlusGradientStop[];
-	/**
-	 * How the brush paints beyond its boundary path, parsed from the record
-	 * but not yet applied: a path gradient's boundary is approximated as a
-	 * bounding circle (see {@link EmfPlusRadialGradient}), and repeating a
-	 * non-circular tiled pattern across that approximation is not
-	 * implemented. Kept for completeness and to document the gap honestly.
-	 */
+	/** How the brush paints beyond its boundary path. */
 	wrapMode: EmfPlusGradientWrapMode;
+	/** Exact path-gradient geometry (absent on hand-built descriptors). */
+	shape?: EmfPlusPathGradientShape;
 }
 
 /** Union of the gradient descriptors an EMF+ brush can carry. */

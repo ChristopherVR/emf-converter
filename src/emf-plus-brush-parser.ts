@@ -27,6 +27,7 @@ import type {
 	EmfPlusBrush,
 	EmfPlusGradientStop,
 	EmfPlusGradientWrapMode,
+	EmfPlusPathGradientShape,
 	TransformMatrix,
 } from './emf-types';
 
@@ -35,6 +36,7 @@ const BRUSH_DATA_PATH = 0x00000001;
 const BRUSH_DATA_TRANSFORM = 0x00000002;
 const BRUSH_DATA_PRESET_COLORS = 0x00000004;
 const BRUSH_DATA_BLEND_FACTORS_H = 0x00000008;
+const BRUSH_DATA_FOCUS_SCALES = 0x00000040;
 
 /** Sanity cap for blend-stop / surrounding-colour / boundary-point counts. */
 const MAX_GRADIENT_ELEMENTS = 4096;
@@ -89,7 +91,7 @@ function readWrapMode(raw: number): EmfPlusGradientWrapMode {
 /** Normalise stops: clamp offsets, sort ascending. */
 function normaliseStops(stops: EmfPlusGradientStop[]): EmfPlusGradientStop[] {
 	return stops
-		.map((s) => ({ offset: clamp01(s.offset), color: s.color }))
+		.map((s) => ({ ...s, offset: clamp01(s.offset) }))
 		.sort((a, b) => a.offset - b.offset);
 }
 
@@ -117,9 +119,11 @@ function readPresetColors(
 	}
 	const stops: EmfPlusGradientStop[] = [];
 	for (let i = 0; i < count; i++) {
+		const argb = view.getUint32(colOff + i * 4, true);
 		stops.push({
 			offset: view.getFloat32(posOff + i * 4, true),
-			color: argbToRgba(view.getUint32(colOff + i * 4, true)),
+			color: argbToRgba(argb),
+			argb,
 		});
 	}
 	return { stops, next };
@@ -184,8 +188,8 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 	}
 
 	let stops: EmfPlusGradientStop[] = [
-		{ offset: 0, color: argbToRgba(startArgb) },
-		{ offset: 1, color: argbToRgba(endArgb) },
+		{ offset: 0, color: argbToRgba(startArgb), argb: startArgb },
+		{ offset: 1, color: argbToRgba(endArgb), argb: endArgb },
 	];
 	if (flags & BRUSH_DATA_PRESET_COLORS) {
 		const preset = readPresetColors(view, o, end);
@@ -198,6 +202,7 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 			stops = blend.entries.map((e) => ({
 				offset: e.pos,
 				color: lerpArgbToRgba(startArgb, endArgb, e.factor),
+				argb: lerpArgb(startArgb, endArgb, e.factor),
 			}));
 		}
 	}
@@ -225,6 +230,8 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 			y2: p2.y,
 			stops: normaliseStops(stops),
 			wrapMode,
+			rect: { x: rx, y: ry, w: rw, h: rh },
+			transform,
 		},
 	};
 }
@@ -252,6 +259,9 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 
 	// Boundary: either an embedded path object or an explicit point list.
 	let boundaryPts: Array<{ x: number; y: number }> = [];
+	let boundaryArgb: number[] = [];
+	const surroundAt = (k: number): number =>
+		surround.length > 0 ? surround[Math.min(k, surround.length - 1)] : centerArgb;
 	if (flags & BRUSH_DATA_PATH) {
 		if (o + 4 <= end) {
 			const pathSize = view.getInt32(o, true);
@@ -259,7 +269,9 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 			if (pathSize > 0 && o + pathSize <= end) {
 				const path = parseEmfPlusPath(view, o, pathSize);
 				if (path) {
-					boundaryPts = path.points;
+					const flat = flattenFirstFigure(path.points, path.types, surroundAt);
+					boundaryPts = flat.points;
+					boundaryArgb = flat.argb;
 				}
 				o += pathSize;
 			}
@@ -273,6 +285,7 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 					x: view.getFloat32(o + i * 8, true),
 					y: view.getFloat32(o + i * 8 + 4, true),
 				});
+				boundaryArgb.push(surroundAt(i));
 			}
 			o += ptCount * 8;
 		}
@@ -283,37 +296,57 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 		transform = readTransform(view, o);
 		o += 24;
 	}
-	if (transform) {
-		({ x: cx, y: cy } = applyMatrix(transform, cx, cy));
-		boundaryPts = boundaryPts.map((p) => applyMatrix(transform as TransformMatrix, p.x, p.y));
+	const center = { x: cx, y: cy };
+	const m = transform;
+	const worldBoundary = m ? boundaryPts.map((p) => applyMatrix(m, p.x, p.y)) : boundaryPts;
+	if (m) {
+		({ x: cx, y: cy } = applyMatrix(m, cx, cy));
 	}
 
 	const surroundArgb = surround.length > 0 ? surround[0] : centerArgb;
 
-	// Colour stops: canvas radial gradients run centre (0) → edge (1); GDI+
-	// path-gradient positions run boundary (0) → centre (1), so invert.
+	// Colour stops for the radial fallback: canvas radial gradients run centre
+	// (0) to edge (1); GDI+ path-gradient positions run boundary (0) to
+	// centre (1), so invert.
 	let stops: EmfPlusGradientStop[] = [
-		{ offset: 0, color: argbToRgba(centerArgb) },
-		{ offset: 1, color: argbToRgba(surroundArgb) },
+		{ offset: 0, color: argbToRgba(centerArgb), argb: centerArgb },
+		{ offset: 1, color: argbToRgba(surroundArgb), argb: surroundArgb },
 	];
+	let blend: EmfPlusPathGradientShape['blend'] = null;
+	let preset: EmfPlusPathGradientShape['preset'] = null;
 	if (flags & BRUSH_DATA_PRESET_COLORS) {
-		const preset = readPresetColors(view, o, end);
-		if (preset) {
-			stops = preset.stops.map((s) => ({ offset: 1 - s.offset, color: s.color }));
+		const presetData = readPresetColors(view, o, end);
+		if (presetData) {
+			stops = presetData.stops.map((s) => ({ ...s, offset: 1 - s.offset }));
+			preset = {
+				positions: presetData.stops.map((s) => s.offset),
+				argb: presetData.stops.map((s) => s.argb ?? 0),
+			};
+			o = presetData.next;
 		}
 	} else if (flags & BRUSH_DATA_BLEND_FACTORS_H) {
-		const blend = readBlendFactors(view, o, end);
-		if (blend) {
-			stops = blend.entries.map((e) => ({
+		const blendData = readBlendFactors(view, o, end);
+		if (blendData) {
+			stops = blendData.entries.map((e) => ({
 				offset: 1 - e.pos,
 				color: lerpArgbToRgba(surroundArgb, centerArgb, e.factor),
+				argb: lerpArgb(surroundArgb, centerArgb, e.factor),
 			}));
+			blend = {
+				positions: blendData.entries.map((e) => e.pos),
+				factors: blendData.entries.map((e) => e.factor),
+			};
+			o = blendData.next;
 		}
+	}
+	let focus: EmfPlusPathGradientShape['focus'] = null;
+	if (flags & BRUSH_DATA_FOCUS_SCALES && o + 12 <= end && view.getUint32(o, true) === 2) {
+		focus = { x: view.getFloat32(o + 4, true), y: view.getFloat32(o + 8, true) };
 	}
 
 	// Radius: farthest boundary point from the centre.
 	let r = 0;
-	for (const p of boundaryPts) {
+	for (const p of worldBoundary) {
 		const d = Math.hypot(p.x - cx, p.y - cy);
 		if (d > r) {
 			r = d;
@@ -325,13 +358,100 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 	}
 
 	emfLog(
-		`parseEmfPlusBrushObject: path gradient centre=(${cx.toFixed(1)},${cy.toFixed(1)}), r=${r.toFixed(1)}, ${stops.length} stop(s)`,
+		`parseEmfPlusBrushObject: path gradient centre=(${cx.toFixed(1)},${cy.toFixed(1)}), ${boundaryPts.length} boundary point(s)`,
 	);
 	return {
 		kind: 'plus-brush',
 		color: argbToRgba(centerArgb),
-		gradient: { type: 'radial', cx, cy, r, stops: normaliseStops(stops), wrapMode },
+		gradient: {
+			type: 'radial',
+			cx,
+			cy,
+			r,
+			stops: normaliseStops(stops),
+			wrapMode,
+			shape: {
+				center,
+				centerArgb,
+				boundary: boundaryPts,
+				boundaryArgb,
+				blend,
+				preset,
+				focus,
+				transform,
+			},
+		},
 	};
+}
+
+/** Packed-ARGB linear interpolation (`t` clamped to 0..1). */
+function lerpArgb(a: number, b: number, t: number): number {
+	const tc = Math.min(1, Math.max(0, t));
+	let out = 0;
+	for (let shift = 24; shift >= 0; shift -= 8) {
+		const ca = (a >>> shift) & 0xff;
+		const cb = (b >>> shift) & 0xff;
+		out = out * 256 + Math.round(ca + (cb - ca) * tc);
+	}
+	return out >>> 0;
+}
+
+/** Segments per flattened cubic Bezier (far finer than any colour step needs). */
+const BEZIER_STEPS = 24;
+
+/**
+ * Flattens the first figure of a GDI+ path (Start/Line/Bezier point types)
+ * into a polygon, carrying a surround colour per vertex: path point `k`
+ * owns colour `colorAt(k)`, and flattened Bezier vertices interpolate
+ * between their segment's end-point colours.
+ */
+function flattenFirstFigure(
+	points: Array<{ x: number; y: number }>,
+	types: Uint8Array,
+	colorAt: (k: number) => number,
+): { points: Array<{ x: number; y: number }>; argb: number[] } {
+	const outPts: Array<{ x: number; y: number }> = [];
+	const outArgb: number[] = [];
+	for (let k = 0; k < points.length; k++) {
+		const kind = types[k] & 0x07;
+		if (k > 0 && kind === 0) {
+			break; // a second figure starts: the first is the boundary
+		}
+		if (kind === 3 && k > 0 && k + 2 < points.length) {
+			const p0 = points[k - 1];
+			const p1 = points[k];
+			const p2 = points[k + 1];
+			const p3 = points[k + 2];
+			const c0 = colorAt(k - 1);
+			const c3 = colorAt(k + 2);
+			for (let i = 1; i <= BEZIER_STEPS; i++) {
+				const t = i / BEZIER_STEPS;
+				const u = 1 - t;
+				outPts.push({
+					x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+					y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+				});
+				outArgb.push(lerpArgb(c0, c3, t));
+			}
+			k += 2;
+			if (types[k] & 0x80) {
+				break;
+			}
+			continue;
+		}
+		outPts.push(points[k]);
+		outArgb.push(colorAt(k));
+		if (types[k] & 0x80) {
+			break;
+		}
+	}
+	// A closed figure may repeat its start point at the end; drop the duplicate.
+	const n = outPts.length;
+	if (n > 1 && outPts[0].x === outPts[n - 1].x && outPts[0].y === outPts[n - 1].y) {
+		outPts.pop();
+		outArgb.pop();
+	}
+	return { points: outPts, argb: outArgb };
 }
 
 // ---------------------------------------------------------------------------
