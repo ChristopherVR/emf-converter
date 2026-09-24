@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.3.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.3.0) - 2026-09-24
+
+### Features
+
+- Rotate bitmap blits/text under world transforms, decode compressed EMF+ textures, fix Image BitmapDataType, exact ROP2 for bracketed paths ([5a06353](https://github.com/ChristopherVR/emf-converter/commit/5a06353db6251a58ce4862668353730abd5f169b))
+
 ## [3.2.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.2.0) - 2026-09-24
 
 ### Features
