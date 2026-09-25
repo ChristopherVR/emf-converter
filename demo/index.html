@@ -590,9 +590,10 @@
 						<code class="inline">SetROP2</code> modes are exact too.
 					</li>
 					<li>
-						<strong>World transforms.</strong> Full affine GDI and EMF+
-						transforms, including rotated and skewed shapes, blits, and
-						text.
+						<strong>Windows-exact rendering.</strong> GDI shapes, pens,
+						dashes and blits use a rasteriser fitted to Windows GDI, and
+						EMF+ follows its recorded SmoothingMode with GDI+'s own
+						rasteriser, checked pixel for pixel against Windows.
 					</li>
 					<li>
 						<strong>300+ EMF record types</strong>, the full EMF+ (GDI+)
@@ -608,16 +609,16 @@
 				<h2>Limitations</h2>
 				<ul class="lims">
 					<li>
-						<strong>Anti-aliased edges.</strong> GDI rasterises without
-						anti-aliasing while Canvas and SVG renderers smooth shape
-						edges, so a few percent of boundary pixels differ from Windows
-						output. Interiors, fills, and raster ops are exact.
+						<strong>Text needs the right fonts.</strong> Pass the font files
+						a metafile uses (<code class="inline">fonts</code>, or
+						<code class="inline">loadSystemFonts()</code> in Node.js) for
+						GDI-exact text; otherwise the host font engine is used. This
+						demo uses your browser's fonts.
 					</li>
 					<li>
-						<strong>SVG and destination-reading raster ops.</strong> SVG
-						cannot read what is underneath, so exact ROP2/ROP3 results are
-						embedded as small image patches when a canvas backend is
-						available, and approximated with blend modes otherwise.
+						<strong>ClearType text</strong> is within a few percent of
+						Windows' pixels; non-antialiased and grayscale text are
+						near-exact.
 					</li>
 					<li>
 						<strong>Safety limits.</strong> Output is clamped to 8192×8192
@@ -625,12 +626,6 @@
 						(EMF+), all overridable via
 						<code class="inline">maxCanvasDimension</code> /
 						<code class="inline">maxRecords</code>.
-					</li>
-					<li>
-						<strong>Font rendering</strong> uses the host font engine, so
-						glyph metrics may differ from Windows GDI. Supply
-						<code class="inline">fontFamilyMap</code> to remap Windows face
-						names to fonts available in your environment.
 					</li>
 				</ul>
 			</div>
