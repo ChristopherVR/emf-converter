@@ -685,8 +685,120 @@ function tableTrig(fn: (a: number) => number): (a: number) => number {
 	};
 }
 
-const tableCos = tableTrig(Math.cos);
-const tableSin = tableTrig(Math.sin);
+/** GDI's table cosine (see {@link tableTrig}). */
+export const tableCos = tableTrig(Math.cos);
+/** GDI's table sine (see {@link tableTrig}). */
+export const tableSin = tableTrig(Math.sin);
+
+/**
+ * The Bezier pieces GDI builds for `AngleArc` (measured against `GetPath`),
+ * as angle pairs in degrees (counter-clockwise, y up) in travel order, from
+ * `startDeg` sweeping `sweepDeg` (counter-clockwise when positive):
+ *
+ *   - a sweep of a full turn or more is drawn as the remainder
+ *     `R = sweep mod 360` (same sign) first, then for each full turn the
+ *     arc from the remainder's end back round to the start angle and on
+ *     again to the remainder's end;
+ *   - each such arc is cut at the multiples of 90 degrees strictly inside
+ *     it, into `floor(hi / 90) - floor(lo / 90) + 1` pieces: an arc whose
+ *     upper end is itself a multiple of 90 degrees ends with a zero-length
+ *     piece;
+ *   - `first` marks each arc's first piece, which GDI always builds with
+ *     the circular-arc formula ({@link circularArcBezier}); a later piece
+ *     spanning a whole quadrant reuses the full ellipse's own Bezier for
+ *     that quadrant instead.
+ */
+export function angleArcPieces(startDeg: number, sweepDeg: number): Array<{ from: number; to: number; first: boolean }> {
+	const out: Array<{ from: number; to: number; first: boolean }> = [];
+	const arc = (from: number, to: number): void => {
+		const lo = Math.min(from, to);
+		const hi = Math.max(from, to);
+		const pieces = Math.floor(hi / 90) - Math.floor(lo / 90) + 1;
+		const cuts: number[] = [];
+		for (let q = Math.floor(lo / 90) + 1; q * 90 < hi; q++) {
+			cuts.push(q * 90);
+		}
+		if (to < from) {
+			cuts.reverse();
+		}
+		const stops = [from, ...cuts, to];
+		while (stops.length - 1 < pieces) {
+			stops.push(to);
+		}
+		for (let i = 0; i + 1 < stops.length; i++) {
+			out.push({ from: stops[i], to: stops[i + 1], first: i === 0 });
+		}
+	};
+	const sign = sweepDeg < 0 ? -1 : 1;
+	const turns = Math.min(8, Math.trunc(Math.abs(sweepDeg) / 360));
+	const end = startDeg + sweepDeg - sign * turns * 360;
+	arc(startDeg, end);
+	for (let t = 1; t <= turns; t++) {
+		arc(end + sign * 360 * (t - 1), startDeg + sign * 360 * t);
+		arc(startDeg + sign * 360 * t, end + sign * 360 * t);
+	}
+	return out;
+}
+
+/**
+ * The standard circular-arc Bezier from `fromDeg` to `toDeg` (at most a
+ * quadrant) on the ellipse about (`cx`, `cy`) with radii `rx`, `ry` (y down),
+ * with GDI's table sine and cosine: `[c1x, c1y, c2x, c2y, x, y]`, unrounded.
+ */
+export function circularArcBezier(cx: number, cy: number, rx: number, ry: number, fromDeg: number, toDeg: number): number[] {
+	const a = (fromDeg * Math.PI) / 180;
+	const b = (toDeg * Math.PI) / 180;
+	const k = (4 / 3) * Math.tan((b - a) / 4);
+	const ax = cx + rx * tableCos(a);
+	const ay = cy - ry * tableSin(a);
+	const bx = cx + rx * tableCos(b);
+	const by = cy - ry * tableSin(b);
+	return [ax - k * rx * tableSin(a), ay - k * ry * tableCos(a), bx + k * rx * tableSin(b), by + k * ry * tableCos(b), bx, by];
+}
+
+/**
+ * GDI's `AngleArc` Beziers in device FIX for the axis-aligned circle box
+ * `box` (the logical circle's bounding box, mapped): the start point, then
+ * one Bezier per {@link angleArcPieces} piece. A whole-quadrant piece other
+ * than an arc's first takes the full ellipse's Bezier for that quadrant
+ * ({@link ellipseBeziersBox}; a clockwise one with its vertical control
+ * distances rounded up, as for `Arc`), every other piece the circular-arc
+ * formula on the box's exact centre and radii, each point rounded to FIX.
+ */
+export function angleArcFix(box: FixBox, startDeg: number, sweepDeg: number): number[] {
+	const l = Math.min(box.ax, box.ax + box.exx);
+	const t = Math.min(box.ay, box.ay + box.eyy);
+	const w = Math.abs(box.exx);
+	const h = Math.abs(box.eyy);
+	const cx = l + w / 2;
+	const cy = t + h / 2;
+	const E = ellipseBeziers(l, t, l + w, t + h);
+	const Ecw = E.slice();
+	const d = Math.ceil(KAPPA * Math.floor(h / 2));
+	Ecw[3] = Ecw[1] - d;
+	Ecw[11] = Ecw[13] - d;
+	Ecw[15] = Ecw[13] + d;
+	Ecw[23] = Ecw[1] + d;
+	const start = (startDeg * Math.PI) / 180;
+	const out: number[] = [Math.round(cx + (w / 2) * tableCos(start)), Math.round(cy - (h / 2) * tableSin(start))];
+	for (const p of angleArcPieces(startDeg, sweepDeg)) {
+		const span = p.to - p.from;
+		if (!p.first && Math.abs(span) === 90 && p.from % 90 === 0) {
+			const q = Math.min(p.from, p.to) / 90;
+			const qi = (((q % 4) + 4) % 4) * 6;
+			if (span > 0) {
+				out.push(E[qi + 2], E[qi + 3], E[qi + 4], E[qi + 5], E[qi + 6], E[qi + 7]);
+			} else {
+				out.push(Ecw[qi + 4], Ecw[qi + 5], Ecw[qi + 2], Ecw[qi + 3], Ecw[qi], Ecw[qi + 1]);
+			}
+			continue;
+		}
+		for (const v of circularArcBezier(cx, cy, w / 2, h / 2, p.from, p.to)) {
+			out.push(Math.round(v));
+		}
+	}
+	return out;
+}
 
 /**
  * The open run of Beziers (`1 + 3n` points, flat FIX pairs) GDI builds for

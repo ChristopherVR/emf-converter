@@ -19,6 +19,7 @@ import {
 } from './emf-constants';
 import { handleEmfGdiPolyPathRecord } from './emf-gdi-poly-path-handlers';
 import type { EmfGdiReplayCtx } from './emf-types';
+import { GdiRasterPath } from './gdi-raster';
 import { defaultState } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -399,8 +400,21 @@ describe('emf-gdi-poly-path-handlers', () => {
 		});
 
 		describe('eMR_SELECTCLIPPATH', () => {
+			/** Gives `rCtx` a closed bracketed rectangle path (device pixels). */
+			const setRectPath = (rCtx: EmfGdiReplayCtx, x: number, y: number, w: number, h: number): void => {
+				const path = new GdiRasterPath();
+				path.moveTo(x * 16, y * 16);
+				path.lineTo((x + w) * 16, y * 16);
+				path.lineTo((x + w) * 16, (y + h) * 16);
+				path.lineTo(x * 16, (y + h) * 16);
+				path.closeFigure();
+				rCtx.rasterPath = path;
+				rCtx.pathCmds = [{ op: 'rect', x, y, w, h }];
+			};
+
 			it('saves context and applies clip for RGN_COPY (mode=5)', () => {
 				const rCtx = makeRCtx();
+				setRectPath(rCtx, 1, 1, 4, 4);
 				const dataOff = 8;
 				rCtx.view.setUint32(dataOff, 5, true); // RGN_COPY
 				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, dataOff, 12);
@@ -413,6 +427,7 @@ describe('emf-gdi-poly-path-handlers', () => {
 			it('unwinds clip save depth for RGN_COPY when there are prior clip saves', () => {
 				const rCtx = makeRCtx();
 				rCtx.clipSaveDepth = 2;
+				setRectPath(rCtx, 1, 1, 4, 4);
 				const dataOff = 8;
 				rCtx.view.setUint32(dataOff, 5, true);
 				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, dataOff, 12);
@@ -422,19 +437,52 @@ describe('emf-gdi-poly-path-handlers', () => {
 
 			it('defaults to RGN_COPY (5) when recSize < 12', () => {
 				const rCtx = makeRCtx();
+				setRectPath(rCtx, 1, 1, 4, 4);
 				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 8);
 				expect(rCtx.clipSaveDepth).toBe(1);
 			});
 
-			it('tracks the recorded path as the clip region with the polygon fill mode', () => {
+			it('turns the path into the region of the pixels FillPath would paint', () => {
 				const rCtx = makeRCtx();
-				rCtx.pathCmds = [{ op: 'rect', x: 10, y: 10, w: 20, h: 20 }];
+				setRectPath(rCtx, 10, 10, 20, 20);
 				rCtx.state.polyFillMode = 1; // ALTERNATE
 				rCtx.view.setUint32(8, 5, true); // RGN_COPY
 				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);
 				expect(rCtx.clipRegion).toEqual([
-					{ cmds: [{ op: 'rect', x: 10, y: 10, w: 20, h: 20 }], fillRule: 'evenodd', simple: false },
+					{ cmds: [{ op: 'rect', x: 10, y: 10, w: 20, h: 20 }], fillRule: 'nonzero', simple: true },
 				]);
+			});
+
+			it('carves ALTERNATE holes into the region and uses the path up', () => {
+				const rCtx = makeRCtx();
+				const path = new GdiRasterPath();
+				for (const [x, y, w] of [[0, 0, 10], [2, 2, 4]]) {
+					path.moveTo(x * 16, y * 16);
+					path.lineTo((x + w) * 16, y * 16);
+					path.lineTo((x + w) * 16, (y + w) * 16);
+					path.lineTo(x * 16, (y + w) * 16);
+					path.closeFigure();
+				}
+				rCtx.rasterPath = path;
+				rCtx.state.polyFillMode = 1; // ALTERNATE
+				rCtx.view.setUint32(8, 5, true);
+				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);
+				const cmds = rCtx.clipRegion![0].cmds as Array<{ x: number; y: number; w: number; h: number }>;
+				const inside = (px: number, py: number) => cmds.some((r) => px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h);
+				expect(inside(1, 1)).toBe(true);
+				expect(inside(3, 3)).toBe(false);
+				expect(rCtx.rasterPath!.figures).toHaveLength(0);
+			});
+
+			it('fails without a closed path: none, still open, or used up', () => {
+				const rCtx = makeRCtx();
+				rCtx.view.setUint32(8, 5, true);
+				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);
+				expect(rCtx.clipRegion).toBeUndefined();
+				setRectPath(rCtx, 1, 1, 4, 4);
+				rCtx.inPath = true;
+				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);
+				expect(rCtx.clipRegion).toBeUndefined();
 			});
 
 			it('combines a path clip exactly with RGN_OR over an existing multi-shape clip', () => {
@@ -443,7 +491,7 @@ describe('emf-gdi-poly-path-handlers', () => {
 					{ cmds: [{ op: 'rect', x: 0, y: 0, w: 50, h: 50 }], fillRule: 'nonzero', simple: true },
 					{ cmds: [{ op: 'rect', x: 10, y: 10, w: 50, h: 50 }], fillRule: 'nonzero', simple: true },
 				];
-				rCtx.pathCmds = [{ op: 'rect', x: 70, y: 0, w: 10, h: 10 }];
+				setRectPath(rCtx, 70, 0, 10, 10);
 				rCtx.state.polyFillMode = 2; // WINDING
 				rCtx.view.setUint32(8, 2, true); // RGN_OR
 				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);

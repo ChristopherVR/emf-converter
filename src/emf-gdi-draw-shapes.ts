@@ -43,6 +43,7 @@ import {
 	EMR_ARCTO,
 	EMR_CHORD,
 	EMR_PIE,
+	EMR_ANGLEARC,
 } from './emf-constants';
 import { realizeBrush } from './emf-gdi-brush-pattern';
 import {
@@ -71,7 +72,7 @@ import { gdiStrokeAlign, paintGdiShape, penLineWidth, penScale } from './emf-gdi
 import { invertAffine } from './emf-plus-exact-fill';
 import { isExactRop2Bitwise } from './emf-rop2-exact';
 import type { CanvasContext, DrawState, EmfGdiReplayCtx } from './emf-types';
-import { GdiRasterPath, type FixBox } from './gdi-raster';
+import { angleArcFix, angleArcPieces, circularArcBezier, GdiRasterPath, type FixBox } from './gdi-raster';
 
 // ---------------------------------------------------------------------------
 // Small local helpers
@@ -621,6 +622,104 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 	return true;
 }
 
+/**
+ * EMR_ANGLEARC (41): a straight line from the current position to the
+ * circle's point at `eStartAngle` degrees (counter-clockwise from the
+ * x axis, y up), then the circular arc of `eSweepAngle` degrees
+ * (counter-clockwise when positive, whatever the arc direction; a sweep of
+ * a full turn or more draws the whole circle first), leaving the current
+ * position at the arc's end. The arc's Beziers are GDI's own
+ * (`angleArcBeziers`), built in logical space and mapped to device FIX.
+ */
+function handleAngleArc(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): boolean {
+	const { view, state, inPath } = rCtx;
+	if (recSize < 28) {
+		return true;
+	}
+	const cx = view.getInt32(dataOff, true);
+	const cy = view.getInt32(dataOff + 4, true);
+	const radius = view.getUint32(dataOff + 8, true);
+	const startDeg = view.getFloat32(dataOff + 12, true);
+	const sweepDeg = view.getFloat32(dataOff + 16, true);
+	if (!Number.isFinite(startDeg) || !Number.isFinite(sweepDeg) || radius > 0x7fffffff) {
+		return true;
+	}
+	const a0 = (startDeg * Math.PI) / 180;
+	const a1 = ((startDeg + sweepDeg) * Math.PI) / 180;
+	const sx = cx + radius * Math.cos(a0);
+	const sy = cy - radius * Math.sin(a0);
+	const ex = cx + radius * Math.cos(a1);
+	const ey = cy - radius * Math.sin(a1);
+	const clockwise = sweepDeg < 0;
+	const turns = Math.min(8, Math.trunc(Math.abs(sweepDeg) / 360));
+	const circleBox = fixBox(rCtx, cx - radius, cy - radius, cx + radius, cy + radius);
+	let fixPts: number[];
+	if (isAxisBox(circleBox)) {
+		fixPts = angleArcFix(circleBox, startDeg, sweepDeg);
+	} else {
+		// Rotated or skewed: the circular-arc Beziers built in logical space
+		// and mapped (GDI's whole-quadrant rounding has no upright frame here).
+		fixPts = [...fixPoint(rCtx, cx + radius * Math.cos(a0), cy - radius * Math.sin(a0))];
+		for (const p of angleArcPieces(startDeg, sweepDeg)) {
+			const bz = circularArcBezier(cx, cy, radius, radius, p.from, p.to);
+			for (let i = 0; i < 6; i += 2) {
+				fixPts.push(...fixPoint(rCtx, bz[i], bz[i + 1]));
+			}
+		}
+	}
+	const e: [number, number] = [fixPts[fixPts.length - 2], fixPts[fixPts.length - 1]];
+	/** Appends the line and arc(s) to `path`, starting from `from` when given. */
+	const buildRaster = (path: GdiRasterPath, from: [number, number] | null): void => {
+		if (from) {
+			path.moveTo(from[0], from[1]);
+		}
+		path.addBeziers(fixPts, false);
+	};
+	const params = gdiEllipseParams(rCtx, cx, cy, radius, radius);
+	const startPx = gmapPoint(rCtx, sx, sy);
+	/** Canvas geometry: local ellipse angles run clockwise on screen (y down). */
+	const buildCanvas = (c: CanvasContext): void => {
+		c.lineTo(startPx.x, startPx.y);
+		if (radius === 0) {
+			return;
+		}
+		const span = Math.min(Math.abs(a1 - a0), Math.PI * 2 * (turns + 1));
+		c.ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, -a0, clockwise ? -a0 + span : -a0 - span, !clockwise);
+	};
+	if (inPath) {
+		const rec = gdiPathRecorder(rCtx);
+		buildCanvas(rec);
+		buildRaster(rasterPathOf(rCtx), rasterPathOf(rCtx).figures.length === 0 ? currentFix(rCtx) : null);
+	} else {
+		resetLineStyle(rCtx);
+		const from = currentFix(rCtx);
+		const fromPx = gmapPoint(rCtx, state.curX, state.curY);
+		paintGdiShape(rCtx, {
+			build: (c: CanvasContext) => {
+				c.beginPath();
+				c.moveTo(fromPx.x, fromPx.y);
+				buildCanvas(c);
+			},
+			raster: () => {
+				const path = new GdiRasterPath();
+				buildRaster(path, from);
+				return path;
+			},
+			fill: false,
+			stroke: true,
+		});
+	}
+	// The current position: the arc's end, truncated to its device pixel as
+	// ArcTo leaves it (exact inside a path).
+	const dx = Math.floor(e[0] / 16);
+	const dy = Math.floor(e[1] / 16);
+	const inv = invertAffine(gdiDeviceMatrix(rCtx));
+	state.curX = inv ? Math.round(inv[0] * dx + inv[2] * dy + inv[4]) : Math.round(ex);
+	state.curY = inv ? Math.round(inv[1] * dx + inv[3] * dy + inv[5]) : Math.round(ey);
+	rCtx.curFix = inPath ? { x: e[0], y: e[1], lx: state.curX, ly: state.curY } : { x: dx * 16, y: dy * 16, lx: state.curX, ly: state.curY };
+	return true;
+}
+
 // ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
@@ -644,6 +743,8 @@ export function handleEmfGdiShapeRecord(
 			return handleRoundRect(rCtx, dataOff, recSize);
 		case EMR_ELLIPSE:
 			return handleEllipse(rCtx, dataOff, recSize);
+		case EMR_ANGLEARC:
+			return handleAngleArc(rCtx, dataOff, recSize);
 		case EMR_ARC:
 		case EMR_ARCTO:
 		case EMR_CHORD:

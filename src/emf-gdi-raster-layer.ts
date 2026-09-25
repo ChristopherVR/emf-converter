@@ -114,8 +114,8 @@ export function flushRasterLayer(rCtx: EmfGdiReplayCtx): void {
  * selection, and drawing-state/mapping changes.
  */
 const LAYER_SAFE_RECORDS = new Set<number>([
-	// shapes, polys, paths
-	2, 3, 4, 5, 6, 7, 8, 27, 42, 43, 44, 45, 46, 47, 54, 55, 59, 60, 61, 62, 63, 64, 85, 86, 87, 88, 89, 90, 91,
+	// shapes, polys, paths (incl. AngleArc, PolyDraw, Flatten/Widen/AbortPath), regions
+	2, 3, 4, 5, 6, 7, 8, 27, 41, 42, 43, 44, 45, 46, 47, 54, 55, 56, 59, 60, 61, 62, 63, 64, 65, 66, 68, 71, 72, 73, 74, 85, 86, 87, 88, 89, 90, 91, 92,
 	// objects
 	37, 38, 39, 40, 82, 93, 94, 95,
 	// state and mapping

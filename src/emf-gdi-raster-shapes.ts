@@ -42,7 +42,7 @@ import {
 	type FixBox,
 	type StyleState,
 } from './gdi-raster';
-import { widenPath } from './gdi-raster-widen';
+import { widenPath, type WidenOptions } from './gdi-raster-widen';
 
 /** Packs a `#rrggbb` string. */
 function rgbOf(color: string): number {
@@ -282,6 +282,37 @@ export function penIsWidened(rCtx: EmfGdiReplayCtx): boolean {
 // Painting
 // ---------------------------------------------------------------------------
 
+/**
+ * The outline options GDI widens a path with for the current (geometric)
+ * pen: its device width, caps and joins (a `CreatePen` pen is round; see
+ * {@link RasterPaintOptions} for the record-level exceptions), miter
+ * limit and geometric dash pattern. Shared by stroking and EMR_WIDENPATH.
+ */
+export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boolean; roundPen?: boolean } = {}): WidenOptions {
+	const { state } = rCtx;
+	const flags = state.penFlags ?? state.penStyle;
+	const widthPx = penDeviceWidth(rCtx);
+	const capBits = flags & 0xf00;
+	const joinBits = flags & 0xf000;
+	const dashes = state.penExtended ? geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1)) : null;
+	return {
+		width: Math.round(widthPx * 16),
+		cap: opts.roundPen || !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
+		join: opts.roundPen
+			? 'round'
+			: opts.rectangle && !state.penExtended
+				? 'miter'
+				: !state.penExtended || joinBits === 0
+					? 'round'
+					: joinBits === 0x1000
+						? 'bevel'
+						: 'miter',
+		miterLimit: state.miterLimit ?? 10,
+		dashes: dashes ? dashes.map((v) => v * 16) : null,
+		shortenDashes: (flags & 0x0f) !== 7,
+	};
+}
+
 /** The 8x8 mask of a hatch's background pixels (1), which GDI leaves alone in `TRANSPARENT` mode. */
 function hatchBackgroundMask(hatch: number): Uint8Array {
 	const m = new Uint8Array(64);
@@ -368,27 +399,7 @@ export function paintRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, opts
 		if (!penIsWidened(rCtx)) {
 			return false;
 		}
-		const flags = state.penFlags ?? state.penStyle;
-		const widthPx = penDeviceWidth(rCtx);
-		const capBits = flags & 0xf00;
-		const joinBits = flags & 0xf000;
-		const dashes = state.penExtended ? geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1)) : null;
-		const polys = widenPath(path, {
-			width: Math.round(widthPx * 16),
-			cap: opts.roundPen || !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
-			join: opts.roundPen
-				? 'round'
-				: opts.rectangle && !state.penExtended
-					? 'miter'
-					: !state.penExtended || joinBits === 0
-						? 'round'
-						: joinBits === 0x1000
-							? 'bevel'
-							: 'miter',
-			miterLimit: state.miterLimit ?? 10,
-			dashes: dashes ? dashes.map((v) => v * 16) : null,
-			shortenDashes: (flags & 0x0f) !== 7,
-		});
+		const polys = widenPath(path, penWidenOptions(rCtx, opts));
 		paintSpansDeferred(rCtx, fillPolygonSpans(polys, true), { kind: 'solid', rgb: rgbOf(state.penColor) }, state.rop2);
 		return true;
 	}

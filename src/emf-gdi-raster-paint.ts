@@ -91,6 +91,18 @@ function usesDest(index: number): boolean {
  * rectangle.
  */
 export function buildSpanPath(ctx: CanvasContext, spans: SpanList): void {
+	ctx.beginPath();
+	for (const r of spanRects(spans)) {
+		ctx.rect(r.x, r.y, r.w, r.h);
+	}
+}
+
+/**
+ * The spans as whole-pixel rectangles, rows with identical column ranges
+ * merged into one rectangle (pairwise disjoint, like a GDI region).
+ */
+export function spanRects(spans: SpanList): Array<{ x: number; y: number; w: number; h: number }> {
+	const out: Array<{ x: number; y: number; w: number; h: number }> = [];
 	const n = spans.length;
 	const d = spans.data;
 	const order = new Array<number>(n);
@@ -99,7 +111,6 @@ export function buildSpanPath(ctx: CanvasContext, spans: SpanList): void {
 	}
 	// Group by column range, then by row, so vertical runs are adjacent.
 	order.sort((a, b) => d[a + 1] - d[b + 1] || d[a + 2] - d[b + 2] || d[a] - d[b]);
-	ctx.beginPath();
 	let i = 0;
 	while (i < n) {
 		const o = order[i];
@@ -118,9 +129,10 @@ export function buildSpanPath(ctx: CanvasContext, spans: SpanList): void {
 			}
 			j++;
 		}
-		ctx.rect(x0, y0, x1 - x0, y1 - y0);
+		out.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
 		i = j;
 	}
+	return out;
 }
 
 /** Fills the span rectangles with one CSS colour, at identity, source-over (or `gco`). */
