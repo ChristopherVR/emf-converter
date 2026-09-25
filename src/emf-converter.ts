@@ -51,6 +51,8 @@ import { SvgContext } from './svg-context';
 import type { ImagePayload } from './svg-context';
 import { svgMarkupToDataUrl, svgTreeToDataUrl, svgTreeToString } from './svg-tree';
 import type { SvgNode } from './svg-tree';
+import { extractEmbeddedEmf } from './wmf-embedded-emf';
+import { wmfPlayback } from './wmf-mapping';
 import { replayWmfRecords } from './wmf-replay';
 
 /**
@@ -225,7 +227,7 @@ async function replayMetafile(
 	}
 	const opts = options ?? {};
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
-	const view = new DataView(buffer);
+	let view = new DataView(buffer);
 
 	// Detection tries EMF first: parseEmfHeader is a cheap, side-effect-free
 	// probe that returns null unless the buffer starts with EMR_HEADER.
@@ -234,6 +236,25 @@ async function replayMetafile(
 		emfHeader = parseEmfHeader(view);
 	} catch (err) {
 		emfWarn('replayMetafile: parseEmfHeader threw during detection:', err instanceof Error ? err.message : err);
+	}
+	if (!emfHeader) {
+		// A WMF written by GetWinMetaFileBits carries the original EMF in
+		// META_ESCAPE comments; Windows plays that EMF instead of the WMF
+		// records when it is intact (wmf-embedded-emf.ts), and so do we.
+		try {
+			const wmfHeader = parseWmfHeader(view);
+			const embedded = wmfHeader ? extractEmbeddedEmf(view, wmfHeader.headerSize) : null;
+			if (embedded) {
+				const embeddedView = new DataView(embedded);
+				emfHeader = parseEmfHeader(embeddedView);
+				if (emfHeader) {
+					emfLog('replayMetafile: WMF carries an embedded EMF; playing the EMF');
+					view = embeddedView;
+				}
+			}
+		} catch (err) {
+			emfWarn('replayMetafile: embedded-EMF probe threw:', err instanceof Error ? err.message : err);
+		}
 	}
 
 	if (emfHeader) {
@@ -296,13 +317,13 @@ async function replayMetafile(
 			emfLog('replayMetafile: parseWmfHeader returned null');
 			return null;
 		}
-		const logicalW = header.boundsRight - header.boundsLeft;
-		const logicalH = header.boundsBottom - header.boundsTop;
-		if (logicalW <= 0 || logicalH <= 0) {
+		if (header.boundsRight - header.boundsLeft <= 0 || header.boundsBottom - header.boundsTop <= 0) {
 			emfLog('replayMetafile: invalid WMF dimensions');
 			return null;
 		}
-		const surface = createSurface(logicalW, logicalH);
+		// The picture's size on the 96 dpi reference device (wmf-mapping.ts).
+		const playback = wmfPlayback(view, header);
+		const surface = createSurface(playback.width, playback.height);
 		if (!surface) {
 			return null;
 		}
@@ -310,6 +331,7 @@ async function replayMetafile(
 		replayWmfRecords(view, surface.ctx, header, surface.width, surface.height, {
 			maxRecords: opts.maxRecords,
 			fontFamilyMap: opts.fontFamilyMap,
+			gdiAntialias: opts.gdiAntialias,
 			fonts: fontCollection(opts),
 		});
 		surface.ctx.restore();

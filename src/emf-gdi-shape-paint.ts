@@ -69,7 +69,7 @@
  */
 
 import { applyBrush, applyPen, rop2Paint, rop2TransformColor } from './emf-canvas-helpers';
-import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
+import { hatchBit, realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import { gdiDeviceMatrix, hasWorldRotation } from './emf-gdi-coord';
 import { paintSpansDeferred } from './emf-gdi-raster-paint';
 import { flushRasterLayer } from './emf-gdi-raster-layer';
@@ -152,6 +152,10 @@ export function fillCurrentPathWithGdiPattern(
 	const sx = rCtx.sx || 1;
 	const sy = rCtx.sy || 1;
 	const index = rop2Rop3Index(state.rop2) ?? 0xf0;
+	// A hatch under the TRANSPARENT background mode paints only its lines.
+	const hatch = state.bkMode === 1 && state.brushPattern?.kind === 'hatch' ? state.brushPattern.hatch : -1;
+	const hatchGap = (dx: number, dy: number): boolean =>
+		hatch >= 0 && !hatchBit(hatch, ((dx - state.brushOrgX) % 8 + 8) % 8, ((dy - state.brushOrgY) % 8 + 8) % 8);
 	if (isSvgContext(ctx) && (index === 0xf0 || !ctx.canReadPixels)) {
 		// SVG renders an unfiltered <pattern> natively (the CanvasPattern
 		// smearing this module works around does not apply), so a plain
@@ -164,7 +168,7 @@ export function fillCurrentPathWithGdiPattern(
 			rgba[i * 4] = (c >>> 16) & 0xff;
 			rgba[i * 4 + 1] = (c >>> 8) & 0xff;
 			rgba[i * 4 + 2] = c & 0xff;
-			rgba[i * 4 + 3] = 255;
+			rgba[i * 4 + 3] = hatch >= 0 && !hatchBit(hatch, i % 8, Math.floor(i / 8)) ? 0 : 255;
 		}
 		ctx.fillWithTile(
 			{ width: realized.width, height: realized.height, rgba },
@@ -205,6 +209,9 @@ export function fillCurrentPathWithGdiPattern(
 		box,
 		(x, y, d) => {
 			if (!ctx.isPointInPath(x + probe, y + probe, fillRule)) {
+				return -1;
+			}
+			if (hatch >= 0 && hatchGap(Math.floor(bounds.left + (x + 0.5) / sx), Math.floor(bounds.top + (y + 0.5) / sy))) {
 				return -1;
 			}
 			const p = patternAt(x, y);

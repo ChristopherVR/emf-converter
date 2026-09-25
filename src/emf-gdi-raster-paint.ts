@@ -51,7 +51,24 @@ export type RasterPaint =
 			toDevice: (x: number, y: number) => [number, number];
 			orgX: number;
 			orgY: number;
+			/**
+			 * Tile pixels left untouched (1): a hatch brush's background under
+			 * the `TRANSPARENT` background mode, which GDI does not paint.
+			 */
+			skip?: Uint8Array;
 	  };
+
+/** True when `paint` leaves canvas pixel (`x`, `y`) untouched (see `skip`). */
+function skipped(paint: RasterPaint, x: number, y: number): boolean {
+	if (paint.kind !== 'tile' || !paint.skip) {
+		return false;
+	}
+	const [dx, dy] = paint.toDevice(x, y);
+	const { width, height } = paint.tile;
+	const tx = (((dx - paint.orgX) % width) + width) % width;
+	const ty = (((dy - paint.orgY) % height) + height) % height;
+	return paint.skip[ty * width + tx] === 1;
+}
 
 /** `#rrggbb` for a packed colour. */
 function hex(rgb: number): string {
@@ -166,6 +183,9 @@ export function paintSpansDeferred(
 		if (y + 1 > layer.y1) layer.y1 = y + 1;
 		let i = (y * w + sx0) * 4;
 		for (let x = sx0; x < sx1; x++, i += 4) {
+			if (skipped(paint, x, y)) {
+				continue;
+			}
 			let c = solid;
 			if (paint.kind === 'tile') {
 				const [dx, dy] = paint.toDevice(x, y);
@@ -207,7 +227,7 @@ export function paintSpans(ctx: CanvasContext, spans: SpanList, paint: RasterPai
 				rgba[i * 4] = (tile.rgb[i] >>> 16) & 0xff;
 				rgba[i * 4 + 1] = (tile.rgb[i] >>> 8) & 0xff;
 				rgba[i * 4 + 2] = tile.rgb[i] & 0xff;
-				rgba[i * 4 + 3] = 255;
+				rgba[i * 4 + 3] = paint.skip?.[i] === 1 ? 0 : 255;
 			}
 			const [ox, oy] = paint.toDevice(0, 0);
 			ctx.save();
@@ -252,6 +272,9 @@ export function paintSpans(ctx: CanvasContext, spans: SpanList, paint: RasterPai
 		const sx0 = Math.max(x0, d[s + 1]);
 		const sx1 = Math.min(x1, d[s + 2]);
 		for (let x = sx0; x < sx1; x++) {
+			if (skipped(paint, x, y)) {
+				continue;
+			}
 			const i = ((y - y0) * box.w + (x - x0)) * 4;
 			let p: number;
 			if (paint.kind === 'solid') {

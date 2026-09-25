@@ -538,12 +538,12 @@ describe('wmf-replay', () => {
 				replayWmfRecords(view, ctx as unknown as CanvasRenderingContext2D, header, 500, 500);
 				const fillRect = ctx.fillRect as ReturnType<typeof vi.fn>;
 				expect(fillRect).toHaveBeenCalledOnce();
-				// fillRect(mx(left), my(top), mw(right-left), mh(bottom-top))
-				// mx(0) = (0-0)/100 * 500 = 0
-				// my(0) = (0-0)/100 * 500 = 0
-				// mw(100) = 100/100 * 500 = 500
-				// mh(100) = 100/100 * 500 = 500
-				expect(fillRect.mock.calls[0]).toStrictEqual([0, 0, 500, 500]);
+				// The 100 x 100 logical picture plays on a 100 x 100 px device (96
+				// units per inch), scaled 5x onto the canvas. GDI plays a WMF in
+				// GM_COMPATIBLE, where Rectangle excludes its right and bottom
+				// device pixel: device 0..99 inclusive, i.e. canvas 0..495 plus
+				// the pen's one-pixel border.
+				expect(fillRect.mock.calls[0]).toStrictEqual([0, 0, 495, 495]);
 			});
 		});
 

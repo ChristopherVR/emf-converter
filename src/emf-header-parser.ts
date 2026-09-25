@@ -125,5 +125,6 @@ export function parseWmfHeader(view: DataView): WmfHeader | null {
 		boundsRight,
 		boundsBottom,
 		unitsPerInch,
+		placeable: headerOffset > 0,
 	};
 }

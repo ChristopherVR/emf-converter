@@ -893,46 +893,13 @@ export interface WmfHeader {
 	boundsBottom: number;
 	/** Logical units per inch (from the placeable header; defaults to 96). */
 	unitsPerInch: number;
-}
-
-// ---------------------------------------------------------------------------
-// WMF coordinate helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Coordinate-mapping closures for WMF replay.
- *
- * Each function converts a value from WMF logical coordinates to canvas
- * pixel coordinates, taking the current window origin/extent and canvas
- * dimensions into account.
- */
-export interface WmfCoord {
-	/** Map logical X position to canvas X. */
-	mx: (x: number) => number;
-	/** Map logical Y position to canvas Y. */
-	my: (y: number) => number;
-	/** Map logical width to canvas width. */
-	mw: (w: number) => number;
-	/** Map logical height to canvas height. */
-	mh: (h: number) => number;
-}
-
-/**
- * Context object passed through the WMF record handler chain.
- * Bundles the DataView, rendering context, current drawing state,
- * and coordinate-mapping helpers.
- */
-export interface WmfReplayCtx {
-	/** DataView over the raw WMF file bytes. */
-	view: DataView;
-	/** Target canvas 2D rendering context. */
-	ctx: CanvasContext;
-	/** Mutable GDI drawing state. */
-	state: DrawState;
-	/** Coordinate-mapping closures (logical -> canvas). */
-	coord: WmfCoord;
-	/** Font files for exact GDI text (see {@link ReplayOptions.fonts}). */
-	fonts?: import('./gdi-font-engine').GdiFontCollection;
+	/**
+	 * True when the file starts with an Aldus placeable header (its bounds
+	 * and `unitsPerInch` then size the picture); false for a bare WMF, whose
+	 * bounds are only the 800 x 600 default. Absent (a hand-built header)
+	 * counts as placeable.
+	 */
+	placeable?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1143,4 +1110,10 @@ export interface EmfGdiReplayCtx {
 	 * `x`, `y`), valid while the logical current position is still `lx`, `ly`.
 	 */
 	curFix?: { x: number; y: number; lx: number; ly: number };
+	/**
+	 * Canvas pixels per playback-device pixel when every mapped point is
+	 * rounded to a whole device pixel (`fixPoint`): GDI's `GM_COMPATIBLE`
+	 * graphics mode, in which a WMF is always played. Absent for EMF.
+	 */
+	wholeDevicePixels?: [number, number];
 }

@@ -50,7 +50,7 @@ export function cssHexToRgb(color: string): number {
  * Decodes a bottom-up or top-down 1bpp DIB's bits (no colour table needed)
  * into one byte per pixel, top-down. Returns `null` when out of bounds.
  */
-function decodeMonoBits(
+export function decodeMonoBits(
 	view: DataView,
 	bmiOffset: number,
 	bitsOffset: number,

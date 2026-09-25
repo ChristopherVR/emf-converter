@@ -2522,6 +2522,184 @@ public static class GdiFixtures
 		});
 	}
 
+	// -----------------------------------------------------------------------
+	// WMF record cases (category "wmf-records"). Each case is a WMF (recorded
+	// by CreateMetaFile, or assembled record by record for the records Win32
+	// never writes itself) and the PNG Windows paints when it PLAYS those
+	// exact bytes: PlayMetaFile onto a white 32bpp DIB section. A placeable
+	// file is played the way a placeable-aware player maps it (MM_ANISOTROPIC,
+	// the window on the header bounds, the viewport on the image's pixel
+	// size at 96 dpi); a non-placeable one on the DIB's default MM_TEXT DC.
+	// -----------------------------------------------------------------------
+
+	static class WmfApi
+	{
+		[DllImport("gdi32.dll")] public static extern bool PlayMetaFile(IntPtr hdc, IntPtr hmf);
+		[DllImport("gdi32.dll")] public static extern IntPtr SetMetaFileBitsEx(uint size, byte[] data);
+		[DllImport("gdi32.dll")] public static extern int SetMapMode(IntPtr hdc, int mode);
+		[DllImport("gdi32.dll")] public static extern bool SetWindowOrgEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool SetWindowExtEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool SetViewportOrgEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool SetViewportExtEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool OffsetWindowOrgEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool OffsetViewportOrgEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool ScaleWindowExtEx(IntPtr hdc, int xn, int xd, int yn, int yd, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool ScaleViewportExtEx(IntPtr hdc, int xn, int xd, int yn, int yd, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern int SaveDC(IntPtr hdc);
+		[DllImport("gdi32.dll")] public static extern bool RestoreDC(IntPtr hdc, int saved);
+		[DllImport("gdi32.dll")] public static extern int IntersectClipRect(IntPtr hdc, int l, int t, int r, int b);
+		[DllImport("gdi32.dll")] public static extern int ExcludeClipRect(IntPtr hdc, int l, int t, int r, int b);
+		[DllImport("gdi32.dll")] public static extern int OffsetClipRgn(IntPtr hdc, int x, int y);
+		[DllImport("gdi32.dll")] public static extern int SelectClipRgn(IntPtr hdc, IntPtr rgn);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreateRectRgn(int l, int t, int r, int b);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreateEllipticRgn(int l, int t, int r, int b);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int l, int t, int r, int b, int w, int h);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreatePolygonRgn([In] POINT[] pts, int n, int mode);
+		[DllImport("gdi32.dll")] public static extern int CombineRgn(IntPtr dst, IntPtr a, IntPtr b, int mode);
+		[DllImport("gdi32.dll")] public static extern bool FillRgn(IntPtr hdc, IntPtr rgn, IntPtr brush);
+		[DllImport("gdi32.dll")] public static extern bool FrameRgn(IntPtr hdc, IntPtr rgn, IntPtr brush, int w, int h);
+		[DllImport("gdi32.dll")] public static extern bool InvertRgn(IntPtr hdc, IntPtr rgn);
+		[DllImport("gdi32.dll")] public static extern bool PaintRgn(IntPtr hdc, IntPtr rgn);
+		[DllImport("gdi32.dll")] public static extern uint SetPixel(IntPtr hdc, int x, int y, int color);
+		[DllImport("gdi32.dll")] public static extern bool FloodFill(IntPtr hdc, int x, int y, int color);
+		[DllImport("gdi32.dll")] public static extern bool ExtFloodFill(IntPtr hdc, int x, int y, int color, uint type);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreatePalette(byte[] logPalette);
+		[DllImport("gdi32.dll")] public static extern IntPtr SelectPalette(IntPtr hdc, IntPtr pal, bool background);
+		[DllImport("gdi32.dll")] public static extern uint RealizePalette(IntPtr hdc);
+		[DllImport("gdi32.dll")] public static extern uint SetPaletteEntries(IntPtr pal, uint start, uint n, byte[] entries);
+		[DllImport("gdi32.dll")] public static extern bool AnimatePalette(IntPtr pal, uint start, uint n, byte[] entries);
+		[DllImport("gdi32.dll")] public static extern bool ResizePalette(IntPtr pal, uint n);
+		[DllImport("gdi32.dll")] public static extern int SetTextCharacterExtra(IntPtr hdc, int extra);
+		[DllImport("gdi32.dll")] public static extern bool SetTextJustification(IntPtr hdc, int extra, int count);
+		[DllImport("gdi32.dll")] public static extern uint SetMapperFlags(IntPtr hdc, uint flags);
+		[DllImport("gdi32.dll")] public static extern uint SetLayout(IntPtr hdc, uint layout);
+		[DllImport("gdi32.dll")] public static extern int Escape(IntPtr hdc, int esc, int cb, byte[] input, IntPtr output);
+		[DllImport("gdi32.dll")] public static extern int SetDIBitsToDevice(IntPtr hdc, int x, int y, int w, int h, int sx, int sy, uint start, uint lines, byte[] bits, byte[] bmi, uint usage);
+		[DllImport("gdi32.dll")] public static extern int StretchDIBits(IntPtr hdc, int x, int y, int w, int h, int sx, int sy, int sw, int sh, byte[] bits, byte[] bmi, uint usage, uint rop);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreateDIBPatternBrushPt(byte[] packed, uint usage);
+		[DllImport("gdi32.dll")] public static extern uint GetWinMetaFileBits(IntPtr hemf, uint size, byte[] buf, int mapMode, IntPtr hdcRef);
+		[DllImport("gdi32.dll")] public static extern IntPtr SetWinMetaFileBits(uint size, byte[] buf, IntPtr hdcRef, ref METAFILEPICT mfp);
+		[DllImport("gdi32.dll")] public static extern bool PlayEnhMetaFile(IntPtr hdc, IntPtr hemf, ref RECT rc);
+		[DllImport("gdi32.dll")] public static extern uint GetEnhMetaFileBits(IntPtr hemf, uint size, byte[] buf);
+		[DllImport("gdi32.dll", CharSet = CharSet.Ansi)] public static extern bool TextOutA(IntPtr hdc, int x, int y, string s, int n);
+		[DllImport("gdi32.dll")] public static extern int SetArcDirection(IntPtr hdc, int dir);
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	public struct METAFILEPICT { public int mm; public int xExt; public int yExt; public IntPtr hMF; }
+
+	/** Records `draw` through CreateMetaFile and returns the raw (non-placeable) WMF bytes. */
+	static byte[] WmfRecord(GdiDraw draw)
+	{
+		string tmp = Path.Combine(outDir, "wmf-records.tmp.wmf");
+		IntPtr mdc = CreateMetaFileW(tmp);
+		draw(mdc);
+		DeleteMetaFile(CloseMetaFile(mdc));
+		byte[] raw = File.ReadAllBytes(tmp);
+		File.Delete(tmp);
+		return raw;
+	}
+
+	/** Prefixes `raw` with an Aldus placeable header (bounds `l,t,r,b` at `inch` units per inch). */
+	static byte[] WmfPlaceable(byte[] raw, int l, int t, int r, int b, int inch)
+	{
+		var ms = new MemoryStream();
+		var bw = new BinaryWriter(ms);
+		bw.Write((uint)0x9AC6CDD7); bw.Write((ushort)0);
+		bw.Write((short)l); bw.Write((short)t); bw.Write((short)r); bw.Write((short)b);
+		bw.Write((ushort)inch); bw.Write((uint)0);
+		ushort sum = 0;
+		byte[] hdr = ms.ToArray();
+		for (int i = 0; i < 20; i += 2) { sum ^= BitConverter.ToUInt16(hdr, i); }
+		bw.Write(sum);
+		bw.Write(raw);
+		return ms.ToArray();
+	}
+
+	/**
+	 * Writes `<name>.wmf` (placeable when `bounds` is given) and `<name>.png`:
+	 * `raw` played by PlayMetaFile onto a white `w` x `h` DIB, under the
+	 * placeable mapping (window = bounds, viewport = w x h) or on the plain
+	 * MM_TEXT DC.
+	 */
+	static void WmfPlayCase(string name, int w, int h, byte[] raw, int[] bounds, int inch)
+	{
+		File.WriteAllBytes(Path.Combine(outDir, name + ".wmf"), bounds != null ? WmfPlaceable(raw, bounds[0], bounds[1], bounds[2], bounds[3], inch) : raw);
+		IntPtr screen = GetDC(IntPtr.Zero);
+		using (var dib = new Dib(screen, w, h))
+		{
+			Fill(dib.Dc, 0, 0, w, h, Rgb(255, 255, 255));
+			IntPtr hmf = WmfApi.SetMetaFileBitsEx((uint)raw.Length, raw);
+			int saved = WmfApi.SaveDC(dib.Dc);
+			if (bounds != null)
+			{
+				WmfApi.SetMapMode(dib.Dc, 8); // MM_ANISOTROPIC
+				WmfApi.SetWindowOrgEx(dib.Dc, bounds[0], bounds[1], IntPtr.Zero);
+				WmfApi.SetWindowExtEx(dib.Dc, bounds[2] - bounds[0], bounds[3] - bounds[1], IntPtr.Zero);
+				WmfApi.SetViewportOrgEx(dib.Dc, 0, 0, IntPtr.Zero);
+				WmfApi.SetViewportExtEx(dib.Dc, w, h, IntPtr.Zero);
+			}
+			WmfApi.PlayMetaFile(dib.Dc, hmf);
+			WmfApi.RestoreDC(dib.Dc, saved);
+			DeleteMetaFile(hmf);
+			dib.SavePng(Path.Combine(outDir, name + ".png"));
+		}
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	/** A placeable case at 96 dpi: bounds 0,0,w,h, drawn in pixels. */
+	static void WmfPixelCase(string name, int w, int h, GdiDraw draw)
+	{
+		WmfPlayCase(name, w, h, WmfRecord(draw), new int[] { 0, 0, w, h }, 96);
+	}
+
+	/** Every shape record with the selected pen and brush, coordinates scaled by `k` (one 38-unit box per shape). */
+	static void WmfShapeRow(IntPtr hdc, int oy, int k)
+	{
+		Func<int, int> S = delegate (int v) { return v * k; };
+		int x = 0;
+		Rectangle(hdc, S(x + 4), S(oy + 4), S(x + 33), S(oy + 30)); x += 38;
+		Rectangle(hdc, S(x + 33), S(oy + 30), S(x + 4), S(oy + 4)); x += 38;
+		RoundRect(hdc, S(x + 3), S(oy + 3), S(x + 34), S(oy + 31), S(12), S(9)); x += 38;
+		Ellipse(hdc, S(x + 3), S(oy + 3), S(x + 34), S(oy + 30)); x += 38;
+		Arc(hdc, S(x + 3), S(oy + 3), S(x + 34), S(oy + 31), S(x + 34), S(oy + 3), S(x + 3), S(oy + 25)); x += 38;
+		Chord(hdc, S(x + 3), S(oy + 3), S(x + 34), S(oy + 31), S(x + 34), S(oy + 8), S(x + 3), S(oy + 25)); x += 38;
+		Pie(hdc, S(x + 3), S(oy + 3), S(x + 35), S(oy + 31), S(x + 34), S(oy + 30), S(x + 30), S(oy + 3)); x += 38;
+		Polygon(hdc, new[] { P(S(x + 18), S(oy + 2)), P(S(x + 34), S(oy + 30)), P(S(x + 2), S(oy + 14)), P(S(x + 33), S(oy + 12)), P(S(x + 5), S(oy + 31)) }, 5); x += 38;
+		Polyline(hdc, new[] { P(S(x + 3), S(oy + 30)), P(S(x + 12), S(oy + 3)), P(S(x + 22), S(oy + 28)), P(S(x + 34), S(oy + 5)) }, 4); x += 38;
+		MoveToEx(hdc, S(x + 3), S(oy + 3), IntPtr.Zero); LineTo(hdc, S(x + 34), S(oy + 30)); LineTo(hdc, S(x + 3), S(oy + 30)); LineTo(hdc, S(x + 20), S(oy + 8));
+	}
+
+	/** Seven rows of {@link WmfShapeRow} under different pens, brushes and modes. */
+	static void WmfShapeSheet(IntPtr hdc, int k)
+	{
+		SetBkMode(hdc, 2);
+		SetBkColor(hdc, Rgb(0xFF, 0xF0, 0xC0));
+		WithObjects(hdc, CreatePen(0, 0, Rgb(0x10, 0x20, 0x90)), CreateSolidBrush(Rgb(0xE0, 0x90, 0x30)), delegate { WmfShapeRow(hdc, 0, k); });
+		WithObjects(hdc, CreatePen(5, 0, 0), CreateSolidBrush(Rgb(0x30, 0xA0, 0x60)), delegate { WmfShapeRow(hdc, 36, k); });
+		WithObjects(hdc, CreatePen(0, 5 * k, Rgb(0x90, 0x20, 0x40)), CreateHatchBrush(5, Rgb(0x20, 0x40, 0xC0)), delegate { WmfShapeRow(hdc, 72, k); });
+		WithObjects(hdc, CreatePen(1, 1, Rgb(0x10, 0x10, 0x10)), CreateHatchBrush(2, Rgb(0xC0, 0x20, 0x20)), delegate { WmfShapeRow(hdc, 108, k); });
+		WithObjects(hdc, CreatePen(6, 4 * k, Rgb(0x20, 0x70, 0x70)), CreateSolidBrush(Rgb(0xF0, 0xE0, 0x60)), delegate { WmfShapeRow(hdc, 144, k); });
+		SetBkMode(hdc, 1);
+		WithObjects(hdc, CreatePen(2, 0, Rgb(0x60, 0x10, 0x80)), CreateHatchBrush(3, Rgb(0x10, 0x80, 0x10)), delegate { WmfShapeRow(hdc, 180, k); });
+		WithObjects(hdc, CreatePen(0, 3 * k, Rgb(0x70, 0x40, 0x10)), GetStockObject(5), delegate { WmfShapeRow(hdc, 216, k); });
+	}
+
+	static void WmfShapeCases()
+	{
+		int w = 380, h = 252;
+		WmfPixelCase("wmf-shapes", w, h, delegate (IntPtr hdc) { WmfShapeSheet(hdc, 1); });
+		// Twips (1440 per inch): every coordinate and pen width 15x, bounds 15x.
+		WmfPlayCase("wmf-shapes-twips", w, h, WmfRecord(delegate (IntPtr hdc) { WmfShapeSheet(hdc, 15); }), new int[] { 0, 0, w * 15, h * 15 }, 1440);
+		// 1000 per inch at 10 units per drawn unit: a non-integer device scale (0.96).
+		WmfPlayCase("wmf-shapes-scaled", 365, 242, WmfRecord(delegate (IntPtr hdc) { WmfShapeSheet(hdc, 10); }), new int[] { 0, 0, 3800, 2520 }, 1000);
+	}
+
+	static void WmfRecordCases()
+	{
+		WmfShapeCases();
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
@@ -2538,5 +2716,6 @@ public static class GdiFixtures
 		if (which == "all" || which == "gdi-raster") { RasterCases(); }
 		if (which == "all" || which == "gdi-raster") { RasterWideExtraCases(); }
 		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxSmoothingCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
+		if (which == "all" || which == "wmf-records") { WmfRecordCases(); }
 	}
 }

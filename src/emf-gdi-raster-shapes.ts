@@ -23,7 +23,7 @@
  * @module emf-gdi-raster-shapes
  */
 
-import { realizeBrush } from './emf-gdi-brush-pattern';
+import { hatchBit, realizeBrush } from './emf-gdi-brush-pattern';
 import { gdiDeviceMatrix } from './emf-gdi-coord';
 import { paintSpansDeferred, type RasterPaint } from './emf-gdi-raster-paint';
 import type { EmfGdiReplayCtx } from './emf-types';
@@ -58,10 +58,16 @@ export function useGdiRaster(rCtx: EmfGdiReplayCtx): boolean {
 /** Maps a logical point to device FIX, rounding the linear part and the translation separately, as GDI does. */
 export function fixPoint(rCtx: EmfGdiReplayCtx, x: number, y: number): [number, number] {
 	const m = gdiDeviceMatrix(rCtx);
-	return [
-		Math.round((m[0] * x + m[2] * y) * 16) + Math.round(m[4] * 16),
-		Math.round((m[1] * x + m[3] * y) * 16) + Math.round(m[5] * 16),
-	];
+	const fx = Math.round((m[0] * x + m[2] * y) * 16) + Math.round(m[4] * 16);
+	const fy = Math.round((m[1] * x + m[3] * y) * 16) + Math.round(m[5] * 16);
+	const whole = rCtx.wholeDevicePixels;
+	if (whole) {
+		// GM_COMPATIBLE (every WMF): points land on whole device pixels.
+		const ux = 16 * whole[0];
+		const uy = 16 * whole[1];
+		return [Math.round(Math.floor(fx / ux + 0.5) * ux), Math.round(Math.floor(fy / uy + 0.5) * uy)];
+	}
+	return [fx, fy];
 }
 
 /** The device parallelogram of the inclusive logical box `l, t, r, b`. */
@@ -239,6 +245,11 @@ const PS_GEOMETRIC = 0x10000;
 export function penDeviceWidth(rCtx: EmfGdiReplayCtx): number {
 	const m = gdiDeviceMatrix(rCtx);
 	const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+	const whole = rCtx.wholeDevicePixels;
+	if (whole) {
+		// GM_COMPATIBLE: a whole number of device pixels.
+		return Math.round((rCtx.state.penWidth * scale) / whole[0]) * whole[0];
+	}
 	return rCtx.state.penWidth * scale;
 }
 
@@ -270,7 +281,22 @@ export function penIsWidened(rCtx: EmfGdiReplayCtx): boolean {
 // Painting
 // ---------------------------------------------------------------------------
 
-/** The paint for the current brush, or `null` for a hollow brush. */
+/** The 8x8 mask of a hatch's background pixels (1), which GDI leaves alone in `TRANSPARENT` mode. */
+function hatchBackgroundMask(hatch: number): Uint8Array {
+	const m = new Uint8Array(64);
+	for (let y = 0; y < 8; y++) {
+		for (let x = 0; x < 8; x++) {
+			m[y * 8 + x] = hatchBit(hatch, x, y) ? 0 : 1;
+		}
+	}
+	return m;
+}
+
+/**
+ * The paint for the current brush, or `null` for a hollow brush. A hatch
+ * brush under the `TRANSPARENT` background mode paints only its lines
+ * (GDI fills shapes and regions that way; blits ignore the mode).
+ */
 export function brushPaint(rCtx: EmfGdiReplayCtx): RasterPaint | null {
 	const realized = realizeBrush(rCtx.state);
 	if (realized.kind === 'none') {
@@ -281,13 +307,14 @@ export function brushPaint(rCtx: EmfGdiReplayCtx): RasterPaint | null {
 	}
 	const sx = rCtx.sx || 1;
 	const sy = rCtx.sy || 1;
-	const { bounds } = rCtx;
+	const { bounds, state } = rCtx;
 	return {
 		kind: 'tile',
 		tile: realized,
 		toDevice: (x, y) => [Math.floor(bounds.left + (x + 0.5) / sx), Math.floor(bounds.top + (y + 0.5) / sy)],
-		orgX: rCtx.state.brushOrgX,
-		orgY: rCtx.state.brushOrgY,
+		orgX: state.brushOrgX,
+		orgY: state.brushOrgY,
+		...(state.bkMode === 1 && state.brushPattern?.kind === 'hatch' ? { skip: hatchBackgroundMask(state.brushPattern.hatch) } : {}),
 	};
 }
 
