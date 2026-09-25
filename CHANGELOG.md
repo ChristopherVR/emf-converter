@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.4.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.4.0) - 2026-09-25
+
+### Features
+
+- SVG output (markup, data URL, React/JSX) and exact fixes for documented limitations ([a8d3e63](https://github.com/ChristopherVR/emf-converter/commit/a8d3e63d6d2ed1727e0d9f9935abd5b6b835eec8))
+
 ## [3.3.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.3.0) - 2026-09-24
 
 ### Features
