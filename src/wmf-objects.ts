@@ -294,77 +294,12 @@ export function createDibPatternBrush(p: WmfPlayer, dataOff: number, recEnd: num
 }
 
 /**
- * `META_CREATEPATTERNBRUSH`: a `Bitmap16` header (type, width, height,
- * width bytes, planes, bits per pixel, 4 reserved bytes), 18 reserved
- * bytes, then the bitmap's rows top-down (each `widthBytes` long). A
- * one-bit bitmap is a monochrome brush.
+ * `META_CREATEPATTERNBRUSH` (a Win16 `Bitmap16` pattern): Windows'
+ * `PlayMetaFile` no longer creates this brush, and the record does not take
+ * an object-table slot either, so the next object lands where this one
+ * would have (measured: `wmf-legacy`). Nothing to do.
  */
-export function createPatternBrush(p: WmfPlayer, dataOff: number, recEnd: number): void {
-	const bmp = readBitmap16(p.view, dataOff, recEnd, 32);
-	if (!bmp) {
-		addObject(p, { kind: 'other' });
-		return;
-	}
-	addObject(p, { kind: 'brush', style: bmp.kind === 'mono' ? 3 : 6, color: 0x808080, hatch: 0, pattern: bmp });
-}
-
-/**
- * Decodes a `Bitmap16` (at `off`, its bits `bitsSkip` bytes after it: 10
- * for a blit record, 32 for a pattern brush) into a monochrome pattern
- * (1 bpp) or colour pixels. Only the single-plane 1, 4 (standard VGA
- * colours), 8 (default palette), 24 and 32 bpp layouts are defined.
- */
-export function readBitmap16(
-	view: DataView,
-	off: number,
-	end: number,
-	bitsSkip: number,
-): Exclude<GdiBrushPattern, { kind: 'hatch' }> | null {
-	if (off + 10 > end) {
-		return null;
-	}
-	const width = view.getInt16(off + 2, true);
-	const height = view.getInt16(off + 4, true);
-	const widthBytes = view.getInt16(off + 6, true);
-	const planes = view.getUint8(off + 8);
-	const bpp = view.getUint8(off + 9);
-	const bits = off + bitsSkip;
-	if (width <= 0 || height <= 0 || widthBytes <= 0 || planes !== 1 || bits + widthBytes * height > end) {
-		return null;
-	}
-	if (bpp === 1) {
-		const out = new Uint8Array(width * height);
-		for (let y = 0; y < height; y++) {
-			for (let x = 0; x < width; x++) {
-				out[y * width + x] = (view.getUint8(bits + y * widthBytes + (x >> 3)) >> (7 - (x & 7))) & 1;
-			}
-		}
-		return { kind: 'mono', width, height, bits: out };
-	}
-	const px = new Uint32Array(width * height);
-	for (let y = 0; y < height; y++) {
-		const row = bits + y * widthBytes;
-		for (let x = 0; x < width; x++) {
-			let c = 0;
-			if (bpp === 24 || bpp === 32) {
-				const o = row + x * (bpp / 8);
-				c = rgb(view.getUint8(o + 2), view.getUint8(o + 1), view.getUint8(o));
-			} else if (bpp === 8) {
-				c = DEFAULT_PALETTE[view.getUint8(row + x) % DEFAULT_PALETTE.length];
-			} else if (bpp === 4) {
-				c = VGA_COLORS[(view.getUint8(row + (x >> 1)) >> (x & 1 ? 0 : 4)) & 0x0f];
-			}
-			px[y * width + x] = c;
-		}
-	}
-	return { kind: 'bitmap', width, height, rgb: px };
-}
-
-/** The 16 standard VGA colours (a 4 bpp device bitmap's pixel values). */
-const VGA_COLORS: readonly number[] = [
-	0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xc0c0c0, 0x808080, 0xff0000, 0x00ff00,
-	0xffff00, 0x0000ff, 0xff00ff, 0x00ffff, 0xffffff,
-];
+export function createPatternBrush(): void {}
 
 /** Reads a WMF `Palette` object (start, count, entries) at `off`. */
 function readPaletteEntries(view: DataView, off: number, end: number): { start: number; entries: number[] } {

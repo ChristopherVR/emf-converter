@@ -2583,10 +2583,79 @@ public static class GdiFixtures
 		[DllImport("gdi32.dll")] public static extern uint GetEnhMetaFileBits(IntPtr hemf, uint size, byte[] buf);
 		[DllImport("gdi32.dll", CharSet = CharSet.Ansi)] public static extern bool TextOutA(IntPtr hdc, int x, int y, string s, int n);
 		[DllImport("gdi32.dll")] public static extern int SetArcDirection(IntPtr hdc, int dir);
+		[DllImport("gdi32.dll")] public static extern bool EnumMetaFile(IntPtr hdc, IntPtr hmf, MfEnumProc proc, IntPtr param);
+		[DllImport("gdi32.dll")] public static extern bool PlayMetaFileRecord(IntPtr hdc, IntPtr table, IntPtr record, uint objects);
+		[DllImport("gdi32.dll")] public static extern bool SetBrushOrgEx(IntPtr hdc, int x, int y, IntPtr prev);
 	}
 
 	[StructLayout(LayoutKind.Sequential)]
 	public struct METAFILEPICT { public int mm; public int xExt; public int yExt; public IntPtr hMF; }
+
+	public delegate int MfEnumProc(IntPtr hdc, IntPtr table, IntPtr record, int objects, IntPtr param);
+
+	/**
+	 * When set, {@link WmfPlayCase} plays the file record by record and turns
+	 * each metric META_SETMAPMODE into the mode's definition on a 96 dpi
+	 * device (MM_ANISOTROPIC, window = units per inch, viewport = 96 x -96
+	 * pixels): GDI derives the metric modes from the display's physical size,
+	 * which differs per machine; the converter's device is the 96 dpi
+	 * reference device. Every other record is played by PlayMetaFileRecord.
+	 */
+	static bool wmfMetricAs96Dpi;
+	static readonly MfEnumProc WmfMetricRecord = delegate (IntPtr hdc, IntPtr table, IntPtr record, int objects, IntPtr param)
+	{
+		int fn = Marshal.ReadInt16(record, 4) & 0xffff;
+		if (fn == 0x0103)
+		{
+			int mode = Marshal.ReadInt16(record, 6);
+			int units = mode == 2 ? 254 : mode == 3 ? 2540 : mode == 4 ? 100 : mode == 5 ? 1000 : mode == 6 ? 1440 : 0;
+			if (units > 0)
+			{
+				WmfApi.SetMapMode(hdc, 8);
+				WmfApi.SetWindowExtEx(hdc, units, units, IntPtr.Zero);
+				WmfApi.SetViewportExtEx(hdc, 96, -96, IntPtr.Zero);
+				return 1;
+			}
+		}
+		WmfApi.PlayMetaFileRecord(hdc, table, record, (uint)objects);
+		return 1;
+	};
+
+	/** Assembles a WMF record by record (for records Win32 never writes itself). */
+	sealed class WmfWriter
+	{
+		readonly MemoryStream body = new MemoryStream();
+		int maxRecord = 3;
+		public int Objects;
+		/** A record of 16-bit parameters, given in file order. */
+		public void Rec(int fn, params int[] words)
+		{
+			var bytes = new byte[words.Length * 2];
+			for (int i = 0; i < words.Length; i++) { bytes[i * 2] = (byte)(words[i] & 0xff); bytes[i * 2 + 1] = (byte)((words[i] >> 8) & 0xff); }
+			RecBytes(fn, bytes);
+		}
+		/** A record with raw parameter bytes (padded to a word). */
+		public void RecBytes(int fn, byte[] data)
+		{
+			int len = data.Length + (data.Length & 1);
+			int words = 3 + len / 2;
+			var bw = new BinaryWriter(body);
+			bw.Write((uint)words); bw.Write((ushort)fn); bw.Write(data);
+			if ((data.Length & 1) != 0) { bw.Write((byte)0); }
+			maxRecord = Math.Max(maxRecord, words);
+		}
+		public byte[] Build()
+		{
+			Rec(0);
+			byte[] recs = body.ToArray();
+			var ms = new MemoryStream();
+			var bw = new BinaryWriter(ms);
+			bw.Write((ushort)1); bw.Write((ushort)9); bw.Write((ushort)0x0300);
+			bw.Write((uint)(9 + recs.Length / 2)); bw.Write((ushort)Objects); bw.Write((uint)maxRecord); bw.Write((ushort)0);
+			bw.Write(recs);
+			return ms.ToArray();
+		}
+	}
 
 	/** Records `draw` through CreateMetaFile and returns the raw (non-placeable) WMF bytes. */
 	static byte[] WmfRecord(GdiDraw draw)
@@ -2631,15 +2700,24 @@ public static class GdiFixtures
 			Fill(dib.Dc, 0, 0, w, h, Rgb(255, 255, 255));
 			IntPtr hmf = WmfApi.SetMetaFileBitsEx((uint)raw.Length, raw);
 			int saved = WmfApi.SaveDC(dib.Dc);
+			// MM_ANISOTROPIC, the viewport on the picture: the window on the
+			// placeable bounds, or (a CF_METAFILEPICT player) the picture's
+			// pixel size, which the file's own window records then override.
+			WmfApi.SetMapMode(dib.Dc, 8);
 			if (bounds != null)
 			{
-				WmfApi.SetMapMode(dib.Dc, 8); // MM_ANISOTROPIC
 				WmfApi.SetWindowOrgEx(dib.Dc, bounds[0], bounds[1], IntPtr.Zero);
 				WmfApi.SetWindowExtEx(dib.Dc, bounds[2] - bounds[0], bounds[3] - bounds[1], IntPtr.Zero);
-				WmfApi.SetViewportOrgEx(dib.Dc, 0, 0, IntPtr.Zero);
-				WmfApi.SetViewportExtEx(dib.Dc, w, h, IntPtr.Zero);
 			}
-			WmfApi.PlayMetaFile(dib.Dc, hmf);
+			else
+			{
+				WmfApi.SetWindowOrgEx(dib.Dc, 0, 0, IntPtr.Zero);
+				WmfApi.SetWindowExtEx(dib.Dc, w, h, IntPtr.Zero);
+			}
+			WmfApi.SetViewportOrgEx(dib.Dc, 0, 0, IntPtr.Zero);
+			WmfApi.SetViewportExtEx(dib.Dc, w, h, IntPtr.Zero);
+			if (wmfMetricAs96Dpi) { WmfApi.EnumMetaFile(dib.Dc, hmf, WmfMetricRecord, IntPtr.Zero); }
+			else { WmfApi.PlayMetaFile(dib.Dc, hmf); }
 			WmfApi.RestoreDC(dib.Dc, saved);
 			DeleteMetaFile(hmf);
 			dib.SavePng(Path.Combine(outDir, name + ".png"));
@@ -2695,9 +2773,425 @@ public static class GdiFixtures
 		WmfPlayCase("wmf-shapes-scaled", 365, 242, WmfRecord(delegate (IntPtr hdc) { WmfShapeSheet(hdc, 10); }), new int[] { 0, 0, 3800, 2520 }, 1000);
 	}
 
+	/** A few shapes in a 60 x 40 logical cell at (`x`, `y`), scaled by `k`. */
+	static void WmfProbe(IntPtr hdc, int x, int y, int k, int color)
+	{
+		WithObjects(hdc, CreatePen(0, 0, Rgb(0x10, 0x10, 0x60)), CreateSolidBrush(color), delegate
+		{
+			Rectangle(hdc, x, y, x + 30 * k, y + 20 * k);
+			Ellipse(hdc, x + 32 * k, y, x + 60 * k, y + 20 * k);
+			Polygon(hdc, new[] { P(x, y + 22 * k), P(x + 60 * k, y + 26 * k), P(x + 20 * k, y + 40 * k) }, 3);
+			MoveToEx(hdc, x + 30 * k, y + 40 * k, IntPtr.Zero); LineTo(hdc, x + 60 * k, y + 22 * k);
+		});
+	}
+
+	static void WmfMappingCases()
+	{
+		// Origins, offsets and extent scaling under the placeable player's MM_ANISOTROPIC.
+		WmfPixelCase("wmf-map-anisotropic", 260, 180, delegate (IntPtr hdc)
+		{
+			WmfProbe(hdc, 4, 4, 1, Palette[0]);
+			WmfApi.SetViewportOrgEx(hdc, 70, 6, IntPtr.Zero);
+			WmfProbe(hdc, 0, 0, 1, Palette[1]);
+			WmfApi.OffsetViewportOrgEx(hdc, 60, 3, IntPtr.Zero);
+			WmfApi.SetWindowOrgEx(hdc, -10, -5, IntPtr.Zero);
+			WmfProbe(hdc, 0, 0, 1, Palette[2]);
+			WmfApi.OffsetWindowOrgEx(hdc, 3, -40, IntPtr.Zero);
+			WmfApi.ScaleWindowExtEx(hdc, 3, 2, 5, 4, IntPtr.Zero);
+			WmfProbe(hdc, -120, 20, 1, Palette[3]);
+			WmfApi.ScaleViewportExtEx(hdc, 2, 3, 7, 5, IntPtr.Zero);
+			WmfApi.SetViewportOrgEx(hdc, 10, 60, IntPtr.Zero);
+			WmfApi.SetWindowOrgEx(hdc, 0, 0, IntPtr.Zero);
+			WmfProbe(hdc, 0, 0, 2, Palette[4]);
+			WmfApi.SetWindowExtEx(hdc, 400, -300, IntPtr.Zero);
+			WmfApi.SetViewportExtEx(hdc, 260, 180, IntPtr.Zero);
+			WmfApi.SetViewportOrgEx(hdc, 0, 180, IntPtr.Zero);
+			WmfProbe(hdc, 200, 90, 2, Palette[5]);
+		});
+		// MM_ISOTROPIC: the viewport shrinks on the axis with the larger scale, after every extent change.
+		WmfPixelCase("wmf-map-isotropic", 260, 180, delegate (IntPtr hdc)
+		{
+			WmfApi.SetMapMode(hdc, 7);
+			WmfApi.SetWindowExtEx(hdc, 300, 100, IntPtr.Zero);
+			WmfApi.SetViewportExtEx(hdc, 260, 180, IntPtr.Zero);
+			WmfProbe(hdc, 4, 4, 1, Palette[0]);
+			WmfApi.SetWindowExtEx(hdc, 100, 170, IntPtr.Zero);
+			WmfProbe(hdc, 150, 4, 1, Palette[1]);
+			WmfApi.ScaleViewportExtEx(hdc, 1, 2, 3, 1, IntPtr.Zero);
+			WmfApi.SetViewportOrgEx(hdc, 0, 90, IntPtr.Zero);
+			WmfProbe(hdc, 4, 4, 2, Palette[2]);
+			WmfApi.SetViewportExtEx(hdc, -200, 120, IntPtr.Zero);
+			WmfApi.SetViewportOrgEx(hdc, 250, 90, IntPtr.Zero);
+			WmfProbe(hdc, 4, 4, 1, Palette[3]);
+		});
+		// MM_TEXT inside a placeable file: one logical unit per device pixel, extents ignored.
+		WmfPlayCase("wmf-map-text", 240, 150, WmfRecord(delegate (IntPtr hdc)
+		{
+			WmfProbe(hdc, 40, 40, 10, Palette[0]);
+			WmfApi.SetMapMode(hdc, 1);
+			WmfApi.SetWindowExtEx(hdc, 5, 5, IntPtr.Zero);
+			WmfApi.SetViewportOrgEx(hdc, 100, 20, IntPtr.Zero);
+			WmfProbe(hdc, 10, 10, 1, Palette[1]);
+		}), new int[] { 0, 0, 2400, 1500 }, 960);
+		// The metric modes (on the 96 dpi reference device) and MM_TEXT back again.
+		wmfMetricAs96Dpi = true;
+		WmfPixelCase("wmf-map-metric", 300, 200, delegate (IntPtr hdc)
+		{
+			int[] modes = { 2, 3, 4, 5, 6 };
+			int[] units = { 254, 2540, 100, 1000, 1440 };
+			for (int i = 0; i < modes.Length; i++)
+			{
+				WmfApi.SetMapMode(hdc, modes[i]);
+				WmfApi.SetViewportOrgEx(hdc, 4 + (i % 3) * 98, 90 + (i / 3) * 100, IntPtr.Zero);
+				int u = units[i];
+				// 0.7 inch wide, 0.8 inch tall above the origin (y grows up).
+				int c = Palette[i];
+				WithObjects(hdc, CreatePen(0, 0, Rgb(0x10, 0x10, 0x60)), CreateSolidBrush(c), delegate
+				{
+					Rectangle(hdc, 0, 0, u * 7 / 10, u * 8 / 10);
+					Ellipse(hdc, u / 10, u / 10, u * 6 / 10, u * 7 / 10);
+				});
+			}
+			WmfApi.SetMapMode(hdc, 1);
+			WmfApi.SetViewportOrgEx(hdc, 0, 0, IntPtr.Zero);
+			WmfProbe(hdc, 200, 150, 1, Palette[6]);
+		});
+		wmfMetricAs96Dpi = false;
+		// Non-placeable: the window extent names the picture (window origin off zero).
+		WmfPlayCase("wmf-nonplaceable", 300, 200, WmfRecord(delegate (IntPtr hdc)
+		{
+			WmfApi.SetWindowOrgEx(hdc, -20, -10, IntPtr.Zero);
+			WmfApi.SetWindowExtEx(hdc, 300, 200, IntPtr.Zero);
+			WmfShapeRow(hdc, 0, 1);
+			WmfProbe(hdc, 10, 60, 2, Palette[2]);
+		}), null, 0);
+		// Non-placeable, MM_ANISOTROPIC with its own viewport: the viewport extent is the picture.
+		WmfPlayCase("wmf-nonplaceable-viewport", 200, 150, WmfRecord(delegate (IntPtr hdc)
+		{
+			WmfApi.SetMapMode(hdc, 8);
+			WmfApi.SetWindowOrgEx(hdc, 0, 0, IntPtr.Zero);
+			WmfApi.SetWindowExtEx(hdc, 400, 300, IntPtr.Zero);
+			WmfApi.SetViewportExtEx(hdc, 200, 150, IntPtr.Zero);
+			WmfShapeRow(hdc, 0, 1);
+			WmfProbe(hdc, 10, 60, 3, Palette[4]);
+		}), null, 0);
+		// Placeable with the bounds' origin off zero (window origin = bounds' top left).
+		WmfPlayCase("wmf-placeable-origin", 200, 140, WmfRecord(delegate (IntPtr hdc)
+		{
+			WmfProbe(hdc, -80, -50, 2, Palette[0]);
+			WmfProbe(hdc, 20, 10, 1, Palette[3]);
+		}), new int[] { -100, -60, 100, 80 }, 96);
+	}
+
+	/** A striped backdrop through which clips are visible. */
+	static void WmfBackdrop(IntPtr hdc, int w, int h, int k)
+	{
+		for (int x = 0, i = 0; x < w; x += 6 * k, i++) { Fill(hdc, x, 0, x + 6 * k, h, Palette[i % 6]); }
+	}
+
+	static void WmfClipSheet(IntPtr hdc, int k)
+	{
+		Func<int, int> S = delegate (int v) { return v * k; };
+		WmfApi.SaveDC(hdc);
+		WmfApi.IntersectClipRect(hdc, S(10), S(10), S(110), S(70));
+		WmfApi.ExcludeClipRect(hdc, S(30), S(25), S(60), S(50));
+		WmfBackdrop(hdc, S(240), S(200), k);
+		WmfApi.OffsetClipRgn(hdc, S(120), S(3));
+		WithObjects(hdc, CreatePen(5, 0, 0), CreateHatchBrush(4, Rgb(0x20, 0x20, 0x80)), delegate { Rectangle(hdc, 0, 0, S(240), S(90)); });
+		WmfApi.RestoreDC(hdc, -1);
+		// A selected clip region is in device pixels: an ellipse and a polygon combined.
+		IntPtr e = WmfApi.CreateEllipticRgn(10, 90, 110, 150);
+		IntPtr q = WmfApi.CreatePolygonRgn(new[] { P(60, 80), P(140, 120), P(70, 160) }, 3, 1);
+		WmfApi.CombineRgn(e, e, q, 3); // RGN_XOR
+		WmfApi.SelectClipRgn(hdc, e);
+		WithObjects(hdc, CreatePen(5, 0, 0), CreateSolidBrush(Rgb(0xE0, 0x40, 0x40)), delegate { Rectangle(hdc, 0, S(80), S(240), S(170)); });
+		WmfApi.SaveDC(hdc);
+		IntPtr r = WmfApi.CreateRoundRectRgn(150, 90, 230, 190, 30, 20);
+		WmfApi.SelectClipRgn(hdc, r);
+		WmfApi.IntersectClipRect(hdc, S(160), S(80), S(240), S(170));
+		WithObjects(hdc, CreatePen(5, 0, 0), CreateSolidBrush(Rgb(0x40, 0xA0, 0x40)), delegate { Rectangle(hdc, 0, S(80), S(240), S(200)); });
+		WmfApi.RestoreDC(hdc, -1);
+		WithObjects(hdc, CreatePen(0, 0, 0), IntPtr.Zero, delegate { MoveToEx(hdc, 0, S(85), IntPtr.Zero); LineTo(hdc, S(240), S(195)); });
+		WmfApi.SelectClipRgn(hdc, IntPtr.Zero);
+		WithObjects(hdc, CreatePen(0, 0, Rgb(0x80, 0, 0x80)), IntPtr.Zero, delegate { MoveToEx(hdc, 0, S(199), IntPtr.Zero); LineTo(hdc, S(240), S(170)); });
+		DeleteObject(e); DeleteObject(q); DeleteObject(r);
+	}
+
+	static void WmfClipCases()
+	{
+		WmfPixelCase("wmf-clip", 240, 200, delegate (IntPtr hdc) { WmfClipSheet(hdc, 1); });
+		WmfPlayCase("wmf-clip-twips", 240, 200, WmfRecord(delegate (IntPtr hdc) { WmfClipSheet(hdc, 15); }), new int[] { 0, 0, 3600, 3000 }, 1440);
+		WmfPlayCase("wmf-clip-scaled", 230, 192, WmfRecord(delegate (IntPtr hdc) { WmfClipSheet(hdc, 10); }), new int[] { 0, 0, 2400, 2000 }, 1000);
+	}
+
+	static void WmfRegionSheet(IntPtr hdc, int k)
+	{
+		Func<int, int> S = delegate (int v) { return v * k; };
+		WmfBackdrop(hdc, S(260), S(200), k);
+		IntPtr e = WmfApi.CreateEllipticRgn(S(10), S(10), S(90), S(70));
+		IntPtr q = WmfApi.CreatePolygonRgn(new[] { P(S(100), S(10)), P(S(170), S(40)), P(S(110), S(80)) }, 3, 1);
+		IntPtr rr = WmfApi.CreateRoundRectRgn(S(180), S(10), S(250), S(80), S(30), S(20));
+		IntPtr u = WmfApi.CreateRectRgn(S(10), S(100), S(80), S(140));
+		IntPtr u2 = WmfApi.CreateRectRgn(S(40), S(120), S(120), S(190));
+		WmfApi.CombineRgn(u, u, u2, 2); // RGN_OR
+		IntPtr solid = CreateSolidBrush(Rgb(0x20, 0x30, 0x90));
+		IntPtr hatch = CreateHatchBrush(5, Rgb(0x90, 0x10, 0x10));
+		WmfApi.FillRgn(hdc, e, solid);
+		SetBkMode(hdc, 1);
+		WmfApi.FillRgn(hdc, q, hatch);
+		SetBkMode(hdc, 2);
+		SetBkColor(hdc, Rgb(0xF0, 0xF0, 0xA0));
+		WmfApi.FrameRgn(hdc, rr, hatch, S(3), S(5));
+		WmfApi.FrameRgn(hdc, u, solid, S(2), S(1));
+		IntPtr br = CreateSolidBrush(Rgb(0xC0, 0x90, 0x20));
+		IntPtr ob = SelectObject(hdc, br);
+		IntPtr p1 = WmfApi.CreateEllipticRgn(S(130), S(100), S(250), S(190));
+		SetROP2(hdc, 7); // R2_XORPEN
+		WmfApi.PaintRgn(hdc, p1);
+		SetROP2(hdc, 13);
+		IntPtr p2 = WmfApi.CreateRectRgn(S(140), S(150), S(240), S(170));
+		WmfApi.PaintRgn(hdc, p2);
+		IntPtr inv = WmfApi.CreateRectRgn(S(60), S(60), S(200), S(110));
+		WmfApi.InvertRgn(hdc, inv);
+		SelectObject(hdc, ob);
+		foreach (IntPtr o in new[] { e, q, rr, u, u2, solid, hatch, br, p1, p2, inv }) { DeleteObject(o); }
+	}
+
+	static void WmfRegionCases()
+	{
+		WmfPixelCase("wmf-regions", 260, 200, delegate (IntPtr hdc) { WmfRegionSheet(hdc, 1); });
+		WmfPlayCase("wmf-regions-twips", 260, 200, WmfRecord(delegate (IntPtr hdc) { WmfRegionSheet(hdc, 15); }), new int[] { 0, 0, 3900, 3000 }, 1440);
+	}
+
+	/** A packed DIB (BITMAPINFOHEADER, colour table, bits) of `bpp` bits. */
+	static byte[] WmfPackedDib(int w, int h, int bpp, bool topDown, int[] table, Func<int, int, int> px)
+	{
+		int stride = ((w * bpp + 31) / 32) * 4;
+		var ms = new MemoryStream();
+		var bw = new BinaryWriter(ms);
+		bw.Write(40); bw.Write(w); bw.Write(topDown ? -h : h); bw.Write((short)1); bw.Write((short)bpp);
+		bw.Write(0); bw.Write(stride * h); bw.Write(0); bw.Write(0); bw.Write(table == null ? 0 : table.Length); bw.Write(0);
+		if (table != null) { foreach (int c in table) { bw.Write((byte)((c >> 16) & 0xff)); bw.Write((byte)((c >> 8) & 0xff)); bw.Write((byte)(c & 0xff)); bw.Write((byte)0); } }
+		for (int row = 0; row < h; row++)
+		{
+			int y = topDown ? row : h - 1 - row;
+			var line = new byte[stride];
+			for (int x = 0; x < w; x++)
+			{
+				int v = px(x, y);
+				if (bpp == 32) { line[x * 4] = (byte)((v >> 16) & 0xff); line[x * 4 + 1] = (byte)((v >> 8) & 0xff); line[x * 4 + 2] = (byte)(v & 0xff); }
+				else if (bpp == 24) { line[x * 3] = (byte)((v >> 16) & 0xff); line[x * 3 + 1] = (byte)((v >> 8) & 0xff); line[x * 3 + 2] = (byte)(v & 0xff); }
+				else if (bpp == 8) { line[x] = (byte)v; }
+				else if (bpp == 4) { line[x / 2] |= (byte)((v & 15) << (x % 2 == 0 ? 4 : 0)); }
+				else if (bpp == 1) { if (v != 0) { line[x / 8] |= (byte)(0x80 >> (x % 8)); } }
+			}
+			bw.Write(line);
+		}
+		return ms.ToArray();
+	}
+
+	/** Splits a packed DIB into its header+table and its bits. */
+	static void WmfSplitDib(byte[] packed, out byte[] bmi, out byte[] bits)
+	{
+		int bpp = BitConverter.ToInt16(packed, 14);
+		int used = BitConverter.ToInt32(packed, 32);
+		int n = bpp <= 8 ? (used != 0 ? used : 1 << bpp) : 0;
+		int head = 40 + n * 4;
+		bmi = new byte[head]; Array.Copy(packed, bmi, head);
+		bits = new byte[packed.Length - head]; Array.Copy(packed, head, bits, 0, bits.Length);
+	}
+
+	static void WmfBitmapSheet(IntPtr hdc, int k)
+	{
+		Func<int, int> S = delegate (int v) { return v * k; };
+		IntPtr screen = GetDC(IntPtr.Zero);
+		WmfBackdrop(hdc, S(300), S(220), k);
+		IntPtr hatch = CreateHatchBrush(5, Rgb(0x10, 0x60, 0x10));
+		IntPtr ob = SelectObject(hdc, hatch);
+		SetBkColor(hdc, Rgb(0xFF, 0xEE, 0xDD));
+		SetTextColor(hdc, Rgb(0x11, 0x22, 0x33));
+		using (var src = SourceBitmap(screen, 16, 12))
+		{
+			uint[] rops = { 0x00CC0020, 0x008800C6, 0x00660046, 0x00C000CA, 0x00330008, 0x00B8074A };
+			// BitBlt's source extent is its destination extent in logical units, which
+			// under a scaled mapping reaches past the bitmap: scaled sheets use StretchBlt.
+			for (int i = 0; i < rops.Length; i++)
+			{
+				if (k == 1) { BitBlt(hdc, S(4 + i * 20), S(4), S(16), S(12), src.Dc, 0, 0, rops[i]); }
+				else { StretchBlt(hdc, S(4 + i * 20), S(4), S(16), S(12), src.Dc, 0, 0, 16, 12, rops[i]); }
+			}
+			SetStretchBltMode(hdc, 3); // COLORONCOLOR
+			StretchBlt(hdc, S(4), S(22), S(40), S(30), src.Dc, 2, 1, 12, 10, 0x00CC0020);
+			StretchBlt(hdc, S(90), S(22), S(-40), S(30), src.Dc, 0, 0, 16, 12, 0x00CC0020);
+			SetStretchBltMode(hdc, 1); // BLACKONWHITE
+			StretchBlt(hdc, S(96), S(22), S(10), S(8), src.Dc, 0, 0, 16, 12, 0x00CC0020);
+			SetStretchBltMode(hdc, 2); // WHITEONBLACK
+			StretchBlt(hdc, S(110), S(22), S(10), S(8), src.Dc, 0, 0, 16, 12, 0x00CC0020);
+		}
+		PatBlt(hdc, S(130), S(4), S(40), S(20), 0x005A0049); // PATINVERT
+		PatBlt(hdc, S(175), S(4), S(40), S(20), 0x00550009); // DSTINVERT
+		PatBlt(hdc, S(220), S(4), S(40), S(20), 0x00F00021); // PATCOPY
+		PatBlt(hdc, S(265), S(4), S(30), S(20), 0x00000042); // BLACKNESS
+		// A monochrome DDB: 0 bits in the text colour, 1 bits in the background colour.
+		byte[] rows = { 0xF0, 0, 0x0F, 0, 0xAA, 0, 0x55, 0, 0xFF, 0, 0x81, 0, 0x3C, 0, 0x00, 0 };
+		IntPtr mono = CreateBitmap(8, 8, 1, 1, rows);
+		IntPtr mdc = CreateCompatibleDC(screen);
+		IntPtr om = SelectObject(mdc, mono);
+		if (k == 1) { BitBlt(hdc, S(130), S(30), S(8), S(8), mdc, 0, 0, 0x00CC0020); }
+		else { StretchBlt(hdc, S(130), S(30), S(8), S(8), mdc, 0, 0, 8, 8, 0x00CC0020); }
+		StretchBlt(hdc, S(145), S(30), S(24), S(24), mdc, 0, 0, 8, 8, 0x00CC0020);
+		if (k == 1) { BitBlt(hdc, S(175), S(30), S(8), S(8), mdc, 0, 0, 0x008800C6); }
+		else { StretchBlt(hdc, S(175), S(30), S(8), S(8), mdc, 0, 0, 8, 8, 0x008800C6); }
+		SelectObject(mdc, om); DeleteDC(mdc); DeleteObject(mono);
+		// StretchDIBits: bottom-up 32 bpp, a sub-rectangle, and an 8 bpp DIB with its own table.
+		byte[] bmi32, bits32;
+		WmfSplitDib(WmfPackedDib(20, 14, 32, false, null, delegate (int x, int y) { return Palette[(x / 3 + y / 2) % 6]; }), out bmi32, out bits32);
+		WmfApi.StretchDIBits(hdc, S(4), S(60), S(40), S(28), 0, 0, 20, 14, bits32, bmi32, 0, 0x00CC0020);
+		WmfApi.StretchDIBits(hdc, S(50), S(60), S(30), S(30), 4, 2, 10, 8, bits32, bmi32, 0, 0x00CC0020);
+		WmfApi.StretchDIBits(hdc, S(86), S(60), S(20), S(14), 0, 0, 20, 14, bits32, bmi32, 0, 0x00EE0086); // SRCPAINT
+		byte[] bmi8, bits8;
+		WmfSplitDib(WmfPackedDib(12, 10, 8, true, new[] { Palette[0], Palette[1], Palette[2], Palette[3], Palette[4], Palette[5] }, delegate (int x, int y) { return (x + y) % 6; }), out bmi8, out bits8);
+		WmfApi.StretchDIBits(hdc, S(112), S(60), S(24), S(20), 0, 0, 12, 10, bits8, bmi8, 0, 0x00CC0020);
+		byte[] bmi4, bits4;
+		WmfSplitDib(WmfPackedDib(10, 10, 4, false, new[] { Palette[3], Palette[4], Palette[5], Palette[6] }, delegate (int x, int y) { return (x * y) % 4; }), out bmi4, out bits4);
+		WmfApi.StretchDIBits(hdc, S(140), S(60), S(10), S(10), 0, 0, 10, 10, bits4, bmi4, 0, 0x00CC0020);
+		// SetDIBitsToDevice: whole and a partial band of scan lines.
+		WmfApi.SetDIBitsToDevice(hdc, S(160), S(60), 20, 14, 0, 0, 0, 14, bits32, bmi32, 0);
+		byte[] band = new byte[20 * 4 * 6];
+		Array.Copy(bits32, 20 * 4 * 4, band, 0, band.Length);
+		WmfApi.SetDIBitsToDevice(hdc, S(190), S(60), 16, 10, 2, 2, 4, 6, band, bmi32, 0);
+		byte[] bmiBand = (byte[])bmi32.Clone();
+		Array.Clear(bmiBand, 20, 4); // biSizeImage 0
+		WmfApi.SetDIBitsToDevice(hdc, S(210), S(60), 16, 6, 2, 4, 4, 6, band, bmiBand, 0);
+		WmfApi.SetDIBitsToDevice(hdc, S(230), S(60), 16, 10, 2, 2, 4, 6, band, bmiBand, 0);
+		Array.Copy(BitConverter.GetBytes(6), 0, bmiBand, 8, 4); // a 6-row DIB: every scan line present
+		WmfApi.SetDIBitsToDevice(hdc, S(250), S(60), 16, 6, 2, 4, 4, 6, band, bmiBand, 0);
+		WmfApi.SetDIBitsToDevice(hdc, S(270), S(60), 16, 6, 2, 0, 0, 6, band, bmiBand, 0);
+		WmfApi.SetDIBitsToDevice(hdc, S(160), S(80), 16, 12, 2, 0, 0, 6, band, bmi32, 0); // first 6 of 14 rows
+		SelectObject(hdc, ob);
+		DeleteObject(hatch);
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	/** Pattern brushes: monochrome and colour CreatePatternBrush, CreateDIBPatternBrushPt, hatches opaque and transparent. */
+	static void WmfPatternSheet(IntPtr hdc, int k)
+	{
+		Func<int, int> S = delegate (int v) { return v * k; };
+		IntPtr screen = GetDC(IntPtr.Zero);
+		WmfBackdrop(hdc, S(240), S(120), k);
+		SetBkColor(hdc, Rgb(0xFF, 0xF0, 0xC0));
+		SetTextColor(hdc, Rgb(0x30, 0x10, 0x60));
+		IntPtr[] brushes =
+		{
+			MakePatternBrush(),
+			MakeColorPatternBrush(screen),
+			WmfApi.CreateDIBPatternBrushPt(WmfPackedDib(6, 5, 24, false, null, delegate (int x, int y) { return Palette[(x + 2 * y) % 6]; }), 0),
+			WmfApi.CreateDIBPatternBrushPt(WmfPackedDib(8, 8, 1, false, new[] { Rgb(0xC0, 0x20, 0x20), Rgb(0x20, 0xC0, 0x20) }, delegate (int x, int y) { return (x ^ y) & 2; }), 0),
+			CreateHatchBrush(1, Rgb(0x80, 0x00, 0x40)),
+		};
+		for (int i = 0; i < brushes.Length; i++)
+		{
+			IntPtr b = brushes[i];
+			WithObjects(hdc, CreatePen(0, 0, 0), b, delegate
+			{
+				int x = 4 + i * 46;
+				SetBkMode(hdc, 2);
+				Rectangle(hdc, S(x), S(4), S(x + 42), S(40));
+				Ellipse(hdc, S(x), S(44), S(x + 42), S(80));
+				SetBkMode(hdc, 1);
+				Polygon(hdc, new[] { P(S(x), S(84)), P(S(x + 42), S(90)), P(S(x + 10), S(116)) }, 3);
+				PatBlt(hdc, S(x + 24), S(100), S(18), S(16), 0x00F00021);
+			});
+		}
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	/** A hand-assembled Bitmap16 blit record: rop, [src extents,] src y, src x, dest extents, dest origin, Bitmap16. */
+	static byte[] WmfBitmap16Params(uint rop, int[] words, int w, int h, int bpp, Func<int, int, int> px)
+	{
+		int widthBytes = ((w * bpp + 15) / 16) * 2;
+		var ms = new MemoryStream();
+		var bw = new BinaryWriter(ms);
+		bw.Write(rop);
+		foreach (int v in words) { bw.Write((short)v); }
+		bw.Write((short)0); bw.Write((short)w); bw.Write((short)h); bw.Write((short)widthBytes); bw.Write((byte)1); bw.Write((byte)bpp);
+		for (int y = 0; y < h; y++)
+		{
+			var line = new byte[widthBytes];
+			for (int x = 0; x < w; x++)
+			{
+				int v = px(x, y);
+				if (bpp == 1) { if (v != 0) { line[x / 8] |= (byte)(0x80 >> (x % 8)); } }
+				else if (bpp == 24) { line[x * 3] = (byte)((v >> 16) & 0xff); line[x * 3 + 1] = (byte)((v >> 8) & 0xff); line[x * 3 + 2] = (byte)(v & 0xff); }
+			}
+			bw.Write(line);
+		}
+		return ms.ToArray();
+	}
+
+	/** Records Win32 never writes: Bitmap16 blits and pattern brush, SetRelAbs, and escapes a player skips. */
+	static byte[] WmfLegacyRecords()
+	{
+		var wr = new WmfWriter();
+		wr.Objects = 4;
+		// Backdrop: a PATCOPY band per colour.
+		for (int i = 0; i < 6; i++)
+		{
+			wr.Rec(0x02FC, 0, Palette[i] & 0xffff, (Palette[i] >> 16) & 0xffff, 0); // CREATEBRUSHINDIRECT -> slot 0
+			wr.Rec(0x012D, 0);
+			wr.Rec(0x061D, 0x0021, 0x00F0, 160, 20, 0, i * 20); // PATBLT rop(lo, hi), h, w, y, x
+			wr.Rec(0x01F0, 0);
+		}
+		wr.Rec(0x0105, 1); // SETRELABS
+		wr.Rec(0x0231, 0, 0); // SETMAPPERFLAGS
+		wr.RecBytes(0x0626, new byte[] { 0x10, 0x00, 0x04, 0x00, 1, 2, 3, 4 }); // ESCAPE (SETCOLORTABLE-ish, ignored)
+		wr.RecBytes(0x0626, new byte[] { 0x0F, 0x00, 0x06, 0x00, (byte)'h', (byte)'i', (byte)'!', 0, 0, 0 }); // MFCOMMENT text
+		wr.Rec(0x0209, 0x2211, 0x0033); // SETTEXTCOLOR
+		wr.Rec(0x0201, 0xEEFF, 0x00DD); // SETBKCOLOR
+		// META_BITBLT, monochrome Bitmap16 16x10.
+		wr.RecBytes(0x0922, WmfBitmap16Params(0x00CC0020, new[] { 0, 0, 10, 16, 8, 6 }, 16, 10, 1, delegate (int x, int y) { return (x / 2 + y) & 1; }));
+		// META_BITBLT with SRCINVERT, 24 bpp.
+		wr.RecBytes(0x0922, WmfBitmap16Params(0x00660046, new[] { 0, 0, 10, 16, 8, 30 }, 16, 10, 24, delegate (int x, int y) { return Palette[(x + y) % 6]; }));
+		// META_BITBLT, SRCCOPY: 24 bpp and 8 bpp Bitmap16 on the white margin.
+		wr.RecBytes(0x0922, WmfBitmap16Params(0x00CC0020, new[] { 0, 0, 10, 16, 8, 124 }, 16, 10, 24, delegate (int x, int y) { return Palette[(x + y) % 6]; }));
+		wr.RecBytes(0x0922, WmfBitmap16Params(0x00CC0020, new[] { 0, 0, 10, 16, 24, 124 }, 16, 10, 1, delegate (int x, int y) { return (x / 2 + y) & 1; }));
+		wr.RecBytes(0x0922, WmfBitmap16Params(0x00CC0020, new[] { 0, 0, 10, 16, 40, 124 }, 16, 10, 32, delegate (int x, int y) { return Palette[(x + y) % 6]; }));
+		// META_STRETCHBLT, monochrome, stretched 3x and mirrored.
+		wr.RecBytes(0x0B23, WmfBitmap16Params(0x00CC0020, new[] { 10, 16, 0, 0, 30, -48, 30, 110 }, 16, 10, 1, delegate (int x, int y) { return (x + y / 3) & 1; }));
+		// META_BITBLT without a bitmap: a pattern blit (rop, src y, src x, reserved, h, w, y, x).
+		wr.Rec(0x02FC, 2, 0x4020, 0x00C0, 3); // hatched brush -> slot 0
+		wr.Rec(0x012D, 0);
+		wr.Rec(0x0922, 0x0049, 0x005A, 0, 0, 0, 20, 30, 60, 8);
+		// META_CREATEPATTERNBRUSH: Bitmap16 header (14), reserved (18), 8x8 mono rows (word aligned).
+		var pat = new MemoryStream();
+		var pw = new BinaryWriter(pat);
+		pw.Write((short)0); pw.Write((short)8); pw.Write((short)8); pw.Write((short)2); pw.Write((byte)1); pw.Write((byte)1); pw.Write(0);
+		pw.Write(new byte[18]);
+		foreach (byte b in new byte[] { 0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81 }) { pw.Write(b); pw.Write((byte)0); }
+		wr.RecBytes(0x01F9, pat.ToArray()); // -> slot 1
+		wr.Rec(0x012D, 1);
+		wr.Rec(0x02FA, 5, 0, 0, 0, 0); // null pen -> slot 2
+		wr.Rec(0x012D, 2);
+		wr.Rec(0x041B, 150, 110, 70, 60); // RECTANGLE b, r, t, l
+		wr.Rec(0x0418, 150, 160, 80, 116); // ELLIPSE
+		return wr.Build();
+	}
+
+	static void WmfBitmapCases()
+	{
+		WmfPixelCase("wmf-bitmaps", 300, 220, delegate (IntPtr hdc) { WmfBitmapSheet(hdc, 1); });
+		WmfPlayCase("wmf-bitmaps-twips", 300, 220, WmfRecord(delegate (IntPtr hdc) { WmfBitmapSheet(hdc, 15); }), new int[] { 0, 0, 4500, 3300 }, 1440);
+		WmfPixelCase("wmf-patterns", 240, 120, delegate (IntPtr hdc) { WmfPatternSheet(hdc, 1); });
+		WmfPlayCase("wmf-legacy", 180, 160, WmfLegacyRecords(), new int[] { 0, 0, 180, 160 }, 96);
+	}
+
 	static void WmfRecordCases()
 	{
+		WmfBitmapCases();
 		WmfShapeCases();
+		WmfMappingCases();
+		WmfClipCases();
+		WmfRegionCases();
 	}
 
 	public static void Run(string dir, string which)

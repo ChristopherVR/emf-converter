@@ -235,7 +235,16 @@ export function wmfFrameRegion(p: WmfPlayer, regionSlot: number, brushSlot: numb
 		let run = -1;
 		for (let x = 0; x <= w; x++) {
 			const inside = x < w && at(x, y) === 1;
-			const inner = inside && at(x - dw, y) === 1 && at(x + dw, y) === 1 && at(x, y - dh) === 1 && at(x, y + dh) === 1;
+			const inner =
+				inside &&
+				at(x - dw, y) === 1 &&
+				at(x + dw, y) === 1 &&
+				at(x, y - dh) === 1 &&
+				at(x, y + dh) === 1 &&
+				at(x - dw, y - dh) === 1 &&
+				at(x + dw, y - dh) === 1 &&
+				at(x - dw, y + dh) === 1 &&
+				at(x + dw, y + dh) === 1;
 			const onFrame = inside && !inner;
 			if (onFrame && run < 0) {
 				run = x;

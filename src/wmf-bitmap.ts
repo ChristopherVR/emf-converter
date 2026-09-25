@@ -1,6 +1,6 @@
 /**
  * WMF bitmap records: `META_PATBLT`, `META_BITBLT` and `META_STRETCHBLT`
- * (a `Bitmap16` device bitmap, or none), `META_DIBBITBLT` and
+ * (Win16 device-bitmap blits, see {@link wmfBitBlt}), `META_DIBBITBLT` and
  * `META_DIBSTRETCHBLT` (a packed DIB, or none), `META_STRETCHDIB` and
  * `META_SETDIBTODEV`.
  *
@@ -10,10 +10,9 @@
  * origin, mirroring, source sub-rectangles and the stretch modes are
  * evaluated by the same exact code. A record "without a bitmap" (its size
  * is the parameters alone, MS-WMF 2.3.1) is a pattern-only blit. A
- * monochrome `Bitmap16` source paints its 0 bits in the text colour and its
- * 1 bits in the background colour, as `BitBlt` does from a monochrome
- * device bitmap; a `DIB_PAL_COLORS` DIB is resolved through the selected
- * palette first.
+ * `DIB_PAL_COLORS` DIB is resolved through the selected palette first.
+ * Every destination is rounded to whole device pixels first, as GDI's
+ * `GM_COMPATIBLE` mode does, and the blit then runs on the device grid.
  *
  * @module wmf-bitmap
  */
@@ -21,8 +20,74 @@
 import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS } from './emf-constants';
 import { gdiDeviceMatrix } from './emf-gdi-coord';
 import { EmfRecordWriter, playEmfRecord } from './wmf-emf-bridge';
-import { dibHeaderAndTableSize, palColorsToRgb, readBitmap16, resolveColorRef } from './wmf-objects';
+import { dibHeaderAndTableSize, palColorsToRgb, resolveColorRef } from './wmf-objects';
 import type { WmfPlayer } from './wmf-player';
+
+/**
+ * Maps a logical destination (`x`, `y`, extents `w`, `h`) to whole device
+ * pixels, each corner rounded to the nearest pixel (GDI's `GM_COMPATIBLE`
+ * blit destination; a negative extent stays a mirror).
+ */
+function deviceDest(p: WmfPlayer, x: number, y: number, w: number, h: number): [number, number, number, number] {
+	const m = gdiDeviceMatrix(p.rCtx);
+	const dev = (lx: number, ly: number): [number, number] => [
+		Math.floor((m[0] * lx + m[2] * ly + m[4]) / p.kx + 0.5),
+		Math.floor((m[1] * lx + m[3] * ly + m[5]) / p.ky + 0.5),
+	];
+	const a = dev(x, y);
+	const b = dev(x + w, y + h);
+	return [a[0], a[1], b[0] - a[0], b[1] - a[1]];
+}
+
+/**
+ * Runs `play` with the shared context mapping device pixels one to one
+ * (logical = device), so a blit's already-rounded destination lands as is.
+ */
+function onDevicePixels(p: WmfPlayer, play: () => void): void {
+	const { rCtx } = p;
+	const saved = {
+		windowOrg: rCtx.windowOrg,
+		windowExt: rCtx.windowExt,
+		viewportOrg: rCtx.viewportOrg,
+		viewportExt: rCtx.viewportExt,
+	};
+	rCtx.windowOrg = { x: 0, y: 0 };
+	rCtx.windowExt = { cx: 1, cy: 1 };
+	rCtx.viewportOrg = { x: 0, y: 0 };
+	rCtx.viewportExt = { cx: p.kx, cy: p.ky };
+	try {
+		play();
+	} finally {
+		Object.assign(rCtx, saved);
+	}
+}
+
+/**
+ * A one-bit DIB in a `META_DIBBITBLT`/`META_DIBSTRETCHBLT` is played as the
+ * monochrome device bitmap it was recorded from: its 0 bits in the DC's
+ * text colour and its 1 bits in the background colour, whatever its colour
+ * table says (measured: `wmf-bitmaps`).
+ */
+function monoAsDeviceColors(p: WmfPlayer, dib: PackedDib | null): PackedDib | null {
+	if (!dib || dib.bmi.length < 48) {
+		return dib;
+	}
+	const v = new DataView(dib.bmi.buffer, dib.bmi.byteOffset, dib.bmi.byteLength);
+	if (v.getUint16(14, true) !== 1) {
+		return dib;
+	}
+	const bmi = dib.bmi.slice();
+	const head = v.getUint32(0, true);
+	const put = (i: number, c: number) => {
+		bmi[head + i * 4] = c & 0xff;
+		bmi[head + i * 4 + 1] = (c >> 8) & 0xff;
+		bmi[head + i * 4 + 2] = (c >> 16) & 0xff;
+		bmi[head + i * 4 + 3] = 0;
+	};
+	put(0, resolveColorRef(p.textColor, p.palette));
+	put(1, resolveColorRef(p.bkColor, p.palette));
+	return { bmi, bits: dib.bits };
+}
 
 /** A packed DIB: header plus colour table, and bits. */
 interface PackedDib {
@@ -56,32 +121,6 @@ function readDib(p: WmfPlayer, off: number, end: number, usage: number): PackedD
 	return { bmi: src.subarray(0, head), bits: src.subarray(head) };
 }
 
-/** A `Bitmap16` source (bits `skip` bytes after its header) as a top-down 32 bpp DIB. */
-function bitmap16Dib(p: WmfPlayer, off: number, end: number): PackedDib | null {
-	const bmp = readBitmap16(p.view, off, end, 10);
-	if (!bmp) {
-		return null;
-	}
-	const { width, height } = bmp;
-	const bmi = new Uint8Array(40);
-	const hv = new DataView(bmi.buffer);
-	hv.setUint32(0, 40, true);
-	hv.setInt32(4, width, true);
-	hv.setInt32(8, -height, true);
-	hv.setUint16(12, 1, true);
-	hv.setUint16(14, 32, true);
-	const bits = new Uint8Array(width * height * 4);
-	const fg = resolveColorRef(p.textColor, p.palette);
-	const bk = resolveColorRef(p.bkColor, p.palette);
-	for (let i = 0; i < width * height; i++) {
-		const c = bmp.kind === 'mono' ? (bmp.bits[i] ? bk : fg) : bmp.kind === 'bitmap' ? bmp.rgb[i] : 0;
-		bits[i * 4] = c & 0xff;
-		bits[i * 4 + 1] = (c >> 8) & 0xff;
-		bits[i * 4 + 2] = (c >> 16) & 0xff;
-	}
-	return { bmi, bits };
-}
-
 /** Plays `EMR_BITBLT`/`EMR_STRETCHBLT` with an optional source DIB (top-down source coordinates). */
 function playBlt(
 	p: WmfPlayer,
@@ -97,6 +136,7 @@ function playBlt(
 	sh: number,
 	dib: PackedDib | null,
 ): void {
+	[dx, dy, dw, dh] = deviceDest(p, dx, dy, dw, dh);
 	const fixed = stretch ? 108 : 100;
 	const w = new EmfRecordWriter(stretch ? EMR_STRETCHBLT : EMR_BITBLT, fixed + (dib ? dib.bmi.length + dib.bits.length + 8 : 0));
 	w.i32(0).i32(0).i32(-1).i32(-1);
@@ -118,7 +158,8 @@ function playBlt(
 		w.raw(dib.bits);
 		w.patchU32(offBmiAt, bmiAt).patchU32(offBmiAt + 4, dib.bmi.length).patchU32(offBmiAt + 8, bitsAt).patchU32(offBmiAt + 12, dib.bits.length);
 	}
-	playEmfRecord(p.rCtx, w.finish());
+	const record = w.finish();
+	onDevicePixels(p, () => playEmfRecord(p.rCtx, record));
 }
 
 /** Plays `EMR_STRETCHDIBITS` (bottom-left source coordinates). */
@@ -134,7 +175,11 @@ function playStretchDibits(
 	sw: number,
 	sh: number,
 	dib: PackedDib,
+	onDevice = false,
 ): void {
+	if (!onDevice) {
+		[dx, dy, dw, dh] = deviceDest(p, dx, dy, dw, dh);
+	}
 	const w = new EmfRecordWriter(EMR_STRETCHDIBITS, 80 + dib.bmi.length + dib.bits.length + 8);
 	w.i32(0).i32(0).i32(-1).i32(-1);
 	w.i32(dx).i32(dy);
@@ -149,7 +194,8 @@ function playStretchDibits(
 	const bitsAt = w.offset;
 	w.raw(dib.bits);
 	w.patchU32(offBmiAt, bmiAt).patchU32(offBmiAt + 4, dib.bmi.length).patchU32(offBmiAt + 8, bitsAt).patchU32(offBmiAt + 12, dib.bits.length);
-	playEmfRecord(p.rCtx, w.finish());
+	const record = w.finish();
+	onDevicePixels(p, () => playEmfRecord(p.rCtx, record));
 }
 
 /** `META_PATBLT`: rop, height, width, y, x. */
@@ -172,39 +218,30 @@ function withoutBitmap(recType: number, recSize: number): boolean {
 }
 
 /**
- * `META_BITBLT` / `META_STRETCHBLT`: rop, [src height, src width,] src y,
- * src x, [reserved when bitmapless,] dest height, dest width, dest y,
- * dest x, then a `Bitmap16`.
+ * `META_BITBLT` / `META_STRETCHBLT`: the Win16 records with a `Bitmap16`
+ * device bitmap. Windows' `PlayMetaFile` no longer draws that bitmap, at
+ * any bit depth (measured: `wmf-legacy`), but a record WITHOUT a bitmap
+ * (its size is the parameters alone) is still the pattern blit it
+ * describes: rop, [src height, src width,] src y, src x, reserved, dest
+ * height, dest width, dest y, dest x.
  */
 export function wmfBitBlt(p: WmfPlayer, stretch: boolean, offset: number, recSize: number): void {
 	const { view } = p;
 	const recType = view.getUint16(offset + 4, true);
+	if (!withoutBitmap(recType, recSize)) {
+		return;
+	}
 	const d = offset + 6;
-	const end = offset + recSize;
-	const none = withoutBitmap(recType, recSize);
-	let k = d + 4;
-	const rd = () => {
-		const v = view.getInt16(k, true);
-		k += 2;
-		return v;
-	};
-	if (d + 4 + (stretch ? 16 : 12) > end) {
+	const k = d + 4 + (stretch ? 4 : 0) + 6;
+	if (k + 8 > offset + recSize) {
 		return;
 	}
 	const rop = view.getUint32(d, true);
-	const sh = stretch ? rd() : 0;
-	const sw = stretch ? rd() : 0;
-	const sy = rd();
-	const sx = rd();
-	if (none) {
-		k += 2;
-	}
-	const dh = rd();
-	const dw = rd();
-	const dy = rd();
-	const dx = rd();
-	const dib = none ? null : bitmap16Dib(p, k, end);
-	playBlt(p, stretch, rop, dx, dy, dw, dh, sx, sy, stretch ? sw : dw, stretch ? sh : dh, dib);
+	const dh = view.getInt16(k, true);
+	const dw = view.getInt16(k + 2, true);
+	const dy = view.getInt16(k + 4, true);
+	const dx = view.getInt16(k + 6, true);
+	playBlt(p, false, rop, dx, dy, dw, dh, 0, 0, dw, dh, null);
 }
 
 /**
@@ -238,7 +275,7 @@ export function wmfDibBitBlt(p: WmfPlayer, stretch: boolean, offset: number, rec
 	const dw = rd();
 	const dy = rd();
 	const dx = rd();
-	const dib = none ? null : readDib(p, k, end, 0);
+	const dib = none ? null : monoAsDeviceColors(p, readDib(p, k, end, 0));
 	playBlt(p, stretch, rop, dx, dy, dw, dh, sx, sy, stretch ? sw : dw, stretch ? sh : dh, dib);
 }
 
@@ -291,47 +328,26 @@ export function wmfSetDibToDev(p: WmfPlayer, d: number, end: number): void {
 	if (!dib || scanCount === 0) {
 		return;
 	}
-	// The DIB holds only rows startScan .. startScan + scanCount - 1.
+	// The DIB holds only the (bottom-up) rows startScan .. startScan +
+	// scanCount - 1; only the part of the source rectangle they cover is
+	// drawn, at its place in the destination. The destination origin is
+	// mapped; the extent is pixels (the bits are never stretched).
+	const dibRows = Math.abs(new DataView(dib.bmi.buffer, dib.bmi.byteOffset, dib.bmi.byteLength).getInt32(8, true));
+	if (startScan !== 0 || scanCount < dibRows) {
+		// Windows' PlayMetaFile draws a META_SETDIBTODEV only when it carries
+		// the whole DIB from its first scan line: a band of scan lines draws
+		// nothing (measured: `wmf-bitmaps`).
+		return;
+	}
+	const lo = Math.max(sy, startScan);
+	const hi = Math.min(sy + h, startScan + scanCount);
+	if (hi <= lo || w <= 0) {
+		return;
+	}
 	const bmi = dib.bmi.slice();
 	const hv = new DataView(bmi.buffer);
 	const fullH = hv.getInt32(8, true);
 	hv.setInt32(8, fullH < 0 ? -scanCount : scanCount, true);
-	// Extents are device pixels: express them in logical units for the blit.
-	const m = gdiDeviceMatrix(p.rCtx);
-	const lw = (w * p.kx) / (m[0] || 1);
-	const lh = (h * p.ky) / (m[3] || 1);
-	playStretchDibitsExact(p, dx, dy, lw, lh, sx, sy - startScan, w, h, { bmi, bits: dib.bits });
-}
-
-/** {@link playStretchDibits} with `SRCCOPY` and fractional logical extents (scaled to fixed point 1/65536). */
-function playStretchDibitsExact(
-	p: WmfPlayer,
-	dx: number,
-	dy: number,
-	lw: number,
-	lh: number,
-	sx: number,
-	sy: number,
-	sw: number,
-	sh: number,
-	dib: PackedDib,
-): void {
-	if (Number.isInteger(lw) && Number.isInteger(lh)) {
-		playStretchDibits(p, 0x00cc0020, dx, dy, lw, lh, sx, sy, sw, sh, dib);
-		return;
-	}
-	// Fractional logical extents (a scaled mapping): blit through a finer
-	// logical grid so the device extent stays exact.
-	const { rCtx } = p;
-	const savedOrg = rCtx.windowOrg;
-	const savedExt = rCtx.windowExt;
-	const f = 64;
-	rCtx.windowOrg = { x: savedOrg.x * f, y: savedOrg.y * f };
-	rCtx.windowExt = { cx: savedExt.cx * f, cy: savedExt.cy * f };
-	try {
-		playStretchDibits(p, 0x00cc0020, dx * f, dy * f, Math.round(lw * f), Math.round(lh * f), sx, sy, sw, sh, dib);
-	} finally {
-		rCtx.windowOrg = savedOrg;
-		rCtx.windowExt = savedExt;
-	}
+	const [ox, oy] = deviceDest(p, dx, dy, 0, 0);
+	playStretchDibits(p, 0x00cc0020, ox, oy + (sy + h - hi), w, hi - lo, sx, lo - startScan, w, hi - lo, { bmi, bits: dib.bits }, true);
 }

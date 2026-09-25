@@ -181,7 +181,7 @@ export function createWmfPlayer(
 	const playback = wmfPlayback(view, header);
 	const kx = canvasW / playback.width;
 	const ky = canvasH / playback.height;
-	const state: DrawState = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, textAlign: 0 };
+	const state: DrawState = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, bkMode: 2 };
 	const rCtx: EmfGdiReplayCtx = {
 		ctx,
 		view,
@@ -436,7 +436,7 @@ export function playWmfRecord(p: WmfPlayer, recType: number, offset: number, rec
 			createDibPatternBrush(p, d, end);
 			return;
 		case META_CREATEPATTERNBRUSH:
-			createPatternBrush(p, d, end);
+			createPatternBrush();
 			return;
 		case META_CREATEPALETTE:
 			createPalette(p, d, end);
@@ -605,7 +605,7 @@ export function playWmfRecord(p: WmfPlayer, recType: number, offset: number, rec
 			return;
 		case META_FILLREGION:
 			if (has(4)) {
-				wmfFillRegion(p, u16(1), u16(0));
+				wmfFillRegion(p, u16(0), u16(1));
 			}
 			return;
 		case META_PAINTREGION:
@@ -620,7 +620,7 @@ export function playWmfRecord(p: WmfPlayer, recType: number, offset: number, rec
 			return;
 		case META_FRAMEREGION:
 			if (has(8)) {
-				wmfFrameRegion(p, u16(3), u16(2), i16(1), i16(0));
+				wmfFrameRegion(p, u16(0), u16(1), i16(2), i16(3));
 			}
 			return;
 
