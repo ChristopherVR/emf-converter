@@ -29,18 +29,22 @@ import {
 	createImageDataCompat,
 	createTempCanvas,
 	decodeDeferredImageBytes,
+	decodeImageBytesBuiltIn,
 	ensureNodeCanvasModule,
+	usingSoftwareCanvas,
 	exportCanvasToPngDataUrl,
 	DEFAULT_DPI_SCALE,
 	type Drawable,
 } from './emf-canvas-helpers';
 import { decodeDibToImageData } from './emf-dib-decoder';
+import { GdiFontCollection } from './gdi-font-engine';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
 import { emfLog, emfWarn } from './emf-logging';
 import { resampleImage } from './emf-plus-image-resample';
 import { preDecodeEmfPlusTextures } from './emf-plus-texture-predecode';
 import { replayEmfRecords } from './emf-record-replay';
 import type { AnyCanvas, CanvasContext, DeferredImageDraw, DeferredImageResample } from './emf-types';
+import { SoftwareRasterCanvas } from './software-raster';
 import { SvgContext } from './svg-context';
 import type { ImagePayload } from './svg-context';
 import { svgMarkupToDataUrl, svgTreeToDataUrl, svgTreeToString } from './svg-tree';
@@ -88,6 +92,30 @@ export interface EmfConvertOptions {
 	 * shape-heavy files. EMF+ drawing and text are unaffected.
 	 */
 	gdiAntialias?: boolean;
+	/**
+	 * TrueType font files (`.ttf` / `.ttc` bytes) to render GDI and WMF text
+	 * with, exactly as Windows GDI does: the LOGFONT is realised against
+	 * these files (face, weight, slant, `lfHeight`/`lfWidth`, charset
+	 * fallback), each glyph is grid-fitted by the font's own TrueType
+	 * instructions and scan-converted with TrueType dropout control
+	 * (non-antialiased, 4x4 grayscale or ClearType per the LOGFONT's
+	 * `lfQuality`), and glyphs are placed on GDI's integer device grid with
+	 * GDI's own advance widths, cell metrics, underline and strike-out.
+	 * Supply the fonts the metafile names (for Windows-authored files, the
+	 * matching files from `C:\Windows\Fonts`); a face that is missing is
+	 * substituted the way GDI's font mapper would (by pitch and family),
+	 * and without this option text is drawn with the canvas font engine.
+	 * Ignored by SVG output, which keeps text as `<text>` but takes its
+	 * per-glyph positions and metrics from these fonts.
+	 */
+	fonts?: Array<ArrayBuffer | ArrayBufferView>;
+	/**
+	 * Windows' system-wide font smoothing, which GDI applies to fonts that
+	 * ask for `DEFAULT_QUALITY`, `DRAFT_QUALITY` or `PROOF_QUALITY` (most
+	 * metafiles): `'cleartype'` (Windows' default), `'gray'` (standard
+	 * antialiasing) or `'mono'` (smoothing off). Only used with `fonts`.
+	 */
+	fontSmoothing?: 'cleartype' | 'gray' | 'mono';
 }
 
 /**
@@ -100,14 +128,34 @@ export interface EmfConvertOptions {
 export interface SvgConvertOptions extends EmfConvertOptions {
 	/**
 	 * Evaluate raster operations that read the destination (exact ROP3 blits,
-	 * exact bitwise ROP2) against a hidden raster mirror of the drawing, and
-	 * embed the pixels they change as image patches. Needs a canvas backend
-	 * (browser/worker canvas, or `@napi-rs/canvas` in Node.js); without one,
-	 * or when set to `false`, those operations fall back to SVG blend modes
+	 * bitwise ROP2, pattern-brush fills combined through ROP2, and
+	 * `gdiAntialias: false` shapes) against a hidden raster mirror of the
+	 * drawing, and embed the pixels they change as image patches. The mirror
+	 * is the canvas backend when one exists (browser/worker canvas, or
+	 * `@napi-rs/canvas` in Node.js) and the built-in pure-JavaScript
+	 * rasteriser otherwise, so this needs no canvas. The built-in mirror
+	 * cannot draw glyphs: where a raster operation reads pixels under text,
+	 * every pixel whose result does not depend on the glyphs stays exact and
+	 * the rest is handed to the SVG renderer as a blend-mode layer (exact for
+	 * inversion and for masks whose channels are all 0 or 255). With `false`,
+	 * no mirror is kept and those operations fall back to SVG blend modes
 	 * (`mix-blend-mode`), which are exact for the common mask ROPs on
 	 * black/white masks and approximate otherwise. Default `true`.
 	 */
 	exactRasterOps?: boolean;
+	/**
+	 * How EMF+ `DrawImage` bitmaps are scaled. `'renderer'` (the default)
+	 * embeds the original image and lets the SVG renderer scale it with its
+	 * own smoothing, which stays sharp at any display size. `'exact'` bakes
+	 * each draw at device resolution with the GDI+-matching resampler (the
+	 * PNG output's `InterpolationMode`/`PixelOffsetMode` model), so the SVG
+	 * shows what GDI+ painted pixel for pixel at its nominal size. PNG and
+	 * BMP images are decoded in pure JavaScript; JPEG, GIF and other formats
+	 * need a canvas backend to decode and otherwise keep `'renderer'`
+	 * scaling, as do draws GDI+ scales with a filter the resampler does not
+	 * model (bicubic, high-quality).
+	 */
+	imageResampling?: 'renderer' | 'exact';
 	/**
 	 * Emit `width`/`height` attributes on the root `<svg>` (the `viewBox` is
 	 * always emitted). Set `false` for a fluid SVG that fills its container.
@@ -207,6 +255,7 @@ async function replayMetafile(
 					fontFamilyMap: opts.fontFamilyMap,
 					textureCache,
 					gdiAntialias: opts.gdiAntialias,
+					fonts: fontCollection(opts),
 				},
 			);
 			// Clears any clipping regions record handlers installed.
@@ -241,6 +290,7 @@ async function replayMetafile(
 		replayWmfRecords(view, surface.ctx, header, surface.width, surface.height, {
 			maxRecords: opts.maxRecords,
 			fontFamilyMap: opts.fontFamilyMap,
+			fonts: fontCollection(opts),
 		});
 		surface.ctx.restore();
 		return { surface, deferredImages: [] };
@@ -249,6 +299,15 @@ async function replayMetafile(
 		console.warn('[emf-converter] WMF conversion failed:', err instanceof Error ? err.message : err);
 		return null;
 	}
+}
+
+/** The parsed `fonts` option (cached per array), or undefined without one. */
+function fontCollection(opts: EmfConvertOptions): GdiFontCollection | undefined {
+	if (!opts.fonts || opts.fonts.length === 0) {
+		return undefined;
+	}
+	const collection = GdiFontCollection.for(opts.fonts, opts.fontSmoothing ?? 'cleartype');
+	return collection.size > 0 ? collection : undefined;
 }
 
 /** Copies possibly-shared image bytes into a plain `ArrayBuffer`. */
@@ -317,8 +376,9 @@ async function processDeferredImages(
 	ctx: CanvasContext,
 	deferredImages: DeferredImageDraw[],
 	recursionDepth: number,
-): Promise<void> {
+): Promise<boolean> {
 	emfLog(`processDeferredImages: ${deferredImages.length} deferred images (recursionDepth=${recursionDepth})`);
+	let complete = true;
 	for (let idx = 0; idx < deferredImages.length; idx++) {
 		const img = deferredImages[idx];
 		try {
@@ -336,6 +396,7 @@ async function processDeferredImages(
 				const metafileDataUrl = await convertMetafileToDataUrl(plainBuffer, undefined, recursionDepth + 1);
 				if (!metafileDataUrl) {
 					emfWarn(`  Deferred image [${idx}]: metafile conversion returned null`);
+					complete = false;
 					continue;
 				}
 				const byteString = atob(metafileDataUrl.split(',')[1]);
@@ -354,8 +415,10 @@ async function processDeferredImages(
 				decoded.close();
 			} else {
 				emfWarn(`  Deferred image [${idx}]: no image decoder available`);
+				complete = false;
 			}
 		} catch (imgErr) {
+			complete = false;
 			const errMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
 			emfWarn(`  Deferred image [${idx}]: DRAW FAILED: ${errMsg}`);
 			console.warn(
@@ -367,6 +430,7 @@ async function processDeferredImages(
 	}
 	// Reset to identity so subsequent callers start with a clean transform.
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	return complete;
 }
 
 /**
@@ -382,8 +446,13 @@ async function processDeferredImages(
  * - The buffer matches neither a valid EMF header nor a valid WMF header.
  * - The logical bounds are zero-sized or negative.
  * - No canvas API is available (browser/worker canvas, or the optional
- *   `@napi-rs/canvas` package in plain Node.js). SVG output
- *   ({@link convertMetafileToSvg}) needs no canvas at all.
+ *   `@napi-rs/canvas` package in plain Node.js) AND the drawing contains
+ *   text or an image format only a canvas can decode (JPEG, GIF, ...).
+ *   Without a canvas the built-in pure-JavaScript rasteriser renders
+ *   everything else (vectors, clipping, gradients, bitmaps, PNG/BMP
+ *   images, every raster operation), but it has no font engine, so rather
+ *   than return an image silently missing its text it returns `null`. SVG
+ *   output ({@link convertMetafileToSvg}) needs no canvas at all.
  *
  * @param buffer  - The raw EMF or WMF file bytes.
  * @param options - Optional {@link EmfConvertOptions} controlling output size,
@@ -424,7 +493,19 @@ export async function convertMetafileToDataUrl(
 		return null;
 	}
 	try {
-		await processDeferredImages(result.surface.ctx, result.deferredImages, recursionDepth);
+		const complete = await processDeferredImages(result.surface.ctx, result.deferredImages, recursionDepth);
+		const soft = (canvas as unknown) instanceof SoftwareRasterCanvas ? (canvas as unknown as SoftwareRasterCanvas) : null;
+		if (soft && (soft.textDraws > 0 || !complete)) {
+			// The software rasteriser has no font engine, and no decoder for
+			// JPEG/GIF/TIFF: a PNG missing text or an image would be silently
+			// wrong, so refuse it (SVG output renders both).
+			emfWarn(
+				`convertMetafileToDataUrl: no canvas backend and the drawing ${
+					soft.textDraws > 0 ? `contains text (${soft.textDraws} runs)` : 'contains an image only a canvas can decode'
+				}; install @napi-rs/canvas for PNG output, or use SVG output`,
+			);
+			return null;
+		}
 		const url = await exportCanvasToPngDataUrl(canvas);
 		if (!url) {
 			emfWarn('convertMetafileToDataUrl: exportCanvasToPngDataUrl returned null');
@@ -533,6 +614,51 @@ function decodeBmpFile(bytes: ArrayBuffer): ImagePayload | null {
 }
 
 /**
+ * Decodes image bytes to straight RGBA: PNG and BMP in pure JavaScript,
+ * anything else through the canvas backend when one exists.
+ */
+async function decodeToRgba(bytes: ArrayBuffer): Promise<{ data: Uint8ClampedArray; width: number; height: number } | null> {
+	const builtIn = await decodeImageBytesBuiltIn(new Uint8Array(bytes));
+	if (builtIn || usingSoftwareCanvas()) {
+		return builtIn;
+	}
+	const decoded = await decodeDeferredImageBytes(bytes);
+	if (!decoded) {
+		return null;
+	}
+	try {
+		const temp = createTempCanvas(decoded.width, decoded.height);
+		if (!temp) {
+			return null;
+		}
+		canvasDrawImage(temp.ctx, decoded.drawable, 0, 0, decoded.width, decoded.height);
+		const px = canvasGetImageData(temp.ctx, 0, 0, decoded.width, decoded.height);
+		return { data: px.data, width: decoded.width, height: decoded.height };
+	} finally {
+		decoded.close();
+	}
+}
+
+/**
+ * `imageResampling: 'exact'`: resamples a deferred EMF+ image draw per
+ * device pixel the way GDI+ does (`emf-plus-image-resample.ts`, the same
+ * model the PNG output uses), returning the device-space block to embed at
+ * identity, or `null` when the image cannot be decoded here or GDI+'s
+ * filter for it is not modelled.
+ */
+async function resampleExact(
+	bytes: ArrayBuffer,
+	spec: DeferredImageResample,
+	surface: { width: number; height: number },
+): Promise<{ x: number; y: number; w: number; h: number; rgba: Uint8ClampedArray } | null> {
+	const pixels = await decodeToRgba(bytes);
+	if (!pixels) {
+		return null;
+	}
+	return resampleImage(pixels.data, pixels.width, pixels.height, spec, { w: surface.width, h: surface.height });
+}
+
+/**
  * Resolves deferred image draws into their reserved SVG slots (so each keeps
  * its recorded z-order and clip): browser-native formats are embedded
  * verbatim, BMP is decoded in JS, embedded metafiles become nested SVG, and
@@ -594,6 +720,14 @@ async function processDeferredImagesSvg(
 				continue;
 			}
 			const slot = (img.svgSlot as SvgNode | undefined) ?? svg.reserveSlot();
+			if (img.resample && options.imageResampling === 'exact' && !img.isMetafile) {
+				const block = await resampleExact(bytes, img.resample, svg.canvas);
+				if (block) {
+					svg.fillSlot(slot, { kind: 'rgba', data: block.rgba, width: block.w, height: block.h }, [1, 0, 0, 1, 0, 0], block.x, block.y, block.w, block.h);
+					continue;
+				}
+				emfWarn(`  Deferred image [${idx}]: exact resampling unavailable (image not decodable here); renderer scaling used`);
+			}
 			const natural = img.resample ? payloadSize(payload) : null;
 			if (img.resample && natural) {
 				// Exact source-rect → device mapping (crop, rotation, shear);
@@ -616,11 +750,12 @@ async function processDeferredImagesSvg(
  * with {@link svgTreeToReact}, or generate component source with
  * {@link svgTreeToJsx}.
  *
- * Unlike PNG output this needs no canvas implementation: vectors, text,
- * gradients, clipping, and bitmaps are all recorded in pure JavaScript. A
- * canvas backend, when present, is used only to evaluate destination-
- * reading raster operations exactly (see {@link SvgConvertOptions.exactRasterOps})
- * and to measure text.
+ * This needs no canvas implementation: vectors, text, gradients, clipping,
+ * and bitmaps are all recorded in pure JavaScript, and destination-reading
+ * raster operations are evaluated exactly against a raster mirror of the
+ * drawing (see {@link SvgConvertOptions.exactRasterOps}), which is the
+ * canvas backend when one exists (it also measures text) and the built-in
+ * pure-JavaScript rasteriser otherwise.
  *
  * @returns The root `<svg>` node, or `null` for an invalid/empty metafile.
  */
@@ -629,6 +764,20 @@ export async function convertMetafileToSvgTree(
 	options?: SvgConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<SvgNode | null> {
+	const svg = await replayToSvgContext(buffer, options, recursionDepth);
+	return svg ? svg.toTree({ includeSize: options?.includeSize }) : null;
+}
+
+/**
+ * Replays a metafile onto a new {@link SvgContext} (deferred images
+ * included) and returns the context itself, whose `shadow` holds the raster
+ * mirror. Internal: {@link convertMetafileToSvgTree} is the public entry.
+ */
+export async function replayToSvgContext(
+	buffer: ArrayBuffer,
+	options?: SvgConvertOptions,
+	recursionDepth: number = 0,
+): Promise<SvgContext | null> {
 	await ensureNodeCanvasModule();
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
 		return null;
@@ -651,7 +800,7 @@ export async function convertMetafileToSvgTree(
 	}
 	const target: SvgContext = svg;
 	await processDeferredImagesSvg(target, result.deferredImages, opts, recursionDepth);
-	return target.toTree({ includeSize: opts.includeSize });
+	return target;
 }
 
 /**

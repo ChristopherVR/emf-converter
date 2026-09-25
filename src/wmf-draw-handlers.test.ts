@@ -14,6 +14,7 @@ import {
 	META_POLYPOLYGON,
 	META_TEXTOUT,
 	META_EXTTEXTOUT,
+	META_PATBLT,
 } from './emf-constants';
 import type { WmfReplayCtx } from './emf-types';
 import { defaultState } from './emf-types';
@@ -145,6 +146,34 @@ describe('wmf-draw-handlers', () => {
 				handleWmfDrawRecord(wCtx, META_RECTANGLE, 0, 8, 10);
 				const ctx = wCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
 				expect(ctx.fillRect).not.toHaveBeenCalled();
+			});
+		});
+
+		// -- META_PATBLT --
+		describe('mETA_PATBLT', () => {
+			function patblt(rop: number): Record<string, { mock: { calls: unknown[][] } }> & { fillStyle: string } {
+				const wCtx = makeWCtx();
+				wCtx.state.brushColor = '#123456';
+				const d = 8;
+				wCtx.view.setUint32(d, rop, true);
+				wCtx.view.setInt16(d + 4, 20, true); // height
+				wCtx.view.setInt16(d + 6, 30, true); // width
+				wCtx.view.setInt16(d + 8, 5, true); // y
+				wCtx.view.setInt16(d + 10, 7, true); // x
+				handleWmfDrawRecord(wCtx, META_PATBLT, 0, d, 18);
+				return wCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }> & { fillStyle: string };
+			}
+
+			it('fills the rectangle with the brush for PATCOPY', () => {
+				const ctx = patblt(0x00f00021);
+				expect(ctx.fillRect.mock.calls[0]).toStrictEqual([7, 5, 30, 20]);
+				expect(ctx.fillStyle).toBe('#123456');
+			});
+
+			it('fills black / white for BLACKNESS / WHITENESS and ignores other ROPs', () => {
+				expect(patblt(0x00000042).fillStyle).toBe('#000000');
+				expect(patblt(0x00ff0062).fillStyle).toBe('#ffffff');
+				expect(patblt(0x005a0049).fillRect).not.toHaveBeenCalled();
 			});
 		});
 

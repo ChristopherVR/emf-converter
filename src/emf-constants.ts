@@ -264,6 +264,7 @@ export const META_CREATEPENINDIRECT = 0x02fa;
 export const META_CREATEBRUSHINDIRECT = 0x02fc;
 export const META_CREATEFONTINDIRECT = 0x02fb;
 export const META_TEXTOUT = 0x0521;
+export const META_PATBLT = 0x061d;
 export const META_EXTTEXTOUT = 0x0a32;
 export const META_SAVEDC = 0x001e;
 export const META_RESTOREDC = 0x0127;

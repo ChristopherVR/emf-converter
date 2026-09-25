@@ -1,10 +1,18 @@
 /**
  * EMR_EXTTEXTOUTW record handler.
  *
- * Honours the record's optional Dx array (per-glyph advance widths) exactly
- * when present, and the font's LOGFONT escapement (baseline rotation). See
- * `emf-gdi-text-layout.ts` for the pure layout math and the documented
- * limits of both.
+ * With `EmfConvertOptions.fonts`, the record is drawn by the GDI font
+ * engine (`gdi-text-render.ts`, `gdi-font-engine.ts`): the LOGFONT is
+ * realised from the supplied font files and every glyph is grid-fitted,
+ * scan-converted and placed the way GDI does, honouring ETO_OPAQUE,
+ * ETO_CLIPPED, ETO_PDY, ETO_GLYPH_INDEX, every TA_* alignment including
+ * TA_UPDATECP, the OPAQUE background, underline and strike-out.
+ *
+ * Without it (or when no supplied font can stand in), the canvas font
+ * engine draws the text: the record's optional Dx array (per-glyph advance
+ * widths) is honoured exactly when present, and the font's LOGFONT
+ * escapement (baseline rotation). See `emf-gdi-text-layout.ts` for the
+ * pure layout math and the documented limits of both.
  *
  * @module emf-gdi-draw-text
  */
@@ -17,6 +25,7 @@ import {
 } from './emf-canvas-helpers';
 import { EMR_EXTTEXTOUTW } from './emf-constants';
 import { gmx, gmy, gmw, gmh, gdiDeviceMatrix, gmapPoint, hasWorldRotation } from './emf-gdi-coord';
+import { drawGdiTextCall, ETO_GLYPH_INDEX, ETO_PDY } from './gdi-text-render';
 import {
 	cumulativeGlyphOffsets,
 	totalGlyphAdvance,
@@ -49,6 +58,60 @@ function readDxArray(
 		dx.push(view.getUint32(start + i * 4, true));
 	}
 	return dx;
+}
+
+/**
+ * Draws the record with the GDI font engine when `EmfConvertOptions.fonts`
+ * supplied a usable font (see `gdi-text-render.ts`). Returns false, having
+ * drawn nothing, otherwise.
+ */
+function drawWithFontEngine(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, nChars: number, offString: number): boolean {
+	const { ctx, view, state } = rCtx;
+	const fonts = rCtx.fonts;
+	if (!fonts) {
+		return false;
+	}
+	const options = view.getUint32(dataOff + 44, true);
+	const codes: number[] = [];
+	for (let i = 0; i < nChars; i++) {
+		codes.push(view.getUint16(offset + offString + i * 2, true));
+	}
+	const pdy = (options & ETO_PDY) !== 0;
+	const raw = readDxArray(view, offset, dataOff, pdy ? nChars * 2 : nChars, view.byteLength);
+	let dx: number[] | null = raw;
+	let dy: number[] | null = null;
+	if (raw && pdy) {
+		dx = [];
+		dy = [];
+		for (let i = 0; i < nChars; i++) {
+			dx.push(raw[i * 2] | 0);
+			dy.push(raw[i * 2 + 1] | 0);
+		}
+	}
+	const adv = drawGdiTextCall(ctx, fonts, state, {
+		codes,
+		glyphIndices: (options & ETO_GLYPH_INDEX) !== 0,
+		x: view.getInt32(dataOff + 28, true),
+		y: view.getInt32(dataOff + 32, true),
+		options,
+		rect: {
+			left: view.getInt32(dataOff + 48, true),
+			top: view.getInt32(dataOff + 52, true),
+			right: view.getInt32(dataOff + 56, true),
+			bottom: view.getInt32(dataOff + 60, true),
+		},
+		dx,
+		dy,
+		matrix: gdiDeviceMatrix(rCtx),
+	});
+	if (!adv) {
+		return false;
+	}
+	if (state.textAlign & 0x01) {
+		state.curX += adv.dx;
+		state.curY += adv.dy;
+	}
+	return true;
 }
 
 function horizontalAlign(textAlign: number): HAlign {
@@ -124,6 +187,9 @@ function handleExtTextOutW(
 	const offString = view.getUint32(dataOff + 40, true);
 	const viewEnd = view.byteLength;
 	if (nChars === 0 || offString === 0 || offset + offString + nChars * 2 > viewEnd) {
+		return true;
+	}
+	if (drawWithFontEngine(rCtx, offset, dataOff, nChars, offString)) {
 		return true;
 	}
 	const text = readUtf16LE(view, offset + offString, nChars);

@@ -80,6 +80,7 @@ export function replayEmfPlusRecords(
 	maxRecords: number = MAX_RECORDS_EMFPLUS_DEFAULT,
 	fontFamilyMap?: Record<string, string>,
 	textureCache?: EmfPlusTextureCache,
+	fonts?: import('./gdi-font-engine').GdiFontCollection,
 ): DeferredImageDraw[] {
 	const s = state ?? createEmfPlusState();
 	const rCtx: EmfPlusReplayCtx = {
@@ -104,6 +105,8 @@ export function replayEmfPlusRecords(
 		textureCache,
 		interpolationMode: s.interpolationMode,
 		pixelOffsetMode: s.pixelOffsetMode,
+		textRenderingHint: s.textRenderingHint,
+		fonts,
 	};
 
 	const end = offset + length;
@@ -215,6 +218,7 @@ export function replayEmfPlusRecords(
 		};
 		state.interpolationMode = rCtx.interpolationMode;
 		state.pixelOffsetMode = rCtx.pixelOffsetMode;
+		state.textRenderingHint = rCtx.textRenderingHint;
 	}
 
 	ctx.setTransform(1, 0, 0, 1, 0, 0);

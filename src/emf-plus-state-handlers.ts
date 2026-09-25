@@ -561,9 +561,12 @@ export function handleEmfPlusStateRecord(
 			rCtx.pixelOffsetMode = recFlags & 0xff;
 			return true;
 
+		case EMFPLUS_SETTEXTRENDERINGHINT:
+			rCtx.textRenderingHint = recFlags & 0xff;
+			return true;
+
 		// ---- rendering hints (accepted, ignored) ----
 		case EMFPLUS_SETANTIALIASMODE:
-		case EMFPLUS_SETTEXTRENDERINGHINT:
 		case EMFPLUS_SETCOMPOSITINGQUALITY:
 			return true;
 

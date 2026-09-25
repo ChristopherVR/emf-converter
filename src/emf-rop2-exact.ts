@@ -31,7 +31,14 @@
  * @module emf-rop2-exact
  */
 
-import { canvasGetImageData, canvasPutImageData, createTempCanvas, type Drawable } from './emf-canvas-helpers';
+import {
+	canvasGetImageData,
+	canvasPutImageData,
+	createTempCanvas,
+	rop2Paint,
+	type Drawable,
+	type Rop2ColorTransform,
+} from './emf-canvas-helpers';
 import {
 	R2_MASKPEN,
 	R2_MERGEPEN,
@@ -46,7 +53,7 @@ import {
 } from './emf-constants';
 import { evalRop3 } from './emf-rop3';
 import type { CanvasContext } from './emf-types';
-import { canReadBack } from './svg-context';
+import { canReadBack, isSvgContext } from './svg-context';
 
 /** ROP3-style truth-table index (bits 16..23 convention), S-independent, per bitwise ROP2 mode. */
 const ROP2_EXACT_INDEX: Record<number, number> = {
@@ -94,6 +101,20 @@ export function rop2Rop3Index(rop2: number): number | undefined {
 
 function packRgb(r: number, g: number, b: number): number {
 	return (r << 16) | (g << 8) | b;
+}
+
+/** `rop2TransformColor` (`emf-canvas-helpers.ts`) on a packed `0xRRGGBB` colour. */
+export function rop2TransformPacked(p: number, transform: Rop2ColorTransform): number {
+	switch (transform) {
+		case 'invert':
+			return ~p & 0xffffff;
+		case 'black':
+			return 0;
+		case 'white':
+			return 0xffffff;
+		default:
+			return p;
+	}
 }
 
 /** An integer device-pixel rectangle on the output canvas. */
@@ -282,6 +303,157 @@ function compositeOverlay(ctx: CanvasContext, box: PixelBox, scratch: Scratch, p
 	}
 }
 
+/** A blend-mode layer to composite after an exact raster-op overlay (see {@link splitUnknownDestination}). */
+export interface BlendLayer {
+	mode: GlobalCompositeOperation;
+	/** Straight RGBA, box-sized; alpha 0 leaves a pixel untouched. */
+	data: Uint8ClampedArray;
+}
+
+/** A blend-mode stand-in for one pixel of a raster op: paint `color` with `mode`. */
+export interface BlendApprox {
+	color: number;
+	mode: GlobalCompositeOperation;
+}
+
+/**
+ * The destination-unknown flags of `box` on `ctx`: only an SVG context
+ * whose raster mirror is the pure-JavaScript rasteriser has any (the pixels
+ * under text it cannot draw, see `software-raster.ts`). `null` when every
+ * destination pixel of the box is known.
+ */
+export function unknownDestination(ctx: CanvasContext, box: PixelBox): Uint8Array | null {
+	return isSvgContext(ctx) ? ctx.unknownPixels(box.x, box.y, box.w, box.h) : null;
+}
+
+/**
+ * Keeps a raster op exact over pixels whose destination the SVG backend's
+ * raster mirror does not know (glyphs it cannot rasterise), by moving each
+ * such pixel out of the exact `overlay` into a blend-mode layer the SVG
+ * renderer evaluates against what is really there:
+ *
+ * - A bitwise op's result, one bit at a time, is either constant, D, or
+ *   ~D. `resultFor(i, 0)` and `resultFor(i, 0xFFFFFF)` reveal which, per
+ *   bit: equal means constant; 0 then 1 means D; 1 then 0 means ~D.
+ * - A pixel whose result does not depend on D at all stays in the overlay:
+ *   exact regardless of what the destination is.
+ * - A pixel where every CHANNEL is wholly constant, D or ~D is expressed
+ *   exactly by two blend layers: `multiply` by 0 (constant channels) or 255
+ *   (the others), then `difference` with the constant, 0 (D) or 255 (~D).
+ *   This covers inversion, XOR/AND/OR with black, white and any colour
+ *   whose channels are 0 or 255 (the transparent-bitmap mask idiom,
+ *   highlight inversion, focus rectangles).
+ * - Any other pixel (a channel mixing D bits with constant bits, such as
+ *   XOR with 0x80) takes `approx(i)` when given, a blend mode approximating
+ *   the op, and otherwise keeps the value computed against the mirror.
+ *
+ * `overlay` (straight RGBA, `n` pixels, alpha 255 where the op paints) is
+ * modified in place; the returned layers are composited after it, in
+ * order.
+ */
+export function splitUnknownDestination(
+	overlay: Uint8ClampedArray,
+	n: number,
+	unknown: Uint8Array,
+	resultFor: (i: number, d: number) => number,
+	approx?: (i: number) => BlendApprox | null,
+): BlendLayer[] {
+	let multiply: Uint8ClampedArray | null = null;
+	let difference: Uint8ClampedArray | null = null;
+	const others = new Map<GlobalCompositeOperation, Uint8ClampedArray>();
+	const put = (layer: Uint8ClampedArray, i: number, c: number): void => {
+		layer[i * 4] = (c >> 16) & 0xff;
+		layer[i * 4 + 1] = (c >> 8) & 0xff;
+		layer[i * 4 + 2] = c & 0xff;
+		layer[i * 4 + 3] = 255;
+	};
+	for (let i = 0; i < n; i++) {
+		if (!unknown[i] || overlay[i * 4 + 3] === 0) {
+			continue;
+		}
+		const r0 = resultFor(i, 0);
+		const r1 = resultFor(i, 0xffffff);
+		if (r0 === r1) {
+			continue; // Independent of the destination: exact as computed.
+		}
+		let m = 0;
+		let x = 0;
+		let expressible = true;
+		for (let shift = 16; shift >= 0; shift -= 8) {
+			const a = (r0 >> shift) & 0xff;
+			const b = (r1 >> shift) & 0xff;
+			if (a === b) {
+				x |= a << shift;
+			} else if (a === 0 && b === 0xff) {
+				m |= 0xff << shift;
+			} else if (a === 0xff && b === 0) {
+				m |= 0xff << shift;
+				x |= 0xff << shift;
+			} else {
+				expressible = false;
+				break;
+			}
+		}
+		if (expressible) {
+			overlay[i * 4 + 3] = 0;
+			if (m !== 0xffffff) {
+				multiply ??= new Uint8ClampedArray(n * 4);
+				put(multiply, i, m);
+			}
+			if (x !== 0) {
+				difference ??= new Uint8ClampedArray(n * 4);
+				put(difference, i, x);
+			}
+			continue;
+		}
+		const a = approx?.(i);
+		if (a) {
+			overlay[i * 4 + 3] = 0;
+			// Pixels are disjoint, so an approximation shares the layer of its mode.
+			if (a.mode === 'multiply') {
+				multiply ??= new Uint8ClampedArray(n * 4);
+				put(multiply, i, a.color);
+				continue;
+			}
+			if (a.mode === 'difference') {
+				difference ??= new Uint8ClampedArray(n * 4);
+				put(difference, i, a.color);
+				continue;
+			}
+			let layer = others.get(a.mode);
+			if (!layer) {
+				layer = new Uint8ClampedArray(n * 4);
+				others.set(a.mode, layer);
+			}
+			put(layer, i, a.color);
+		}
+	}
+	const layers: BlendLayer[] = [];
+	if (multiply) {
+		layers.push({ mode: 'multiply', data: multiply });
+	}
+	if (difference) {
+		layers.push({ mode: 'difference', data: difference });
+	}
+	for (const [mode, data] of others) {
+		layers.push({ mode, data });
+	}
+	return layers;
+}
+
+/**
+ * Composites {@link splitUnknownDestination} layers at device `box` (only
+ * an SVG context produces them; see `SvgContext.blendPatch`).
+ */
+export function drawBlendLayers(ctx: CanvasContext, box: PixelBox, layers: ReadonlyArray<BlendLayer>): void {
+	if (!isSvgContext(ctx)) {
+		return;
+	}
+	for (const layer of layers) {
+		ctx.blendPatch(layer.data, box.x, box.y, box.w, box.h, layer.mode);
+	}
+}
+
 /**
  * Rewrites the pixels of `box` on `ctx` one at a time: `op(x, y, d)` gets a
  * device pixel and its current packed `0xRRGGBB` colour, and returns the new
@@ -292,11 +464,15 @@ function compositeOverlay(ctx: CanvasContext, box: PixelBox, scratch: Scratch, p
  * destination exactly as it was. Only when no scratch canvas can be created
  * are the pixels written back with `putImageData`, which cannot honour the
  * clip. Returns `false` (having drawn nothing) when pixel readback fails.
+ * Pixels whose destination is unknown to an SVG context's raster mirror
+ * are resolved by {@link splitUnknownDestination}, with `approx(x, y)` as
+ * the blend-mode fallback.
  */
 export function rewritePixels(
 	ctx: CanvasContext,
 	box: PixelBox,
 	op: (x: number, y: number, d: number) => number,
+	approx?: (x: number, y: number) => BlendApprox | null,
 ): boolean {
 	try {
 		const dest = canvasGetImageData(ctx, box.x, box.y, box.w, box.h);
@@ -321,7 +497,18 @@ export function rewritePixels(
 			canvasPutImageData(ctx, dest, box.x, box.y);
 			return true;
 		}
+		const unknown = unknownDestination(ctx, box);
+		const layers = unknown
+			? splitUnknownDestination(
+					od,
+					box.w * box.h,
+					unknown,
+					(i, d) => op(box.x + (i % box.w), box.y + Math.floor(i / box.w), d),
+					approx && ((i) => approx(box.x + (i % box.w), box.y + Math.floor(i / box.w))),
+				)
+			: [];
 		compositeOverlay(ctx, box, scratch, overlay);
+		drawBlendLayers(ctx, box, layers);
 		return true;
 	} catch {
 		return false;
@@ -362,7 +549,7 @@ export function paintWithRop2PerPixel(
 ): boolean {
 	const index = rop2Rop3Index(rop2);
 	if (index === undefined || !canReadBack(ctx)) {
-		// No readable destination (SVG output without a canvas backend): the
+		// No readable destination (SVG output with exactRasterOps: false): the
 		// caller's blend-mode approximation is the best available.
 		return false;
 	}
@@ -398,6 +585,9 @@ export function paintWithRop2PerPixel(
 		const paint = canvasGetImageData(sc, 0, 0, box.w, box.h);
 		const pd = paint.data;
 		const dd = index === 0xf0 ? null : canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
+		// The raw paint colour per pixel, kept for resolving unknown destinations.
+		const unknown = dd ? unknownDestination(ctx, box) : null;
+		const rawP = unknown ? new Int32Array(box.w * box.h) : null;
 		for (let i = 0; i < pd.length; i += 4) {
 			const a = pd[i + 3];
 			let covered: boolean;
@@ -420,6 +610,9 @@ export function paintWithRop2PerPixel(
 				continue;
 			}
 			const p = fixedP >= 0 ? fixedP : packRgb(pd[i], pd[i + 1], pd[i + 2]);
+			if (rawP) {
+				rawP[i >> 2] = p;
+			}
 			let c = p;
 			if (dd) {
 				const d = packRgb(dd[i], dd[i + 1], dd[i + 2]);
@@ -430,7 +623,19 @@ export function paintWithRop2PerPixel(
 			pd[i + 2] = c & 0xff;
 			pd[i + 3] = 255;
 		}
+		let layers: BlendLayer[] = [];
+		if (unknown && rawP) {
+			const approx = rop2Paint(rop2);
+			layers = splitUnknownDestination(
+				pd,
+				box.w * box.h,
+				unknown,
+				(i, d) => evalRop3(index, rawP[i], d, d),
+				(i) => ({ color: rop2TransformPacked(rawP[i], approx.colorTransform), mode: approx.gco }),
+			);
+		}
 		compositeOverlay(ctx, box, scratch, paint);
+		drawBlendLayers(ctx, box, layers);
 		return true;
 	} catch {
 		return false;

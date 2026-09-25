@@ -120,6 +120,25 @@ export interface GdiFont {
 	 * counterclockwise). Defaults to 0 (no rotation) when absent.
 	 */
 	escapementTenthDeg?: number;
+	/** The rest of the LOGFONT, for exact GDI font realisation (see {@link GdiFontDetails}). */
+	details?: GdiFontDetails;
+}
+
+/**
+ * LOGFONT fields beyond the ones every text path uses, kept so the GDI font
+ * engine (`gdi-font-engine.ts`) can realise the font exactly as GDI would.
+ */
+export interface GdiFontDetails {
+	/** `lfWidth` (logical units, 0 = the font's own aspect ratio). */
+	width: number;
+	/** `lfOrientation`, tenths of a degree. */
+	orientationTenthDeg: number;
+	/** `lfCharSet`. */
+	charSet: number;
+	/** `lfQuality` (0 DEFAULT .. 6 CLEARTYPE_NATURAL). */
+	quality: number;
+	/** `lfPitchAndFamily`. */
+	pitchAndFamily: number;
 }
 
 /**
@@ -186,6 +205,8 @@ export interface DrawState {
 	 * Threaded from {@link EmfConvertOptions.fontFamilyMap}.
 	 */
 	fontFamilyMap?: Record<string, string>;
+	/** The selected font's remaining LOGFONT fields (see {@link GdiFontDetails}). */
+	fontDetails?: GdiFontDetails;
 	/**
 	 * Binary raster-operation mode set via EMR_SETROP2 / META_SETROP2.
 	 * 13 = R2_COPYPEN (the default, normal source-over drawing).
@@ -276,6 +297,11 @@ export interface ReplayOptions {
 	textureCache?: EmfPlusTextureCache;
 	/** `EmfConvertOptions.gdiAntialias`: `false` rasterises GDI vector shapes without antialiasing. */
 	gdiAntialias?: boolean;
+	/**
+	 * Font files for exact GDI text (`EmfConvertOptions.fonts`), realised
+	 * by `gdi-font-engine.ts`; omitted, text uses the canvas font engine.
+	 */
+	fonts?: import('./gdi-font-engine').GdiFontCollection;
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +482,8 @@ export interface EmfPlusFont {
 	flags: number;
 	/** Font family name. */
 	family: string;
+	/** GDI+ `Unit` of `emSize` (0 World, 2 Pixel, 3 Point, ...); absent = World. */
+	unit?: number;
 }
 
 /**
@@ -641,6 +669,8 @@ export interface EmfPlusState {
 	interpolationMode?: number;
 	/** Active GDI+ `PixelOffsetMode` (`EmfPlusSetPixelOffsetMode`; 0 = Default when absent). */
 	pixelOffsetMode?: number;
+	/** Active GDI+ `TextRenderingHint` (`EmfPlusSetTextRenderingHint`; 0 = SystemDefault when absent). */
+	textRenderingHint?: number;
 }
 
 /**
@@ -721,6 +751,8 @@ export interface WmfReplayCtx {
 	state: DrawState;
 	/** Coordinate-mapping closures (logical -> canvas). */
 	coord: WmfCoord;
+	/** Font files for exact GDI text (see {@link ReplayOptions.fonts}). */
+	fonts?: import('./gdi-font-engine').GdiFontCollection;
 }
 
 // ---------------------------------------------------------------------------
@@ -807,6 +839,10 @@ export interface EmfPlusReplayCtx {
 	interpolationMode?: number;
 	/** Active GDI+ `PixelOffsetMode` (0 = Default when absent); see {@link EmfPlusState.pixelOffsetMode}. */
 	pixelOffsetMode?: number;
+	/** Active GDI+ `TextRenderingHint`; see {@link EmfPlusState.textRenderingHint}. */
+	textRenderingHint?: number;
+	/** Font files for exact text (see {@link ReplayOptions.fonts}). */
+	fonts?: import('./gdi-font-engine').GdiFontCollection;
 }
 
 // ---------------------------------------------------------------------------
@@ -880,4 +916,6 @@ export interface EmfGdiReplayCtx {
 	 * `fill()`/`stroke()`. Threaded from {@link ReplayOptions.gdiAntialias}.
 	 */
 	gdiAntialias?: boolean;
+	/** Font files for exact GDI text (see {@link ReplayOptions.fonts}). */
+	fonts?: import('./gdi-font-engine').GdiFontCollection;
 }

@@ -94,37 +94,107 @@ function paeth(a: number, b: number, c: number): number {
 	return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
+/** Sum of the filtered bytes read as signed values: the usual filter-choice heuristic. */
+function score(line: Uint8Array, stride: number): number {
+	let s = 0;
+	for (let i = 0; i < stride; i++) {
+		const v = line[i];
+		s += v < 128 ? v : 256 - v;
+	}
+	return s;
+}
+
 /** Filters RGBA scanlines, choosing a filter per row. */
-function filterScanlines(data: ArrayLike<number>, width: number, height: number): Uint8Array {
+function filterScanlines(input: ArrayLike<number>, width: number, height: number): Uint8Array {
+	const data =
+		input instanceof Uint8Array || input instanceof Uint8ClampedArray
+			? new Uint8Array(input.buffer, input.byteOffset, input.length)
+			: Uint8Array.from(input);
 	const stride = width * 4;
+	const words = data.byteOffset % 4 === 0 ? new Uint32Array(data.buffer, data.byteOffset, width * height) : null;
 	const out = new Uint8Array((stride + 1) * height);
-	const candidates = [new Uint8Array(stride), new Uint8Array(stride), new Uint8Array(stride), new Uint8Array(stride)];
+	const sub = new Uint8Array(stride);
+	const up = new Uint8Array(stride);
+	const pae = new Uint8Array(stride);
 	for (let y = 0; y < height; y++) {
 		const row = y * stride;
 		const prev = row - stride;
-		let best = 0;
-		let bestScore = Infinity;
-		for (let f = 0; f < 4; f++) {
-			const line = candidates[f];
-			let score = 0;
-			for (let i = 0; i < stride; i++) {
-				const x = data[row + i];
-				const a = i >= 4 ? data[row + i - 4] : 0;
-				const b = y > 0 ? data[prev + i] : 0;
-				const c = i >= 4 && y > 0 ? data[prev + i - 4] : 0;
-				const v =
-					f === 0 ? x : f === 1 ? (x - a) & 0xff : f === 2 ? (x - b) & 0xff : (x - paeth(a, b, c)) & 0xff;
-				line[i] = v;
-				score += v < 128 ? v : 256 - v;
+		const o = y * (stride + 1);
+		if (words && y > 0) {
+			// A row repeating the one above (large flat areas): Up filters it to zeros.
+			const w0 = row >> 2;
+			const p0 = prev >> 2;
+			let same = true;
+			for (let k = 0; k < width; k++) {
+				if (words[w0 + k] !== words[p0 + k]) {
+					same = false;
+					break;
+				}
 			}
-			if (score < bestScore) {
-				bestScore = score;
-				best = f;
+			if (same) {
+				out[o] = 2;
+				continue;
 			}
 		}
+		const none = data.subarray(row, row + stride);
+		const noneScore = score(none as Uint8Array, stride);
+		if (noneScore === 0) {
+			// An all-zero row (a blank area): filter None is already optimal.
+			out.set(none, o + 1);
+			continue;
+		}
+		let subScore = 0;
+		let upScore = 0;
+		for (let i = 0; i < 4 && i < stride; i++) {
+			const x = data[row + i];
+			sub[i] = x;
+			subScore += x < 128 ? x : 256 - x;
+		}
+		for (let i = 4; i < stride; i++) {
+			const v = (data[row + i] - data[row + i - 4]) & 0xff;
+			sub[i] = v;
+			subScore += v < 128 ? v : 256 - v;
+		}
+		if (y > 0) {
+			for (let i = 0; i < stride; i++) {
+				const v = (data[row + i] - data[prev + i]) & 0xff;
+				up[i] = v;
+				upScore += v < 128 ? v : 256 - v;
+			}
+		} else {
+			up.set(none);
+			upScore = noneScore;
+		}
 		// Filter codes: 0 None, 1 Sub, 2 Up, 4 Paeth.
-		out[y * (stride + 1)] = best === 3 ? 4 : best;
-		out.set(candidates[best], y * (stride + 1) + 1);
+		let best: Uint8Array = none as Uint8Array;
+		let code = 0;
+		let bestScore = noneScore;
+		if (subScore < bestScore) {
+			bestScore = subScore;
+			best = sub;
+			code = 1;
+		}
+		if (upScore < bestScore) {
+			bestScore = upScore;
+			best = up;
+			code = 2;
+		}
+		// Paeth only pays off on busy rows; flat artwork is already near zero.
+		if (y > 0 && bestScore > stride >> 3) {
+			for (let i = 0; i < stride; i++) {
+				const a = i >= 4 ? data[row + i - 4] : 0;
+				const b = data[prev + i];
+				const c = i >= 4 ? data[prev + i - 4] : 0;
+				pae[i] = (data[row + i] - paeth(a, b, c)) & 0xff;
+			}
+			const paethScore = score(pae, stride);
+			if (paethScore < bestScore) {
+				best = pae;
+				code = 4;
+			}
+		}
+		out[o] = code;
+		out.set(best, o + 1);
 	}
 	return out;
 }

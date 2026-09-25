@@ -26,14 +26,21 @@
  *   {@link SvgContext.toTree}).
  *
  * Raster operations that must READ the destination (exact ROP3 blits,
- * exact bitwise ROP2) cannot be expressed in SVG. When a real canvas backend
- * exists, the context mirrors every call onto a hidden "shadow" canvas of
- * the same size, so `getImageData` returns the true destination; a
- * subsequent `putImageData` is emitted as an `<image>` patch holding ONLY
- * the pixels that actually changed (unchanged pixels stay transparent, so
- * the vector content underneath keeps showing through). Without a canvas
- * backend (or with `exactRasterOps: false`) the destination reads back as
- * transparent and callers use their blend-mode approximations instead.
+ * exact bitwise ROP2, pattern fills combined through ROP2, non-antialiased
+ * GDI shapes) cannot be expressed in SVG. The context therefore mirrors
+ * every call onto a hidden "shadow" raster of the same size, so
+ * `getImageData` returns the true destination; the pixels such an operation
+ * changes are emitted as `<image>` patches (unchanged pixels stay
+ * transparent, so the vector content underneath keeps showing through).
+ * The shadow is the canvas backend when one exists, and otherwise the
+ * built-in pure-JavaScript rasteriser (`software-raster.ts`), which renders
+ * everything but glyphs. Pixels under text are therefore UNKNOWN to that
+ * shadow ({@link SvgContext.unknownPixels}); raster ops keep every result
+ * that does not depend on them exact and hand the rest to the SVG renderer
+ * as blend-mode layers ({@link SvgContext.blendPatch}, see
+ * `splitUnknownDestination` in `emf-rop2-exact.ts`). Only with
+ * `exactRasterOps: false` is there no shadow: the destination then reads
+ * back as transparent and callers use their blend-mode approximations.
  *
  * @module svg-context
  */
@@ -46,7 +53,9 @@ import {
 	createTempCanvas,
 } from './emf-canvas-helpers';
 import { encodePng } from './png-encoder';
-import { SoftwareRasterCanvas, isSoftwareRaster } from './software-raster';
+import { PathBuilder, flattenPath, pointInPolylines, type PathSeg } from './canvas-path';
+import { SoftwareRasterCanvas, SoftwareRasterContext, isSoftwareRaster } from './software-raster';
+import { estimateTextWidth, parseFont } from './text-estimate';
 import { bytesToBase64 } from './svg-tree';
 import type { SvgNode } from './svg-tree';
 import type { CanvasContext } from './emf-types';
@@ -172,7 +181,7 @@ function snapshotSource(source: unknown): ImagePayload | null {
 		return source.payload;
 	}
 	if (source instanceof SoftwareRasterCanvas) {
-		return { kind: 'rgba', data: source.pixels.slice(), width: source.width, height: source.height };
+		return { kind: 'rgba', data: source.pixels, width: source.width, height: source.height };
 	}
 	const size = getWidthHeight(source);
 	if (!size) {
@@ -294,11 +303,7 @@ type Paint = string | SvgGradient | SvgPattern;
 // Paths
 // ---------------------------------------------------------------------------
 
-type Seg =
-	| { t: 'M'; x: number; y: number }
-	| { t: 'L'; x: number; y: number }
-	| { t: 'C'; x1: number; y1: number; x2: number; y2: number; x: number; y: number }
-	| { t: 'Z' };
+type Seg = PathSeg;
 
 /**
  * Serialises a path compactly: relative commands, implicit command
@@ -412,59 +417,6 @@ function userSpaceDecimals(m: Matrix): number {
 	return Math.max(2, Math.min(8, Math.ceil(2 + Math.log10(scale))));
 }
 
-/** Flattens a path into closed polygons (for `isPointInPath`). */
-function flatten(segs: Seg[]): Array<Array<[number, number]>> {
-	const polys: Array<Array<[number, number]>> = [];
-	let cur: Array<[number, number]> | null = null;
-	let lx = 0;
-	let ly = 0;
-	for (const s of segs) {
-		if (s.t === 'M') {
-			cur = [[s.x, s.y]];
-			polys.push(cur);
-			lx = s.x;
-			ly = s.y;
-		} else if (s.t === 'L') {
-			cur?.push([s.x, s.y]);
-			lx = s.x;
-			ly = s.y;
-		} else if (s.t === 'C') {
-			const n = 16;
-			for (let i = 1; i <= n; i++) {
-				const t = i / n;
-				const u = 1 - t;
-				cur?.push([
-					u * u * u * lx + 3 * u * u * t * s.x1 + 3 * u * t * t * s.x2 + t * t * t * s.x,
-					u * u * u * ly + 3 * u * u * t * s.y1 + 3 * u * t * t * s.y2 + t * t * t * s.y,
-				]);
-			}
-			lx = s.x;
-			ly = s.y;
-		}
-	}
-	return polys;
-}
-
-function pointInPolys(polys: Array<Array<[number, number]>>, x: number, y: number, rule: CanvasFillRule): boolean {
-	let winding = 0;
-	let crossings = 0;
-	for (const poly of polys) {
-		const n = poly.length;
-		for (let i = 0; i < n; i++) {
-			const [x0, y0] = poly[i];
-			const [x1, y1] = poly[(i + 1) % n];
-			if (y0 <= y ? y1 > y : y1 <= y) {
-				const xi = x0 + ((y - y0) * (x1 - x0)) / (y1 - y0);
-				if (xi > x) {
-					crossings++;
-					winding += y1 > y0 ? 1 : -1;
-				}
-			}
-		}
-	}
-	return rule === 'evenodd' ? (crossings & 1) === 1 : winding !== 0;
-}
-
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -510,7 +462,10 @@ interface CtxState {
 export interface SvgContextOptions {
 	/** Prefix for every generated element id (keep unique per page when inlining several SVGs). */
 	idPrefix?: string;
-	/** Mirror drawing onto a real canvas so destination-reading raster ops stay exact. */
+	/**
+	 * Mirror drawing onto this raster (a canvas backend's context, or a
+	 * `SoftwareRasterContext`) so destination-reading raster ops stay exact.
+	 */
 	shadow?: CanvasContext | null;
 }
 
@@ -532,10 +487,8 @@ export class SvgContext {
 	private nextId = 0;
 	private state: CtxState;
 	private stack: CtxState[] = [];
-	private path: Seg[] = [];
-	/** Current point and subpath start, in DEVICE space. */
-	private cur: { x: number; y: number } | null = null;
-	private start: { x: number; y: number } | null = null;
+	/** The current path, in DEVICE space (see `canvas-path.ts`). */
+	private readonly pb = new PathBuilder();
 	private readonly defs: SvgNode[] = [];
 	private readonly defKeys = new Map<string, string>();
 	private readonly body: SvgNode[] = [];
@@ -570,6 +523,67 @@ export class SvgContext {
 	/** True when `getImageData` returns the real destination (a shadow canvas exists). */
 	get canReadPixels(): boolean {
 		return this.shadow !== null;
+	}
+
+	/** The shadow when it is the pure-JavaScript rasteriser (`software-raster.ts`). */
+	private get softShadow(): SoftwareRasterContext | null {
+		return this.shadow instanceof SoftwareRasterContext ? this.shadow : null;
+	}
+
+	/** True when the shadow can draw (or make a pattern from) `image` directly. */
+	private shadowAccepts(image: unknown): boolean {
+		if (image instanceof SvgImageSource) {
+			return false;
+		}
+		return this.softShadow !== null || !isSoftwareRaster(image);
+	}
+
+	/**
+	 * Flags (1 = unknown) for the device rectangle's pixels whose true value
+	 * the shadow does not know, or `null` when it knows them all. Only the
+	 * pure-JavaScript shadow has unknown pixels: it cannot rasterise glyphs,
+	 * so text (and deferred EMF+ images) leave their area unknown until
+	 * something opaque is painted over it (see `software-raster.ts`).
+	 */
+	unknownPixels(x: number, y: number, w: number, h: number): Uint8Array | null {
+		const soft = this.softShadow;
+		return soft ? soft.canvas.unknownIn(x, y, w, h) : null;
+	}
+
+	/**
+	 * Composites a device-space RGBA patch (straight alpha, `w` x `h` at
+	 * `x`, `y`, identity transform) with a blend mode, as an `<image>` with
+	 * `mix-blend-mode`, so the SVG renderer blends it with whatever is
+	 * really underneath (glyphs included). The active clip is applied to the
+	 * patch's own pixels, from the shadow's clip coverage, and the patch is
+	 * emitted OUTSIDE any clip group: a `clip-path` group may be rendered as
+	 * an isolated layer, which would blend the patch with nothing. The
+	 * shadow receives the same draw.
+	 */
+	blendPatch(rgba: Uint8ClampedArray, x: number, y: number, w: number, h: number, mode: GlobalCompositeOperation): void {
+		const soft = this.softShadow;
+		const data = rgba.slice();
+		if (soft) {
+			const cov = soft.clipCoverage(x, y, w, h);
+			if (cov) {
+				for (let i = 0; i < w * h; i++) {
+					data[i * 4 + 3] = (data[i * 4 + 3] * cov[i]) / 255;
+				}
+			}
+			soft.save();
+			soft.setTransform(1, 0, 0, 1, 0, 0);
+			soft.globalAlpha = 1;
+			soft.globalCompositeOperation = mode;
+			soft.imageSmoothingEnabled = false;
+			soft.drawImage({ data: rgba, width: w, height: h }, x, y);
+			soft.restore();
+		}
+		const node = this.imageNode({ kind: 'rgba', data, width: w, height: h }, x, y, w, h, true);
+		if (BLEND_MODES.has(mode)) {
+			node.attrs.style = `${node.attrs.style};mix-blend-mode:${mode}`;
+		}
+		this.body.push(node);
+		this.group = null;
 	}
 
 	private id(kind: string): string {
@@ -775,140 +789,42 @@ export class SvgContext {
 
 	// ---- path construction -----------------------------------------------
 
+	private get path(): Seg[] {
+		return this.pb.segs;
+	}
+
 	private map(x: number, y: number): { x: number; y: number } {
 		const m = this.state.transform;
 		return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] };
 	}
 
 	beginPath(): void {
-		this.path = [];
-		this.cur = null;
-		this.start = null;
+		this.pb.reset();
 		this.shadow?.beginPath();
 	}
-	private moveDevice(p: { x: number; y: number }): void {
-		this.path.push({ t: 'M', x: p.x, y: p.y });
-		this.cur = p;
-		this.start = p;
-	}
-	private lineDevice(p: { x: number; y: number }): void {
-		if (!this.cur) {
-			this.moveDevice(p);
-			return;
-		}
-		this.path.push({ t: 'L', x: p.x, y: p.y });
-		this.cur = p;
-	}
 	moveTo(x: number, y: number): void {
-		if (Number.isFinite(x) && Number.isFinite(y)) {
-			this.moveDevice(this.map(x, y));
-		}
+		this.pb.moveTo(this.state.transform, x, y);
 		this.shadow?.moveTo(x, y);
 	}
 	lineTo(x: number, y: number): void {
-		if (Number.isFinite(x) && Number.isFinite(y)) {
-			this.lineDevice(this.map(x, y));
-		}
+		this.pb.lineTo(this.state.transform, x, y);
 		this.shadow?.lineTo(x, y);
 	}
-	private curveUser(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void {
-		const p1 = this.map(x1, y1);
-		const p2 = this.map(x2, y2);
-		const p = this.map(x, y);
-		if (!this.cur) {
-			this.moveDevice(p1);
-		}
-		this.path.push({ t: 'C', x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, x: p.x, y: p.y });
-		this.cur = p;
-	}
 	bezierCurveTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void {
-		if ([x1, y1, x2, y2, x, y].every(Number.isFinite)) {
-			this.curveUser(x1, y1, x2, y2, x, y);
-		}
+		this.pb.bezierCurveTo(this.state.transform, x1, y1, x2, y2, x, y);
 		this.shadow?.bezierCurveTo(x1, y1, x2, y2, x, y);
 	}
 	quadraticCurveTo(cx: number, cy: number, x: number, y: number): void {
-		if ([cx, cy, x, y].every(Number.isFinite)) {
-			const m = this.state.transform;
-			const i = inv(m);
-			const p0 = this.cur && i ? { x: i[0] * this.cur.x + i[2] * this.cur.y + i[4], y: i[1] * this.cur.x + i[3] * this.cur.y + i[5] } : { x: cx, y: cy };
-			this.curveUser(
-				p0.x + (2 / 3) * (cx - p0.x),
-				p0.y + (2 / 3) * (cy - p0.y),
-				x + (2 / 3) * (cx - x),
-				y + (2 / 3) * (cy - y),
-				x,
-				y,
-			);
-		}
+		this.pb.quadraticCurveTo(this.state.transform, cx, cy, x, y);
 		this.shadow?.quadraticCurveTo(cx, cy, x, y);
 	}
 	closePath(): void {
-		if (this.cur) {
-			this.path.push({ t: 'Z' });
-			this.cur = this.start;
-		}
+		this.pb.closePath();
 		this.shadow?.closePath();
 	}
 	rect(x: number, y: number, w: number, h: number): void {
-		if ([x, y, w, h].every(Number.isFinite)) {
-			this.moveDevice(this.map(x, y));
-			this.lineDevice(this.map(x + w, y));
-			this.lineDevice(this.map(x + w, y + h));
-			this.lineDevice(this.map(x, y + h));
-			this.path.push({ t: 'Z' });
-			this.moveDevice(this.map(x, y));
-		}
+		this.pb.rect(this.state.transform, x, y, w, h);
 		this.shadow?.rect(x, y, w, h);
-	}
-
-	/** Appends an elliptical arc as cubic Beziers (user space, then mapped). */
-	private ellipseUser(
-		cx: number,
-		cy: number,
-		rx: number,
-		ry: number,
-		rotation: number,
-		startAngle: number,
-		endAngle: number,
-		ccw: boolean,
-	): void {
-		const TAU = Math.PI * 2;
-		let sweep = endAngle - startAngle;
-		if (!ccw) {
-			sweep = sweep >= TAU ? TAU : ((sweep % TAU) + TAU) % TAU;
-		} else {
-			sweep = -sweep >= TAU ? -TAU : -((((-sweep) % TAU) + TAU) % TAU);
-		}
-		const cosR = Math.cos(rotation);
-		const sinR = Math.sin(rotation);
-		const pt = (t: number): { x: number; y: number } => {
-			const ex = rx * Math.cos(t);
-			const ey = ry * Math.sin(t);
-			return { x: cx + ex * cosR - ey * sinR, y: cy + ex * sinR + ey * cosR };
-		};
-		const deriv = (t: number): { x: number; y: number } => {
-			const ex = -rx * Math.sin(t);
-			const ey = ry * Math.cos(t);
-			return { x: ex * cosR - ey * sinR, y: ex * sinR + ey * cosR };
-		};
-		const first = this.map(pt(startAngle).x, pt(startAngle).y);
-		this.lineDevice(first);
-		if (sweep === 0) {
-			return;
-		}
-		const n = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
-		const step = sweep / n;
-		const k = (4 / 3) * Math.tan(step / 4);
-		for (let i = 0; i < n; i++) {
-			const t0 = startAngle + i * step;
-			const t1 = t0 + step;
-			const p0 = pt(t0);
-			const p1 = pt(t1);
-			const d0 = deriv(t0);
-			const d1 = deriv(t1);
-			this.curveUser(p0.x + k * d0.x, p0.y + k * d0.y, p1.x - k * d1.x, p1.y - k * d1.y, p1.x, p1.y);
-		}
 	}
 	ellipse(
 		x: number,
@@ -920,79 +836,22 @@ export class SvgContext {
 		endAngle: number,
 		counterclockwise = false,
 	): void {
-		if (rx < 0 || ry < 0) {
-			throw new RangeError('The radii provided are negative');
-		}
-		if ([x, y, rx, ry, rotation, startAngle, endAngle].every(Number.isFinite)) {
-			this.ellipseUser(x, y, rx, ry, rotation, startAngle, endAngle, counterclockwise);
-		}
+		this.pb.ellipse(this.state.transform, x, y, rx, ry, rotation, startAngle, endAngle, counterclockwise);
 		this.shadow?.ellipse(x, y, rx, ry, rotation, startAngle, endAngle, counterclockwise);
 	}
 	arc(x: number, y: number, r: number, startAngle: number, endAngle: number, counterclockwise = false): void {
-		if (r < 0) {
-			throw new RangeError('The radius provided is negative');
-		}
-		if ([x, y, r, startAngle, endAngle].every(Number.isFinite)) {
-			this.ellipseUser(x, y, r, r, 0, startAngle, endAngle, counterclockwise);
-		}
+		this.pb.arc(this.state.transform, x, y, r, startAngle, endAngle, counterclockwise);
 		this.shadow?.arc(x, y, r, startAngle, endAngle, counterclockwise);
 	}
 	arcTo(x1: number, y1: number, x2: number, y2: number, r: number): void {
 		this.shadow?.arcTo(x1, y1, x2, y2, r);
-		if (![x1, y1, x2, y2, r].every(Number.isFinite)) {
-			return;
-		}
-		if (!this.cur) {
-			this.moveDevice(this.map(x1, y1));
-			return;
-		}
-		const i = inv(this.state.transform);
-		if (!i) {
-			return;
-		}
-		const x0 = i[0] * this.cur.x + i[2] * this.cur.y + i[4];
-		const y0 = i[1] * this.cur.x + i[3] * this.cur.y + i[5];
-		const v1x = x0 - x1;
-		const v1y = y0 - y1;
-		const v2x = x2 - x1;
-		const v2y = y2 - y1;
-		const l1 = Math.hypot(v1x, v1y);
-		const l2 = Math.hypot(v2x, v2y);
-		const cross = v1x * v2y - v1y * v2x;
-		if (r === 0 || l1 === 0 || l2 === 0 || Math.abs(cross) < 1e-12 * l1 * l2) {
-			this.lineDevice(this.map(x1, y1));
-			return;
-		}
-		const u1x = v1x / l1;
-		const u1y = v1y / l1;
-		const u2x = v2x / l2;
-		const u2y = v2y / l2;
-		const theta = Math.acos(Math.max(-1, Math.min(1, u1x * u2x + u1y * u2y)));
-		const dist = r / Math.tan(theta / 2);
-		const t1 = { x: x1 + u1x * dist, y: y1 + u1y * dist };
-		const t2 = { x: x1 + u2x * dist, y: y1 + u2y * dist };
-		const bx = u1x + u2x;
-		const by = u1y + u2y;
-		const bl = Math.hypot(bx, by);
-		const cd = r / Math.sin(theta / 2);
-		const c = { x: x1 + (bx / bl) * cd, y: y1 + (by / bl) * cd };
-		const a1 = Math.atan2(t1.y - c.y, t1.x - c.x);
-		const a2 = Math.atan2(t2.y - c.y, t2.x - c.x);
-		let delta = a2 - a1;
-		while (delta > Math.PI) {
-			delta -= 2 * Math.PI;
-		}
-		while (delta <= -Math.PI) {
-			delta += 2 * Math.PI;
-		}
-		this.ellipseUser(c.x, c.y, r, r, 0, a1, a1 + delta, delta < 0);
+		this.pb.arcTo(this.state.transform, x1, y1, x2, y2, r);
 	}
-
 	isPointInPath(x: number, y: number, fillRule: CanvasFillRule = 'nonzero'): boolean {
 		if (this.shadow && typeof this.shadow.isPointInPath === 'function') {
 			return this.shadow.isPointInPath(x, y, fillRule);
 		}
-		return pointInPolys(flatten(this.path), x, y, fillRule);
+		return pointInPolylines(flattenPath(this.path, 0.05), x, y, fillRule);
 	}
 
 	// ---- emission --------------------------------------------------------
@@ -1071,17 +930,60 @@ export class SvgContext {
 		if (!isIdentity(space)) {
 			attrs.gradientTransform = matrixAttr(space);
 		}
-		const stops = [...g.stops]
-			.map((s, i) => ({ ...s, i }))
-			.sort((a, b) => a.offset - b.offset || a.i - b.i)
-			.map((s) => {
-				const col = parseCssColor(s.color);
-				const sa: SvgNode['attrs'] = { offset: String(Math.round(s.offset * 1e6) / 1e6), 'stop-color': col.color };
-				if (col.alpha < 1) {
-					sa['stop-opacity'] = fmt(col.alpha);
+		const sorted = [...g.stops].map((s, i) => ({ ...s, i })).sort((a, b) => a.offset - b.offset || a.i - b.i);
+		const offsets = sorted.map((s) => s.offset);
+		if (g.type === 'linear') {
+			// A hard stop (two stops at one offset) whose seam lies within a
+			// hair of a column/row of pixel centres is decided differently by
+			// different renderers: Canvas evaluates the exact offset, browsers
+			// evaluate SVG gradients through a quantised table (measured in
+			// Chromium: about 0.1px of slop). Moving such a seam to a quarter
+			// pixel from the centre, on the side Canvas sees it, gives every
+			// renderer the same answer. Only an axis-aligned gradient can line a
+			// seam up with a whole column or row of centres; angled seams are
+			// left exactly where they are.
+			const dx = space[0] * (c[2] - c[0]) + space[2] * (c[3] - c[1]);
+			const dy = space[1] * (c[2] - c[0]) + space[3] * (c[3] - c[1]);
+			const x0 = space[0] * c[0] + space[2] * c[1] + space[4];
+			const y0 = space[1] * c[0] + space[3] * c[1] + space[5];
+			const lengthPx = Math.hypot(dx, dy);
+			const horizontal = lengthPx > 0 && Math.abs(dy) < 1e-9 * lengthPx;
+			const vertical = lengthPx > 0 && Math.abs(dx) < 1e-9 * lengthPx;
+			if (horizontal || vertical) {
+				const start = horizontal ? x0 : y0;
+				const span = horizontal ? dx : dy;
+				for (let k = 1; k < sorted.length; k++) {
+					const at = sorted[k].offset;
+					// Unrolled tile periods compute both stops of a seam separately,
+					// so compare with a tolerance rather than exactly.
+					if (Math.abs(at - sorted[k - 1].offset) > 1e-9 || at <= 0 || at >= 1) {
+						continue;
+					}
+					const seam = start + at * span;
+					const centre = Math.round(seam - 0.5) + 0.5;
+					const d = seam - centre;
+					if (Math.abs(d) >= 0.1) {
+						continue;
+					}
+					// Along the gradient axis: is the pixel centre before the seam?
+					const centreBefore = span > 0 ? d >= 0 : d < 0;
+					const moved = (centre + (centreBefore === span > 0 ? 0.25 : -0.25) - start) / span;
+					const prev = k >= 2 ? offsets[k - 2] : 0;
+					const next = k + 1 < sorted.length ? sorted[k + 1].offset : 1;
+					const clamped = Math.min(Math.max(moved, prev), next);
+					offsets[k - 1] = clamped;
+					offsets[k] = clamped;
 				}
-				return { tag: 'stop', attrs: sa };
-			});
+			}
+		}
+		const stops = sorted.map((s, k) => {
+			const col = parseCssColor(s.color);
+			const sa: SvgNode['attrs'] = { offset: String(Math.round(offsets[k] * 1e6) / 1e6), 'stop-color': col.color };
+			if (col.alpha < 1) {
+				sa['stop-opacity'] = fmt(col.alpha);
+			}
+			return { tag: 'stop', attrs: sa };
+		});
 		return { tag: g.type === 'linear' ? 'linearGradient' : 'radialGradient', attrs, children: stops };
 	}
 
@@ -1278,7 +1180,7 @@ export class SvgContext {
 			return null;
 		}
 		let real: CanvasPattern | null = null;
-		if (this.shadow && !isSoftwareRaster(image) && !(image instanceof SvgImageSource)) {
+		if (this.shadow && this.shadowAccepts(image)) {
 			try {
 				real = (this.shadow.createPattern as unknown as (i: unknown, r: string) => CanvasPattern | null).call(
 					this.shadow,
@@ -1323,7 +1225,22 @@ export class SvgContext {
 		this.fillPath(this.path, fillRule);
 		this.state.fillStyle = saved;
 		this.state.transform = savedT;
-		if (this.shadow) {
+		if (this.softShadow) {
+			// Mirror exactly what the SVG shows: the tile, unfiltered, under the path's coverage.
+			const temp = new SoftwareRasterCanvas(tile.width, tile.height);
+			temp.ctx.putImageData({ data: tile.rgba, width: tile.width, height: tile.height }, 0, 0);
+			const real = this.softShadow.createPattern(temp, 'repeat');
+			if (real) {
+				real.setTransform({ a: cellW, b: 0, c: 0, d: cellH, e: originX, f: originY });
+				const s = this.softShadow;
+				s.save();
+				s.setTransform(1, 0, 0, 1, 0, 0);
+				s.imageSmoothingEnabled = false;
+				s.fillStyle = real;
+				s.fill(fillRule);
+				s.restore();
+			}
+		} else if (this.shadow) {
 			// Keep the destination mirror in step with a plain pixel fill.
 			const temp = createTempCanvas(tile.width, tile.height);
 			if (temp && !isSoftwareRaster(temp.canvas)) {
@@ -1420,10 +1337,72 @@ export class SvgContext {
 		this.emit({ tag: 'text', attrs, text });
 	}
 
+	/**
+	 * Emits one GDI text run as a single `<text>` whose glyphs sit at the
+	 * exact per-glyph positions GDI would use (`x`/`y` lists, one entry per
+	 * UTF-16 code unit), in device space or, for a rotated run, in the run's
+	 * own frame under `matrix`. `fontSize` is the realised em height in
+	 * pixels; `scaleX` stretches it horizontally (LOGFONT `lfWidth`).
+	 * `aliased` asks the viewer for non-antialiased text rendering
+	 * (`text-rendering="optimizeSpeed"`), the closest SVG has to GDI's
+	 * NONANTIALIASED_QUALITY. Does not touch the shadow canvas (the caller
+	 * paints its exact raster there).
+	 */
+	fillGlyphRun(run: SvgGlyphRun): void {
+		if (!run.text || run.xs.length === 0) {
+			return;
+		}
+		const paint = this.resolvePaint(run.fill, IDENTITY);
+		if (!paint) {
+			return;
+		}
+		const attrs: SvgNode['attrs'] = {
+			x: run.xs.map(fmt).join(' '),
+			y: run.ys.every((v) => v === run.ys[0]) ? fmt(run.ys[0]) : run.ys.map(fmt).join(' '),
+		};
+		let m: Matrix | null = run.matrix ? [...run.matrix] as Matrix : null;
+		if (run.scaleX && run.scaleX !== 1) {
+			const s: Matrix = [run.scaleX, 0, 0, 1, 0, 0];
+			m = m ? mul(m, s) : s;
+			attrs.x = run.xs.map((v) => fmt(v / run.scaleX!)).join(' ');
+		}
+		if (m && !isIdentity(m)) {
+			attrs.transform = matrixAttr(m);
+		}
+		attrs['font-family'] = run.fontFamily;
+		attrs['font-size'] = fmt(run.fontSize);
+		if (run.fontWeight && run.fontWeight !== 400) {
+			attrs['font-weight'] = String(run.fontWeight);
+		}
+		if (run.italic) {
+			attrs['font-style'] = 'italic';
+		}
+		if (run.aliased) {
+			attrs['text-rendering'] = 'optimizeSpeed';
+		}
+		attrs.fill = paint.value;
+		if (paint.opacity < 1) {
+			attrs['fill-opacity'] = fmt(paint.opacity);
+		}
+		attrs['xml:space'] = 'preserve';
+		this.blendStyle(attrs);
+		this.emit({ tag: 'text', attrs, text: run.text });
+	}
+
 	// ---- images & pixels -------------------------------------------------
 
 	drawImage(image: unknown, ...args: number[]): void {
-		if (this.shadow && !isSoftwareRaster(image) && !(image instanceof SvgImageSource)) {
+		if (this.softShadow) {
+			const source =
+				image instanceof SvgImageSource
+					? image.payload.kind === 'rgba'
+						? { data: image.payload.data, width: image.payload.width, height: image.payload.height }
+						: null
+					: image;
+			if (source) {
+				this.softShadow.drawImage(source, ...args);
+			}
+		} else if (this.shadow && this.shadowAccepts(image)) {
 			try {
 				(this.shadow.drawImage as unknown as (...a: unknown[]) => void).call(this.shadow, image, ...args);
 			} catch {
@@ -1432,11 +1411,11 @@ export class SvgContext {
 		} else if (this.shadow && isSoftwareRaster(image)) {
 			this.mirrorSoftwareDraw(image as SoftwareRasterCanvas, args);
 		}
-		let payload = snapshotSource(image);
 		const size = getWidthHeight(image);
-		if (!payload || !size) {
+		if (!size) {
 			return;
 		}
+		let payload: ImagePayload | null;
 		let dx: number;
 		let dy: number;
 		let dw: number;
@@ -1444,17 +1423,35 @@ export class SvgContext {
 		if (args.length >= 8) {
 			const [sx, sy, sw, sh] = args;
 			[, , , , dx, dy, dw, dh] = args;
-			const cropped = cropPayload(payload, sx, sy, sw, sh);
-			if (!cropped) {
+			if (image instanceof SoftwareRasterCanvas) {
+				// Read only the source rectangle (a reused scratch canvas can be far larger).
+				const x0 = Math.max(0, Math.floor(Math.min(sx, sx + sw)));
+				const y0 = Math.max(0, Math.floor(Math.min(sy, sy + sh)));
+				const x1 = Math.min(image.width, Math.ceil(Math.max(sx, sx + sw)));
+				const y1 = Math.min(image.height, Math.ceil(Math.max(sy, sy + sh)));
+				payload =
+					x1 > x0 && y1 > y0
+						? { kind: 'rgba', data: image.readRgba(x0, y0, x1 - x0, y1 - y0), width: x1 - x0, height: y1 - y0 }
+						: null;
+			} else {
+				const full = snapshotSource(image);
+				payload = full && cropPayload(full, sx, sy, sw, sh);
+			}
+			if (!payload) {
 				return;
 			}
-			payload = cropped;
-		} else if (args.length >= 4) {
-			[dx, dy, dw, dh] = args;
 		} else {
-			[dx, dy] = args;
-			dw = size.w;
-			dh = size.h;
+			payload = snapshotSource(image);
+			if (!payload) {
+				return;
+			}
+			if (args.length >= 4) {
+				[dx, dy, dw, dh] = args;
+			} else {
+				[dx, dy] = args;
+				dw = size.w;
+				dh = size.h;
+			}
 		}
 		if (![dx, dy, dw, dh].every(Number.isFinite) || dw === 0 || dh === 0 || this.state.globalAlpha <= 0) {
 			return;
@@ -1569,9 +1566,17 @@ export class SvgContext {
 	 * Reserves a placeholder at the current paint position (and clip), for
 	 * an image whose content is only available after async decoding. Keeps
 	 * the image in its true z-order instead of painting it on top of
-	 * everything recorded after it.
+	 * everything recorded after it. `deviceQuad` (flat `x, y` corners in
+	 * device space), when given, is where the image will land; the pure-
+	 * JavaScript shadow marks that area unknown.
 	 */
-	reserveSlot(): SvgNode {
+	reserveSlot(deviceQuad?: ReadonlyArray<number>): SvgNode {
+		// The shadow never sees the image (it is decoded after replay), so a
+		// raster op reading this area later must not trust the shadow there.
+		const soft = this.softShadow;
+		if (soft && deviceQuad && deviceQuad.length >= 6) {
+			soft.canvas.markUnknown(deviceQuad, null);
+		}
 		const slot: SvgNode = { tag: 'g', attrs: {}, children: [] };
 		this.emit(slot);
 		return slot;
@@ -1689,37 +1694,25 @@ async function payloadToUrl(p: ImagePayload): Promise<string> {
 // Font helpers
 // ---------------------------------------------------------------------------
 
-/** Parses the Canvas font shorthand the replay code produces. */
-export function parseFont(font: string): { style: string; weight: string; size: number; family: string } {
-	const m = /^\s*((?:(?:italic|oblique|normal|bold|bolder|lighter|small-caps|\d{3})\s+)*)([\d.]+)px\s+(.+)$/i.exec(font);
-	if (!m) {
-		return { style: '', weight: '', size: 10, family: 'sans-serif' };
-	}
-	const tokens = m[1].trim().split(/\s+/).filter(Boolean);
-	const style = tokens.find((t) => /^(italic|oblique)$/i.test(t)) ?? '';
-	const weight = tokens.find((t) => /^(bold|bolder|lighter|\d{3})$/i.test(t)) ?? '';
-	return { style, weight, size: parseFloat(m[2]), family: m[3].trim() };
-}
+export { estimateTextWidth, parseFont };
 
-/** Rough advance-width estimate used only when no canvas exists to measure text. */
-export function estimateTextWidth(text: string, size: number): number {
-	let em = 0;
-	for (const ch of text) {
-		if (/[ilj.,;:'!|]/.test(ch)) {
-			em += 0.28;
-		} else if (/[mwMW@]/.test(ch)) {
-			em += 0.83;
-		} else if (/[A-Z0-9]/.test(ch)) {
-			em += 0.64;
-		} else if (ch === ' ') {
-			em += 0.28;
-		} else if (ch.charCodeAt(0) > 0x2e7f) {
-			em += 1;
-		} else {
-			em += 0.52;
-		}
-	}
-	return em * size;
+/** One positioned GDI text run for {@link SvgContext.fillGlyphRun}. */
+export interface SvgGlyphRun {
+	/** The run's characters (one per position). */
+	text: string;
+	/** Per-character x and y (device, or run-frame units under `matrix`). */
+	xs: number[];
+	ys: number[];
+	/** Frame-to-device matrix `[a, b, c, d, e, f]` for rotated text, or null. */
+	matrix: [number, number, number, number, number, number] | null;
+	/** Horizontal stretch (lfWidth), 1 = none. */
+	scaleX?: number;
+	fontFamily: string;
+	fontSize: number;
+	fontWeight: number;
+	italic: boolean;
+	aliased: boolean;
+	fill: string;
 }
 
 /** True when `ctx` is an {@link SvgContext}. */

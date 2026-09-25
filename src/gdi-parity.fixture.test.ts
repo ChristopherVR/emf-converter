@@ -11,9 +11,10 @@
  * the device origin), so a residual is a real rendering difference, never
  * a registration offset.
  */
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 
-import { compareFixture } from './__fixtures__/gdi-parity-harness';
+import { compareFixture, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
+import { setSoftwareCanvasOnly } from './emf-canvas-helpers';
 import type { EmfConvertOptions } from './index';
 
 interface ParityCase {
@@ -261,6 +262,121 @@ const IMAGE_DRAW_CASES: ParityCase[] = [close('image-draw-png', 0.001)];
  */
 const TEXTURE_FILL_CASES: ParityCase[] = [exact('texture-fill-compressed')];
 
+/**
+ * Text drawn by the GDI font engine (`EmfConvertOptions.fonts`, see
+ * `gdi-font-engine.ts`) from the same Windows font files GDI used: the
+ * `text-*` WMF fixtures and the `textx-*` sheets (category `text-extra` in
+ * `GdiFixtures.cs`): five faces at 8..72 px in every LOGFONT quality, both
+ * lfHeight signs, weights, italic, underline, strike-out, lfWidth, Dx /
+ * ETO_PDY / ETO_OPAQUE / ETO_CLIPPED / ETO_GLYPH_INDEX, every TA_*
+ * alignment and TA_UPDATECP, OPAQUE backgrounds, escapement, world
+ * rotation, the same through WMF, and EMF+ DrawString per
+ * TextRenderingHint. `maxMismatch` is the measured share (tolerance 8)
+ * with headroom; the comments give the measurement.
+ *
+ * What is left, by category (details in the module docs):
+ * - non-antialiased (mono) text: under 0.03% on every sheet, a handful of
+ *   single pixels per line where GDI's grid-fitting of a diagonal stroke
+ *   differs from this interpreter by 1/64 pixel;
+ * - grayscale (ANTIALIASED_QUALITY): the same, plus GDI's
+ *   luminance-dependent contrast for coloured text (`textx-color-aa`);
+ * - ClearType (also DEFAULT/DRAFT/PROOF_QUALITY, which Windows renders as
+ *   ClearType): 3..10%, GDI's "compatible width" ClearType grid-fitting is
+ *   approximated;
+ * - rotated text: glyphs at non-axis angles and GDI's rounded rotation
+ *   matrix (0.3..1.5%);
+ * - EMF+ AntiAlias / SingleBitPerPixel / ClearType hints: GDI+'s own
+ *   rasterizer and layout, approximated;
+ * - `Helv` and `MS Shell Dlg` at a cell height: GDI used the bitmap
+ *   `MS Sans Serif` (.fon), which is not supported.
+ */
+const fontCase = (name: string, ext: 'emf' | 'wmf', maxMismatch: number): ParityCase => ({
+	name,
+	ext,
+	tolerance: 8,
+	maxMismatch,
+});
+
+const FONT_ENGINE_CASES: ParityCase[] = [
+	fontCase('rotate-text-25deg', 'emf', 0.0182), // measured 1.460%
+	fontCase('text-arial-hm13', 'wmf', 0.0006), // measured 0.029%
+	fontCase('text-arial-hm20', 'wmf', 0.0004), // measured 0.007%
+	fontCase('text-arial-hp18', 'wmf', 0), // measured 0.000%
+	fontCase('text-couriernew-hm13', 'wmf', 0), // measured 0.000%
+	fontCase('text-couriernew-hm20', 'wmf', 0), // measured 0.000%
+	fontCase('text-couriernew-hp18', 'wmf', 0), // measured 0.000%
+	fontCase('text-helv-hm13', 'wmf', 0.029), // measured 2.307%
+	fontCase('text-helv-hm20', 'wmf', 0.12), // measured 9.571%
+	fontCase('text-helv-hp18', 'wmf', 0.0635), // measured 5.078%
+	fontCase('text-msshelldlg-hm13', 'wmf', 0.0009), // measured 0.057%
+	fontCase('text-msshelldlg-hm20', 'wmf', 0), // measured 0.000%
+	fontCase('text-msshelldlg-hp18', 'wmf', 0.051), // measured 4.071%
+	fontCase('text-nosuchfacexyz-hm13', 'wmf', 0), // measured 0.000%
+	fontCase('text-nosuchfacexyz-hm20', 'wmf', 0), // measured 0.000%
+	fontCase('text-nosuchfacexyz-hp18', 'wmf', 0.0005), // measured 0.021%
+	fontCase('text-timesnewroman-hm13', 'wmf', 0), // measured 0.000%
+	fontCase('text-timesnewroman-hm20', 'wmf', 0), // measured 0.000%
+	fontCase('text-timesnewroman-hp18', 'wmf', 0), // measured 0.000%
+	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
+	fontCase('textx-arial-aa', 'emf', 0.0015), // measured 0.122%
+	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
+	fontCase('textx-arial-cleartype', 'emf', 0.1009), // measured 8.074%
+	fontCase('textx-arial-ctnatural', 'emf', 0.21), // measured 16.501%
+	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
+	fontCase('textx-arial-q0-default', 'emf', 0.1009), // measured 8.074%
+	fontCase('textx-arial-q1-draft', 'emf', 0.1009), // measured 8.074%
+	fontCase('textx-arial-q2-proof', 'emf', 0.1009), // measured 8.074%
+	fontCase('textx-arial-styles-aa', 'emf', 0.0009), // measured 0.059%
+	fontCase('textx-arial-styles-mono', 'emf', 0.0006), // measured 0.027%
+	fontCase('textx-color-aa', 'emf', 0.017), // measured 1.352%
+	fontCase('textx-color-cleartype', 'emf', 0.036), // measured 2.850%
+	fontCase('textx-color-mono', 'emf', 0.0003), // measured 0.005%
+	fontCase('textx-couriernew-aa', 'emf', 0.0004), // measured 0.010%
+	fontCase('textx-couriernew-cell-mono', 'emf', 0.0004), // measured 0.011%
+	fontCase('textx-couriernew-mono', 'emf', 0.0004), // measured 0.010%
+	fontCase('textx-couriernew-styles-mono', 'emf', 0.0004), // measured 0.012%
+	fontCase('textx-escapement-aa', 'emf', 0.0034), // measured 0.270%
+	fontCase('textx-escapement-mono', 'emf', 0.0034), // measured 0.270%
+	fontCase('textx-eto-aa', 'emf', 0.0062), // measured 0.499%
+	fontCase('textx-eto-mono', 'emf', 0.0054), // measured 0.435%
+	fontCase('textx-opaque-aa', 'emf', 0.0003), // measured 0.001%
+	fontCase('textx-opaque-mono', 'emf', 0.0003), // measured 0.004%
+	fontCase('textx-plus-antialias', 'emf', 0.204), // measured 16.320%
+	fontCase('textx-plus-antialiasgridfit', 'emf', 0.068), // measured 5.405%
+	fontCase('textx-plus-cleartype', 'emf', 0.1827), // measured 14.615%
+	fontCase('textx-plus-singlebit', 'emf', 0.12), // measured 9.420%
+	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0009), // measured 0.065%
+	fontCase('textx-plus-systemdefault', 'emf', 0.0009), // measured 0.065%
+	fontCase('textx-segoeui-aa', 'emf', 0.0006), // measured 0.031%
+	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
+	fontCase('textx-segoeui-cleartype', 'emf', 0.073), // measured 5.832%
+	fontCase('textx-segoeui-mono', 'emf', 0.0004), // measured 0.015%
+	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
+	fontCase('textx-tahoma-aa', 'emf', 0.0012), // measured 0.092%
+	fontCase('textx-tahoma-cell-mono', 'emf', 0.0005), // measured 0.019%
+	fontCase('textx-tahoma-mono', 'emf', 0.0005), // measured 0.020%
+	fontCase('textx-tahoma-styles-mono', 'emf', 0.0006), // measured 0.028%
+	fontCase('textx-timesnewroman-aa', 'emf', 0.0012), // measured 0.092%
+	fontCase('textx-timesnewroman-cell-mono', 'emf', 0.0005), // measured 0.019%
+	fontCase('textx-timesnewroman-mono', 'emf', 0.0004), // measured 0.013%
+	fontCase('textx-timesnewroman-styles-mono', 'emf', 0.0004), // measured 0.012%
+	fontCase('textx-wmf-align-mono', 'wmf', 0), // measured 0.000%
+	fontCase('textx-wmf-arial-aa', 'wmf', 0.0015), // measured 0.122%
+	fontCase('textx-wmf-arial-mono', 'wmf', 0.0005), // measured 0.017%
+	fontCase('textx-wmf-arial-styles-mono', 'wmf', 0.0006), // measured 0.027%
+	fontCase('textx-wmf-couriernew-mono', 'wmf', 0.0004), // measured 0.010%
+	fontCase('textx-wmf-escapement-mono', 'wmf', 0.0038), // measured 0.305%
+	fontCase('textx-wmf-eto-mono', 'wmf', 0.0003), // measured 0.004%
+	fontCase('textx-wmf-opaque-mono', 'wmf', 0.0003), // measured 0.004%
+	fontCase('textx-wmf-segoeui-mono', 'wmf', 0.0004), // measured 0.015%
+	fontCase('textx-wmf-tahoma-mono', 'wmf', 0.0005), // measured 0.020%
+	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.0006), // measured 0.028%
+	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0.0005), // measured 0.020%
+	fontCase('textx-wmf-timesnewroman-styles-mono', 'wmf', 0.0004), // measured 0.012%
+	fontCase('textx-world-aa', 'emf', 0.0043), // measured 0.346%
+	fontCase('textx-world-mono', 'emf', 0.0035), // measured 0.282%
+];
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -334,11 +450,59 @@ describe('GDI ground-truth parity', () => {
 		});
 	});
 
+	describe.skipIf(!windowsFonts())('GDI text via the font engine (Windows fonts)', () => {
+		it.each(FONT_ENGINE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
 	describe('EMF+ TextureFill brush with a compressed embedded image', () => {
 		it.each(TEXTURE_FILL_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
+	});
+});
+
+/**
+ * The same cases rendered by the built-in pure-JavaScript rasteriser
+ * (`software-raster.ts`), as in plain Node.js without `@napi-rs/canvas`.
+ * Every bound above holds unchanged: the ROP3 cases and the texture fill
+ * stay pixel-exact (raster-op evaluation is exact given exact operands),
+ * and the anti-aliased cases differ from the `@napi-rs/canvas` output only
+ * along edges, where this rasteriser's coverage is the exact covered area
+ * (Skia's approximates it; see `software-raster-coverage.ts`). Measured
+ * against GDI: rotate-ellipse-40deg 2.00% (napi 1.91%), rotate-bitblt-25deg
+ * 0.81% (0.67%), rop2-bitwise-grid 0.28% (0.23%), pattern-fill-ellipse-color
+ * 3.01% (3.08%), every other case equal to the napi figure. Text cannot be
+ * rasterised without a font engine, so the text fixture yields no PNG.
+ */
+describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no canvas backend)', () => {
+	beforeAll(() => setSoftwareCanvasOnly(true));
+	afterAll(() => setSoftwareCanvasOnly(false));
+
+	const cases = [
+		...ROP3_CASES,
+		...LINEAR_TILE_CASES,
+		...PATH_TILE_CASES,
+		...PATTERN_FILL_CASES,
+		...ROTATION_CASES,
+		...ROP2_EXACT_CASES,
+		...ROTATION_AFFINE_CASES.filter((c) => c.name !== 'rotate-text-25deg'),
+		...ALIASED_CASES,
+		...IMAGE_DRAW_CASES,
+		...TEXTURE_FILL_CASES,
+	];
+	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
+		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
+		expect(diff).not.toBeNull();
+		expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+	});
+
+	it('returns no PNG for a metafile with text', async () => {
+		expect(await renderFixture('rotate-text-25deg.emf')).toBeNull();
 	});
 });

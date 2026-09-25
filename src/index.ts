@@ -6,8 +6,9 @@
  *
  * - PNG data URLs, by replaying the drawing onto an HTML Canvas,
  *   OffscreenCanvas, or (in plain Node.js, with the optional
- *   `@napi-rs/canvas` package) a Node canvas backend:
- *   {@link convertMetafileToDataUrl}
+ *   `@napi-rs/canvas` package) a Node canvas backend, and with no canvas at
+ *   all the built-in pure-JavaScript rasteriser (for drawings without text,
+ *   which needs a font engine): {@link convertMetafileToDataUrl}
  * - SVG, by replaying the same drawing onto an SVG recorder that needs no
  *   canvas at all: {@link convertMetafileToSvg} (markup),
  *   {@link convertMetafileToSvgDataUrl} (base64 data URL), and

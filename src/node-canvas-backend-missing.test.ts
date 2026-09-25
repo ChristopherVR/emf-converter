@@ -1,8 +1,9 @@
 /**
  * Confirms that when `@napi-rs/canvas` genuinely cannot be imported (not
  * installed, or the native binary is missing for the current platform),
- * `convertMetafileToDataUrl` degrades to `null` in plain Node.js instead of
- * throwing.
+ * `convertMetafileToDataUrl` never throws in plain Node.js: it renders
+ * through the built-in pure-JavaScript rasteriser when the drawing has no
+ * text, and returns `null` when it has text (which needs a font engine).
  *
  * This mocks the dynamic `import('@napi-rs/canvas')` call inside
  * `ensureNodeCanvasModule` (in `emf-canvas-helpers.ts`) to reject, simulating
@@ -19,19 +20,22 @@ vi.mock('@napi-rs/canvas', () => {
 	throw new Error('Cannot find module \'@napi-rs/canvas\' (simulated, not installed)');
 });
 
+function load(rel: string): ArrayBuffer {
+	const bytes = readFileSync(fileURLToPath(new URL(rel, import.meta.url)));
+	return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 describe('Node.js canvas backend (missing @napi-rs/canvas)', () => {
-	it('convertMetafileToDataUrl returns null without throwing when the Node backend fails to load', async () => {
+	it('renders a text-free metafile to PNG with the software rasteriser', async () => {
 		const { convertMetafileToDataUrl } = await import('./index');
 		const { isNodeCanvasBackendReady } = await import('./emf-canvas-helpers');
-
-		const path = fileURLToPath(new URL('./__fixtures__/sample-crown.wmf', import.meta.url));
-		const bytes = readFileSync(path);
-		const buffer = bytes.buffer.slice(
-			bytes.byteOffset,
-			bytes.byteOffset + bytes.byteLength,
-		) as ArrayBuffer;
-
-		await expect(convertMetafileToDataUrl(buffer)).resolves.toBeNull();
+		const url = await convertMetafileToDataUrl(load('./__fixtures__/gdi/rop3-grid-solid.emf'));
+		expect(url).toMatch(/^data:image\/png;base64,iVBORw0KGgo/);
 		expect(isNodeCanvasBackendReady()).toBe(false);
+	});
+
+	it('returns null without throwing for a metafile with text', async () => {
+		const { convertMetafileToDataUrl } = await import('./index');
+		await expect(convertMetafileToDataUrl(load('./__fixtures__/gdi/rotate-text-25deg.emf'))).resolves.toBeNull();
 	});
 });

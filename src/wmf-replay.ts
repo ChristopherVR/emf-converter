@@ -89,7 +89,7 @@ export function replayWmfRecords(
 	const state: DrawState = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap };
 	const stateStack: DrawState[] = [];
 
-	const wCtx: WmfReplayCtx = { view, ctx, state, coord };
+	const wCtx: WmfReplayCtx = { view, ctx, state, coord, fonts: replayOptions.fonts };
 
 	let offset = header.headerSize;
 	const maxOffset = view.byteLength;
@@ -220,6 +220,13 @@ export function replayWmfRecords(
 						strikeOut: view.getUint8(dataOff + 12) !== 0,
 						family: family || 'sans-serif',
 						escapementTenthDeg: view.getInt16(dataOff + 4, true),
+						details: {
+							width: view.getInt16(dataOff + 2, true),
+							orientationTenthDeg: view.getInt16(dataOff + 6, true),
+							charSet: view.getUint8(dataOff + 13),
+							quality: view.getUint8(dataOff + 16),
+							pitchAndFamily: view.getUint8(dataOff + 17),
+						},
 					});
 				}
 				break;
@@ -245,6 +252,7 @@ export function replayWmfRecords(
 								state.fontStrikeOut = obj.strikeOut;
 								state.fontFamily = obj.family;
 								state.fontEscapementTenthDeg = obj.escapementTenthDeg ?? 0;
+								state.fontDetails = obj.details;
 								break;
 						}
 					}

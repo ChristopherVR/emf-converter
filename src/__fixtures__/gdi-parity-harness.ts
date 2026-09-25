@@ -9,7 +9,8 @@
  *
  * Test-only: lives under `__fixtures__`, is never exported from the package.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { getRenderableEmfBounds, parseEmfHeader } from '../emf-header-parser';
@@ -169,4 +170,29 @@ export async function compareFixture(
 		return null;
 	}
 	return diffImages(rendered, await loadReference(name), tolerance);
+}
+
+/**
+ * The Windows font files the text fixtures name (Arial, Times New Roman,
+ * Courier New, Segoe UI, Tahoma, Microsoft Sans Serif), read from
+ * `%WINDIR%\\Fonts` (or `GDI_FIXTURE_FONTS`), for the converter's `fonts`
+ * option. Null when they are not all present (non-Windows CI), so the
+ * font-engine parity cases skip instead of failing. Cached.
+ */
+let systemFontsCache: Buffer[] | null | undefined;
+export function windowsFonts(): Buffer[] | null {
+	if (systemFontsCache !== undefined) {
+		return systemFontsCache;
+	}
+	const dir = process.env.GDI_FIXTURE_FONTS ?? join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts');
+	const files = [
+		'arial.ttf', 'arialbd.ttf', 'ariali.ttf', 'arialbi.ttf',
+		'times.ttf', 'timesbd.ttf', 'timesi.ttf', 'timesbi.ttf',
+		'cour.ttf', 'courbd.ttf', 'couri.ttf', 'courbi.ttf',
+		'segoeui.ttf', 'segoeuib.ttf', 'segoeuii.ttf', 'segoeuiz.ttf',
+		'tahoma.ttf', 'tahomabd.ttf', 'micross.ttf',
+	];
+	const paths = files.map((f) => join(dir, f));
+	systemFontsCache = paths.every((p) => existsSync(p)) ? paths.map((p) => readFileSync(p)) : null;
+	return systemFontsCache;
 }

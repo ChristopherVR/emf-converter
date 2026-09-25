@@ -26,7 +26,14 @@ import {
 	plusWorldMatrix,
 } from './emf-plus-state-handlers';
 import { isSvgContext } from './svg-context';
-import type { DeferredImageResample, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
+import type { DeferredImageResample, EmfPlusFont, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
+import {
+	ANTIALIASED_QUALITY,
+	CLEARTYPE_QUALITY,
+	NONANTIALIASED_QUALITY,
+	type LogFontSpec,
+} from './gdi-font-engine';
+import { paintGdiTextRun } from './gdi-text-render';
 
 /** GDI+ `UnitPixel` (MS-EMFPLUS 2.1.1.33): the only source-rectangle unit resampled per pixel. */
 const UNIT_PIXEL = 2;
@@ -40,6 +47,21 @@ const UNIT_PIXEL = 2;
  * image, a non-pixel source unit, a degenerate source rectangle, or an
  * `InterpolationMode` that is not modelled.
  */
+/**
+ * Maps flat `x, y` page points through the world transform `wt` scaled by
+ * `s` (page unit and DPI) to device space: where a deferred image lands,
+ * for `SvgContext.reserveSlot`.
+ */
+function deviceQuad(wt: TransformMatrix, s: number, pts: number[]): number[] {
+	const out: number[] = [];
+	for (let i = 0; i < pts.length; i += 2) {
+		const x = pts[i];
+		const y = pts[i + 1];
+		out.push((wt[0] * x + wt[2] * y + wt[4]) * s, (wt[1] * x + wt[3] * y + wt[5]) * s);
+	}
+	return out;
+}
+
 function imageResampleSpec(
 	rCtx: EmfPlusReplayCtx,
 	dataOff: number,
@@ -67,6 +89,102 @@ function imageResampleSpec(
 		kernel,
 		halfPixelOffset: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0),
 	};
+}
+
+// ---------------------------------------------------------------------------
+// DrawString through the GDI font engine
+// ---------------------------------------------------------------------------
+
+/**
+ * LOGFONT quality equivalent of each GDI+ `TextRenderingHint`:
+ * SystemDefault (measured: GDI+ draws it single-bit grid-fitted into a
+ * bitmap), SingleBitPerPixelGridFit, SingleBitPerPixel, AntiAliasGridFit,
+ * AntiAlias, ClearTypeGridFit.
+ */
+const HINT_QUALITY = [NONANTIALIASED_QUALITY, NONANTIALIASED_QUALITY, NONANTIALIASED_QUALITY, ANTIALIASED_QUALITY, ANTIALIASED_QUALITY, CLEARTYPE_QUALITY];
+
+/** GDI+'s leading padding before the first glyph of a DrawString (a sixth of the em). */
+const PLUS_LEADING_EM = 1 / 6;
+
+function rgbaToHex(c: string): string | null {
+	const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(c.trim());
+	if (m) {
+		if (m[4] !== undefined && Number(m[4]) < 1) {
+			return null;
+		}
+		return '#' + [m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('');
+	}
+	return /^#[0-9a-f]{6}$/i.test(c) ? c : null;
+}
+
+/**
+ * Draws an EmfPlusDrawString with the GDI font engine when fonts were
+ * supplied, for a solid brush, near (left) alignment and an unrotated
+ * world transform. Returns false, having drawn nothing, otherwise.
+ */
+function drawPlusStringWithEngine(
+	rCtx: EmfPlusReplayCtx,
+	font: EmfPlusFont,
+	text: string,
+	layoutX: number,
+	layoutY: number,
+	paint: string | CanvasGradient | CanvasPattern,
+	alignment: number,
+): boolean {
+	const fonts = rCtx.fonts;
+	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
+	const unit = font.unit ?? 0;
+	if (!fonts || !color || alignment !== 0 || (unit !== 0 && unit !== 2)) {
+		return false;
+	}
+	const m = plusWorldMatrix(rCtx);
+	if (m[1] !== 0 || m[2] !== 0 || m[0] <= 0 || m[3] <= 0) {
+		return false;
+	}
+	const emPx = font.emSize * m[3];
+	const hint = rCtx.textRenderingHint ?? 0;
+	const quality = HINT_QUALITY[hint] ?? NONANTIALIASED_QUALITY;
+	const spec: LogFontSpec = {
+		face: font.family,
+		height: -Math.round(emPx),
+		width: 0,
+		weight: font.flags & 1 ? 700 : 400,
+		italic: (font.flags & 2) !== 0,
+		charSet: 1,
+		pitchAndFamily: 0,
+		quality,
+		unhinted: hint === 2 || hint === 4,
+	};
+	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
+	if (!realized) {
+		return false;
+	}
+	const ttf = realized.ttf;
+	const ascent = Math.ceil((emPx * ttf.winAscent) / ttf.unitsPerEm);
+	const x = m[0] * layoutX + m[4] + emPx * PLUS_LEADING_EM;
+	const y = m[3] * layoutY + m[5] + ascent;
+	const codes: number[] = [];
+	for (let i = 0; i < text.length; i++) {
+		codes.push(text.charCodeAt(i));
+	}
+	paintGdiTextRun(rCtx.ctx, realized, {
+		codes,
+		glyphIndices: false,
+		x,
+		y,
+		dx: null,
+		dy: null,
+		textAlign: 0x18,
+		textColor: color,
+		bkColor: '#ffffff',
+		bkMode: 1,
+		options: 0,
+		rect: null,
+		matrix: null,
+		underline: (font.flags & 4) !== 0,
+		strikeOut: (font.flags & 8) !== 0,
+	}, rCtx.fontFamilyMap);
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,14 +266,19 @@ export function handleEmfPlusTextImageRecord(
 				if (strLen > 0 && dataOff + 28 + strLen * 2 <= dataOff + recDataSize) {
 					const text = readUtf16LE(view, dataOff + 28, strLen);
 					if (text.length > 0 && font && font.kind === 'plus-font') {
+						const sf = objectTable.get(formatId);
+						const paint = resolveBrushPaint(rCtx, recFlags, brushVal);
+						const alignment = sf && sf.kind === 'plus-stringformat' ? sf.alignment : 0;
+						if (drawPlusStringWithEngine(rCtx, font, text, layoutX, layoutY, paint, alignment)) {
+							return true;
+						}
 						const bold = font.flags & 1 ? 'bold ' : '';
 						const italic = font.flags & 2 ? 'italic ' : '';
 						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
 						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
-						ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
+						ctx.fillStyle = paint;
 						ctx.textBaseline = 'top';
 
-						const sf = objectTable.get(formatId);
 						if (sf && sf.kind === 'plus-stringformat') {
 							switch (sf.alignment) {
 								case 1:
@@ -268,7 +391,9 @@ export function handleEmfPlusTextImageRecord(
 							wt[5] * s,
 						] as TransformMatrix,
 						isMetafile: imgObj.type === 2,
-						svgSlot: isSvgContext(rCtx.ctx) ? rCtx.ctx.reserveSlot() : undefined,
+						svgSlot: isSvgContext(rCtx.ctx)
+							? rCtx.ctx.reserveSlot(deviceQuad(wt, s, [dx, dy, dx + dw, dy, dx + dw, dy + dh, dx, dy + dh]))
+							: undefined,
 						resample: imageResampleSpec(rCtx, dataOff, imgObj.type === 2, (sx, sy, sw, sh) => [
 							dw / sw,
 							0,
@@ -342,7 +467,11 @@ export function handleEmfPlusTextImageRecord(
 							wt2[5] * s2,
 						] as TransformMatrix,
 						isMetafile: imgObj.type === 2,
-						svgSlot: isSvgContext(rCtx.ctx) ? rCtx.ctx.reserveSlot() : undefined,
+						svgSlot: isSvgContext(rCtx.ctx)
+							? rCtx.ctx.reserveSlot(
+									deviceQuad(wt2, s2, [p1x, p1y, p2x, p2y, p2x + p3x - p1x, p2y + p3y - p1y, p3x, p3y]),
+								)
+							: undefined,
 						// The three points are the destinations of the source
 						// rectangle's top-left, top-right and bottom-left corners,
 						// so any rotation or shear is carried exactly here.

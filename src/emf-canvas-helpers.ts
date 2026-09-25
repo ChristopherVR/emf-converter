@@ -3,6 +3,7 @@
  */
 
 import { invertCssColor } from './emf-color-helpers';
+import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
 import { resolveFontPixelHeight } from './emf-gdi-text-layout';
@@ -25,7 +26,10 @@ import {
 	R2_XORPEN,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
+import { decodePng, isPng } from './png-decoder';
+import { encodePng } from './png-encoder';
 import { SoftwareRasterCanvas } from './software-raster';
+import { bytesToBase64 } from './svg-tree';
 import type { AnyCanvas, CanvasContext, DrawState, GdiObject } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +83,8 @@ export async function ensureNodeCanvasModule(): Promise<NodeCanvasModule | null>
 	} catch {
 		emfWarn(
 			'createCanvas: no OffscreenCanvas/document and @napi-rs/canvas is not installed. ' +
-				'Install it (`npm install @napi-rs/canvas`) to enable EMF/WMF conversion in plain Node.js.',
+				'Using the built-in software rasteriser instead, which cannot draw text: PNG output of a metafile with text needs ' +
+					'the package (`npm install @napi-rs/canvas`); SVG output does not.',
 		);
 		nodeCanvasModule = null;
 	}
@@ -88,7 +93,25 @@ export async function ensureNodeCanvasModule(): Promise<NodeCanvasModule | null>
 
 /** True once {@link ensureNodeCanvasModule} has resolved to a usable module. */
 export function isNodeCanvasBackendReady(): boolean {
-	return !!nodeCanvasModule;
+	return !softwareOnly && !!nodeCanvasModule;
+}
+
+let softwareOnly = false;
+
+/**
+ * Test hook: while `true`, every canvas this module creates is the pure-
+ * JavaScript {@link SoftwareRasterCanvas} and images are decoded only by
+ * the built-in decoders, exactly as in plain Node.js without
+ * `@napi-rs/canvas`, even where a real backend exists (so one test run can
+ * compare the two). Not exported from the package.
+ */
+export function setSoftwareCanvasOnly(on: boolean): void {
+	softwareOnly = on;
+}
+
+/** True when no real canvas backend is in use (none exists, or {@link setSoftwareCanvasOnly}). */
+export function usingSoftwareCanvas(): boolean {
+	return softwareOnly || (typeof OffscreenCanvas === 'undefined' && typeof document === 'undefined' && !nodeCanvasModule);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +188,15 @@ export function createCanvas(
 	const { w, h, scaleX, scaleY } = computeSurfaceSize(width, height, maxWidth, maxHeight, dpiScale, maxCanvasDimension);
 
 	try {
+		if (usingSoftwareCanvas()) {
+			// No canvas implementation at all (plain Node.js without
+			// @napi-rs/canvas): the pure-JavaScript rasteriser stands in. It
+			// draws everything but text glyphs; see `software-raster.ts`.
+			emfLog(`createCanvas: using the software rasteriser ${w}×${h}`);
+			const soft = new SoftwareRasterCanvas(w, h);
+			return { canvas: soft as unknown as AnyCanvas, ctx: soft.ctx as unknown as CanvasContext, scaleX, scaleY };
+		}
+
 		if (typeof OffscreenCanvas !== 'undefined') {
 			emfLog(
 				`createCanvas: using OffscreenCanvas ${w}×${h}, scale=(${scaleX.toFixed(3)},${scaleY.toFixed(3)})`,
@@ -228,6 +260,10 @@ export function createTempCanvas(
 	}
 	width = Math.max(1, Math.min(Math.floor(width), MAX_CANVAS_DIMENSION));
 	height = Math.max(1, Math.min(Math.floor(height), MAX_CANVAS_DIMENSION));
+	if (softwareOnly) {
+		const soft = new SoftwareRasterCanvas(width, height);
+		return { canvas: soft as unknown as AnyCanvas, ctx: soft.ctx as unknown as CanvasContext };
+	}
 	if (typeof OffscreenCanvas !== 'undefined') {
 		const canvas = new OffscreenCanvas(width, height);
 		const ctx = canvas.getContext('2d');
@@ -254,10 +290,8 @@ export function createTempCanvas(
 		}
 		return { canvas, ctx };
 	}
-	// No canvas implementation at all: only the SVG backend gets this far
-	// (the raster pipeline already failed to create its main canvas). A pure
-	// JS raster covers the scratch-surface bitmap work it needs; see
-	// `software-raster.ts`.
+	// No canvas implementation at all: the pure-JavaScript rasteriser
+	// (`software-raster.ts`) implements the whole Canvas 2D API but text.
 	const soft = new SoftwareRasterCanvas(width, height);
 	return { canvas: soft as unknown as AnyCanvas, ctx: soft.ctx as unknown as CanvasContext };
 }
@@ -651,6 +685,12 @@ export async function blobToDataUrl(blob: Blob): Promise<string> {
 }
 
 export async function exportCanvasToPngDataUrl(canvas: AnyCanvas): Promise<string | null> {
+	if ((canvas as unknown) instanceof SoftwareRasterCanvas) {
+		const soft = canvas as unknown as SoftwareRasterCanvas;
+		emfLog(`exportCanvasToPngDataUrl: encoding the software raster (${soft.width}×${soft.height})`);
+		const png = await encodePng(soft.pixels, soft.width, soft.height);
+		return `data:image/png;base64,${bytesToBase64(png)}`;
+	}
 	if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
 		emfLog(
 			`exportCanvasToPngDataUrl: using OffscreenCanvas.convertToBlob (${canvas.width}×${canvas.height})`,
@@ -682,8 +722,16 @@ export async function exportCanvasToPngDataUrl(canvas: AnyCanvas): Promise<strin
 // Deferred-image decoding (browser createImageBitmap, or Node @napi-rs/canvas)
 // ---------------------------------------------------------------------------
 
-/** A decoded, drawable image ready to hand to `ctx.drawImage`. */
-export type DecodedDrawable = ImageBitmap | InstanceType<NodeCanvasModule['Image']>;
+/**
+ * A decoded, drawable image ready to hand to `ctx.drawImage`: a browser
+ * `ImageBitmap`, a `@napi-rs/canvas` image, or (with no canvas backend) the
+ * straight-RGBA pixels of a built-in decoder, which the software rasteriser
+ * draws directly.
+ */
+export type DecodedDrawable =
+	| ImageBitmap
+	| InstanceType<NodeCanvasModule['Image']>
+	| { data: Uint8ClampedArray; width: number; height: number };
 
 /**
  * Decodes raw image bytes (PNG/BMP/etc.) into something `ctx.drawImage` can
@@ -701,6 +749,11 @@ export async function decodeDeferredImageBytes(
 	bytes: ArrayBuffer,
 	mime?: string,
 ): Promise<{ drawable: DecodedDrawable; width: number; height: number; close: () => void } | null> {
+	if (usingSoftwareCanvas()) {
+		// No canvas backend: only the built-in decoders (PNG, BMP) are available.
+		const pixels = await decodeImageBytesBuiltIn(new Uint8Array(bytes));
+		return pixels ? { drawable: pixels, width: pixels.width, height: pixels.height, close: () => {} } : null;
+	}
 	if (nodeCanvasModule) {
 		const image = await nodeCanvasModule.loadImage(new Uint8Array(bytes));
 		return { drawable: image, width: image.width, height: image.height, close: () => {} };
@@ -711,6 +764,26 @@ export async function decodeDeferredImageBytes(
 	const blob = mime !== undefined ? new Blob([bytes], { type: mime }) : new Blob([bytes]);
 	const bitmap = await createImageBitmap(blob);
 	return { drawable: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+}
+
+/**
+ * Decodes PNG or BMP bytes into straight RGBA with no canvas at all (the
+ * built-in `png-decoder.ts` and the DIB decoder). `null` for any other
+ * format (JPEG, GIF, TIFF, ...), which needs a canvas backend.
+ */
+export async function decodeImageBytesBuiltIn(
+	bytes: Uint8Array,
+): Promise<{ data: Uint8ClampedArray; width: number; height: number } | null> {
+	if (isPng(bytes)) {
+		return decodePng(bytes);
+	}
+	if (bytes.length >= 26 && bytes[0] === 0x42 && bytes[1] === 0x4d) {
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		const bitsOffset = view.getUint32(10, true);
+		const image = decodeDibToImageData(view, 14, bitsOffset, view.byteLength - bitsOffset);
+		return image ? { data: image.data as Uint8ClampedArray, width: image.width, height: image.height } : null;
+	}
+	return null;
 }
 
 // ---------------------------------------------------------------------------

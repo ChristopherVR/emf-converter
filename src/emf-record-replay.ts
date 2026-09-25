@@ -120,6 +120,7 @@ export function replayEmfRecords(
 		sy,
 		pathCmds: [],
 		gdiAntialias: replayOptions.gdiAntialias,
+		fonts: replayOptions.fonts,
 	};
 
 	let offset = 0;
@@ -161,6 +162,7 @@ export function replayEmfRecords(
 						maxRecordsEmfPlus,
 						replayOptions.fontFamilyMap,
 						replayOptions.textureCache,
+						replayOptions.fonts,
 					);
 					emfLog(
 						`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} returned ${deferred.length} deferred images`,

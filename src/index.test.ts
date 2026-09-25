@@ -34,6 +34,7 @@ import { parseEmfPlusPath } from './emf-plus-path';
 import { defaultState, cloneState, createEmfPlusState } from './emf-types';
 import type { EmfGdiReplayCtx } from './emf-types';
 import { convertMetafileToDataUrl } from './index';
+import { isSoftwareRaster } from './software-raster';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -749,10 +750,14 @@ describe('emf-canvas-helpers', () => {
 	});
 
 	describe('createCanvas()', () => {
-		it('returns null when neither OffscreenCanvas nor document available', () => {
-			// In Node.js test environment, neither should be available
-			const result = createCanvas(100, 100);
-			expect(result).toBeNull();
+		it('falls back to the pure-JS software rasteriser when no canvas backend is available', () => {
+			// No OffscreenCanvas or document here, and @napi-rs/canvas has not
+			// been loaded (ensureNodeCanvasModule was never awaited).
+			const result = createCanvas(100, 50);
+			expect(result).not.toBeNull();
+			expect(isSoftwareRaster(result!.canvas)).toBe(true);
+			expect(result!.canvas.width).toBe(100);
+			expect(result!.canvas.height).toBe(50);
 		});
 	});
 });

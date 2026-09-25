@@ -942,6 +942,350 @@ public static class GdiFixtures
 		});
 	}
 
+	// -----------------------------------------------------------------------
+	// Extra text cases (category text-extra): every LOGFONT quality, sizes
+	// 8-72 px across five faces, both lfHeight signs, weights/italic/
+	// underline/strike-out/lfWidth, ExtTextOut Dx/ETO_PDY/ETO_OPAQUE/
+	// ETO_CLIPPED/ETO_GLYPH_INDEX, every TA_* alignment incl. TA_UPDATECP,
+	// OPAQUE backgrounds, escapement, world-transform rotation, the same
+	// through WMF, and EMF+ DrawString under each TextRenderingHint.
+	// -----------------------------------------------------------------------
+
+	static class TxApi
+	{
+		[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool ExtTextOutW(IntPtr hdc, int x, int y, uint options, ref RECT rc, string s, int n, int[] dx);
+		[DllImport("gdi32.dll", CharSet = CharSet.Unicode, EntryPoint = "ExtTextOutW")] public static extern bool ExtTextOutNoRect(IntPtr hdc, int x, int y, uint options, IntPtr rc, string s, int n, int[] dx);
+		[DllImport("gdi32.dll", EntryPoint = "ExtTextOutW")] public static extern bool ExtTextOutGlyphs(IntPtr hdc, int x, int y, uint options, IntPtr rc, ushort[] glyphs, int n, int[] dx);
+		[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern uint GetGlyphIndicesW(IntPtr hdc, string s, int n, [Out] ushort[] gi, uint flags);
+	}
+
+	static readonly string[] TxFaces = { "Arial", "Times New Roman", "Courier New", "Segoe UI", "Tahoma" };
+	static readonly int[] TxSizes = { -8, -9, -10, -11, -12, -13, -14, -15, -16, -18, -20, -22, -24, -28, -32, -36, -48, -72 };
+	static readonly int[] TxCellSizes = { 9, 10, 12, 14, 16, 18, 20, 23, 26, 30, 36, 44, 56 };
+	const string TxSample = "Hamburgefonstiv 0123 AVWX &@%$";
+
+	static string TxKey(string face) { return face.Replace(" ", "").ToLowerInvariant(); }
+
+	static LOGFONT TxLf(string face, int height, int weight, bool italic, byte quality)
+	{
+		var lf = new LOGFONT();
+		lf.lfHeight = height; lf.lfWeight = weight; lf.lfItalic = (byte)(italic ? 1 : 0);
+		lf.lfCharSet = 1; lf.lfFaceName = face; lf.lfQuality = quality;
+		return lf;
+	}
+
+	/** Selects `lf`, runs `body`, then restores and deletes the font. */
+	static void TxWithFont(IntPtr hdc, LOGFONT lf, Action body)
+	{
+		IntPtr font = CreateFontIndirectW(ref lf);
+		IntPtr old = SelectObject(hdc, font);
+		body();
+		SelectObject(hdc, old);
+		DeleteObject(font);
+	}
+
+	static void TxLine(IntPtr hdc, LOGFONT lf, int x, int y, string s)
+	{
+		TxWithFont(hdc, lf, delegate { TextOutW(hdc, x, y, s, s.Length); });
+	}
+
+	/** One line per size, baseline-aligned, black on white. */
+	static void TxSizeSheet(string name, string face, byte quality, int[] sizes, bool wmf)
+	{
+		int h = 6;
+		foreach (int s in sizes) { h += (int)(Math.Abs(s) * 1.35) + 3; }
+		GdiDraw draw = delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 480, h, Rgb(255, 255, 255));
+			SetBkMode(hdc, 1); SetTextColor(hdc, 0); SetTextAlign(hdc, 24);
+			int y = 3;
+			foreach (int s in sizes)
+			{
+				y += (int)(Math.Abs(s) * 1.05) + 1;
+				TxLine(hdc, TxLf(face, s, 400, false, quality), 4, y, TxSample);
+				y += (int)(Math.Abs(s) * 0.3) + 2;
+			}
+		};
+		if (wmf) { WmfCase(name, 480, h, draw); } else { GdiCase(name, 480, h, draw); }
+	}
+
+	/** Weight/italic/underline/strike-out/lfWidth variants at two sizes. */
+	static void TxStyleSheet(string name, string face, byte quality, bool wmf)
+	{
+		int[][] v = {
+			new[] { 400, 0, 0, 0, 0 }, new[] { 700, 0, 0, 0, 0 }, new[] { 400, 1, 0, 0, 0 }, new[] { 700, 1, 0, 0, 0 },
+			new[] { 400, 0, 1, 0, 0 }, new[] { 400, 0, 0, 1, 0 }, new[] { 700, 1, 1, 1, 0 }, new[] { 900, 0, 0, 0, 0 },
+			new[] { 300, 0, 0, 0, 0 }, new[] { 600, 0, 0, 0, 0 }, new[] { 100, 0, 0, 0, 0 },
+			new[] { 400, 0, 0, 0, 4 }, new[] { 400, 0, 0, 0, 12 },
+		};
+		int[] heights = { -11, -17 };
+		int h = 4 + v.Length * heights.Length * 22;
+		GdiDraw draw = delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 420, h, Rgb(255, 255, 255));
+			SetBkMode(hdc, 1); SetTextColor(hdc, 0); SetTextAlign(hdc, 24);
+			int y = 4;
+			foreach (int ht in heights)
+			{
+				foreach (int[] s in v)
+				{
+					y += 18;
+					var lf = TxLf(face, ht, s[0], s[1] != 0, quality);
+					lf.lfUnderline = (byte)s[2]; lf.lfStrikeOut = (byte)s[3]; lf.lfWidth = s[4] == 0 ? 0 : (ht < -12 ? s[4] + 3 : s[4]);
+					TxLine(hdc, lf, 4, y, "Styled text: Quick fox jumps 0123");
+					y += 4;
+				}
+			}
+		};
+		if (wmf) { WmfCase(name, 420, h, draw); } else { GdiCase(name, 420, h, draw); }
+	}
+
+	/** ExtTextOut Dx spacing, ETO_PDY, ETO_OPAQUE, ETO_CLIPPED and ETO_GLYPH_INDEX. */
+	static void TxEtoSheet(string name, byte quality, bool wmf)
+	{
+		GdiDraw draw = delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 360, 250, Rgb(255, 255, 255));
+			SetBkMode(hdc, 1); SetTextColor(hdc, Rgb(0x10, 0x20, 0x80)); SetBkColor(hdc, Rgb(0xFF, 0xE0, 0x70));
+			SetTextAlign(hdc, 24);
+			TxWithFont(hdc, TxLf("Arial", -16, 400, false, quality), delegate
+			{
+				string s = "Spaced Dx text";
+				var dx = new int[s.Length];
+				for (int i = 0; i < dx.Length; i++) { dx[i] = 9 + (i % 3) * 3; }
+				TxApi.ExtTextOutNoRect(hdc, 6, 24, 0, IntPtr.Zero, s, s.Length, dx);
+				var rc = new RECT(); rc.Left = 4; rc.Top = 34; rc.Right = 200; rc.Bottom = 58;
+				TxApi.ExtTextOutW(hdc, 8, 52, 2, ref rc, "ETO_OPAQUE box", 14, null);
+				rc.Left = 10; rc.Top = 64; rc.Right = 120; rc.Bottom = 78;
+				TxApi.ExtTextOutW(hdc, 6, 80, 4, ref rc, "ETO_CLIPPED cut glyphs", 22, null);
+				rc.Left = 150; rc.Top = 62; rc.Right = 300; rc.Bottom = 76;
+				TxApi.ExtTextOutW(hdc, 146, 80, 6, ref rc, "Opaque+clipped text", 19, null);
+				if (!wmf)
+				{
+					string p = "Pdy wave";
+					var dxy = new int[p.Length * 2];
+					for (int i = 0; i < p.Length; i++) { dxy[i * 2] = 11; dxy[i * 2 + 1] = (i % 2 == 0) ? -3 : 3; }
+					TxApi.ExtTextOutNoRect(hdc, 6, 110, 0x2000, IntPtr.Zero, p, p.Length, dxy);
+					string g = "Glyph index run";
+					var gi = new ushort[g.Length];
+					TxApi.GetGlyphIndicesW(hdc, g, g.Length, gi, 0);
+					TxApi.ExtTextOutGlyphs(hdc, 150, 110, 0x10, IntPtr.Zero, gi, gi.Length, null);
+					var gdx = new int[g.Length];
+					for (int i = 0; i < gdx.Length; i++) { gdx[i] = 12; }
+					TxApi.ExtTextOutGlyphs(hdc, 150, 140, 0x10, IntPtr.Zero, gi, gi.Length, gdx);
+				}
+				var ndx = new int[] { 8, 8, 8, 8, 8, 8, 8, 8, 8, 8 };
+				TxApi.ExtTextOutNoRect(hdc, 6, 140, 0, IntPtr.Zero, "Narrow dx!", 10, ndx);
+			});
+			TxWithFont(hdc, TxLf("Times New Roman", -22, 700, true, quality), delegate
+			{
+				var rc = new RECT(); rc.Left = 6; rc.Top = 160; rc.Right = 340; rc.Bottom = 190;
+				TxApi.ExtTextOutW(hdc, 12, 183, 6, ref rc, "Bold italic opaque", 18, null);
+			});
+			SetBkMode(hdc, 2);
+			TxWithFont(hdc, TxLf("Courier New", -15, 400, false, quality), delegate
+			{
+				var rc = new RECT(); rc.Left = 6; rc.Top = 200; rc.Right = 100; rc.Bottom = 230;
+				TxApi.ExtTextOutW(hdc, 20, 222, 4, ref rc, "bkmode opaque + clip", 20, null);
+			});
+		};
+		if (wmf) { WmfCase(name, 360, 250, draw); } else { GdiCase(name, 360, 250, draw); }
+	}
+
+	/** Every TA_* horizontal x vertical combination, plus TA_UPDATECP runs. */
+	static void TxAlignSheet(string name, byte quality, bool wmf)
+	{
+		uint[] hs = { 0, 6, 2 };     // TA_LEFT, TA_CENTER, TA_RIGHT
+		uint[] vs = { 0, 24, 8 };    // TA_TOP, TA_BASELINE, TA_BOTTOM
+		GdiDraw draw = delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 400, 260, Rgb(255, 255, 255));
+			SetBkMode(hdc, 1); SetTextColor(hdc, 0);
+			TxWithFont(hdc, TxLf("Arial", -15, 400, false, quality), delegate
+			{
+				for (int i = 0; i < 3; i++)
+				{
+					for (int j = 0; j < 3; j++)
+					{
+						SetTextAlign(hdc, hs[i] | vs[j]);
+						TextOutW(hdc, 70 + i * 130, 24 + j * 42, "Align gy", 8);
+					}
+				}
+				SetTextAlign(hdc, 1 | 24); // TA_UPDATECP | TA_BASELINE
+				MoveToEx(hdc, 10, 170, IntPtr.Zero);
+				TextOutW(hdc, 0, 0, "One ", 4);
+				TextOutW(hdc, 0, 0, "two ", 4);
+				TextOutW(hdc, 0, 0, "three", 5);
+				SetTextAlign(hdc, 1 | 2 | 0); // TA_UPDATECP | TA_RIGHT | TA_TOP
+				MoveToEx(hdc, 390, 190, IntPtr.Zero);
+				TextOutW(hdc, 0, 0, "right", 5);
+				TextOutW(hdc, 0, 0, "-to-", 4);
+				TextOutW(hdc, 0, 0, "left", 4);
+				SetTextAlign(hdc, 1 | 6 | 8); // TA_UPDATECP | TA_CENTER | TA_BOTTOM
+				MoveToEx(hdc, 200, 250, IntPtr.Zero);
+				TextOutW(hdc, 0, 0, "centered cp", 11);
+			});
+		};
+		if (wmf) { WmfCase(name, 400, 260, draw); } else { GdiCase(name, 400, 260, draw); }
+	}
+
+	/** OPAQUE background mode: the text cell (ascent + descent, advance width) filled with bkColor. */
+	static void TxOpaqueSheet(string name, byte quality, bool wmf)
+	{
+		GdiDraw draw = delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 380, 180);
+			SetBkMode(hdc, 2); SetBkColor(hdc, Rgb(0xFF, 0xF0, 0xB0)); SetTextColor(hdc, Rgb(0x80, 0x10, 0x10));
+			SetTextAlign(hdc, 24);
+			TxLine(hdc, TxLf("Arial", -14, 400, false, quality), 6, 22, "Opaque Arial 14 gjpqy");
+			var lf = TxLf("Times New Roman", -20, 400, true, quality); lf.lfUnderline = 1;
+			TxLine(hdc, lf, 6, 56, "Italic underlined opaque");
+			SetTextAlign(hdc, 0);
+			TxLine(hdc, TxLf("Segoe UI", -18, 700, false, quality), 6, 70, "Top-aligned bold Segoe");
+			SetBkColor(hdc, Rgb(0x20, 0x20, 0x40)); SetTextColor(hdc, Rgb(0xFF, 0xFF, 0xFF));
+			SetTextAlign(hdc, 8);
+			TxLine(hdc, TxLf("Tahoma", 13, 400, false, quality), 6, 130, "Inverse Tahoma cell 13");
+			SetTextAlign(hdc, 24);
+			lf = TxLf("Courier New", -24, 400, false, quality); lf.lfStrikeOut = 1;
+			TxLine(hdc, lf, 6, 165, "Courier strike");
+		};
+		if (wmf) { WmfCase(name, 380, 180, draw); } else { GdiCase(name, 380, 180, draw); }
+	}
+
+	/** lfEscapement (= lfOrientation) rotating the baseline and the glyphs. */
+	static void TxEscapementSheet(string name, byte quality, bool wmf)
+	{
+		int[] esc = { 0, 300, 450, 900, 1800, 2700, 3150, 1200 };
+		GdiDraw draw = delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 420, 420, Rgb(255, 255, 255));
+			SetBkMode(hdc, 1); SetTextColor(hdc, 0); SetTextAlign(hdc, 24);
+			for (int i = 0; i < esc.Length; i++)
+			{
+				var lf = TxLf(i % 2 == 0 ? "Arial" : "Times New Roman", -16, 400, false, quality);
+				lf.lfEscapement = esc[i]; lf.lfOrientation = esc[i];
+				int x = 60 + (i % 3) * 140, y = 70 + (i / 3) * 140;
+				TxLine(hdc, lf, x, y, "Escape " + (esc[i] / 10));
+			}
+		};
+		if (wmf) { WmfCase(name, 420, 420, draw); } else { GdiCase(name, 420, 420, draw); }
+	}
+
+	/** Rotated / scaled world transforms applied to text (EMF only: WMF has none). */
+	static void TxWorldSheet(string name, byte quality)
+	{
+		double[] angles = { 25, 90, 180, -30, 10 };
+		GdiCase(name, 360, 360, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 360, 360, Rgb(255, 255, 255));
+			SetBkMode(hdc, 1); SetTextColor(hdc, 0); SetTextAlign(hdc, 24);
+			SetGraphicsMode(hdc, 2);
+			for (int i = 0; i < angles.Length; i++)
+			{
+				XFORM xf = RotationXform(angles[i], 80 + (i % 3) * 110, 80 + (i / 3) * 150);
+				SetWorldTransform(hdc, ref xf);
+				TxLine(hdc, TxLf(i % 2 == 0 ? "Arial" : "Times New Roman", -17, 400, false, quality), 0, 0, "World " + angles[i]);
+			}
+			XFORM id = new XFORM { eM11 = 1, eM22 = 1 };
+			SetWorldTransform(hdc, ref id);
+			XFORM sc = new XFORM { eM11 = 2, eM22 = 2, eDx = 10, eDy = 300 };
+			SetWorldTransform(hdc, ref sc);
+			TxLine(hdc, TxLf("Arial", -9, 400, false, quality), 0, 0, "Scaled x2");
+			SetWorldTransform(hdc, ref id);
+		});
+	}
+
+	/** Coloured text over a striped backdrop (antialiased blending is visible). */
+	static void TxColorSheet(string name, byte quality)
+	{
+		GdiCase(name, 360, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 360, 120);
+			SetBkMode(hdc, 1); SetTextAlign(hdc, 24);
+			int[] colors = { Rgb(0, 0, 0), Rgb(0xFF, 0xFF, 0xFF), Rgb(0xC0, 0x10, 0x10), Rgb(0x10, 0x60, 0xE0) };
+			for (int i = 0; i < colors.Length; i++)
+			{
+				SetTextColor(hdc, colors[i]);
+				TxLine(hdc, TxLf(i % 2 == 0 ? "Segoe UI" : "Arial", -18 - i * 2, i == 2 ? 700 : 400, false, quality), 6, 26 + i * 28, "Colour text Ag " + i);
+			}
+		});
+	}
+
+	/** EMF+ DrawString under one TextRenderingHint. */
+	static void TxPlusCase(string name, System.Drawing.Text.TextRenderingHint hint)
+	{
+		GpCase(name, 360, 140, delegate (Graphics g)
+		{
+			g.Clear(Color.White);
+			g.TextRenderingHint = hint;
+			using (var f = new Font("Arial", 16, FontStyle.Regular, GraphicsUnit.Pixel))
+			using (var b = new SolidBrush(Color.Black))
+			{
+				g.DrawString("GDI+ DrawString Ag 0123", f, b, 6, 6);
+			}
+			using (var f = new Font("Times New Roman", 22, FontStyle.Italic, GraphicsUnit.Pixel))
+			using (var b = new SolidBrush(Color.FromArgb(255, 0x20, 0x40, 0xA0)))
+			{
+				g.DrawString("Italic Times 22", f, b, 6, 40);
+			}
+			using (var f = new Font("Segoe UI", 12, FontStyle.Bold | FontStyle.Underline, GraphicsUnit.Pixel))
+			using (var b = new SolidBrush(Color.Black))
+			{
+				g.DrawString("Bold underline Segoe 12", f, b, 6, 84);
+			}
+		});
+	}
+
+	static void TextExtraCases()
+	{
+		foreach (string f in TxFaces)
+		{
+			TxSizeSheet("textx-" + TxKey(f) + "-mono", f, 3, TxSizes, false);
+			TxSizeSheet("textx-" + TxKey(f) + "-aa", f, 4, TxSizes, false);
+			TxSizeSheet("textx-" + TxKey(f) + "-cell-mono", f, 3, TxCellSizes, false);
+			TxStyleSheet("textx-" + TxKey(f) + "-styles-mono", f, 3, false);
+		}
+		TxSizeSheet("textx-arial-cleartype", "Arial", 5, TxSizes, false);
+		TxSizeSheet("textx-segoeui-cleartype", "Segoe UI", 5, TxSizes, false);
+		TxSizeSheet("textx-arial-ctnatural", "Arial", 6, TxSizes, false);
+		TxSizeSheet("textx-arial-q0-default", "Arial", 0, TxSizes, false);
+		TxSizeSheet("textx-arial-q1-draft", "Arial", 1, TxSizes, false);
+		TxSizeSheet("textx-arial-q2-proof", "Arial", 2, TxSizes, false);
+		TxStyleSheet("textx-arial-styles-aa", "Arial", 4, false);
+		TxEtoSheet("textx-eto-mono", 3, false);
+		TxEtoSheet("textx-eto-aa", 4, false);
+		TxAlignSheet("textx-align-mono", 3, false);
+		TxOpaqueSheet("textx-opaque-mono", 3, false);
+		TxOpaqueSheet("textx-opaque-aa", 4, false);
+		TxEscapementSheet("textx-escapement-mono", 3, false);
+		TxEscapementSheet("textx-escapement-aa", 4, false);
+		TxWorldSheet("textx-world-mono", 3);
+		TxWorldSheet("textx-world-aa", 4);
+		TxColorSheet("textx-color-aa", 4);
+		TxColorSheet("textx-color-cleartype", 5);
+		TxColorSheet("textx-color-mono", 3);
+		// The same through WMF (ANSI META_TEXTOUT / META_EXTTEXTOUT records).
+		foreach (string f in TxFaces)
+		{
+			TxSizeSheet("textx-wmf-" + TxKey(f) + "-mono", f, 3, TxSizes, true);
+		}
+		TxSizeSheet("textx-wmf-arial-aa", "Arial", 4, TxSizes, true);
+		TxSizeSheet("textx-wmf-timesnewroman-cell-mono", "Times New Roman", 3, TxCellSizes, true);
+		TxStyleSheet("textx-wmf-arial-styles-mono", "Arial", 3, true);
+		TxStyleSheet("textx-wmf-timesnewroman-styles-mono", "Times New Roman", 3, true);
+		TxEtoSheet("textx-wmf-eto-mono", 3, true);
+		TxAlignSheet("textx-wmf-align-mono", 3, true);
+		TxOpaqueSheet("textx-wmf-opaque-mono", 3, true);
+		TxEscapementSheet("textx-wmf-escapement-mono", 3, true);
+		// EMF+ DrawString under each TextRenderingHint.
+		TxPlusCase("textx-plus-singlebitgridfit", System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit);
+		TxPlusCase("textx-plus-singlebit", System.Drawing.Text.TextRenderingHint.SingleBitPerPixel);
+		TxPlusCase("textx-plus-antialiasgridfit", System.Drawing.Text.TextRenderingHint.AntiAliasGridFit);
+		TxPlusCase("textx-plus-antialias", System.Drawing.Text.TextRenderingHint.AntiAlias);
+		TxPlusCase("textx-plus-cleartype", System.Drawing.Text.TextRenderingHint.ClearTypeGridFit);
+		TxPlusCase("textx-plus-systemdefault", System.Drawing.Text.TextRenderingHint.SystemDefault);
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
@@ -954,5 +1298,6 @@ public static class GdiFixtures
 		if (which == "all" || which == "rop2") { Rop2Cases(); }
 		if (which == "all" || which == "image") { ImageDrawCases(); TextureFillCompressedCase(); }
 		if (which == "all" || which == "rotation-affine") { RotationAffineBlitTextCases(); }
+		if (which == "all" || which == "text-extra") { TextExtraCases(); }
 	}
 }

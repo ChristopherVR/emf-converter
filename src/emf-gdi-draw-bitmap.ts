@@ -26,6 +26,7 @@ import type { RealizedBrush } from './emf-gdi-brush-pattern';
 import { gmx, gmy, gmw, gmh, gdiDeviceMatrix, gmapPoint, hasWorldRotation } from './emf-gdi-coord';
 import { HALFTONE, stretchGdi } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
+import { drawBlendLayers, splitUnknownDestination, unknownDestination, type BlendLayer } from './emf-rop2-exact';
 import { applyRop3, classifyRop3, clampPositiveRect, evalRop3, rop3Index, rop3Operands } from './emf-rop3';
 import type { Rop3Pattern, Rop3Plan } from './emf-rop3';
 import type { AnyCanvas, CanvasContext, EmfGdiReplayCtx } from './emf-types';
@@ -213,10 +214,12 @@ function fillRectWith(
  * layer is evaluated alone (its result does not depend on D) and composited
  * with a blend mode that equals the bitwise op for black/white operands
  * (multiply = AND, screen = OR, difference = XOR) and approximates it for
- * other colours. Used only when the destination cannot be read back (SVG
- * output without a canvas backend), where the exact per-pixel evaluation is
- * impossible; the transparent-bitmap idiom (SRCAND mask + SRCPAINT/SRCINVERT
- * image) is exact this way.
+ * other colours. Used when the destination cannot be read back (SVG output
+ * with `exactRasterOps: false`), where the exact per-pixel evaluation is
+ * impossible, and as the stand-in for pixels under text that the pure-
+ * JavaScript raster mirror does not know and whose result mixes destination
+ * bits within a channel (`splitUnknownDestination`); the transparent-bitmap
+ * idiom (SRCAND mask + SRCPAINT/SRCINVERT image) is exact this way.
  */
 const ROP3_BLEND_APPROX: Record<number, [number, GlobalCompositeOperation]> = {
 	0x88: [0xcc, 'multiply'], // SRCAND: S & D
@@ -247,7 +250,7 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 	if (!canReadBack(ctx) && rop3Operands(index).usesD) {
 		const approx = ROP3_BLEND_APPROX[index];
 		if (!approx) {
-			emfWarn(`runTernary: ROP3 0x${index.toString(16)} needs the destination, which SVG output cannot read; skipped`);
+			emfWarn(`runTernary: ROP3 0x${index.toString(16)} needs the destination, which SVG output without a raster mirror cannot read; skipped`);
 			return;
 		}
 		[index, blend] = approx;
@@ -272,7 +275,27 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 		src = canvasGetImageData(layer.ctx, 0, 0, rect.w, rect.h);
 	}
 	const dst = canvasGetImageData(ctx, rect.x, rect.y, rect.w, rect.h);
-	applyRop3(dst, src, patternOperand(rCtx, brush), index, rect.x, rect.y);
+	const pattern = patternOperand(rCtx, brush);
+	applyRop3(dst, src, pattern, index, rect.x, rect.y);
+	// Pixels under text the SVG backend's raster mirror cannot draw: keep
+	// every destination-independent result exact and let the SVG renderer
+	// apply the rest against the real glyphs (see splitUnknownDestination).
+	const unknown = blend === 'source-over' && rop3Operands(index).usesD ? unknownDestination(ctx, rect) : null;
+	let layers: BlendLayer[] = [];
+	if (unknown) {
+		const sd = src ? src.data : null;
+		const pAt = (i: number): number =>
+			typeof pattern === 'number' ? pattern : pattern(rect.x + (i % rect.w), rect.y + Math.floor(i / rect.w));
+		const sAt = (i: number): number => (sd ? (sd[i * 4] << 16) | (sd[i * 4 + 1] << 8) | sd[i * 4 + 2] : 0);
+		const approx = ROP3_BLEND_APPROX[index];
+		layers = splitUnknownDestination(
+			dst.data,
+			rect.w * rect.h,
+			unknown,
+			(i, d) => evalRop3(index, pAt(i), sAt(i), d),
+			approx ? (i) => ({ color: evalRop3(approx[0], pAt(i), sAt(i), 0), mode: approx[1] }) : undefined,
+		);
+	}
 	canvasPutImageData(layer.ctx, dst, 0, 0);
 	ctx.save();
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -280,6 +303,7 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 	ctx.globalAlpha = 1;
 	canvasDrawImage(ctx, layer.canvas, rect.x, rect.y, rect.w, rect.h);
 	ctx.restore();
+	drawBlendLayers(ctx, rect, layers);
 }
 
 /**

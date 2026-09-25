@@ -105,11 +105,16 @@ export function handleEmfObjectRecord(
 				// into lfOutPrecision/lfClipPrecision/lfQuality/
 				// lfPitchAndFamily, corrupting or blanking the face name).
 				const height = view.getInt32(dataOff + 4, true);
+				const width = view.getInt32(dataOff + 8, true);
 				const escapementTenthDeg = view.getInt32(dataOff + 12, true);
+				const orientationTenthDeg = view.getInt32(dataOff + 16, true);
 				const weight = view.getInt32(dataOff + 20, true);
 				const italic = view.getUint8(dataOff + 24);
 				const underline = view.getUint8(dataOff + 25);
 				const strikeOut = view.getUint8(dataOff + 26);
+				const charSet = view.getUint8(dataOff + 27);
+				const quality = view.getUint8(dataOff + 30);
+				const pitchAndFamily = view.getUint8(dataOff + 31);
 				const family = readUtf16LE(view, dataOff + 32, 32) || 'sans-serif';
 				rCtx.objectTable.set(ihFont, {
 					kind: 'font',
@@ -122,6 +127,7 @@ export function handleEmfObjectRecord(
 					strikeOut: strikeOut !== 0,
 					family,
 					escapementTenthDeg,
+					details: { width, orientationTenthDeg, charSet, quality, pitchAndFamily },
 				});
 			}
 			return true;
@@ -153,6 +159,7 @@ export function handleEmfObjectRecord(
 							state.fontStrikeOut = obj.strikeOut;
 							state.fontFamily = obj.family;
 							state.fontEscapementTenthDeg = obj.escapementTenthDeg ?? 0;
+							state.fontDetails = obj.details;
 							break;
 					}
 				}

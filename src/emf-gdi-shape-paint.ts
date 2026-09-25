@@ -70,6 +70,7 @@ import {
 	paintWithRop2PerPixel,
 	rewritePixels,
 	rop2Rop3Index,
+	rop2TransformPacked,
 	surfaceSize,
 } from './emf-rop2-exact';
 import { evalRop3 } from './emf-rop3';
@@ -168,15 +169,28 @@ export function fillCurrentPathWithGdiPattern(
 	// Sampling the unshifted path at (x + 0.5 - shift) is the same test as
 	// sampling the path shifted by GDI_FILL_SHIFT at the canvas pixel centre.
 	const probe = 0.5 - GDI_FILL_SHIFT;
-	return rewritePixels(ctx, box, (x, y, d) => {
-		if (!ctx.isPointInPath(x + probe, y + probe, fillRule)) {
-			return -1;
-		}
-		const lx = Math.floor(bounds.left + (x + 0.5) / sx);
-		const ly = Math.floor(bounds.top + (y + 0.5) / sy);
-		const p = sampleTile(realized, lx, ly, state.brushOrgX, state.brushOrgY);
-		return index === 0xf0 ? p : evalRop3(index, p, d, d);
-	});
+	const patternAt = (x: number, y: number): number =>
+		sampleTile(
+			realized,
+			Math.floor(bounds.left + (x + 0.5) / sx),
+			Math.floor(bounds.top + (y + 0.5) / sy),
+			state.brushOrgX,
+			state.brushOrgY,
+		);
+	// Blend-mode stand-in for pixels under text an SVG raster mirror cannot know.
+	const approx = rop2Paint(state.rop2);
+	return rewritePixels(
+		ctx,
+		box,
+		(x, y, d) => {
+			if (!ctx.isPointInPath(x + probe, y + probe, fillRule)) {
+				return -1;
+			}
+			const p = patternAt(x, y);
+			return index === 0xf0 ? p : evalRop3(index, p, d, d);
+		},
+		(x, y) => ({ color: rop2TransformPacked(patternAt(x, y), approx.colorTransform), mode: approx.gco }),
+	);
 }
 
 /**

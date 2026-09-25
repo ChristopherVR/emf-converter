@@ -229,11 +229,12 @@ export function parseEmfPlusFontObject(
 		return null;
 	}
 	const emSize = view.getFloat32(dataOff + 4, true);
+	const unit = view.getUint32(dataOff + 8, true);
 	const styleFlags = view.getInt32(dataOff + 12, true);
 	const nameLen = view.getUint32(dataOff + 20, true);
 	let family = 'sans-serif';
 	if (nameLen > 0 && dataOff + 24 + nameLen * 2 <= dataOff + recDataSize) {
 		family = readUtf16LE(view, dataOff + 24, nameLen) || 'sans-serif';
 	}
-	return { kind: 'plus-font', emSize: emSize || 12, flags: styleFlags, family };
+	return { kind: 'plus-font', emSize: emSize || 12, flags: styleFlags, family, unit };
 }

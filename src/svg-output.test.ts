@@ -274,6 +274,38 @@ describe('SvgContext', () => {
 		expect(group.attrs['clip-path']).toBe(`url(#${clips[1].attrs.id})`);
 	});
 
+	it('moves axis-aligned hard-stop seams off pixel centres, on the side Canvas sees them', async () => {
+		const ctx = new SvgContext(100, 10);
+		// Seam at x = -15.5 + 0.2 * 180 = 20.5 (exactly a pixel centre) plus a
+		// hair, the way the tiled-gradient builder biases it.
+		const g = ctx.createLinearGradient(-15.5, 0, 164.5, 0);
+		g.addColorStop(0, '#ff0000');
+		g.addColorStop(0.2 + 1e-7, '#0000ff');
+		g.addColorStop(0.2 + 1e-7, '#ff0000');
+		g.addColorStop(1, '#0000ff');
+		ctx.fillStyle = g;
+		ctx.fillRect(0, 0, 100, 10);
+		const tree = await ctx.toTree();
+		const stops = tree.children![0].children![0].children!.map((s) => Number(s.attrs.offset));
+		// Centre 20.5 is before the seam, so the seam moves to 20.75.
+		expect(stops[1]).toBeCloseTo((20.75 + 15.5) / 180, 6);
+		expect(stops[2]).toBe(stops[1]);
+	});
+
+	it('leaves angled hard-stop seams exactly where they are', async () => {
+		const ctx = new SvgContext(100, 100);
+		const g = ctx.createLinearGradient(0, 0, 100, 37);
+		g.addColorStop(0, '#ff0000');
+		g.addColorStop(0.5, '#0000ff');
+		g.addColorStop(0.5, '#ff0000');
+		g.addColorStop(1, '#0000ff');
+		ctx.fillStyle = g;
+		ctx.fillRect(0, 0, 100, 100);
+		const tree = await ctx.toTree();
+		const stops = tree.children![0].children![0].children!.map((s) => Number(s.attrs.offset));
+		expect(stops).toEqual([0, 0.5, 0.5, 1]);
+	});
+
 	it('maps blend composite operations to mix-blend-mode', async () => {
 		const ctx = new SvgContext(10, 10);
 		ctx.globalCompositeOperation = 'difference';
