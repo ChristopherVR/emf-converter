@@ -265,7 +265,8 @@ export function penIsCosmetic(rCtx: EmfGdiReplayCtx): boolean {
 	}
 	// GDI rounds the transformed width to whole pixels (a unit-scale rotation
 	// gives 1.00000003 in float arithmetic; that is still a one-pixel pen).
-	return Math.round(penDeviceWidth(rCtx)) <= 1;
+	// (Under whole device pixels a canvas pixel may be a fraction of one.)
+	return Math.round(penDeviceWidth(rCtx) / (rCtx.wholeDevicePixels?.[0] ?? 1)) <= 1;
 }
 
 /**

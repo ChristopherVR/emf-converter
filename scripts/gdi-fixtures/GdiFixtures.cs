@@ -2666,6 +2666,32 @@ public static class GdiFixtures
 		DeleteMetaFile(CloseMetaFile(mdc));
 		byte[] raw = File.ReadAllBytes(tmp);
 		File.Delete(tmp);
+		// GDI copies the face name's whole buffer, bytes after its terminator
+		// included (uninitialised memory): clear them so the file is deterministic.
+		for (int off = 18; off + 6 <= raw.Length; )
+		{
+			int size = BitConverter.ToInt32(raw, off) * 2;
+			int fn = BitConverter.ToUInt16(raw, off + 4);
+			if (size < 6) { break; }
+			if (fn == 0x02FB && size >= 6 + 18 + 32)
+			{
+				bool end = false;
+				for (int i = 0; i < 32; i++) { int at = off + 6 + 18 + i; if (end) { raw[at] = 0; } else if (raw[at] == 0) { end = true; } }
+			}
+			if (fn == 0x0521 && size >= 8)
+			{
+				int n = BitConverter.ToInt16(raw, off + 6);
+				if ((n & 1) != 0 && off + 8 + n < off + size) { raw[off + 8 + n] = 0; }
+			}
+			if (fn == 0x0A32 && size >= 14)
+			{
+				int n = BitConverter.ToInt16(raw, off + 10);
+				int opts = BitConverter.ToUInt16(raw, off + 12);
+				int str = off + 14 + ((opts & 6) != 0 ? 8 : 0);
+				if ((n & 1) != 0 && str + n < off + size) { raw[str + n] = 0; }
+			}
+			off += size;
+		}
 		return raw;
 	}
 
