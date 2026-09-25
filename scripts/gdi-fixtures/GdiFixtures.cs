@@ -1285,6 +1285,7 @@ public static class GdiFixtures
 		TxPlusCase("textx-plus-cleartype", System.Drawing.Text.TextRenderingHint.ClearTypeGridFit);
 		TxPlusCase("textx-plus-systemdefault", System.Drawing.Text.TextRenderingHint.SystemDefault);
 		TxRasterCases();
+		TxRotatedAlignCases();
 	}
 
 	// -----------------------------------------------------------------------
@@ -2390,6 +2391,51 @@ public static class GdiFixtures
 		TxStyleSheet("textx-fon-mssansserif-styles", "MS Sans Serif", 0, false);
 		TxStyleSheet("textx-fon-courier-styles", "Courier", 0, true);
 		TxSizeSheet("textx-fon-mssansserif-aa", "MS Sans Serif", 4, TxRasterSizes, false);
+	}
+
+	// Rotated text with TA_TOP / TA_BOTTOM / TA_BASELINE and TA_CENTER /
+	// TA_RIGHT, by escapement and by world transform, with a cross at each
+	// reference point.
+	static void TxRotatedAlignSheet(string name, bool world, int height)
+	{
+		int[] angles = { 0, 25, 45, 90, 160, 300 };
+		int[] aligns = { 0, 8, 24, 6 | 24, 2 };
+		GdiCase(name, 600, 520, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 600, 520, Rgb(255, 255, 255));
+			SetBkMode(hdc, 1); SetTextColor(hdc, 0);
+			SetGraphicsMode(hdc, 2);
+			for (int i = 0; i < angles.Length; i++)
+			{
+				for (int j = 0; j < aligns.Length; j++)
+				{
+					int x = 50 + j * 115, y = 45 + i * 80;
+					SetTextAlign(hdc, (uint)aligns[j]);
+					var lf = TxLf(j % 2 == 0 ? "Arial" : "Times New Roman", height, 400, false, 3);
+					if (world)
+					{
+						XFORM xf = RotationXform(-angles[i], x, y);
+						SetWorldTransform(hdc, ref xf);
+						TxLine(hdc, lf, 0, 0, "Tg" + angles[i]);
+						XFORM id = new XFORM { eM11 = 1, eM22 = 1 };
+						SetWorldTransform(hdc, ref id);
+					}
+					else
+					{
+						lf.lfEscapement = angles[i] * 10; lf.lfOrientation = angles[i] * 10;
+						TxLine(hdc, lf, x, y, "Tg" + angles[i]);
+					}
+					Fill(hdc, x, y, x + 1, y + 1, Rgb(255, 0, 0));
+				}
+			}
+		});
+	}
+
+	static void TxRotatedAlignCases()
+	{
+		TxRotatedAlignSheet("textx-rotalign-esc", false, -20);
+		TxRotatedAlignSheet("textx-rotalign-esc-small", false, -13);
+		TxRotatedAlignSheet("textx-rotalign-world", true, -20);
 	}
 
 	public static void Run(string dir, string which)

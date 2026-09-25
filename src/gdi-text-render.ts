@@ -223,7 +223,11 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 	}
 	// Vertical alignment moves the baseline across it.
 	const vAlign = run.textAlign & 0x18;
-	const baseDown = vAlign === 0x18 ? 0 : vAlign === 0x08 ? -font.descent : font.ascent;
+	// At a non-axis angle GDI realises the font with rotated metrics.
+	const skew = !!m && Math.abs(m[0]) > 1e-9 && Math.abs(m[1]) > 1e-9;
+	const ascent = skew ? (font.rotatedAscent ?? font.ascent) : font.ascent;
+	const descent = skew ? (font.rotatedDescent ?? font.descent) : font.descent;
+	const baseDown = vAlign === 0x18 ? 0 : vAlign === 0x08 ? -descent : ascent;
 
 	// Place every glyph at an integer device origin.
 	const placed: PlacedGlyph[] = [];

@@ -98,6 +98,9 @@ export interface TtfFont {
 	headFlags: number;
 	/** `head.macStyle` (bit 0 bold, bit 1 italic). */
 	macStyle: number;
+	/** `head` bounding box yMax / yMin (font units). */
+	headYMax: number;
+	headYMin: number;
 	numGlyphs: number;
 	hheaAscender: number;
 	hheaDescender: number;
@@ -609,6 +612,8 @@ export function parseTrueTypeFace(view: DataView, base = 0): TtfFont | null {
 		unitsPerEm,
 		headFlags,
 		macStyle,
+		headYMax: view.getInt16(head.offset + 42),
+		headYMin: view.getInt16(head.offset + 38),
 		numGlyphs,
 		hheaAscender: view.getInt16(hhea.offset + 4),
 		hheaDescender: view.getInt16(hhea.offset + 6),

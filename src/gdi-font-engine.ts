@@ -203,6 +203,13 @@ export interface GdiRealizedFont {
 	glyphIndex(code: number): number;
 	advance(index: number): number;
 	rotatedAdvance(index: number): number;
+	/**
+	 * tmAscent / tmDescent of the font realised at a non-axis angle
+	 * (escapement or world rotation), which TA_TOP / TA_BOTTOM use there;
+	 * absent where rotation does not change them.
+	 */
+	readonly rotatedAscent?: number;
+	readonly rotatedDescent?: number;
 	glyph(index: number, m?: readonly [number, number, number, number], subX?: number): GdiGlyph;
 	charForGlyph(index: number): number;
 }
@@ -360,6 +367,9 @@ export class RealizedFont implements GdiRealizedFont {
 	/** Cell ascent / descent (tmAscent / tmDescent), device pixels. */
 	readonly ascent: number;
 	readonly descent: number;
+	/** tmAscent / tmDescent at a non-axis angle (see {@link GdiRealizedFont.rotatedAscent}). */
+	readonly rotatedAscent: number;
+	readonly rotatedDescent: number;
 	/** Underline / strike-out: position above the baseline (y up) and thickness. */
 	readonly underlinePosition: number;
 	readonly underlineThickness: number;
@@ -414,6 +424,12 @@ export class RealizedFont implements GdiRealizedFont {
 			this.ascent = scale(ttf.winAscent);
 			this.descent = scale(ttf.winDescent);
 		}
+		// Rotated (non-axis) realisations report the head bounding box, scaled
+		// and padded: floor(yMax * ppem / upem + 1.27) (measured exact for
+		// Arial and Times New Roman lfHeight -10..-24 at 25 and 45 degrees,
+		// both ascent and descent; the fitted pad lies in [1.254, 1.288)).
+		this.rotatedAscent = Math.floor((ttf.headYMax * ppem) / upem + 1.27);
+		this.rotatedDescent = Math.floor((-ttf.headYMin * ppem) / upem + 1.27);
 		this.underlinePosition = scale(ttf.underlinePosition);
 		this.underlineThickness = scale(ttf.underlineThickness);
 		this.strikeoutPosition = scale(ttf.strikeoutPosition);
@@ -542,6 +558,15 @@ export class RealizedFont implements GdiRealizedFont {
 		// enable dropout control), as GDI does; 90/180/270 degrees keep the
 		// upright hinting (measured exact against the escapement fixtures).
 		const src = skew ? this.rotatedOutline(index) : this.outline(index);
+		if (skew && m) {
+			// GDI scales a rotated glyph by the font matrix rounded to whole
+			// pixels per em (ppem*cos and ppem*sin each rounded), so a 16 px
+			// glyph at 25 degrees is drawn about 16.5 px tall (measured with
+			// GetGlyphOutline; it cuts the escapement fixtures' residual by
+			// a fifth).
+			const p = this.ppem;
+			m = [Math.round(m[0] * p) / p, Math.round(m[1] * p) / p, Math.round(m[2] * p) / p, Math.round(m[3] * p) / p];
+		}
 		let o: Outline = src;
 		if (this.syntheticItalic || m || subX) {
 			const n = src.xs.length;

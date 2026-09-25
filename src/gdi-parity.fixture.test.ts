@@ -421,7 +421,7 @@ const fontCase = (name: string, ext: 'emf' | 'wmf', maxMismatch: number): Parity
 });
 
 const FONT_ENGINE_CASES: ParityCase[] = [
-	fontCase('rotate-text-25deg', 'emf', 0.0183), // measured 1.460%
+	fontCase('rotate-text-25deg', 'emf', 0.0025), // measured 0.197%
 	fontCase('text-arial-hm13', 'wmf', 0.0006), // measured 0.029%
 	fontCase('text-arial-hm20', 'wmf', 0.0004), // measured 0.007%
 	fontCase('text-arial-hp18', 'wmf', 0), // measured 0.000%
@@ -458,8 +458,8 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-couriernew-cell-mono', 'emf', 0.0005), // measured 0.011%
 	fontCase('textx-couriernew-mono', 'emf', 0.0004), // measured 0.010%
 	fontCase('textx-couriernew-styles-mono', 'emf', 0.0005), // measured 0.012%
-	fontCase('textx-escapement-aa', 'emf', 0.0034), // measured 0.270%
-	fontCase('textx-escapement-mono', 'emf', 0.0034), // measured 0.270%
+	fontCase('textx-escapement-aa', 'emf', 0.0027), // measured 0.212%
+	fontCase('textx-escapement-mono', 'emf', 0.0027), // measured 0.212%
 	fontCase('textx-eto-aa', 'emf', 0.0063), // measured 0.499%
 	fontCase('textx-eto-mono', 'emf', 0.0055), // measured 0.435%
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
@@ -493,6 +493,9 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-plus-singlebit', 'emf', 0.1178), // measured 9.420%
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
+	fontCase('textx-rotalign-esc', 'emf', 0.0064), // measured 0.511%
+	fontCase('textx-rotalign-esc-small', 'emf', 0.0046), // measured 0.367%
+	fontCase('textx-rotalign-world', 'emf', 0.0068), // measured 0.537%
 	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
 	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
 	fontCase('textx-segoeui-cleartype', 'emf', 0.0506), // measured 4.041%
@@ -511,7 +514,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-wmf-arial-mono', 'wmf', 0.0005), // measured 0.017%
 	fontCase('textx-wmf-arial-styles-mono', 'wmf', 0.0006), // measured 0.027%
 	fontCase('textx-wmf-couriernew-mono', 'wmf', 0.0004), // measured 0.010%
-	fontCase('textx-wmf-escapement-mono', 'wmf', 0.0039), // measured 0.305%
+	fontCase('textx-wmf-escapement-mono', 'wmf', 0.0031), // measured 0.247%
 	fontCase('textx-wmf-eto-mono', 'wmf', 0.0004), // measured 0.004%
 	fontCase('textx-wmf-opaque-mono', 'wmf', 0.0004), // measured 0.004%
 	fontCase('textx-wmf-segoeui-mono', 'wmf', 0.0005), // measured 0.015%
@@ -519,8 +522,8 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.0006), // measured 0.028%
 	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0.0005), // measured 0.020%
 	fontCase('textx-wmf-timesnewroman-styles-mono', 'wmf', 0.0005), // measured 0.012%
-	fontCase('textx-world-aa', 'emf', 0.0044), // measured 0.346%
-	fontCase('textx-world-mono', 'emf', 0.0036), // measured 0.282%
+	fontCase('textx-world-aa', 'emf', 0.0036), // measured 0.284%
+	fontCase('textx-world-mono', 'emf', 0.0028), // measured 0.221%
 ];
 
 /**

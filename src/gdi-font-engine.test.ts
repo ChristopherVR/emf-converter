@@ -143,6 +143,10 @@ describe('gdi-font-engine', () => {
 		expect(r.strikeoutPosition).toBe(3);
 		expect(r.advance(2)).toBe(2);
 		expect(r.mode).toBe('mono');
+		// At a non-axis angle: the head bounding box, scaled and padded.
+		const f = parseFontFile(FONT)[0];
+		expect(r.rotatedAscent).toBe(Math.floor((f.headYMax * 10) / f.unitsPerEm + 1.27));
+		expect(r.rotatedDescent).toBe(Math.floor((-f.headYMin * 10) / f.unitsPerEm + 1.27));
 	});
 
 	it('resolves both lfHeight signs', () => {
