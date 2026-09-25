@@ -106,24 +106,24 @@ const LINEAR_TILE_CASES: ParityCase[] = [
  * size and shape (`emf-plus-linear-ramp.ts`): five preset colours on a
  * brush rectangle whose w + h picks a 16-, 64- and 256-interval table,
  * `SetSigmaBellShape` (hundreds of blend points), `SetBlendTriangularShape`
- * (three), `GammaCorrection` on a two-colour and a preset ramp,
- * translucent end colours, and `PixelOffsetMode` Half. All within one
- * level of GDI+ on every pixel. `gpx-lin-blend-ellipse` (four blend
- * factors, rotated, on an ellipse) is level-exact inside the shape; its
- * curved edge is Canvas antialiasing where GDI+'s default SmoothingMode
- * paints aliased pixels (see the `gdiAntialias: false` block below).
+ * (three), `GammaCorrection` on a two-colour and a preset ramp (linear
+ * light held in 10 bits), translucent end colours (their exact half-level
+ * knots rounding down), and `PixelOffsetMode` Half: every pixel equal to
+ * GDI+'s. `gpx-lin-blend-ellipse` (four blend factors, rotated, on an
+ * aliased ellipse) is exact too. `gpx-lin-sigma` keeps a few pixels one
+ * level off where a blend knot lands exactly on a half level.
  */
 const LINEAR_RAMP_CASES: ParityCase[] = [
-	levelExact('gpx-lin-preset5-small'),
-	levelExact('gpx-lin-preset5-large'),
-	levelExact('gpx-lin-preset5-huge'),
-	levelExact('gpx-lin-sigma'),
-	levelExact('gpx-lin-triangular'),
-	levelExact('gpx-lin-gamma'),
-	levelExact('gpx-lin-gamma-preset'),
-	levelExact('gpx-lin-alpha'),
-	levelExact('gpx-lin-pixeloffset-half'),
-	close('gpx-lin-blend-ellipse', 0.03), // measured 2.41% (antialiased edge only)
+	exact('gpx-lin-preset5-small'),
+	exact('gpx-lin-preset5-large'),
+	exact('gpx-lin-preset5-huge'),
+	levelExact('gpx-lin-sigma'), // measured 0.013% one level off (tolerance 0)
+	exact('gpx-lin-triangular'),
+	exact('gpx-lin-gamma'),
+	exact('gpx-lin-gamma-preset'),
+	exact('gpx-lin-alpha'),
+	exact('gpx-lin-pixeloffset-half'),
+	exact('gpx-lin-blend-ellipse'),
 ];
 
 /**
@@ -597,13 +597,13 @@ const REGION_CLIP_CASES: ParityCase[] = [exact('gpx-clipregion')];
  * An EMF+ `DrawImage` of an embedded metafile, replayed record by record
  * into the destination (`emf-plus-draw-image.ts`) instead of rasterised
  * and scaled: scaled 1.5x/1.33x, and under a clip with later shapes over
- * it. Nested shape edges land where GDI+ puts them (its playback scales
- * about pixel centres); the residual is antialiased edges against GDI+'s
- * aliased ones (the `gdiAntialias: false` block takes it under 0.1%).
+ * it. Nested shapes are rasterised aliased like GDI+'s; the residual is a
+ * handful of pixels on the scaled ellipse's edge (4.57% and 2.31% before
+ * EMF+ followed the recorded SmoothingMode).
  */
 const NESTED_METAFILE_CASES: ParityCase[] = [
-	close('gpx-metafile-scaled', 0.05), // measured 4.57%
-	close('gpx-metafile-clip-zorder', 0.03), // measured 2.31%
+	close('gpx-metafile-scaled', 0.002), // measured 0.065%
+	close('gpx-metafile-clip-zorder', 0.001), // measured 0.039%
 ];
 
 /**
@@ -628,25 +628,38 @@ const TEXTURE_SAMPLING_CASES: ParityCase[] = [
 
 /**
  * Pens and text painted with a texture, linear-gradient or path-gradient
- * brush: the stroke's or glyphs' coverage comes from Canvas and every
- * covered pixel's colour from the brush's own per-pixel sampler
- * (`paintBrushThroughMask`), where a pen used to paint its brush's flat
- * colour and text a filtered `CanvasPattern`. Pen strokes: exact but for
- * the curved stroke's antialiased edge (19% to 28% before); text: the
- * residual is glyph shapes and layout from the host font engine, the
- * colours inside the glyphs match. `gpx-pen-styles` checks the pen record's
- * optional data (dash pattern and offset, alignment, compound line, caps,
- * join, miter limit) is parsed in GDI+'s order so the brush after it is
- * found; compound lines and separate dash/line caps are not modelled.
+ * brush: every covered pixel's colour comes from the brush's own per-pixel
+ * sampler, where a pen used to paint its brush's flat colour and text a
+ * filtered `CanvasPattern`. Pen strokes are GDI+'s widened outline
+ * scan-converted by its own rules (`emf-plus-widen.ts`,
+ * `emf-plus-raster.ts`), 19% to 28% off before; `gpx-pen-styles` (a
+ * custom dash pattern with an offset on an Inset pen with round joins, a
+ * round start and square end cap on a dashed line, and a compound line) is
+ * exact. Text without the `fonts` option: the residual is glyph shapes and
+ * layout from the host font engine (see the fonts group below).
  */
 const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
-	close('gpx-pen-texture', 0.025), // measured 1.79%
-	close('gpx-pen-lingrad', 0.025), // measured 1.84%
-	close('gpx-pen-pathgrad', 0.02), // measured 1.40%
-	close('gpx-pen-styles', 0.05), // measured 4.37%
-	close('gpx-text-texture', 0.14), // measured 11.57% (glyph shapes)
-	close('gpx-text-lingrad', 0.14), // measured 11.76% (glyph shapes)
-	close('gpx-text-pathgrad', 0.09), // measured 6.85% (glyph shapes)
+	close('gpx-pen-texture', 0.001), // measured 0.019%
+	close('gpx-pen-lingrad', 0.001), // measured 0.019%
+	close('gpx-pen-pathgrad', 0.002), // measured 0.070%
+	exact('gpx-pen-styles'),
+	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
+	close('gpx-text-lingrad', 0.14), // measured 10.98% (glyph shapes)
+	close('gpx-text-pathgrad', 0.09), // measured 6.53% (glyph shapes)
+];
+
+/**
+ * The brush-filled text with the `fonts` option: glyph coverage from the
+ * GDI font engine (`gdiTextCoverage`), per channel for ClearType, and the
+ * brush's colour per pixel. The residual is the engine's own grayscale and
+ * ClearType fidelity (see the font engine group); single-bit text is exact.
+ */
+const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
+	close('gpx-text-texture', 0.025), // measured 1.977%
+	close('gpx-text-lingrad', 0.025), // measured 1.996%
+	close('gpx-text-pathgrad', 0.021), // measured 1.649%
+	exact('gpx-text-texture-mono'),
+	close('gpx-text-texture-cleartype', 0.04), // measured 3.093%
 ];
 
 /**
@@ -654,24 +667,19 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
  * default, recorded as PathPointFlags without 0x2000) fills even-odd, so
  * the star's centre and the overlap of two same-direction rectangles stay
  * empty; Winding fills them. Alternate used to fill nonzero (9.7% of
- * pixels off). The residual is antialiased edges (see below for aliased).
+ * pixels off). The fills and the clip regions are GDI+'s own pixels.
  */
 const PATH_FILL_MODE_CASES: ParityCase[] = [
-	close('gpx-fillpath-alternate', 0.035), // measured 2.52%
-	close('gpx-fillpath-winding', 0.03), // measured 1.96%
-	close('gpx-clippath-alternate', 0.035), // measured 2.53%
-	close('gpx-clippath-winding', 0.03), // measured 1.96%
+	exact('gpx-fillpath-alternate'),
+	exact('gpx-fillpath-winding'),
+	exact('gpx-clippath-alternate'),
+	exact('gpx-clippath-winding'),
 ];
 
 /**
- * The same EMF+ fixtures with `gdiAntialias: false`: EMF+ fills and
- * strokes recorded under GDI+'s default SmoothingMode (None) are
- * rasterised aliased on GDI+'s pixel grid (a pixel is painted when its
- * sample point, the integer device coordinate under PixelOffsetMode None,
- * is inside; curves flattened into GDI+'s 0.25-pixel polygon), and EMF+
- * clip regions become the pixel sets GDI+ holds. What is left is single
- * pixels along slanted and curved edges, where GDI+'s fixed-point edge
- * stepping rounds a crossing the other way.
+ * The same EMF+ fixtures with `gdiAntialias: false`, which for EMF+ is the
+ * default: drawing follows the recorded SmoothingMode either way (only
+ * `gdiAntialias: true` hands EMF+ edges to Canvas).
  */
 const plusAliased = (name: string, maxMismatch: number): ParityCase => ({
 	...close(name, maxMismatch),
@@ -679,18 +687,36 @@ const plusAliased = (name: string, maxMismatch: number): ParityCase => ({
 });
 
 const PLUS_ALIASED_CASES: ParityCase[] = [
-	plusAliased('gpx-fillpath-alternate', 0.002), // measured 0.07%
-	plusAliased('gpx-fillpath-winding', 0.002), // measured 0.04%
-	plusAliased('gpx-clippath-alternate', 0.002), // measured 0.08%
-	plusAliased('gpx-clippath-winding', 0.002), // measured 0.06%
-	plusAliased('gpx-lin-blend-ellipse', 0.003), // measured 0.11%
-	plusAliased('gpx-metafile-scaled', 0.002), // measured 0.10%
-	plusAliased('gpx-metafile-clip-zorder', 0.002), // measured 0.05%
-	plusAliased('gpx-pen-texture', 0.003), // measured 0.12%
-	plusAliased('gpx-pen-lingrad', 0.003), // measured 0.12%
-	plusAliased('gpx-pen-pathgrad', 0.003), // measured 0.14%
+	plusAliased('gpx-fillpath-alternate', 0),
+	plusAliased('gpx-fillpath-winding', 0),
+	plusAliased('gpx-clippath-alternate', 0),
+	plusAliased('gpx-clippath-winding', 0),
+	plusAliased('gpx-lin-blend-ellipse', 0),
+	plusAliased('gpx-metafile-scaled', 0.002), // measured 0.065%
+	plusAliased('gpx-metafile-clip-zorder', 0.001), // measured 0.039%
+	plusAliased('gpx-pen-texture', 0.001), // measured 0.019%
+	plusAliased('gpx-pen-lingrad', 0.001), // measured 0.019%
+	plusAliased('gpx-pen-pathgrad', 0.002), // measured 0.070%
 	plusAliased('gpx-image-clip-zorder', 0), // measured 0%
 	plusAliased('gpx-texture-tile', 0), // measured 0%
+];
+
+/**
+ * One drawing (a filled ellipse, triangle and Bezier path, a 3.5-pixel pen
+ * ellipse and two 1-pixel lines) under each GDI+ SmoothingMode. None and
+ * HighSpeed are drawn aliased, AntiAlias and HighQuality with GDI+'s 8 x 4
+ * antialiasing: the fills are exact; the strokes' residual is single pixels
+ * at the ends of the nominal-width lines and one antialiasing sample along
+ * parts of the closed pen outline. `gdiAntialias: true` keeps Canvas
+ * smoothing (the bounds below it guard that it still applies).
+ */
+const SMOOTHING_CASES: ParityCase[] = [
+	close('gpx-smooth-none', 0.001), // measured 0.025% (6.26% before)
+	close('gpx-smooth-highspeed', 0.001), // measured 0.025%
+	close('gpx-smooth-antialias', 0.006), // measured 0.457% (8.60% before)
+	close('gpx-smooth-highquality', 0.006), // measured 0.457%
+	{ ...close('gpx-smooth-none', 0.07), options: { gdiAntialias: true } }, // measured 6.258%
+	{ ...close('gpx-smooth-antialias', 0.07), options: { gdiAntialias: true } }, // measured 5.603%
 ];
 
 describe('GDI ground-truth parity', () => {
@@ -782,6 +808,14 @@ describe('GDI ground-truth parity', () => {
 		});
 	});
 
+	describe.skipIf(!windowsFonts())('EMF+ brush-filled text via the font engine (Windows fonts)', () => {
+		it.each(TEXT_BRUSH_FONT_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
 	describe.skipIf(!windowsFonts())('GDI text via the font engine (Windows fonts)', () => {
 		it.each(FONT_ENGINE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
@@ -808,7 +842,8 @@ describe('GDI ground-truth parity', () => {
 		['EMF+ TextureBrush sampling and WrapMode', TEXTURE_SAMPLING_CASES],
 		['EMF+ pens and text painted with texture/gradient brushes', PEN_TEXT_BRUSH_CASES],
 		['EMF+ path FillMode for fills and clips', PATH_FILL_MODE_CASES],
-		['EMF+ SmoothingMode None with gdiAntialias: false', PLUS_ALIASED_CASES],
+		['EMF+ with gdiAntialias: false', PLUS_ALIASED_CASES],
+		['EMF+ drawing under each SmoothingMode', SMOOTHING_CASES],
 	];
 	for (const [title, cases] of groups) {
 		describe(title, () => {
