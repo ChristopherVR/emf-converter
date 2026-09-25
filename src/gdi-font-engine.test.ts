@@ -15,7 +15,7 @@ import { fixturePath, windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { buildTestFont } from './__fixtures__/test-font';
 import { ensureNodeCanvasModule } from './emf-canvas-helpers';
 import { GdiFontCollection, resolvePpem, type LogFontSpec } from './gdi-font-engine';
-import { paintGdiTextRun, type GdiTextRun } from './gdi-text-render';
+import { gdiTextCoverage, paintGdiTextRun, type GdiTextRun } from './gdi-text-render';
 import { SvgContext } from './svg-context';
 import { svgTreeToString } from './svg-tree';
 import { convertMetafileToSvg } from './index';
@@ -254,6 +254,16 @@ describe('gdi-text-render', () => {
 	it('clips to the ETO_CLIPPED rectangle', async () => {
 		const { ink } = await paint(run({ options: 0x04, rect: { left: 0, top: 0, right: 12, bottom: 30 } }));
 		expect(columns(ink, 15)).toEqual([10]);
+	});
+
+	it('exposes the run\'s glyph coverage as a device-space mask', () => {
+		const cov = gdiTextCoverage(font, run())!;
+		expect([cov.x, cov.y, cov.width, cov.height, cov.channels]).toEqual([10, 13, 3, 7, 1]);
+		// Columns 10 and 12 are ink (255), column 11 is the gap between glyphs.
+		expect(Array.from(cov.data.slice(0, 3))).toEqual([255, 0, 255]);
+		const gray = gdiTextCoverage(fonts.realize(spec({ quality: 4 }))!, run())!;
+		expect(Math.max(...gray.data)).toBe(255);
+		expect(gdiTextCoverage(font, run({ codes: [0x20] }))).toBeNull();
 	});
 
 	it('emits SVG text at the same per-glyph origins', async () => {

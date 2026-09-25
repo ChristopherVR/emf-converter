@@ -159,16 +159,25 @@ function fillDeviceQuad(ctx: CanvasContext, pts: Array<{ x: number; y: number }>
 	ctx.restore();
 }
 
+/** Where every glyph of a run lands (shared by painting and {@link gdiTextCoverage}). */
+interface RunLayout {
+	glyphs: number[];
+	total: number;
+	totalY: number;
+	startAlong: number;
+	baseDown: number;
+	hAlign: number;
+	at: (along: number, down: number) => { x: number; y: number };
+	placed: PlacedGlyph[];
+	origins: Array<{ x: number; y: number; along: number; down: number }>;
+}
+
 /**
- * Paints `run` with `font` and returns the device advance of the whole run
- * (for TA_UPDATECP). Never throws; draws nothing it cannot place.
+ * Lays a run out the way GDI does: advances (Dx, or the font's widths),
+ * TA_* alignment along and across the baseline, and every glyph bitmap at
+ * an integer device origin.
  */
-export function paintGdiTextRun(
-	ctx: CanvasContext,
-	font: RealizedFont,
-	run: GdiTextRun,
-	fontFamilyMap?: Record<string, string>,
-): GdiTextAdvance {
+function layoutGdiRun(font: RealizedFont, run: GdiTextRun): RunLayout {
 	const n = run.codes.length;
 	const glyphs = run.codes.map((c) => (run.glyphIndices ? c : font.glyphIndex(c)));
 	// Advances along the baseline (device, may be fractional under scaling).
@@ -216,6 +225,46 @@ export function paintGdiTextRun(
 	const vAlign = run.textAlign & 0x18;
 	const baseDown = vAlign === 0x18 ? 0 : vAlign === 0x08 ? -font.descent : font.ascent;
 
+	// Place every glyph at an integer device origin.
+	const placed: PlacedGlyph[] = [];
+	const origins: Array<{ x: number; y: number; along: number; down: number }> = [];
+	const gm = m ? ([m[0], m[1], m[2], m[3]] as const) : undefined;
+	let along = startAlong;
+	let down = baseDown;
+	for (let i = 0; i < n; i++) {
+		const origin = at(along, down);
+		// GDI places every glyph at an integer origin; GDI+'s non-grid-fitted
+		// hints keep the fractional x (to 1/64 pixel) in the glyph itself.
+		const ox = font.gridFit ? Math.round(origin.x) : Math.floor(origin.x);
+		const subX = font.gridFit ? 0 : Math.round((origin.x - ox) * 64);
+		origins.push({ x: ox + subX / 64, y: Math.round(origin.y), along, down });
+		const g = font.glyph(glyphs[i], gm, subX);
+		if (g.bitmap) {
+			placed.push({ x: ox + g.bitmap.left, y: Math.round(origin.y) - g.bitmap.top, bitmap: g.bitmap });
+		}
+		along += adv[i];
+		down += advY[i];
+	}
+	return { glyphs, total, totalY, startAlong, baseDown, hAlign, at, placed, origins };
+}
+
+/**
+ * Paints `run` with `font` and returns the device advance of the whole run
+ * (for TA_UPDATECP). Never throws; draws nothing it cannot place.
+ */
+export function paintGdiTextRun(
+	ctx: CanvasContext,
+	font: RealizedFont,
+	run: GdiTextRun,
+	fontFamilyMap?: Record<string, string>,
+): GdiTextAdvance {
+	const { glyphs, total, totalY, startAlong, baseDown, at, placed, origins, hAlign } = layoutGdiRun(font, run);
+	const m = run.matrix;
+	const ux = m ? m[0] : 1;
+	const uy = m ? m[1] : 0;
+	const vx = m ? m[2] : 0;
+	const vy = m ? m[3] : 1;
+
 	const clip = run.options & ETO_CLIPPED && run.rect ? run.rect : null;
 
 	// ETO_OPAQUE rectangle.
@@ -242,26 +291,6 @@ export function paintGdiTextRun(
 		}
 	}
 
-	// Place every glyph at an integer device origin.
-	const placed: PlacedGlyph[] = [];
-	const origins: Array<{ x: number; y: number; along: number; down: number }> = [];
-	const gm = m ? ([m[0], m[1], m[2], m[3]] as const) : undefined;
-	let along = startAlong;
-	let down = baseDown;
-	for (let i = 0; i < n; i++) {
-		const origin = at(along, down);
-		// GDI places every glyph at an integer origin; GDI+'s non-grid-fitted
-		// hints keep the fractional x (to 1/64 pixel) in the glyph itself.
-		const ox = font.gridFit ? Math.round(origin.x) : Math.floor(origin.x);
-		const subX = font.gridFit ? 0 : Math.round((origin.x - ox) * 64);
-		origins.push({ x: ox + subX / 64, y: Math.round(origin.y), along, down });
-		const g = font.glyph(glyphs[i], gm, subX);
-		if (g.bitmap) {
-			placed.push({ x: ox + g.bitmap.left, y: Math.round(origin.y) - g.bitmap.top, bitmap: g.bitmap });
-		}
-		along += adv[i];
-		down += advY[i];
-	}
 	if (isSvgContext(ctx)) {
 		if (clip) {
 			ctx.save();
@@ -667,4 +696,64 @@ function compositeClearType(
 	ctx.globalAlpha = 1;
 	canvasDrawImage(ctx, layer.canvas, x0, y0, w, h);
 	ctx.restore();
+}
+
+/** A run's glyph coverage in device space (see {@link gdiTextCoverage}). */
+export interface GdiTextCoverage {
+	/** Device position of the mask's top-left pixel. */
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** 1 (one alpha per pixel) or 3 (ClearType R, G, B alphas per pixel). */
+	channels: 1 | 3;
+	/** Row-major coverage, 0..255 per pixel (or per channel). */
+	data: Uint8ClampedArray;
+}
+
+/**
+ * The glyph coverage GDI would paint for `run` (no background, no
+ * underline/strike-out), as an alpha mask in device pixels: 255 for a
+ * black-and-white pixel, `k * 255 / 16` for grayscale coverage `k`, and
+ * per-channel alphas for ClearType. For callers that fill text with
+ * something other than a solid colour (e.g. an EMF+ gradient or texture
+ * brush sampled per pixel through the mask). Returns null for an empty run.
+ */
+export function gdiTextCoverage(font: RealizedFont, run: GdiTextRun): GdiTextCoverage | null {
+	const { placed } = layoutGdiRun(font, run);
+	if (placed.length === 0) {
+		return null;
+	}
+	let x0 = Infinity;
+	let y0 = Infinity;
+	let x1 = -Infinity;
+	let y1 = -Infinity;
+	for (const p of placed) {
+		x0 = Math.min(x0, p.x);
+		y0 = Math.min(y0, p.y);
+		x1 = Math.max(x1, p.x + p.bitmap.width);
+		y1 = Math.max(y1, p.y + p.bitmap.height);
+	}
+	const w = x1 - x0;
+	const h = y1 - y0;
+	if (w <= 0 || h <= 0 || w * h > 64 * 1024 * 1024) {
+		return null;
+	}
+	const channels: 1 | 3 = placed.some((p) => p.bitmap.channels === 3) ? 3 : 1;
+	const data = new Uint8ClampedArray(w * h * channels);
+	const full = font.mode === 'mono' ? 1 : 16;
+	for (const p of placed) {
+		const b = p.bitmap;
+		const bc = b.channels === 3 ? 3 : 1;
+		for (let y = 0; y < b.height; y++) {
+			for (let x = 0; x < b.width; x++) {
+				for (let c = 0; c < channels; c++) {
+					const v = bc === 3 ? b.data[(y * b.width + x) * 3 + c] : Math.round((b.data[y * b.width + x] * 255) / full);
+					const i = ((p.y + y - y0) * w + (p.x + x - x0)) * channels + c;
+					if (v > data[i]) data[i] = v;
+				}
+			}
+		}
+	}
+	return { x: x0, y: y0, width: w, height: h, channels, data };
 }
