@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.5.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.5.1) - 2026-09-25
+
+### Documentation
+
+- Keep only real limitations in the README and demo ([235f437](https://github.com/ChristopherVR/emf-converter/commit/235f43744f18ecda4e9221a7184f9e5e6db7ff90))
+
 ## [3.5.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.5.0) - 2026-09-25
 
 ### Features
