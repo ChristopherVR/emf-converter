@@ -707,16 +707,16 @@ const PLUS_ALIASED_CASES: ParityCase[] = [
  * One drawing (a filled ellipse, triangle and Bezier path, a 3.5-pixel pen
  * ellipse and two 1-pixel lines) under each GDI+ SmoothingMode. None and
  * HighSpeed are drawn aliased, AntiAlias and HighQuality with GDI+'s 8 x 4
- * antialiasing: the fills are exact; the strokes' residual is single pixels
- * at the ends of the nominal-width lines and one antialiasing sample along
- * parts of the closed pen outline. `gdiAntialias: true` keeps Canvas
+ * antialiasing: fills and strokes are exact (the 1-pixel lines through
+ * GDI+'s nominal-width line algorithm, `emf-plus-nominal-line.ts`, and the
+ * curves through GDI+'s own Bezier flattener). `gdiAntialias: true` keeps Canvas
  * smoothing (the bounds below it guard that it still applies).
  */
 const SMOOTHING_CASES: ParityCase[] = [
-	close('gpx-smooth-none', 0.001), // measured 0.025% (6.26% before)
-	close('gpx-smooth-highspeed', 0.001), // measured 0.025%
-	close('gpx-smooth-antialias', 0.006), // measured 0.457% (8.60% before)
-	close('gpx-smooth-highquality', 0.006), // measured 0.457%
+	close('gpx-smooth-none', 0), // measured 0% (6.26% before, 0.025% with the older nominal-line model)
+	close('gpx-smooth-highspeed', 0), // measured 0%
+	close('gpx-smooth-antialias', 0), // measured 0% (8.60% before, 0.457% with the older nominal-line model)
+	close('gpx-smooth-highquality', 0), // measured 0%
 	{ ...close('gpx-smooth-none', 0.07), options: { gdiAntialias: true } }, // measured 6.258%
 	{ ...close('gpx-smooth-antialias', 0.07), options: { gdiAntialias: true } }, // measured 5.603%
 ];
@@ -779,6 +779,63 @@ const WMF_RECORD_CASES: ParityCase[] = [
  * engine: GDI's per-character extra and its DDA spread of the break extra.
  */
 const WMF_TEXT_SPACING_CASES: ParityCase[] = [wmf('wmf-text-spacing', 0.0002)]; // measured 0.006%
+
+/**
+ * EMF+ records and objects the converter used to skip, against real GDI+
+ * (`emfplus-records` fixtures; the hand-built record encodings no recorder
+ * writes are checked against GDI+'s own playback of them). Measured before
+ * these records were handled (tolerance 8): beziers 4.45%, curve 9.46%,
+ * closed curve 30.39%, region fill 34.16%, relative points 21.18%,
+ * containers 36.57% / 22.29%, save/restore 21.34%, compositing 15.96%,
+ * hatch 54.20%, MultiFormat 23.25%, StrokeFillPath 30.16%, terminal-server
+ * clip 45.75% / 63.25%, terminal-server graphics 31.27%, compressed shapes
+ * 0.26% (the arcs). Aliased and antialiased (`-aa`) variants.
+ */
+const recordCase = (name: string, maxMismatch: number): ParityCase => ({ ...close(name, maxMismatch) });
+
+const EMF_PLUS_RECORD_CASES: ParityCase[] = [
+	recordCase('gpx-rec-beziers', 0.0005), // measured 0.019%
+	recordCase('gpx-rec-beziers-aa', 0.0005), // measured 0.025%
+	recordCase('gpx-rec-curve', 0),
+	recordCase('gpx-rec-curve-aa', 0.0005), // measured 0.013%
+	recordCase('gpx-rec-closedcurve', 0),
+	recordCase('gpx-rec-closedcurve-aa', 0),
+	recordCase('gpx-rec-compressed', 0),
+	recordCase('gpx-rec-compressed-aa', 0),
+	recordCase('gpx-rec-relative', 0),
+	recordCase('gpx-rec-relative-image', 0),
+	recordCase('gpx-rec-fillregion', 0),
+	recordCase('gpx-rec-fillregion-aa', 0),
+	recordCase('gpx-rec-container', 0),
+	recordCase('gpx-rec-container-page', 0),
+	recordCase('gpx-rec-save-restore', 0),
+	recordCase('gpx-rec-compositing', 0),
+	recordCase('gpx-rec-compositing-aa', 0),
+	recordCase('gpx-rec-hatch', 0),
+	recordCase('gpx-rec-hatch-origin', 0),
+	recordCase('gpx-rec-hatch-rotated', 0),
+	recordCase('gpx-rec-multiformat-start', 0),
+	recordCase('gpx-rec-multiformat-ignored', 0),
+	recordCase('gpx-rec-strokefillpath', 0),
+	recordCase('gpx-rec-tsclip', 0),
+	recordCase('gpx-rec-tsclip-state', 0),
+	recordCase('gpx-rec-tsgraphics', 0),
+	recordCase('gpx-rec-customcap', 0.0005), // measured 0.013%
+	recordCase('gpx-rec-customcap-aa', 0.001), // measured 0.051%
+];
+
+/**
+ * TextContrast on antialiased and ClearType text (Windows fonts): GDI+
+ * lightens grayscale coverage a to 1 - (1 - a)^(1 / gamma) and blends
+ * ClearType channels as value^gamma, gamma = 1 + contrast / 10. The
+ * residual is the glyph shapes (as in the brush-filled text cases); per
+ * row the mean signed error no longer drifts with the contrast (ClearType
+ * 6.39% before, grayscale 6.64%).
+ */
+const TEXT_CONTRAST_CASES: ParityCase[] = [
+	close('gpx-rec-textcontrast', 0.075), // measured 6.444%
+	close('gpx-rec-textcontrast-cleartype', 0.05), // measured 4.008%
+];
 
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
@@ -877,6 +934,14 @@ describe('GDI ground-truth parity', () => {
 		});
 	});
 
+	describe.skipIf(!windowsFonts())('EMF+ TextContrast via the font engine (Windows fonts)', () => {
+		it.each(TEXT_CONTRAST_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
 	describe.skipIf(!windowsFonts())('GDI text via the font engine (Windows fonts)', () => {
 		it.each(FONT_ENGINE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
@@ -929,6 +994,7 @@ describe('GDI ground-truth parity', () => {
 		['EMF+ path FillMode for fills and clips', PATH_FILL_MODE_CASES],
 		['EMF+ with gdiAntialias: false', PLUS_ALIASED_CASES],
 		['EMF+ drawing under each SmoothingMode', SMOOTHING_CASES],
+		['EMF+ records and objects (curves, regions, containers, hatches, compositing, terminal-server, MultiFormat)', EMF_PLUS_RECORD_CASES],
 	];
 	for (const [title, cases] of groups) {
 		describe(title, () => {
@@ -970,6 +1036,7 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 		...IMAGE_DRAW_CASES,
 		...TEXTURE_FILL_CASES,
 		...WMF_RECORD_CASES,
+		...EMF_PLUS_RECORD_CASES,
 	];
 	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
 		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);

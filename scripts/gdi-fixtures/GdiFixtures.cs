@@ -3438,6 +3438,588 @@ public static class GdiFixtures
 		WmfRegionCases();
 	}
 
+	// emfplus-records: EMF+ drawing records and objects the converter had no
+	// handler for (Beziers, cardinal splines, regions, containers, custom line
+	// caps, hatch brushes, compositing mode, relative and compressed points,
+	// terminal-server records). Cases GDI+ records itself are drawn through
+	// GpCase; the record encodings no recorder writes (relative points,
+	// terminal-server records) are spliced into a recorded file as raw EMF+
+	// records and the reference is GDI+'s own playback of that file
+	// (Graphics.DrawImage of the metafile at its frame size reproduces a
+	// direct drawing pixel for pixel: measured on the gpx-smooth drawing).
+	// -----------------------------------------------------------------------
+
+	static readonly SmoothingMode[] EprSmoothing = { SmoothingMode.None, SmoothingMode.AntiAlias };
+
+	static string EprSmoothTag(SmoothingMode m) { return m == SmoothingMode.None ? "" : "-aa"; }
+
+	static void EprCurveCases()
+	{
+		const int W = 160, H = 100;
+		foreach (var smoothing in EprSmoothing)
+		{
+			var sm = smoothing;
+			GpCase("gpx-rec-beziers" + EprSmoothTag(sm), W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SmoothingMode = sm;
+				using (var pen = new Pen(Color.FromArgb(255, 30, 60, 200), 1f))
+				{
+					g.DrawBeziers(pen, new PointF[] { new PointF(6.3f, 40.2f), new PointF(20.7f, 2.1f), new PointF(50.2f, 70.9f), new PointF(70.4f, 20.6f), new PointF(80.1f, 5.3f), new PointF(95.8f, 45.2f), new PointF(75.5f, 50.7f) });
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 200, 40, 40), 4.5f))
+				{
+					pen.StartCap = LineCap.Round; pen.EndCap = LineCap.Triangle; pen.LineJoin = LineJoin.Round;
+					g.DrawBeziers(pen, new Point[] { new Point(100, 10), new Point(160, 20), new Point(90, 60), new Point(150, 90) });
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 20, 140, 60), 1f))
+				{
+					g.DrawBeziers(pen, new Point[] { new Point(5, 95), new Point(30, 55), new Point(60, 110), new Point(85, 70) });
+				}
+			});
+			GpCase("gpx-rec-curve" + EprSmoothTag(sm), W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SmoothingMode = sm;
+				var pts = new PointF[] { new PointF(8.2f, 30.4f), new PointF(30.6f, 8.1f), new PointF(52.3f, 40.8f), new PointF(70.1f, 12.2f), new PointF(88.9f, 35.5f) };
+				using (var pen = new Pen(Color.FromArgb(255, 30, 60, 200), 1f)) { g.DrawCurve(pen, pts); }
+				using (var pen = new Pen(Color.FromArgb(255, 200, 40, 40), 3f)) { g.DrawCurve(pen, pts, 1.3f); }
+				using (var pen = new Pen(Color.FromArgb(255, 20, 140, 60), 2f)) { g.DrawCurve(pen, pts, 0f); }
+				var ip = new Point[] { new Point(100, 10), new Point(150, 20), new Point(110, 45), new Point(155, 60), new Point(105, 90) };
+				using (var pen = new Pen(Color.FromArgb(255, 120, 40, 160), 1f)) { g.DrawCurve(pen, ip, 1, 2, 0.8f); }
+				using (var pen = new Pen(Color.FromArgb(255, 200, 120, 0), 5f)) { pen.EndCap = LineCap.Round; g.DrawCurve(pen, new Point[] { new Point(10, 60), new Point(40, 95), new Point(80, 55) }, 2.2f); }
+				using (var pen = new Pen(Color.FromArgb(255, 0, 0, 0), 1f)) { g.DrawCurve(pen, new PointF[] { new PointF(40.5f, 70.2f), new PointF(90.3f, 80.7f) }); }
+			});
+			GpCase("gpx-rec-closedcurve" + EprSmoothTag(sm), W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SmoothingMode = sm;
+				var star = new PointF[] { new PointF(40, 5.5f), new PointF(62.3f, 70.1f), new PointF(5.2f, 28.6f), new PointF(75.8f, 28.4f), new PointF(18.1f, 70.3f) };
+				using (var b = new SolidBrush(Color.FromArgb(255, 30, 90, 200))) { g.FillClosedCurve(b, star, FillMode.Alternate, 0.4f); }
+				for (int i = 0; i < star.Length; i++) { star[i].X += 80; }
+				using (var b = new SolidBrush(Color.FromArgb(255, 200, 60, 30))) { g.FillClosedCurve(b, star, FillMode.Winding, 0.4f); }
+				using (var pen = new Pen(Color.FromArgb(255, 20, 20, 20), 1f)) { g.DrawClosedCurve(pen, star, 0.4f, FillMode.Alternate); }
+				using (var pen = new Pen(Color.FromArgb(255, 20, 140, 60), 3f)) { g.DrawClosedCurve(pen, new Point[] { new Point(10, 80), new Point(40, 75), new Point(30, 97) }); }
+				using (var b = new SolidBrush(Color.FromArgb(255, 150, 60, 170))) { g.FillClosedCurve(b, new Point[] { new Point(60, 80), new Point(100, 76), new Point(90, 98), new Point(70, 95) }); }
+			});
+		}
+	}
+
+	// Integer coordinates: GDI+ records them compressed (16-bit points and
+	// rectangles) for every shape record that has the C flag.
+	static void EprCompressedCases()
+	{
+		const int W = 160, H = 100;
+		foreach (var smoothing in EprSmoothing)
+		{
+			var sm = smoothing;
+			GpCase("gpx-rec-compressed" + EprSmoothTag(sm), W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SmoothingMode = sm;
+				using (var pen = new Pen(Color.FromArgb(255, 30, 60, 200), 1f))
+				{
+					g.DrawRectangles(pen, new Rectangle[] { new Rectangle(5, 5, 30, 20), new Rectangle(12, 12, 30, 20) });
+					g.DrawLines(pen, new Point[] { new Point(50, 5), new Point(70, 30), new Point(90, 8), new Point(60, 40) });
+					g.DrawArc(pen, new Rectangle(100, 5, 50, 30), 30, 200);
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 200, 40, 40), 3f))
+				{
+					g.DrawEllipse(pen, new Rectangle(5, 45, 40, 30));
+					g.DrawPie(pen, new Rectangle(55, 45, 40, 40), -30, 250);
+					g.DrawArc(pen, new Rectangle(105, 45, 45, 30), 200, -120);
+				}
+				using (var b = new SolidBrush(Color.FromArgb(255, 20, 140, 60)))
+				{
+					g.FillPie(b, new Rectangle(10, 80, 30, 30), 180, 90);
+					g.FillEllipse(b, new Rectangle(50, 88, 20, 10));
+					g.FillPolygon(b, new Point[] { new Point(80, 99), new Point(100, 85), new Point(120, 99) });
+					g.FillRectangles(b, new Rectangle[] { new Rectangle(130, 85, 8, 8), new Rectangle(142, 88, 12, 9) });
+				}
+			});
+		}
+	}
+
+	// FillRegion: a region built from rectangles and a path, combined with
+	// every boolean operation, under a rotation, aliased and antialiased.
+	static void EprRegionCases()
+	{
+		const int W = 160, H = 100;
+		foreach (var smoothing in EprSmoothing)
+		{
+			var sm = smoothing;
+			GpCase("gpx-rec-fillregion" + EprSmoothTag(sm), W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SmoothingMode = sm;
+				using (var p = new GraphicsPath())
+				{
+					p.AddEllipse(20.3f, 10.6f, 50.2f, 40.1f);
+					using (var r = new Region(p))
+					{
+						r.Union(new RectangleF(5.5f, 30.2f, 40.4f, 20.3f));
+						r.Xor(new Rectangle(30, 20, 20, 50));
+						using (var b = new SolidBrush(Color.FromArgb(255, 30, 90, 200))) { g.FillRegion(b, r); }
+					}
+				}
+				using (var r = new Region(new Rectangle(90, 10, 60, 40)))
+				{
+					r.Exclude(new Rectangle(100, 20, 20, 20));
+					r.Intersect(new Rectangle(85, 15, 50, 60));
+					r.Complement(new Rectangle(80, 5, 70, 55));
+					using (var b = new SolidBrush(Color.FromArgb(200, 200, 40, 40))) { g.FillRegion(b, r); }
+				}
+				g.TranslateTransform(60, 70);
+				g.RotateTransform(20);
+				using (var r = new Region(new RectangleF(-25.5f, -12.2f, 50.3f, 24.6f)))
+				{
+					r.Exclude(new RectangleF(-10, -5, 12, 10));
+					g.FillRegion(Brushes.DarkGreen, r);
+				}
+			});
+		}
+	}
+
+	// Raw EMF+ record builders for the spliced cases.
+	static byte[] EprCat(params byte[][] parts)
+	{
+		var ms = new MemoryStream();
+		foreach (var p in parts) { ms.Write(p, 0, p.Length); }
+		return ms.ToArray();
+	}
+	static byte[] EprF(params float[] v) { var r = new byte[v.Length * 4]; for (int i = 0; i < v.Length; i++) { BitConverter.GetBytes(v[i]).CopyTo(r, i * 4); } return r; }
+	static byte[] EprI(params int[] v) { var r = new byte[v.Length * 4]; for (int i = 0; i < v.Length; i++) { BitConverter.GetBytes(v[i]).CopyTo(r, i * 4); } return r; }
+	static byte[] EprS(params int[] v) { var r = new byte[v.Length * 2]; for (int i = 0; i < v.Length; i++) { BitConverter.GetBytes((short)v[i]).CopyTo(r, i * 2); } return r; }
+	static byte[] EprB(params int[] v) { var r = new byte[v.Length]; for (int i = 0; i < v.Length; i++) { r[i] = (byte)v[i]; } return r; }
+	static byte[] EprRec(int type, int flags, params byte[][] parts)
+	{
+		byte[] raw = EprCat(parts);
+		var data = new byte[(raw.Length + 3) & ~3];
+		raw.CopyTo(data, 0);
+		return EprCat(BitConverter.GetBytes((ushort)type), BitConverter.GetBytes((ushort)flags), EprI(12 + data.Length, data.Length), data);
+	}
+	const int EprVersion = unchecked((int)0xDBC01002);
+	static byte[] EprPenObj(int id, float width, uint argb) { return EprRec(0x4008, 0x0200 | id, EprI(EprVersion, 0, 0, 2), EprF(width), EprI(EprVersion, 0), BitConverter.GetBytes(argb)); }
+	static int EprArgb(int a, int r, int g, int b) { return (a << 24) | (r << 16) | (g << 8) | b; }
+	static byte[] EprBrushObj(int id, uint argb) { return EprRec(0x4008, 0x0100 | id, EprI(EprVersion, 0), BitConverter.GetBytes(argb)); }
+	static byte[] EprFillRect(uint argb, int x, int y, int w, int h) { return EprRec(0x400A, 0xC000, BitConverter.GetBytes(argb), EprI(1), EprS(x, y, w, h)); }
+	static byte[] EprPathObj(int id, float[] xy, byte[] types) { return EprRec(0x4008, 0x0300 | id, EprI(EprVersion, types.Length, 0), EprF(xy), types); }
+
+	/**
+	 * EmfPlusPointR coordinates as GDI+ itself decodes them: ONE byte when bit
+	 * 7 is set (a 7-bit signed value), else TWO bytes, big-endian, holding a
+	 * 15-bit signed value. MS-EMFPLUS 2.2.2.21/22 describe the bit the other
+	 * way round; GDI+ rejects records encoded that way (draws nothing).
+	 */
+	static byte[] EprPointR(params int[] v)
+	{
+		var ms = new MemoryStream();
+		foreach (int x in v)
+		{
+			if (x >= -64 && x <= 63) { ms.WriteByte((byte)(0x80 | (x & 0x7f))); }
+			else { int u = x & 0x7fff; ms.WriteByte((byte)(u >> 8)); ms.WriteByte((byte)(u & 0xff)); }
+		}
+		return ms.ToArray();
+	}
+
+	/**
+	 * Records `prelude` as an EmfPlusOnly metafile, splices each batch of raw
+	 * EMF+ records (one EMR_COMMENT each) in front of its EMF+ EndOfFile, writes
+	 * `<name>.emf`, and writes `<name>.png` as GDI+'s own playback of it.
+	 */
+	static void EprSpliceCase(string name, int w, int h, GpDraw prelude, params byte[][] batches)
+	{
+		string emf = Path.Combine(outDir, name + ".emf");
+		string tmp = Path.Combine(outDir, name + ".tmp.emf");
+		using (var refG = Graphics.FromHwnd(IntPtr.Zero))
+		{
+			IntPtr hdc = refG.GetHdc();
+			var mf = new Metafile(tmp, hdc, new RectangleF(0, 0, w, h), MetafileFrameUnit.Pixel, EmfType.EmfPlusOnly);
+			refG.ReleaseHdc(hdc);
+			using (var g = Graphics.FromImage(mf)) { g.PageUnit = GraphicsUnit.Pixel; prelude(g); }
+			mf.Dispose();
+		}
+		byte[] src = File.ReadAllBytes(tmp);
+		File.Delete(tmp);
+		var ms = new MemoryStream();
+		int off = 0, count = 0;
+		bool done = false;
+		while (off + 8 <= src.Length)
+		{
+			int type = BitConverter.ToInt32(src, off), size = BitConverter.ToInt32(src, off + 4);
+			if (!done && type == 70 && size >= 28 && BitConverter.ToInt32(src, off + 12) == 0x2B464D45 && BitConverter.ToUInt16(src, off + 16) == 0x4002)
+			{
+				foreach (byte[] records in batches)
+				{
+					byte[] payload = EprCat(EprI(0x2B464D45), records);
+					byte[] comment = EprCat(EprI(70, 12 + payload.Length, payload.Length), payload);
+					ms.Write(comment, 0, comment.Length);
+					count++;
+				}
+				done = true;
+			}
+			ms.Write(src, off, size);
+			count++;
+			off += size;
+		}
+		byte[] outBytes = ms.ToArray();
+		BitConverter.GetBytes(outBytes.Length).CopyTo(outBytes, 48);
+		BitConverter.GetBytes(count).CopyTo(outBytes, 52);
+		File.WriteAllBytes(emf, outBytes);
+		using (var played = new Metafile(emf))
+		using (var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb))
+		{
+			using (var g = Graphics.FromImage(bmp)) { g.DrawImage(played, new Rectangle(0, 0, w, h)); }
+			bmp.Save(Path.Combine(outDir, name + ".png"), ImageFormat.Png);
+		}
+	}
+
+	static void EprWhite(Graphics g) { g.FillRectangle(Brushes.White, 0, 0, 160, 100); }
+
+	// Relative (EmfPlusPointR) point data, flag P (0x0800), on every record
+	// that accepts it: 7-bit and 15-bit deltas, positive and negative.
+	static void EprRelativeCases()
+	{
+		byte[] pen1 = EprPenObj(1, 1f, 0xFF1E3CC8);
+		byte[] pen3 = EprPenObj(2, 3f, 0xFFC82828);
+		int[] lines = { 10, 10, 100, 5, -50, 60, -30, -40, 100, 60, -300, -10, 290, -80 };
+		int[] poly = { 20, 55, 40, -10, 25, 35, -60, 5 };
+		int[] bez = { 90, 50, 30, -45, 40, 90, -20, -60, 5, -20, 10, 70, -40, -10 };
+		int[] curve = { 110, 60, 25, -30, 20, 35, -10, 20, -30, 5 };
+		EprSpliceCase("gpx-rec-relative", 160, 100, EprWhite, EprCat(
+			pen1, pen3,
+			EprRec(0x400c, 0x8800, EprI(EprArgb(255, 30, 140, 60), 4), EprPointR(poly)),
+			EprRec(0x400d, 0x0801, EprI(lines.Length / 2), EprPointR(lines)),
+			EprRec(0x4019, 0x0802, EprI(bez.Length / 2), EprPointR(bez)),
+			EprRec(0x4017, 0x0801, EprF(0.6f), EprI(curve.Length / 2), EprPointR(curve)),
+			EprRec(0x4016, 0xA800, EprI(EprArgb(160, 150, 60, 170)), EprF(0.5f), EprI(4), EprPointR(5, 70, 40, 25, -10, -20, -25, 20)),
+			EprRec(0x400d, 0x2801, EprI(3), EprPointR(130, 10, 20, 15, -15, 10))));
+		// DrawImagePoints with relative destination points (a 6 x 5 pixel-format
+		// bitmap object drawn onto a sheared parallelogram), and with 16-bit ones.
+		var px = new List<byte>();
+		for (int y = 0; y < 5; y++)
+		{
+			for (int x = 0; x < 6; x++) { px.Add((byte)(x * 40)); px.Add((byte)(y * 60)); px.Add((byte)((x + y) % 2 == 0 ? 220 : 30)); px.Add(255); }
+		}
+		byte[] image = EprRec(0x4008, 0x0500, EprI(EprVersion, 1), EprI(6, 5, 24, 0x0026200A, 0), px.ToArray());
+		EprSpliceCase("gpx-rec-relative-image", 160, 100, EprWhite, EprCat(image,
+			EprRec(0x4021, 5),
+			EprRec(0x401B, 0x0800, EprI(-1, 2), EprF(0, 0, 6, 5), EprI(3), EprPointR(10, 10, 60, 10, -40, 50)),
+			EprRec(0x401B, 0x4000, EprI(-1, 2), EprF(1, 1, 4, 3), EprI(3), EprS(90, 20, 150, 30, 95, 90))));
+	}
+
+	// Records GDI+'s recorder never writes, hand-built and spliced (see
+	// EprSpliceCase); what GDI+'s playback does with each was read from
+	// gdiplus.dll (its public symbols) and confirmed by these references.
+	static void EprPlaybackOnlyCases()
+	{
+		const int W = 160, H = 100;
+		byte[] red = EprFillRect(0xFFE02020, 10, 10, 30, 30);
+		byte[] green = EprFillRect(0xFF20A040, 50, 10, 30, 30);
+		byte[] blue = EprFillRect(0xFF2040E0, 90, 10, 30, 30);
+		byte[] yellow = EprFillRect(0xFFE0C020, 10, 55, 30, 30);
+		byte[] black = EprFillRect(0xFF202020, 50, 55, 30, 30);
+		byte[] magenta = EprFillRect(0xFFC020C0, 90, 55, 30, 30);
+		byte[] section = EprRec(0x4006, 0);
+		byte[] end = EprRec(0x4007, 0);
+		// A well-formed MultiFormatStart (Count, then Count format ids) makes
+		// GDI+ select a section and clear its play flag; Section and End are
+		// themselves gated by that flag, so every later EMF+ record is dropped,
+		// in later comments too. Only red and green are painted.
+		EprSpliceCase("gpx-rec-multiformat-start", W, H, EprWhite,
+			EprCat(red, green, EprRec(0x4005, 0, EprI(2, unchecked((int)0xDBC01001), EprVersion)), blue, section, yellow, section, black, end),
+			magenta);
+		// Section and End without a Start, and a Start whose data is too short
+		// (under 8 bytes, or under 4 + 4 * Count), are ignored: all six painted.
+		EprSpliceCase("gpx-rec-multiformat-ignored", W, H, EprWhite,
+			EprCat(red, section, green, end, EprRec(0x4005, 0, EprI(1)), blue, EprRec(0x4005, 0, EprI(3, EprVersion)), yellow, section, black, end),
+			magenta);
+		// StrokeFillPath: flags = path id; PenId, BrushId, a third field. GDI+
+		// fills the path, then strokes it (an open figure stays open).
+		byte[] objs = EprCat(EprPathObj(0, new float[] { 20, 20, 120, 30, 60, 80, 140, 60 }, EprB(0, 1, 1, 1)), EprPenObj(1, 5, 0xFFE02020), EprBrushObj(2, 0xFF2040E0));
+		EprSpliceCase("gpx-rec-strokefillpath", W, H, EprWhite,
+			EprCat(objs, EprRec(0x4037, 0, EprI(1, 2, -1)),
+				EprPathObj(3, new float[] { 30.5f, 88.2f, 150.3f, 70.6f, 140.1f, 95.4f }, EprB(0, 1, 0x81)),
+				EprRec(0x4037, 3, EprI(-1, 2, -1)), EprRec(0x4037, 3, EprI(1, -1, -1)),
+				EprRec(0x4037, 0, EprI(2, 1))));
+		// SetTSGraphics: a leading 32-bit field, then SmoothingMode,
+		// TextRenderingHint, CompositingMode, CompositingQuality, RenderOrigin
+		// (2 x int16), TextContrast, FilterType, PixelOffsetMode and the
+		// world-to-DEVICE matrix. The next world-transform record discards the
+		// matrix; the rendering state stays.
+		byte[] ell = EprRec(0x400E, 0x8000, EprI(unchecked((int)0xFFC03030)), EprF(10.3f, 10.2f, 50.5f, 30.7f));
+		EprSpliceCase("gpx-rec-tsgraphics", W, H, EprWhite,
+			EprCat(EprRec(0x4039, 0, EprI(0), EprB(4, 0, 0, 0), EprS(0, 0, 4), EprB(0, 0), EprF(1.5f, 0, 0, 1.5f, 7, 3)), ell,
+				EprRec(0x402D, 0, EprF(0, 50)), ell,
+				EprRec(0x4039, 0, EprI(0), EprB(3, 0, 1, 0), EprS(0, 0, 4), EprB(0, 2), EprF(1, 0, 0, 1, 90, 5)),
+				EprRec(0x400E, 0x8000, EprI(unchecked((int)0x80208040)), EprF(0.4f, 0.3f, 40.2f, 30.9f))));
+		// SetTSClip: device-pixel rectangles (banded, as a region's scans are)
+		// intersected with the current clip and kept below every later clip record (SetClipRect Replace and
+		// ResetClip only change the clip inside it); Save/Restore restore it.
+		byte[] fillAll = EprFillRect(0xFF3060C0, 0, 0, W, H);
+		EprSpliceCase("gpx-rec-tsclip", W, H, EprWhite,
+			EprCat(EprRec(0x403A, 0x8002, EprB(0x80 | 20, 0x80 | 10, 0, 100, 0x80 | 50, 0x80 | 10, 0x80 | 5, 0x80 | 40, 0x80 | 20)),
+				EprRec(0x4032, 0x0000, EprF(25, 0, 200, 200)), fillAll));
+		EprSpliceCase("gpx-rec-tsclip-state", W, H, EprWhite,
+			EprCat(EprRec(0x4025, 0, EprI(1)),
+				EprRec(0x403A, 0x0002, EprI(10, 10, 70, 40, 30, 40, 150, 90)),
+				EprRec(0x4031, 0), EprFillRect(0xFF3060C0, 0, 0, 80, 100),
+				EprRec(0x402D, 0, EprF(5, 3)),
+				EprRec(0x4032, 0x0000, EprF(60, 0, 100, 60)), EprFillRect(0xFFC02040, 60, 0, 100, 100),
+				EprRec(0x4026, 0, EprI(1)), EprRec(0x402B, 0),
+				EprFillRect(0x80E0C020, 0, 70, 160, 30)));
+	}
+
+	// Containers (BeginContainer with a source/destination rectangle and a
+	// unit, BeginContainerNoParams) and Save/Restore: what a container resets
+	// (transform, clip, rendering hints) and what EndContainer and Restore
+	// bring back.
+	static void EprStateCases()
+	{
+		const int W = 160, H = 100;
+		GpCase("gpx-rec-container", W, H, delegate (Graphics g)
+		{
+			g.FillRectangle(Brushes.White, 0, 0, W, H);
+			g.SmoothingMode = SmoothingMode.AntiAlias;
+			g.SetClip(new Rectangle(4, 3, 150, 92));
+			g.TranslateTransform(10, 5);
+			var c1 = g.BeginContainer(new RectangleF(0, 0, 60, 40), new RectangleF(0, 0, 30, 20), GraphicsUnit.Pixel);
+			using (var b = new SolidBrush(Color.FromArgb(255, 30, 60, 200))) { g.FillEllipse(b, 1.3f, 1.2f, 20.5f, 15.7f); }
+			g.SetClip(new Rectangle(0, 0, 25, 18));
+			using (var b = new SolidBrush(Color.FromArgb(128, 200, 30, 30))) { g.FillRectangle(b, -5, -5, 100, 100); }
+			g.ResetClip();
+			g.TranslateTransform(20, 0);
+			using (var b = new SolidBrush(Color.FromArgb(255, 30, 150, 60))) { g.FillRectangle(b, 0, 12, 8, 6); g.FillRectangle(b, 60, -30, 20, 200); }
+			var c2 = g.BeginContainer(new RectangleF(10, 0, 20, 20), new RectangleF(0, 0, 10, 10), GraphicsUnit.Millimeter);
+			using (var b = new SolidBrush(Color.FromArgb(255, 20, 20, 20))) { g.FillRectangle(b, 0, 0, 2, 3); }
+			g.EndContainer(c2);
+			g.EndContainer(c1);
+			using (var b = new SolidBrush(Color.FromArgb(255, 220, 120, 20))) { g.FillEllipse(b, 70.3f, 50.2f, 40.3f, 30.2f); }
+			var c3 = g.BeginContainer();
+			using (var b = new SolidBrush(Color.FromArgb(255, 150, 60, 170))) { g.FillEllipse(b, -8.6f, 55.3f, 30.4f, 30.9f); }
+			g.PageUnit = GraphicsUnit.Point;
+			using (var b = new SolidBrush(Color.FromArgb(200, 20, 120, 160))) { g.FillRectangle(b, 100, 50, 10, 10); }
+			g.EndContainer(c3);
+			using (var b = new SolidBrush(Color.FromArgb(255, 90, 90, 20))) { g.FillEllipse(b, 120.4f, 60.1f, 20.2f, 20.5f); }
+		});
+		GpCase("gpx-rec-container-page", W, H, delegate (Graphics g)
+		{
+			g.FillRectangle(Brushes.White, 0, 0, W, H);
+			g.PageUnit = GraphicsUnit.Millimeter;
+			g.PageScale = 0.5f;
+			g.TranslateTransform(4, 3);
+			var c1 = g.BeginContainer(new RectangleF(0, 0, 40, 30), new RectangleF(5, 5, 40, 30), GraphicsUnit.Pixel);
+			using (var b = new SolidBrush(Color.FromArgb(255, 30, 60, 200))) { g.FillRectangle(b, 5, 5, 30, 20); }
+			g.PageUnit = GraphicsUnit.Pixel;
+			using (var b = new SolidBrush(Color.FromArgb(255, 200, 40, 40))) { g.FillRectangle(b, 5, 30, 30, 10); }
+			g.EndContainer(c1);
+			using (var b = new SolidBrush(Color.FromArgb(255, 30, 150, 60))) { g.FillRectangle(b, 100, 20, 30, 20); }
+			var c2 = g.BeginContainer(new RectangleF(100, 50, 40, 30), new RectangleF(0, 0, 20, 15), GraphicsUnit.Point);
+			using (var b = new SolidBrush(Color.FromArgb(255, 20, 20, 20))) { g.FillRectangle(b, 2, 2, 10, 5); }
+			g.EndContainer(c2);
+		});
+		GpCase("gpx-rec-save-restore", W, H, delegate (Graphics g)
+		{
+			g.FillRectangle(Brushes.White, 0, 0, W, H);
+			g.SmoothingMode = SmoothingMode.AntiAlias;
+			g.SetClip(new Rectangle(5, 5, 140, 90));
+			g.RotateTransform(8);
+			var s1 = g.Save();
+			g.SmoothingMode = SmoothingMode.None;
+			g.ResetTransform();
+			g.SetClip(new Rectangle(20, 10, 60, 40), CombineMode.Intersect);
+			using (var b = new SolidBrush(Color.FromArgb(255, 30, 60, 200))) { g.FillEllipse(b, 10.3f, 0.4f, 80.2f, 60.3f); }
+			var s2 = g.Save();
+			g.ResetClip();
+			g.PageUnit = GraphicsUnit.Point;
+			using (var b = new SolidBrush(Color.FromArgb(128, 200, 30, 30))) { g.FillRectangle(b, 60, 5, 40, 30); }
+			g.Restore(s2);
+			using (var b = new SolidBrush(Color.FromArgb(255, 30, 150, 60))) { g.FillEllipse(b, 60.2f, 30.1f, 30.4f, 30.3f); }
+			var s3 = g.Save();
+			g.TranslateTransform(50, 0);
+			g.Restore(s1);
+			using (var b = new SolidBrush(Color.FromArgb(255, 220, 120, 20))) { g.FillEllipse(b, 90.3f, 40.2f, 50.3f, 40.2f); }
+			g.Restore(s3);
+			using (var b = new SolidBrush(Color.FromArgb(255, 20, 20, 20))) { g.FillEllipse(b, 20.1f, 70.3f, 20.2f, 20.1f); }
+		});
+	}
+
+	// CompositingMode SourceCopy (the brush colour, alpha included, replaces
+	// the destination) against SourceOver, on fills, antialiased edges, a
+	// gradient, a pen and a fully transparent brush.
+	static void EprCompositingCases()
+	{
+		const int W = 160, H = 100;
+		foreach (var smoothing in EprSmoothing)
+		{
+			var sm = smoothing;
+			GpCase("gpx-rec-compositing" + EprSmoothTag(sm), W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				using (var stripes = new SolidBrush(Color.FromArgb(255, 40, 40, 40)))
+				{ for (int x = 0; x < W; x += 16) { g.FillRectangle(stripes, x, 0, 8, H); } }
+				g.SmoothingMode = sm;
+				g.CompositingMode = CompositingMode.SourceCopy;
+				using (var b = new SolidBrush(Color.FromArgb(128, 200, 40, 40))) { g.FillRectangle(b, 5, 5, 40, 30); g.FillEllipse(b, 50.3f, 4.6f, 40.2f, 30.5f); }
+				using (var b = new SolidBrush(Color.FromArgb(0, 0, 0, 0))) { g.FillRectangle(b, 100, 5, 20, 30); }
+				using (var b = new LinearGradientBrush(new RectangleF(0, 40, 70, 20), Color.FromArgb(40, 20, 120, 220), Color.FromArgb(230, 250, 220, 0), 0f))
+				{ g.FillRectangle(b, 5, 40, 70, 25); }
+				using (var pen = new Pen(Color.FromArgb(100, 30, 160, 60), 5f)) { g.DrawLine(pen, 85, 45, 150, 60); }
+				g.CompositingMode = CompositingMode.SourceOver;
+				using (var b = new SolidBrush(Color.FromArgb(128, 200, 40, 40))) { g.FillRectangle(b, 5, 70, 40, 25); g.FillEllipse(b, 50.3f, 68.6f, 40.2f, 28.5f); }
+				g.CompositingMode = CompositingMode.SourceCopy;
+				using (var b = new SolidBrush(Color.FromArgb(255, 30, 60, 200))) { g.FillEllipse(b, 100.3f, 68.6f, 40.2f, 28.5f); }
+			});
+		}
+	}
+
+	// HatchBrush: every HatchStyle (a 9 x 6 grid of cells), at the default
+	// rendering origin, after SetRenderingOrigin, and under a rotation with
+	// antialiasing (the pattern stays on the device pixel grid).
+	static void EprHatchCases()
+	{
+		const int W = 160, H = 100;
+		for (int variant = 0; variant < 3; variant++)
+		{
+			int v = variant;
+			string name = v == 0 ? "gpx-rec-hatch" : v == 1 ? "gpx-rec-hatch-origin" : "gpx-rec-hatch-rotated";
+			GpCase(name, W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				if (v == 1) { g.RenderingOrigin = new Point(3, 5); }
+				if (v == 2) { g.SmoothingMode = SmoothingMode.AntiAlias; g.RenderingOrigin = new Point(-2, 7); }
+				// Every brush stays alive until the end: the recorder then gives
+				// each its own object slot (disposing one per cell let the slot
+				// numbering vary from run to run).
+				var brushes = new List<HatchBrush>();
+				for (int style = 0; style <= 52; style++)
+				{
+					int cx = 1 + (style % 9) * 17, cy = 2 + (style / 9) * 16;
+					Color fore = Color.FromArgb(255, (style * 37) % 200, 40 + (style * 11) % 120, 150);
+					Color back = style % 5 == 4 ? Color.FromArgb(120, 250, 230, 120) : Color.FromArgb(255, 250, 240, 210);
+					var hb = new HatchBrush((HatchStyle)style, fore, back);
+					brushes.Add(hb);
+					if (v == 2)
+					{
+						var st = g.Save();
+						g.TranslateTransform(cx + 8, cy + 7);
+						g.RotateTransform(20);
+						g.FillEllipse(hb, -8.2f, -6.3f, 16.4f, 12.6f);
+						g.Restore(st);
+					}
+					else { g.FillRectangle(hb, cx, cy, 16, 15); }
+				}
+				foreach (var hb in brushes) { hb.Dispose(); }
+			});
+		}
+	}
+
+
+	// Pens with custom line caps: AdjustableArrowCap (filled, outlined, with
+	// MiddleInset and WidthScale) and CustomLineCap with a fill path and with
+	// a stroke path (BaseInset, WidthScale, stroke caps and join), on lines,
+	// a polyline with sharp turns near its ends, a Bezier and a cardinal
+	// spline, at pen widths 1, 2 and 4.5.
+	static void EprCustomCapDraw(Graphics g, SmoothingMode sm)
+	{
+		const int W = 160, H = 100;
+		g.FillRectangle(Brushes.White, 0, 0, W, H);
+		g.SmoothingMode = sm;
+		using (var filled = new AdjustableArrowCap(3f, 4f, true))
+		using (var open = new AdjustableArrowCap(2.5f, 3f, false))
+		using (var mid = new AdjustableArrowCap(3.5f, 4.5f, true))
+		using (var small = new AdjustableArrowCap(4f, 3f, true))
+		using (var fillPath = new GraphicsPath())
+		using (var linePath = new GraphicsPath())
+		{
+			mid.MiddleInset = 1.5f;
+			small.WidthScale = 0.6f;
+			// A kite crossing the negative y axis (required of a fill path).
+			fillPath.AddPolygon(new PointF[] { new PointF(-1.5f, -1.2f), new PointF(0f, 2f), new PointF(1.5f, -1.2f), new PointF(0f, -0.4f) });
+			linePath.AddLines(new PointF[] { new PointF(-1.5f, -0.6f), new PointF(0f, 1.4f), new PointF(1.5f, -0.6f) });
+			using (var fillCap = new CustomLineCap(fillPath, null, LineCap.Flat, 0.5f))
+			using (var lineCap = new CustomLineCap(null, linePath, LineCap.Round, 1f))
+			{
+				fillCap.WidthScale = 1.5f;
+				lineCap.StrokeJoin = LineJoin.Round;
+				lineCap.SetStrokeCaps(LineCap.Round, LineCap.Triangle);
+				using (var pen = new Pen(Color.FromArgb(255, 30, 60, 200), 2f))
+				{
+					pen.CustomEndCap = filled;
+					g.DrawLine(pen, 8.3f, 10.2f, 70.6f, 14.9f);
+					pen.CustomStartCap = open;
+					g.DrawLine(pen, 12.1f, 30.4f, 66.8f, 22.2f);
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 200, 40, 40), 4.5f))
+				{
+					pen.CustomStartCap = small;
+					pen.CustomEndCap = mid;
+					g.DrawLine(pen, 90.4f, 8.6f, 150.3f, 30.1f);
+					pen.CustomStartCap = lineCap;
+					pen.CustomEndCap = fillCap;
+					g.DrawLine(pen, 88.2f, 45.3f, 148.7f, 42.4f);
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 20, 140, 60), 1f))
+				{
+					pen.CustomStartCap = open;
+					pen.CustomEndCap = filled;
+					g.DrawLines(pen, new PointF[] { new PointF(10.2f, 45.3f), new PointF(40.6f, 40.1f), new PointF(42.3f, 55.7f), new PointF(70.8f, 52.4f), new PointF(72.1f, 48.6f) });
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 120, 40, 160), 2f))
+				{
+					pen.CustomEndCap = mid;
+					pen.CustomStartCap = fillCap;
+					g.DrawBezier(pen, 12.4f, 90.2f, 25.1f, 55.3f, 55.7f, 98.4f, 70.3f, 68.1f);
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 200, 120, 0), 4.5f))
+				{
+					pen.CustomEndCap = lineCap;
+					pen.CustomStartCap = filled;
+					g.DrawCurve(pen, new PointF[] { new PointF(92.3f, 90.1f), new PointF(110.4f, 62.2f), new PointF(128.6f, 88.3f), new PointF(150.2f, 64.7f) });
+				}
+			}
+		}
+	}
+
+	static void EprCustomCapCases()
+	{
+		GpCase("gpx-rec-customcap", 160, 100, delegate (Graphics g) { EprCustomCapDraw(g, SmoothingMode.None); });
+		GpCase("gpx-rec-customcap-aa", 160, 100, delegate (Graphics g) { EprCustomCapDraw(g, SmoothingMode.AntiAlias); });
+	}
+
+		// TextContrast (0 to 12, GDI+'s default 4) on antialiased and ClearType
+	// text: GDI+ lightens a glyph's coverage a with the text gamma
+	// 1 + contrast / 10, as 1 - (1 - a)^(1 / gamma).
+	static void EprTextContrastCases()
+	{
+		foreach (var hint in new[] { TextRenderingHint.AntiAliasGridFit, TextRenderingHint.ClearTypeGridFit })
+		{
+			var h = hint;
+			GpCase("gpx-rec-textcontrast" + (h == TextRenderingHint.ClearTypeGridFit ? "-cleartype" : ""), 360, 190, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, 360, 190);
+				g.TextRenderingHint = h;
+				using (var f = new Font("Arial", 40, FontStyle.Bold, GraphicsUnit.Pixel))
+				using (var dark = new SolidBrush(Color.FromArgb(255, 20, 30, 90)))
+				using (var bg = new SolidBrush(Color.FromArgb(255, 30, 40, 60)))
+				{
+					int[] contrasts = { 0, 4, 8, 12 };
+					for (int i = 0; i < contrasts.Length; i++)
+					{
+						g.TextContrast = contrasts[i];
+						g.DrawString("Wav" + contrasts[i], f, dark, 4, 2 + i * 46);
+					}
+					g.FillRectangle(bg, 180, 0, 180, 190);
+					for (int i = 0; i < contrasts.Length; i++)
+					{
+						g.TextContrast = contrasts[i];
+						g.DrawString("Sky" + contrasts[i], f, Brushes.White, 184, 2 + i * 46);
+					}
+				}
+			});
+		}
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
@@ -3453,6 +4035,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "text-extra") { TextExtraCases(); }
 		if (which == "all" || which == "gdi-raster") { RasterCases(); }
 		if (which == "all" || which == "gdi-raster") { RasterWideExtraCases(); }
+		if (which == "all" || which == "emfplus-records") { EprCurveCases(); EprCompressedCases(); EprRegionCases(); EprRelativeCases(); EprPlaybackOnlyCases(); EprStateCases(); EprCompositingCases(); EprHatchCases(); EprCustomCapCases(); EprTextContrastCases(); }
 		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxSmoothingCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
 		if (which == "all" || which == "wmf-records") { WmfRecordCases(); }
 	}

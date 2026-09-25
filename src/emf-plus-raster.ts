@@ -7,13 +7,13 @@
  * straight onto a bitmap (every edge pixel compared), GDI+:
  *
  * - converts every device-space vertex and Bezier control point to 28.4
- *   fixed point by rounding UP (`ceil(v * 16)`; an ellipse at y = 5.7 has
- *   its top at 5.75, one at 56.5 stays at 56.5);
+ *   fixed point by rounding to 1/256 and then UP (see {@link toPlusFix};
+ *   an ellipse at y = 5.7 has its top at 5.75, one at 56.5 stays at 56.5);
  * - flattens every Bezier (an ellipse is four quarter-turn Beziers) with
- *   the same fixed-point hybrid forward differencing GDI uses
- *   (`flattenBezier`, gdi-raster.ts) at 3/8 of GDI's error tolerance
- *   ({@link GDIPLUS_HFD_TOLERANCE}): `GraphicsPath.Flatten` returns exactly
- *   those points, 1/16-pixel values included;
+ *   the same fixed-point hybrid forward differencing GDI uses, with GDI+'s
+ *   own error bounds (`flattenBezierGdiplus`, emf-plus-nominal-line.ts, read
+ *   from gdiplus.dll): `GraphicsPath.Flatten` returns exactly those points,
+ *   1/16-pixel values included;
  * - scan-converts the resulting polygon at sample points: one per pixel at
  *   the integer device point when aliased, an 8 x 4 grid at
  *   (x - 0.5 + i/8, y - 0.5 + j/4) when antialiased, the coverage being
@@ -30,7 +30,7 @@
  */
 
 import { arcBeziers } from './emf-plus-flatten';
-import { flattenBezier } from './gdi-raster';
+import { flattenBezierGdiplus } from './emf-plus-nominal-line';
 import type { CanvasContext, TransformMatrix } from './emf-types';
 
 /** GDI+'s Bezier flattening tolerance as a fraction of GDI's (fitted: exact on every probed curve). */
@@ -40,13 +40,17 @@ export const GDIPLUS_HFD_TOLERANCE = 3 / 8;
 export type FixFigure = number[];
 
 /**
- * GDI+'s float to 28.4 conversion (rounding up). A hair below each step
- * still rounds down, so a coordinate GDI+ holds exactly (a whole or
- * sixteenth pixel) that double-precision transforms land just above stays
- * put.
+ * GDI+'s float to 28.4 conversion: the coordinate is first rounded to the
+ * nearest 1/256 pixel, then UP to the next 1/16 (so up to 1/32 pixel past
+ * a step still rounds down). Fitted on 300 ellipses and Bezier curves read
+ * back through `GraphicsPath.Flatten` (297 exact; plain rounding up, the
+ * earlier model, got 248), and it keeps every earlier fill fixture exact
+ * while fixing curve edges that rounding up moved by 1/16 pixel. A hair
+ * below each 1/256 step still rounds down, so a coordinate GDI+ holds
+ * exactly that double-precision transforms land just above stays put.
  */
 export function toPlusFix(v: number): number {
-	return Math.ceil(v * 16 - 1e-4);
+	return Math.ceil(Math.round(v * 256 - 1e-6) / 16);
 }
 
 /** A coordinate in 28.4 rounded to the nearest sixteenth, halves up (see {@link aliasedRectFix}). */
@@ -128,18 +132,8 @@ export function recordDeviceFigures(buildPath: (c: CanvasContext) => void, devic
 		f.pts[n - 2] = p0x / 16;
 		f.pts[n - 1] = p0y / 16;
 		const out: number[] = [];
-		flattenBezier(
-			p0x,
-			p0y,
-			fix(dx(c1x, c1y)),
-			fix(dy(c1x, c1y)),
-			fix(dx(c2x, c2y)),
-			fix(dy(c2x, c2y)),
-			fix(dx(x, y)),
-			fix(dy(x, y)),
-			out,
-			GDIPLUS_HFD_TOLERANCE,
-		);
+		const ctrl = [p0x, p0y, fix(dx(c1x, c1y)), fix(dy(c1x, c1y)), fix(dx(c2x, c2y)), fix(dy(c2x, c2y)), fix(dx(x, y)), fix(dy(x, y))];
+		flattenBezierGdiplus(ctrl, out);
 		for (const v of out) {
 			f.pts.push(v / 16);
 		}

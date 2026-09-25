@@ -17,10 +17,64 @@ import {
 	EMFPLUS_FILLPOLYGON,
 } from './emf-constants';
 import { tryFillPlusShapeExact } from './emf-plus-exact-fill';
-import { readRectFromView, readPointFromView } from './emf-plus-read-helpers';
+import { PLUS_FLAG_RELATIVE, readPlusPoints, readRectFromView, readPointFromView } from './emf-plus-read-helpers';
 import { resolveBrushPaint, applyPlusWorldTransform } from './emf-plus-state-handlers';
 import { strokePlusGeometry } from './emf-plus-stroke';
 import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx } from './emf-types';
+
+/**
+ * The parametric start angle and sweep (radians, for `ellipse()`) of a
+ * GDI+ arc given in degrees. GDI+ measures an arc's angles as the
+ * directions of rays from the centre (the point where the ray at angle
+ * `a` meets the ellipse), not as the ellipse's parameter; read back from
+ * `GraphicsPath.AddArc` (an arc of a 50 x 40 ellipse from 30 degrees starts
+ * at the parameter 35.82 degrees). The sweep keeps its sign, a sweep of
+ * 360 degrees or more is the whole ellipse. Pure.
+ */
+export function ellipseArcAngles(startDeg: number, sweepDeg: number, rx: number, ry: number): { start: number; sweep: number } {
+	const param = (deg: number): number => {
+		const a = (deg * Math.PI) / 180;
+		return rx > 0 && ry > 0 ? Math.atan2(rx * Math.sin(a), ry * Math.cos(a)) : a;
+	};
+	const sweepClamped = Math.max(-360, Math.min(360, sweepDeg));
+	const start = param(startDeg);
+	if (Math.abs(sweepClamped) >= 360) {
+		return { start, sweep: Math.sign(sweepClamped) * 2 * Math.PI };
+	}
+	let sweep = param(startDeg + sweepClamped) - start;
+	if (sweepClamped > 0 && sweep < 0) {
+		sweep += 2 * Math.PI;
+	} else if (sweepClamped < 0 && sweep > 0) {
+		sweep -= 2 * Math.PI;
+	} else if (sweepClamped === 0) {
+		sweep = 0;
+	}
+	return { start, sweep };
+}
+
+/**
+ * A point-list record's points: relative (flag P) points decoded strictly
+ * (`null` when the data runs out, a record GDI+ does not draw), absolute
+ * ones read as far as the record's data goes.
+ */
+function readRecordPoints(
+	view: DataView,
+	offset: number,
+	end: number,
+	count: number,
+	flags: number,
+): Array<{ x: number; y: number }> | null {
+	if (flags & PLUS_FLAG_RELATIVE) {
+		return readPlusPoints(view, offset, end, count, flags);
+	}
+	const compressed = (flags & 0x4000) !== 0;
+	const ptSize = compressed ? 4 : 8;
+	const pts: Array<{ x: number; y: number }> = [];
+	for (let i = 0, o = offset; i < count && o + ptSize <= end; i++, o += ptSize) {
+		pts.push(readPointFromView(view, o, compressed));
+	}
+	return pts;
+}
 
 /** The pen object a draw record names, or `null`. */
 function penOf(rCtx: EmfPlusReplayCtx, penId: number): EmfPlusPen | null {
@@ -192,8 +246,8 @@ export function handleEmfPlusDrawRecord(
 			if (isFill) {
 				aOff += 4;
 			}
-			const startAngle = (view.getFloat32(aOff, true) * Math.PI) / 180;
-			const sweepAngle = (view.getFloat32(aOff + 4, true) * Math.PI) / 180;
+			const startDeg = view.getFloat32(aOff, true);
+			const sweepDeg = view.getFloat32(aOff + 4, true);
 			aOff += 8;
 
 			const compressed = (recFlags & 0x4000) !== 0;
@@ -217,6 +271,7 @@ export function handleEmfPlusDrawRecord(
 			const cy = y + h / 2;
 			const rx = Math.abs(w) / 2;
 			const ry = Math.abs(h) / 2;
+			const { start: startAngle, sweep: sweepAngle } = ellipseArcAngles(startDeg, sweepDeg, rx, ry);
 			if (isFill) {
 				const pie = (c: CanvasContext): void => {
 					c.moveTo(cx, cy);
@@ -266,13 +321,9 @@ export function handleEmfPlusDrawRecord(
 		case EMFPLUS_DRAWLINES: {
 			if (recDataSize >= 4) {
 				const count = view.getUint32(dataOff, true);
-				const compressed = (recFlags & 0x4000) !== 0;
-				const ptSize = compressed ? 4 : 8;
-				const pts: Array<{ x: number; y: number }> = [];
-				let pOff = dataOff + 4;
-				for (let i = 0; i < count && pOff + ptSize <= dataOff + recDataSize; i++) {
-					pts.push(readPointFromView(view, pOff, compressed));
-					pOff += ptSize;
+				const pts = readRecordPoints(view, dataOff + 4, dataOff + recDataSize, count, recFlags);
+				if (!pts) {
+					return true;
 				}
 				const closed = (recFlags & 0x2000) !== 0;
 				strokePlusGeometry(
@@ -295,13 +346,9 @@ export function handleEmfPlusDrawRecord(
 			if (recDataSize >= 8) {
 				const brushVal = view.getUint32(dataOff, true);
 				const count = view.getUint32(dataOff + 4, true);
-				const compressed = (recFlags & 0x4000) !== 0;
-				const ptSize = compressed ? 4 : 8;
-				const pts: Array<{ x: number; y: number }> = [];
-				let pOff = dataOff + 8;
-				for (let i = 0; i < count && pOff + ptSize <= dataOff + recDataSize; i++) {
-					pts.push(readPointFromView(view, pOff, compressed));
-					pOff += ptSize;
+				const pts = readRecordPoints(view, dataOff + 8, dataOff + recDataSize, count, recFlags);
+				if (!pts) {
+					return true;
 				}
 				const polygon = (c: CanvasContext): void => {
 					pts.forEach((pt, i) => (i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y)));

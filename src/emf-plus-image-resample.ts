@@ -16,7 +16,11 @@
  *   a source point, and is painted only when that point lies inside the
  *   source rectangle (half-open). Destination corners are first snapped to
  *   GDI+'s 1/16-pixel fixed-point grid.
- * - NearestNeighbor: the texel nearest the source point (halves round up).
+ * - NearestNeighbor follows its own rules (see {@link resampleNearest}):
+ *   the destination parallelogram is scan-converted from its 28.4 corners
+ *   like a fill, and each row is walked with GDI+'s 16.16 fixed-point
+ *   stepper, so the texel boundaries land where GDI+ puts them under any
+ *   scale, rotation, shear or flip.
  * - Bilinear (also Default and LowQuality): the 2x2 tent, point-sampled at
  *   every scale (no prefilter, so a strong reduction aliases, as in GDI+).
  * - Bicubic: the 4x4 cubic convolution kernel with `a = -0.5`
@@ -43,6 +47,7 @@
  * @module emf-plus-image-resample
  */
 
+import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
 import type { DeferredImageResample, ImageResampleKernel, TransformMatrix } from './emf-types';
 
 /** GDI+ InterpolationMode values (MS-EMFPLUS 2.1.1.16). */
@@ -356,6 +361,9 @@ export function resampleImage(
 	spec: DeferredImageResample,
 	surface: { w: number; h: number },
 ): ResampledBlock | null {
+	if (spec.kernel === 'nearest' && !spec.wrap) {
+		return resampleNearest(rgba, width, height, spec, surface);
+	}
 	let m = snapToDeviceGrid(spec);
 	const kernel = spec.kernel;
 	const hq = kernel === 'hq-bilinear' || kernel === 'hq-bicubic';
@@ -484,6 +492,113 @@ export function resampleImage(
 			out[dst + 1] = (Math.min(Math.max(0, g), alpha) * 255) / alpha;
 			out[dst + 2] = (Math.min(Math.max(0, b), alpha) * 255) / alpha;
 			out[dst + 3] = alpha;
+		}
+	}
+	return { x: bx0, y: by0, w, h, rgba: out };
+}
+
+/** One in 16.16 fixed point, the precision of GDI+'s nearest-neighbour stepper. */
+const FIX16 = 65536;
+
+/**
+ * NearestNeighbor `DrawImage`/`DrawImagePoints` (without an ImageAttributes
+ * WrapMode), as GDI+ paints it. Fitted on 270 random draws (scales, shears,
+ * rotations, flips, source sub-rectangles with whole and fractional
+ * corners, PixelOffsetMode None and Half), every one pixel-exact:
+ *
+ * - Coverage: the destination parallelogram, its corners converted to 28.4
+ *   as a fill's vertices are (`toPlusFix`), is scan-converted by GDI+'s
+ *   aliased fill rule (`rasterizePlusFill`); the corners are not otherwise
+ *   snapped (snapping the origin to 1/16 moved texel boundaries by a pixel).
+ * - Texels: along each device row GDI+ maps the first covered pixel's
+ *   sample point (x, y; x + 0.5, y + 0.5 under Half) through the inverse
+ *   transform, rounds that source point to 16.16 fixed point, and steps it
+ *   by the inverse's x column, also rounded to 16.16, pixel by pixel; the
+ *   texel is the stepped point rounded half up (`(u + 0.5) >> 16`). The
+ *   rounded step is why a flipped axis rounds its halves the other way
+ *   after the first pixel of a row.
+ * - Reads: a texel column anywhere in the bitmap is read, also beyond the
+ *   source rectangle's right edge (a sub-rectangle of 1..3 paints column 3
+ *   where its last half texel rounds up), but only the rows the source
+ *   rectangle spans (from `floor(srcY)` to `ceil(srcY + srcH)`); anything
+ *   else is transparent, as is a column beyond the bitmap. Pure.
+ */
+export function resampleNearest(
+	rgba: Uint8ClampedArray,
+	width: number,
+	height: number,
+	spec: DeferredImageResample,
+	surface: { w: number; h: number },
+): ResampledBlock | null {
+	const m = spec.toDevice;
+	const inv = invert(m);
+	if (!inv) {
+		return null;
+	}
+	const { srcX, srcY, srcW, srcH } = spec;
+	const corners = [
+		[srcX, srcY],
+		[srcX + srcW, srcY],
+		[srcX + srcW, srcY + srcH],
+		[srcX, srcY + srcH],
+	].map(([u, v]) => [m[0] * u + m[2] * v + m[4], m[1] * u + m[3] * v + m[5]]);
+	let x0 = Infinity;
+	let y0 = Infinity;
+	let x1 = -Infinity;
+	let y1 = -Infinity;
+	for (const [x, y] of corners) {
+		x0 = Math.min(x0, x);
+		y0 = Math.min(y0, y);
+		x1 = Math.max(x1, x);
+		y1 = Math.max(y1, y);
+	}
+	if (![x0, y0, x1, y1].every(Number.isFinite)) {
+		return null;
+	}
+	const bx0 = Math.max(0, Math.floor(x0) - 1);
+	const by0 = Math.max(0, Math.floor(y0) - 1);
+	const bx1 = Math.min(surface.w, Math.ceil(x1) + 2);
+	const by1 = Math.min(surface.h, Math.ceil(y1) + 2);
+	const w = bx1 - bx0;
+	const h = by1 - by0;
+	if (!(w > 0 && h > 0) || w * h > MAX_RESAMPLE_PIXELS) {
+		return null;
+	}
+	const box = { x: bx0, y: by0, w, h };
+	const coverage = rasterizePlusFill([corners.flatMap(([x, y]) => [toPlusFix(x), toPlusFix(y)])], false, false, spec.halfPixelOffset, box);
+	const rowLo = Math.max(0, Math.floor(srcY));
+	const rowHi = Math.min(height, Math.ceil(srcY + srcH));
+	const o = spec.halfPixelOffset ? 0.5 : 0;
+	const du = Math.round(inv[0] * FIX16);
+	const dv = Math.round(inv[1] * FIX16);
+	const out = new Uint8ClampedArray(w * h * 4);
+	for (let j = 0; j < h; j++) {
+		const py = by0 + j + o;
+		let start = -1;
+		let su = 0;
+		let sv = 0;
+		for (let i = 0; i < w; i++) {
+			if (!coverage[j * w + i]) {
+				continue;
+			}
+			if (start < 0) {
+				const px = bx0 + i + o;
+				start = i;
+				su = Math.round((inv[0] * px + inv[2] * py + inv[4]) * FIX16);
+				sv = Math.round((inv[1] * px + inv[3] * py + inv[5]) * FIX16);
+			}
+			const k = i - start;
+			const tu = Math.floor((su + k * du + FIX16 / 2) / FIX16);
+			const tv = Math.floor((sv + k * dv + FIX16 / 2) / FIX16);
+			if (tu < 0 || tu >= width || tv < rowLo || tv >= rowHi) {
+				continue;
+			}
+			const s = (tv * width + tu) * 4;
+			const d = (j * w + i) * 4;
+			out[d] = rgba[s];
+			out[d + 1] = rgba[s + 1];
+			out[d + 2] = rgba[s + 2];
+			out[d + 3] = rgba[s + 3];
 		}
 	}
 	return { x: bx0, y: by0, w, h, rgba: out };

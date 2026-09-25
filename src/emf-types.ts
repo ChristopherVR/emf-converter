@@ -551,6 +551,8 @@ export interface EmfPlusBrush {
 	gradient?: EmfPlusGradient;
 	/** Present for a texture-fill brush with a decodable embedded bitmap. */
 	texture?: EmfPlusTexture | null;
+	/** Present for a hatch brush (see `emf-plus-brush-hatch.ts`). */
+	hatch?: import('./emf-plus-brush-hatch').EmfPlusHatch;
 }
 
 /** An EMF+ (GDI+) pen object used for stroking shapes. */
@@ -582,6 +584,13 @@ export interface EmfPlusPen {
 	 * the pen width, each pair one parallel band of the stroke.
 	 */
 	compound?: number[] | null;
+	/**
+	 * Custom line caps (`PenDataCustomStartCap`/`PenDataCustomEndCap`, an
+	 * `EmfPlusCustomLineCap` each; see `emf-plus-custom-cap.ts`), drawn at
+	 * the ends of every open figure in place of the start/end cap.
+	 */
+	customStartCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
+	customEndCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
 	/** Pen transform (`PenDataTransform`), applied to the pen's width and shape. */
 	transform?: TransformMatrix | null;
 	/**
@@ -788,6 +797,71 @@ export interface DeferredImageResample {
 }
 
 // ---------------------------------------------------------------------------
+// EMF+ graphics state beyond transform and clip
+// ---------------------------------------------------------------------------
+
+/**
+ * GDI+ graphics state the EMF+ records set besides the world transform,
+ * page transform, clip and rendering hints (see
+ * {@link EmfPlusReplayCtx.ext}). Every field is optional: absent means
+ * GDI+'s default.
+ */
+export interface EmfPlusGraphicsExt {
+	/**
+	 * The container transform (`BeginContainer`/`BeginContainerNoParams`):
+	 * maps the current container's page space (world x page transform
+	 * applied) to device pixels, before the DPI scale and base transform.
+	 * Absent at the top level.
+	 */
+	containerTransform?: TransformMatrix | null;
+	/** Device-space clip of the enclosing containers (their clips intersected); absent: none. */
+	containerClip?: ClipRegion;
+	/**
+	 * The terminal-server clip (`EmfPlusSetTSClip`): device-pixel rectangles
+	 * intersected with the clip in force when it was set, kept below every
+	 * later clip record; absent: none.
+	 */
+	tsClip?: ClipRegion;
+	/**
+	 * A world-to-device matrix set by `EmfPlusSetTSGraphics` (pre-DPI device
+	 * pixels), in force until the next world or page transform record.
+	 */
+	tsDevice?: TransformMatrix | null;
+	/** GDI+ `CompositingMode`: 0 SourceOver (default), 1 SourceCopy. */
+	compositingMode?: number;
+	/** GDI+ `CompositingQuality` (recorded; blending is GDI+'s either way). */
+	compositingQuality?: number;
+	/** Rendering origin (`EmfPlusSetRenderingOrigin`): the device pixel a hatch pattern is anchored to. */
+	renderingOrigin?: { x: number; y: number };
+	/** GDI+ text contrast, 0 to 12 (`EmfPlusSetTextContrast`); absent: 4, GDI+'s default. */
+	textContrast?: number;
+	/** True after a well-formed `EmfPlusMultiFormatStart`: GDI+ then plays no further EMF+ record. */
+	multiFormatSkip?: boolean;
+	/** The image effect of the last `EmfPlusSerializableObject`, applied by the next DrawImagePoints with flag E. */
+	pendingEffect?: unknown;
+}
+
+/**
+ * One entry of the EMF+ Save/Restore and container stack: the complete
+ * graphics state to bring back (`EmfPlusRestore`, `EmfPlusEndContainer`).
+ */
+export interface EmfPlusSavedState {
+	/** World transform. */
+	transform: TransformMatrix;
+	/** The rest of the state; absent on entries from older callers (transform only). */
+	snapshot?: {
+		clipRegion: ClipRegion;
+		antiAlias?: boolean;
+		interpolationMode?: number;
+		pixelOffsetMode?: number;
+		textRenderingHint?: number;
+		pageUnit: number;
+		pageScale: number;
+		ext: EmfPlusGraphicsExt;
+	};
+}
+
+// ---------------------------------------------------------------------------
 // EMF+ persistent state (survives across multiple EMR_COMMENT records)
 // ---------------------------------------------------------------------------
 
@@ -805,7 +879,7 @@ export interface EmfPlusState {
 	/** Current GDI+ world transform matrix. */
 	worldTransform: TransformMatrix;
 	/** Stack of saved transforms for Save/Restore and BeginContainer/EndContainer. */
-	saveStack: Array<{ transform: TransformMatrix }>;
+	saveStack: EmfPlusSavedState[];
 	/** Maps the caller-supplied save/container ID to an index in {@link saveStack}. */
 	saveIdMap: Map<number, number>;
 	/** Tracked clip region (device-space shapes), persisted across comment batches. */
@@ -849,6 +923,8 @@ export interface EmfPlusState {
 	nestingDepth?: number;
 	/** Active GDI+ antialiasing (see {@link EmfPlusReplayCtx.antiAlias}). */
 	antiAlias?: boolean;
+	/** Further GDI+ graphics state (see {@link EmfPlusReplayCtx.ext}), shared by reference. */
+	ext?: EmfPlusGraphicsExt;
 	/** `EmfConvertOptions.gdiAntialias`, for nested metafile replays. */
 	gdiAntialias?: boolean;
 }
@@ -924,7 +1000,7 @@ export interface EmfPlusReplayCtx {
 	/** Accumulator for image draws that must be resolved asynchronously. */
 	deferredImages: DeferredImageDraw[];
 	/** Save/container transform stack. */
-	saveStack: Array<{ transform: TransformMatrix }>;
+	saveStack: EmfPlusSavedState[];
 	/** Maps caller-supplied save/container IDs to stack indices. */
 	saveIdMap: Map<number, number>;
 	/** Running count of Image objects parsed (for diagnostics). */
@@ -1012,6 +1088,16 @@ export interface EmfPlusReplayCtx {
 	 * `false`/absent is GDI+'s default (SmoothingMode None, aliased edges).
 	 */
 	antiAlias?: boolean;
+	/**
+	 * The rest of the GDI+ graphics state the EMF+ records set: container
+	 * transform and clip, compositing mode and quality, rendering origin,
+	 * text contrast, terminal-server clip and device matrix, the pending
+	 * image effect and the MultiFormat playback switch. Created on first use
+	 * (`plusExt` in `emf-plus-state-handlers.ts`) and shared with the
+	 * persistent {@link EmfPlusState}, so it survives from one EMR_COMMENT
+	 * batch to the next.
+	 */
+	ext?: EmfPlusGraphicsExt;
 	/** `EmfConvertOptions.gdiAntialias`, threaded through for nested metafile replays. */
 	gdiAntialias?: boolean;
 }
