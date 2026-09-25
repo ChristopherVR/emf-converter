@@ -49,6 +49,11 @@ export function toPlusFix(v: number): number {
 	return Math.ceil(v * 16 - 1e-4);
 }
 
+/** A coordinate in 28.4 rounded to the nearest sixteenth, halves up (see {@link aliasedRectFix}). */
+function nearestFix(v: number): number {
+	return Math.floor(v * 16 + 0.5 - 1e-4);
+}
+
 /**
  * The 28.4 vertices of an axis-aligned rectangle figure as GDI+'s aliased
  * fill holds them: rounded to the NEAREST sixteenth (halves up), not up.
@@ -58,7 +63,7 @@ export function toPlusFix(v: number): number {
  * figure's float device vertices; `null` when it is not such a rectangle.
  */
 function aliasedRectFix(raw: ReadonlyArray<number>): FixFigure | null {
-	let pts = raw.map((v) => Math.floor(v * 16 + 0.5 - 1e-4));
+	let pts = raw.map(nearestFix);
 	if (pts.length === 10 && pts[0] === pts[8] && pts[1] === pts[9]) {
 		pts = pts.slice(0, 8);
 	}
@@ -351,4 +356,74 @@ export function rasterizePlusFill(
 		}
 	}
 	return coverage;
+}
+
+/**
+ * The device pixels GDI+ holds for a clip region made of `shapes` (each
+ * issuing device-space geometry, the region their intersection), as
+ * disjoint rectangles within `box`: every shape recorded and
+ * scan-converted like an aliased fill (a pixel belongs when its sample
+ * point is inside), its vertices rounded to the nearest sixteenth rather
+ * than up (measured on a star-shaped clip path: exact on every pixel). `half` samples at pixel centres (PixelOffsetMode Half,
+ * HighQuality). `null` when a shape uses a path call the recorder does not
+ * model.
+ */
+export function clipPixelRects(
+	shapes: ReadonlyArray<{ build: (c: CanvasContext) => void; evenOdd: boolean }>,
+	box: { x: number; y: number; w: number; h: number },
+	half: boolean,
+): Array<{ x: number; y: number; w: number; h: number }> | null {
+	const identity: TransformMatrix = [1, 0, 0, 1, 0, 0];
+	let inside: Uint8ClampedArray | null = null;
+	for (const shape of shapes) {
+		let figs: FixFigure[];
+		try {
+			// A region's vertices round to the NEAREST sixteenth (measured on a
+			// star clip: rounding up left four tip pixels out).
+			figs = recordDeviceFigures(shape.build, identity).map((f) => f.pts.map(nearestFix));
+		} catch {
+			return null;
+		}
+		const cov = rasterizePlusFill(figs, shape.evenOdd, false, half, box);
+		if (inside) {
+			for (let i = 0; i < cov.length; i++) {
+				inside[i] = inside[i] && cov[i];
+			}
+		} else {
+			inside = cov;
+		}
+	}
+	const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
+	if (!inside) {
+		return rects;
+	}
+	// Runs per row, merged downwards while a run repeats exactly.
+	let open = new Map<string, { x: number; y: number; w: number; h: number }>();
+	for (let y = 0; y < box.h; y++) {
+		const next = new Map<string, { x: number; y: number; w: number; h: number }>();
+		for (let x = 0; x < box.w; ) {
+			if (!inside[y * box.w + x]) {
+				x++;
+				continue;
+			}
+			let e = x;
+			while (e < box.w && inside[y * box.w + e]) {
+				e++;
+			}
+			const key = x + ',' + e;
+			const prev = open.get(key);
+			if (prev) {
+				prev.h++;
+				next.set(key, prev);
+				open.delete(key);
+			} else {
+				const r = { x: box.x + x, y: box.y + y, w: e - x, h: 1 };
+				rects.push(r);
+				next.set(key, r);
+			}
+			x = e;
+		}
+		open = next;
+	}
+	return rects;
 }

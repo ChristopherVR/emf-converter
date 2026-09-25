@@ -2,7 +2,14 @@ import { describe, it, expect } from 'vitest';
 
 import { flattenCubic } from './emf-plus-brush-parser';
 import { textureTexelAt, wrapTexel } from './emf-plus-brush-texture';
-import { foldIntoTile, invertAffine, pathGradientSampler, textureSampler, tryFillPlusShapeExact } from './emf-plus-exact-fill';
+import {
+	foldIntoTile,
+	gdiplusBlendPixels,
+	invertAffine,
+	pathGradientSampler,
+	textureSampler,
+	tryFillPlusShapeExact,
+} from './emf-plus-exact-fill';
 import type { EmfPlusPathGradientShape, EmfPlusReplayCtx, EmfPlusTexture, TransformMatrix } from './emf-types';
 
 const IDENTITY: TransformMatrix = [1, 0, 0, 1, 0, 0];
@@ -151,5 +158,22 @@ describe('tryFillPlusShapeExact', () => {
 		};
 		const rCtx = rCtxWith({ clip: () => {}, drawImage: () => {} }, { kind: 'plus-brush', color: 'red', texture });
 		expect(tryFillPlusShapeExact(rCtx, 0, 1, () => {}, null)).toBe(false);
+	});
+});
+
+describe('gdiplusBlendPixels', () => {
+	it('blends as GDI+ does: premultiplied colour scaled by the sample share over the destination', () => {
+		// (30, 90, 200) opaque over white with 18 of 32 samples: GDI+ paints (129, 163, 225).
+		const data = new Uint8ClampedArray([30, 90, 200, 255]);
+		const dst = new Uint8ClampedArray([255, 255, 255, 255]);
+		expect(gdiplusBlendPixels(data, dst, new Uint8ClampedArray([Math.round((18 * 255) / 32)]))).toBe(true);
+		expect([...data]).toEqual([129, 163, 225, 255]);
+	});
+
+	it('leaves uncovered pixels transparent and declines a translucent destination', () => {
+		const data = new Uint8ClampedArray([1, 2, 3, 255, 1, 2, 3, 255]);
+		const dst = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 128]);
+		expect(gdiplusBlendPixels(data, dst, new Uint8ClampedArray([0, 255]))).toBe(false);
+		expect(data[3]).toBe(0);
 	});
 });

@@ -324,7 +324,7 @@ function strokeGdiplus(
 		return false;
 	}
 	const coverage = rasterizePlusFill(fix, false, antialias, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), box);
-	return compositeBrushCoverage(rCtx, sampler, box, coverage);
+	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
 }
 
 /** True for the identity matrix. */

@@ -9,6 +9,7 @@ import {
 	emptyClipShape,
 	reapplyClipRegion,
 	rectsClipShape,
+	replayClipCmds,
 	translateClipRegion,
 	type ClipCombineOp,
 	type ClipCombineResult,
@@ -47,6 +48,7 @@ import { createBrushGradient } from './emf-plus-brush-gradient';
 import { createBrushTexture } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { emfPlusPathClipShape } from './emf-plus-path';
+import { clipPixelRects } from './emf-plus-raster';
 import { isSvgContext } from './svg-context';
 import type { EmfPlusBrush, EmfPlusRegionNode, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
@@ -358,7 +360,17 @@ function pixelSnapPlusClip(rCtx: EmfPlusReplayCtx, incoming: ClipRegion): ClipRe
 	if (rCtx.gdiAntialias === true || !incoming || !domain || isSvgContext(rCtx.ctx)) {
 		return incoming;
 	}
-	const shift = (isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0) ? 0 : 0.5) - 1 / 32;
+	const half = isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0);
+	// GDI+'s own aliased scan conversion of the region (emf-plus-raster.ts).
+	const exact = clipPixelRects(
+		incoming.map((shape) => ({ build: (c) => replayClipCmds(c, shape.cmds), evenOdd: shape.fillRule === 'evenodd' })),
+		domain,
+		half,
+	);
+	if (exact) {
+		return [rectsClipShape(exact)];
+	}
+	const shift = (half ? 0 : 0.5) - 1 / 32;
 	const shifted = translateClipRegion(incoming, shift, shift);
 	return [rectsClipShape(scanlineCombineRegions(shifted, null, 'intersect', domain))];
 }

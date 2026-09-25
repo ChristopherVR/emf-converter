@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { figuresBox, rasterizePlusFill, recordDeviceFigures, recordPlusFigures, toPlusFix } from './emf-plus-raster';
+import { clipPixelRects, figuresBox, rasterizePlusFill, recordDeviceFigures, recordPlusFigures, toPlusFix } from './emf-plus-raster';
 import type { CanvasContext, TransformMatrix } from './emf-types';
 
 const IDENTITY: TransformMatrix = [1, 0, 0, 1, 0, 0];
@@ -78,5 +78,30 @@ describe('figuresBox', () => {
 	it('bounds the figures with a margin, clamped to the surface', () => {
 		expect(figuresBox([square(2, 3, 5, 4)], { w: 10, h: 10 })).toEqual({ x: 1, y: 2, w: 6, h: 4 });
 		expect(figuresBox([square(20, 20, 30, 30)], { w: 10, h: 10 })).toBeNull();
+	});
+});
+
+describe('clipPixelRects', () => {
+	it('holds a clip region as the pixels whose sample point is inside, merged into rectangles', () => {
+		const rects = clipPixelRects(
+			[{ build: (c) => c.rect(1.25, 1.25, 3, 2), evenOdd: false }],
+			{ x: 0, y: 0, w: 8, h: 8 },
+			false,
+		);
+		// Samples at integers: x 2..4, y 2..3.
+		expect(rects).toEqual([{ x: 2, y: 2, w: 3, h: 2 }]);
+	});
+
+	it('intersects several shapes and declines unmodelled geometry', () => {
+		const rects = clipPixelRects(
+			[
+				{ build: (c) => c.rect(0, 0, 4, 4), evenOdd: false },
+				{ build: (c) => c.rect(2, 2, 4, 4), evenOdd: false },
+			],
+			{ x: 0, y: 0, w: 8, h: 8 },
+			false,
+		);
+		expect(rects).toEqual([{ x: 2, y: 2, w: 2, h: 2 }]);
+		expect(clipPixelRects([{ build: (c) => c.arc(2, 2, 1, 0, 3), evenOdd: false }], { x: 0, y: 0, w: 8, h: 8 }, false)).toBeNull();
 	});
 });

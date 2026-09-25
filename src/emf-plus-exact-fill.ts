@@ -590,7 +590,7 @@ function fillPlusShapeGdiplus(
 		if (fbox.w * fbox.h <= MAX_EXACT_PIXELS) {
 			const half = isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0);
 			const coverage = rasterizePlusFill(figures, fillRule === 'evenodd', mode === 'gdiplus-aa', half, fbox);
-			return compositeBrushCoverage(rCtx, sampler, fbox, coverage);
+			return compositeBrushCoverage(rCtx, sampler, fbox, coverage, 1, true);
 		}
 	}
 	const box = deviceBounds(points, device, size);
@@ -612,6 +612,44 @@ function fillPlusShapeGdiplus(
 }
 
 /**
+ * GDI+'s blend of a brush colour into an opaque destination pixel, in
+ * place: `data` holds the brush's straight RGBA per pixel on entry and the
+ * final opaque pixel (alpha 0 where nothing is drawn) on return, `dst` the
+ * destination, `coverage` GDI+'s coverage (0/255 aliased,
+ * `round(k * 255 / 32)` for k of its 32 antialiasing samples). Measured on
+ * every combination of 11 source levels, 3 destinations, 3 brush alphas
+ * and all 32 sample counts (9504 channel values, all exact): GDI+
+ * premultiplies the colour, `p = round(c * a / 255)`, scales it by the
+ * sample share, `round(p * k / 32)`, and adds the destination times
+ * `255 - round(a * k / 32)` over 255, rounded. Returns `false` (with
+ * `data` partly rewritten) when a covered destination pixel is not opaque,
+ * which this formula does not model.
+ */
+export function gdiplusBlendPixels(data: Uint8ClampedArray, dst: Uint8ClampedArray, coverage: Uint8ClampedArray): boolean {
+	for (let p = 0; p < coverage.length; p++) {
+		const o = p * 4;
+		const cv = coverage[p];
+		const a = data[o + 3];
+		if (cv === 0 || a === 0) {
+			data[o + 3] = 0;
+			continue;
+		}
+		if (dst[o + 3] !== 255) {
+			return false;
+		}
+		// Samples inside (coverage = round(k * 255 / 32) is one-to-one).
+		const k = cv === 255 ? 32 : Math.round((cv * 32) / 255);
+		const A = Math.round((a * k) / 32);
+		for (let c = 0; c < 3; c++) {
+			const pre = Math.round((data[o + c] * a) / 255);
+			data[o + c] = Math.min(255, Math.round((pre * k) / 32) + Math.round((dst[o + c] * (255 - A)) / 255));
+		}
+		data[o + 3] = 255;
+	}
+	return true;
+}
+
+/**
  * Composites a brush through a coverage mask the caller already computed
  * for `box` (`channels` coverage values per pixel: 1, or 3 for ClearType's
  * per-channel R, G, B coverage), as {@link paintBrushThroughMask} does: the
@@ -619,7 +657,10 @@ function fillPlusShapeGdiplus(
  * coverage, drawn at an integer device offset through the live clip. A
  * three-channel mask blends each channel separately against the pixels
  * already there (read back, blended, and drawn opaque where covered).
- * Returns `false` without canvas support.
+ * `gdiplusBlend` marks a coverage from GDI+'s own rasteriser (0/255, or
+ * `round(k * 255 / 32)` for k of 32 samples): the pixels are then blended
+ * with GDI+'s own arithmetic ({@link gdiplusBlendPixels}) wherever the
+ * destination is opaque. Returns `false` without canvas support.
  */
 export function compositeBrushCoverage(
 	rCtx: EmfPlusReplayCtx,
@@ -627,6 +668,7 @@ export function compositeBrushCoverage(
 	box: { x: number; y: number; w: number; h: number },
 	coverage: Uint8ClampedArray,
 	channels: 1 | 3 = 1,
+	gdiplusBlend: boolean = false,
 ): boolean {
 	const { ctx } = rCtx;
 	const out = createTempCanvas(box.w, box.h);
@@ -635,6 +677,22 @@ export function compositeBrushCoverage(
 	}
 	const data = new Uint8ClampedArray(box.w * box.h * 4);
 	sampler(box.x, box.y, box.w, box.h, data);
+	if (channels === 1 && gdiplusBlend && typeof ctx.getImageData === 'function') {
+		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
+		if (gdiplusBlendPixels(data, dst, coverage)) {
+			canvasPutImageData(out.ctx, createImageDataCompat(data, box.w, box.h), 0, 0);
+			ctx.save();
+			try {
+				ctx.setTransform(1, 0, 0, 1, 0, 0);
+				ctx.imageSmoothingEnabled = false;
+				(ctx.drawImage as unknown as (img: unknown, x: number, y: number) => void).call(ctx, out.canvas, box.x, box.y);
+			} finally {
+				ctx.restore();
+			}
+			return true;
+		}
+		sampler(box.x, box.y, box.w, box.h, data);
+	}
 	if (channels === 3) {
 		if (typeof ctx.getImageData !== 'function') {
 			return false;
