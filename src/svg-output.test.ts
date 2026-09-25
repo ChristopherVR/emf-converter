@@ -131,7 +131,9 @@ describe('SVG parity against real GDI output (vector fixtures)', () => {
 			};
 			const reference = await loadReference(name);
 			const svgDiff = diffImages(rendered, reference, 8);
-			const pngDiff = diffImages((await renderFixture(`${name}.emf`))!, reference, 8);
+			// Compared with the smooth-edged PNG pipeline (`gdiAntialias: true`),
+			// the same edge treatment the SVG's vector shapes get.
+			const pngDiff = diffImages((await renderFixture(`${name}.emf`, { gdiAntialias: true }))!, reference, 8);
 			expect(svgDiff.mismatchRatio).toBeLessThanOrEqual(pngDiff.mismatchRatio + 0.005);
 		},
 	);

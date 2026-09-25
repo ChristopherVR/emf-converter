@@ -85,20 +85,24 @@ export interface EmfConvertOptions {
 	 */
 	fontFamilyMap?: Record<string, string>;
 	/**
-	 * Antialias plain-GDI (EMF) vector shapes: Rectangle, Ellipse, RoundRect,
-	 * Polygon, Polyline, arcs, and bracketed paths. Default `true`, Canvas's
-	 * own smooth edges (with GDI's geometry, pen widths, caps, joins and
-	 * dash patterns). `false` rasterises their fills and strokes the way
-	 * Windows GDI does, with its own 28.4 fixed-point geometry, fill rule,
-	 * line algorithm and Bezier flattening, for output that matches what
-	 * Windows paints pixel for pixel; it is at least as fast as the default.
+	 * Smooth shape edges instead of reproducing Windows' own rasterisation.
 	 *
-	 * EMF+ fills, strokes and clips follow the GDI+ `SmoothingMode` the file
-	 * records, as GDI+ does, unless this is `true`: None, Default and
-	 * HighSpeed are drawn aliased on GDI+'s pixel grid, AntiAlias and
-	 * HighQuality with GDI+'s 8 x 4-sample antialiasing, and clip regions are
-	 * GDI+'s pixel sets. `true` draws every EMF+ edge with Canvas's own
-	 * smoothing instead. SVG output always keeps vector edges.
+	 * PNG output defaults to `false`: plain-GDI vector shapes (Rectangle,
+	 * Ellipse, RoundRect, Polygon, Polyline, arcs, bracketed paths, wide
+	 * pens) are rasterised the way Windows GDI does, with its 28.4
+	 * fixed-point geometry, fill rule, line algorithm and Bezier flattening,
+	 * and EMF+ fills, strokes and clips follow the GDI+ `SmoothingMode` the
+	 * file records (None, Default and HighSpeed aliased on GDI+'s pixel grid,
+	 * AntiAlias and HighQuality with GDI+'s 8 x 4-sample antialiasing), so the
+	 * PNG matches what Windows paints pixel for pixel.
+	 *
+	 * `true` draws every edge with Canvas's own antialiasing instead (still
+	 * with GDI's geometry, pen widths, caps, joins and dash patterns), which
+	 * looks smoother than Windows, especially for files recorded without
+	 * GDI+ antialiasing.
+	 *
+	 * SVG output defaults to smooth vector edges (an SVG is meant to scale);
+	 * `false` there embeds Windows' aliased shape pixels as image patches.
 	 */
 	gdiAntialias?: boolean;
 	/**
@@ -488,7 +492,8 @@ export async function convertMetafileToDataUrl(
 		emfWarn(`convertMetafileToDataUrl: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION}`);
 		return null;
 	}
-	const opts = options ?? {};
+	// PNG output reproduces what Windows paints unless smoothing is asked for.
+	const opts: EmfConvertOptions = { ...options, gdiAntialias: options?.gdiAntialias ?? false };
 	let canvas: AnyCanvas | null = null;
 	const result = await replayMetafile(buffer, opts, (w, h) => {
 		const setup = createCanvas(

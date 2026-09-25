@@ -194,6 +194,8 @@ describe('convertMetafileToDataUrl (EMF path)', () => {
 				fontFamilyMap: { calibri: 'Carlito' },
 				textureCache: expect.any(Map),
 				imageCache: expect.any(Map),
+				// PNG output defaults to Windows-exact rasterisation.
+				gdiAntialias: false,
 			},
 		);
 	});
