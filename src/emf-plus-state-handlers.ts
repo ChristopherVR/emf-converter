@@ -179,9 +179,10 @@ export function plusWorldMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
 }
 
 /** Apply the current EMF+ world transform to the canvas, incorporating page units and DPI scale. */
-export function applyPlusWorldTransform(rCtx: EmfPlusReplayCtx): void {
+export function applyPlusWorldTransform(rCtx: EmfPlusReplayCtx, geometry: boolean = true): void {
 	const m = plusWorldMatrix(rCtx);
-	const d = plusCanvasShift(rCtx);
+	// Text is not placed on the antialiasing grid (see plusCanvasShift).
+	const d = geometry ? plusCanvasShift(rCtx) : 0;
 	rCtx.ctx.setTransform(m[0], m[1], m[2], m[3], m[4] + d, m[5] + d);
 }
 
@@ -196,9 +197,14 @@ export function applyPlusWorldTransform(rCtx: EmfPlusReplayCtx): void {
  * (SmoothingMode None, the default) samples pixel x at x, which the
  * unshifted Canvas edge of whole-pixel geometry already reproduces, so
  * there is no shift. Pixel-indexed samplers (gradients, textures, images)
- * are unaffected: they evaluate device pixel x at GDI+'s point.
+ * are unaffected: they evaluate device pixel x at GDI+'s point, and so is
+ * text, which GDI+ places whatever the SmoothingMode, and SVG output.
  */
 export function plusCanvasShift(rCtx: EmfPlusReplayCtx): number {
+	// A raster effect only: SVG keeps the recorded geometry.
+	if (isSvgContext(rCtx.ctx)) {
+		return 0;
+	}
 	return rCtx.antiAlias && !isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0) ? 0.5 : 0;
 }
 

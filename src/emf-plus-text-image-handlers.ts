@@ -250,18 +250,26 @@ function fillPlusText(
 		}
 		const { font, textAlign, textBaseline } = ctx;
 		if (
-			paintBrushThroughMask(rCtx, sampler, box, (c) => {
-				c.font = font;
-				c.textAlign = textAlign;
-				c.textBaseline = textBaseline;
-				c.fillText(text, x, y);
-			})
+			paintBrushThroughMask(
+				rCtx,
+				sampler,
+				box,
+				(c) => {
+					c.font = font;
+					c.textAlign = textAlign;
+					c.textBaseline = textBaseline;
+					c.fillText(text, x, y);
+				},
+				'canvas',
+				undefined,
+				false,
+			)
 		) {
 			return;
 		}
 	}
 	ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-	applyPlusWorldTransform(rCtx);
+	applyPlusWorldTransform(rCtx, false);
 	ctx.fillText(text, x, y);
 }
 
