@@ -707,16 +707,16 @@ const PLUS_ALIASED_CASES: ParityCase[] = [
  * One drawing (a filled ellipse, triangle and Bezier path, a 3.5-pixel pen
  * ellipse and two 1-pixel lines) under each GDI+ SmoothingMode. None and
  * HighSpeed are drawn aliased, AntiAlias and HighQuality with GDI+'s 8 x 4
- * antialiasing: the fills are exact; the strokes' residual is single pixels
- * at the ends of the nominal-width lines and one antialiasing sample along
- * parts of the closed pen outline. `gdiAntialias: true` keeps Canvas
+ * antialiasing: fills and strokes are exact (the 1-pixel lines through
+ * GDI+'s nominal-width line algorithm, `emf-plus-nominal-line.ts`, and the
+ * curves through GDI+'s own Bezier flattener). `gdiAntialias: true` keeps Canvas
  * smoothing (the bounds below it guard that it still applies).
  */
 const SMOOTHING_CASES: ParityCase[] = [
-	close('gpx-smooth-none', 0.001), // measured 0.025% (6.26% before)
-	close('gpx-smooth-highspeed', 0.001), // measured 0.025%
-	close('gpx-smooth-antialias', 0.006), // measured 0.457% (8.60% before)
-	close('gpx-smooth-highquality', 0.006), // measured 0.457%
+	close('gpx-smooth-none', 0), // measured 0% (6.26% before, 0.025% with the older nominal-line model)
+	close('gpx-smooth-highspeed', 0), // measured 0%
+	close('gpx-smooth-antialias', 0), // measured 0% (8.60% before, 0.457% with the older nominal-line model)
+	close('gpx-smooth-highquality', 0), // measured 0%
 	{ ...close('gpx-smooth-none', 0.07), options: { gdiAntialias: true } }, // measured 6.258%
 	{ ...close('gpx-smooth-antialias', 0.07), options: { gdiAntialias: true } }, // measured 5.603%
 ];
@@ -794,15 +794,15 @@ const WMF_TEXT_SPACING_CASES: ParityCase[] = [wmf('wmf-text-spacing', 0.0002)]; 
 const recordCase = (name: string, maxMismatch: number): ParityCase => ({ ...close(name, maxMismatch) });
 
 const EMF_PLUS_RECORD_CASES: ParityCase[] = [
-	recordCase('gpx-rec-beziers', 0.002), // measured 0.127%
-	recordCase('gpx-rec-beziers-aa', 0.008), // measured 0.699%
-	recordCase('gpx-rec-curve', 0.001), // measured 0.077%
-	recordCase('gpx-rec-curve-aa', 0.006), // measured 0.486%
-	recordCase('gpx-rec-closedcurve', 0.002), // measured 0.141%
-	recordCase('gpx-rec-closedcurve-aa', 0.011), // measured 0.965%
-	recordCase('gpx-rec-compressed', 0.001), // measured 0.045%
-	recordCase('gpx-rec-compressed-aa', 0.006), // measured 0.531%
-	recordCase('gpx-rec-relative', 0.006), // measured 0.478%
+	recordCase('gpx-rec-beziers', 0.0005), // measured 0.019%
+	recordCase('gpx-rec-beziers-aa', 0.0005), // measured 0.025%
+	recordCase('gpx-rec-curve', 0),
+	recordCase('gpx-rec-curve-aa', 0.0005), // measured 0.013%
+	recordCase('gpx-rec-closedcurve', 0),
+	recordCase('gpx-rec-closedcurve-aa', 0),
+	recordCase('gpx-rec-compressed', 0),
+	recordCase('gpx-rec-compressed-aa', 0),
+	recordCase('gpx-rec-relative', 0),
 	recordCase('gpx-rec-relative-image', 0.035), // measured 3.068%
 	recordCase('gpx-rec-fillregion', 0),
 	recordCase('gpx-rec-fillregion-aa', 0),
@@ -820,8 +820,8 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
 	recordCase('gpx-rec-tsclip', 0),
 	recordCase('gpx-rec-tsclip-state', 0),
 	recordCase('gpx-rec-tsgraphics', 0),
-	recordCase('gpx-rec-customcap', 0.001), // measured 0.025%
-	recordCase('gpx-rec-customcap-aa', 0.002), // measured 0.114%
+	recordCase('gpx-rec-customcap', 0.0005), // measured 0.013%
+	recordCase('gpx-rec-customcap-aa', 0.0005), // measured 0.025%
 ];
 
 /**

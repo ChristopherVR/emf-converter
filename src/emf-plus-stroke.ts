@@ -6,7 +6,8 @@
  *
  * Raster strokes follow the recorded SmoothingMode (see `plusRasterMode`):
  * aliased or with GDI+'s antialiasing, a stroke is rasterised as GDI+ does
- * it, a pen up to 1.5 device pixels wide as GDI+'s nominal-width line and
+ * it, a pen up to 1.5 device pixels wide as GDI+'s nominal-width line
+ * (`emf-plus-nominal-line.ts`) and
  * a wider one as the outline GDI+'s widener builds (joins, caps, dash
  * pattern and DashCap, compound bands, Inset alignment:
  * `emf-plus-widen.ts`), scan-converted by GDI+'s fill rules
@@ -40,6 +41,7 @@ import {
 } from './emf-plus-raster';
 import { applyPlusWorldTransform, brushPaint, plusWorldMatrix } from './emf-plus-state-handlers';
 import { customCapGeometry } from './emf-plus-custom-cap';
+import { nominalLineCoverage, recordNominalFigures, type NominalFigure } from './emf-plus-nominal-line';
 import { widenFigures, type DevicePen } from './emf-plus-widen';
 import { isSvgContext } from './svg-context';
 import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
@@ -52,61 +54,6 @@ import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx, TransformMatrix } fro
  * and antialiased), 1.6 already its true 1.6 / cos(angle).
  */
 export const NOMINAL_PEN_MAX = 1.5;
-
-/**
- * How far GDI+'s nominal-width line reaches past each end point, along the
- * line, in device pixels (fitted on 60 random lines, aliased and
- * antialiased: 0.25 beats 0 and 0.5).
- */
-const NOMINAL_END_EXTENSION = 0.25;
-
-interface DevicePt {
-	x: number;
-	y: number;
-}
-
-/**
- * The device-space quadrilaterals GDI+'s nominal-width line covers along
- * `figures`: one per segment, a parallelogram one pixel tall across the
- * minor axis (an x-major segment spans y - 0.5 to y + 0.5 in every column),
- * ends square to the segment and extended by {@link NOMINAL_END_EXTENSION}.
- * All wound the same way, so their nonzero union is the stroke. With
- * GDI+'s antialiasing the segment's end points are first converted to
- * 28.4 (`fixEnds`; fitted on 60 random lines). Pure.
- */
-export function nominalLineQuads(figures: ReadonlyArray<DeviceFigure>, fixEnds: boolean): DevicePt[][] {
-	const quads: DevicePt[][] = [];
-	const snap = (v: number): number => (fixEnds ? toPlusFix(v) / 16 : v);
-	for (const f of figures) {
-		const pts = f.closed ? [...f.pts, f.pts[0], f.pts[1]] : f.pts;
-		for (let i = 0; i + 3 < pts.length; i += 2) {
-			const p = { x: snap(pts[i]), y: snap(pts[i + 1]) };
-			const q = { x: snap(pts[i + 2]), y: snap(pts[i + 3]) };
-			const dx = q.x - p.x;
-			const dy = q.y - p.y;
-			const len = Math.hypot(dx, dy);
-			if (!(len > 1e-9)) {
-				continue;
-			}
-			const ux = dx / len;
-			const uy = dy / len;
-			// Half-width across the segment giving a minor-axis extent of one pixel.
-			const h = 0.5 * Math.max(Math.abs(ux), Math.abs(uy));
-			const e = NOMINAL_END_EXTENSION;
-			const a = { x: p.x - ux * e, y: p.y - uy * e };
-			const b = { x: q.x + ux * e, y: q.y + uy * e };
-			const nx = -uy * h;
-			const ny = ux * h;
-			quads.push([
-				{ x: a.x + nx, y: a.y + ny },
-				{ x: b.x + nx, y: b.y + ny },
-				{ x: b.x - nx, y: b.y - ny },
-				{ x: a.x - nx, y: a.y - ny },
-			]);
-		}
-	}
-	return quads;
-}
 
 /** GDI+ `DashStyle` patterns (Dash, Dot, DashDot, DashDotDot), in pen widths. */
 const DASH_PATTERNS: Record<number, number[]> = {
@@ -317,8 +264,8 @@ function strokeGdiplus(
 	let fix: FixFigure[];
 	if (hasCustomCap(pen)) {
 		fix = customCapOutline(figures, width, devicePen, pen).map((poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
-	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash) {
-		fix = nominalLineQuads(figures, antialias).map((q) => q.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
+	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash && !(((pen.startCap ?? 0) | (pen.endCap ?? 0) | (pen.dashCap ?? 0)) & 0xf0)) {
+		return strokeNominal(rCtx, pen, sampler, buildPath, device, size, antialias, closedFigure);
 	} else {
 		fix = widenFigures(figures, devicePen).map((poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
 	}
@@ -330,6 +277,53 @@ function strokeGdiplus(
 		return false;
 	}
 	const coverage = rasterizePlusFill(fix, false, antialias, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), box);
+	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
+}
+
+/**
+ * A pen at most {@link NOMINAL_PEN_MAX} device pixels wide (solid, without
+ * anchor or custom caps) drawn as GDI+'s nominal-width line
+ * (`emf-plus-nominal-line.ts`): the path enumerated in GDI+'s precision,
+ * then GDI+'s one-pixel DDA (aliased, opaque solid brush, straight
+ * figures) or its half-pixel diamond outline scan-converted.
+ */
+function strokeNominal(
+	rCtx: EmfPlusReplayCtx,
+	pen: EmfPlusPen,
+	sampler: DeviceBrushSampler,
+	buildPath: (c: CanvasContext) => void,
+	device: TransformMatrix,
+	size: { w: number; h: number },
+	antialias: boolean,
+	closedFigure: boolean,
+): boolean {
+	let figures: NominalFigure[];
+	try {
+		figures = recordNominalFigures(buildPath, device);
+	} catch {
+		return false;
+	}
+	if (closedFigure) {
+		figures = figures.map((f) => ({ ...f, closed: true }));
+	}
+	const box = figuresBox(
+		figures.map((f) => f.pts),
+		size,
+	);
+	if (!box) {
+		return true;
+	}
+	if (box.w * box.h > 16_000_000) {
+		return false;
+	}
+	const argb = cssColorToArgb(pen.color);
+	const plainBrush = !pen.brush || (!pen.brush.gradient && !pen.brush.texture && !pen.brush.hatch);
+	const opaqueSolid = plainBrush && argb !== null && argb >>> 24 === 0xff && rCtx.ext?.compositingMode !== 1;
+	const coverage = nominalLineCoverage(
+		figures,
+		{ antialias, half: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), opaqueSolid, clip: { x: 0, y: 0, w: size.w, h: size.h } },
+		box,
+	);
 	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
 }
 
