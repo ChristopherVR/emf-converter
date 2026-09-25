@@ -803,6 +803,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
 	recordCase('gpx-rec-compressed', 0.001), // measured 0.045%
 	recordCase('gpx-rec-compressed-aa', 0.006), // measured 0.531%
 	recordCase('gpx-rec-relative', 0.006), // measured 0.478%
+	recordCase('gpx-rec-relative-image', 0.035), // measured 3.068%
 	recordCase('gpx-rec-fillregion', 0),
 	recordCase('gpx-rec-fillregion-aa', 0),
 	recordCase('gpx-rec-container', 0),

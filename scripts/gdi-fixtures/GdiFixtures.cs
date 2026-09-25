@@ -3694,6 +3694,18 @@ public static class GdiFixtures
 			EprRec(0x4017, 0x0801, EprF(0.6f), EprI(curve.Length / 2), EprPointR(curve)),
 			EprRec(0x4016, 0xA800, EprI(EprArgb(160, 150, 60, 170)), EprF(0.5f), EprI(4), EprPointR(5, 70, 40, 25, -10, -20, -25, 20)),
 			EprRec(0x400d, 0x2801, EprI(3), EprPointR(130, 10, 20, 15, -15, 10))));
+		// DrawImagePoints with relative destination points (a 6 x 5 pixel-format
+		// bitmap object drawn onto a sheared parallelogram), and with 16-bit ones.
+		var px = new List<byte>();
+		for (int y = 0; y < 5; y++)
+		{
+			for (int x = 0; x < 6; x++) { px.Add((byte)(x * 40)); px.Add((byte)(y * 60)); px.Add((byte)((x + y) % 2 == 0 ? 220 : 30)); px.Add(255); }
+		}
+		byte[] image = EprRec(0x4008, 0x0500, EprI(EprVersion, 1), EprI(6, 5, 24, 0x0026200A, 0), px.ToArray());
+		EprSpliceCase("gpx-rec-relative-image", 160, 100, EprWhite, EprCat(image,
+			EprRec(0x4021, 5),
+			EprRec(0x401B, 0x0800, EprI(-1, 2), EprF(0, 0, 6, 5), EprI(3), EprPointR(10, 10, 60, 10, -40, 50)),
+			EprRec(0x401B, 0x4000, EprI(-1, 2), EprF(1, 1, 4, 3), EprI(3), EprS(90, 20, 150, 30, 95, 90))));
 	}
 
 	// Records GDI+'s recorder never writes, hand-built and spliced (see

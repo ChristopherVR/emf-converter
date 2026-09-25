@@ -29,6 +29,7 @@ import {
 } from './emf-plus-exact-fill';
 import { isHalfPixelOffset, resampleKernelFor } from './emf-plus-image-resample';
 import { replayEmfPlusPath } from './emf-plus-path';
+import { readPlusPoints } from './emf-plus-read-helpers';
 import { strokePlusGeometry } from './emf-plus-stroke';
 import {
 	resolveBrushPaint,
@@ -685,28 +686,15 @@ export function handleEmfPlusTextImageRecord(
 				const imgId = recFlags & 0xff;
 				const imgObj = objectTable.get(imgId);
 				const count = view.getUint32(dataOff + 24, true);
-				const compressed = (recFlags & 0x4000) !== 0;
 				const ptOff = dataOff + 28;
 				if (count >= 3 && imgObj && imgObj.kind === 'plus-image' && imgObj.data) {
-					let p1x: number, p1y: number, p2x: number, p2y: number, p3x: number, p3y: number;
-					if (compressed && ptOff + 12 <= dataOff + recDataSize) {
-						p1x = view.getInt16(ptOff, true);
-						p1y = view.getInt16(ptOff + 2, true);
-						p2x = view.getInt16(ptOff + 4, true);
-						p2y = view.getInt16(ptOff + 6, true);
-						p3x = view.getInt16(ptOff + 8, true);
-						p3y = view.getInt16(ptOff + 10, true);
-					} else if (!compressed && ptOff + 24 <= dataOff + recDataSize) {
-						p1x = view.getFloat32(ptOff, true);
-						p1y = view.getFloat32(ptOff + 4, true);
-						p2x = view.getFloat32(ptOff + 8, true);
-						p2y = view.getFloat32(ptOff + 12, true);
-						p3x = view.getFloat32(ptOff + 16, true);
-						p3y = view.getFloat32(ptOff + 20, true);
-					} else {
+					// Absolute (flag C: 16-bit) or relative (flag P) points.
+					const pts = readPlusPoints(view, ptOff, dataOff + recDataSize, 3, recFlags);
+					if (!pts) {
 						emfWarn(`DrawImagePoints: imgId=${imgId}, point data out of bounds`);
 						return true;
 					}
+					const [{ x: p1x, y: p1y }, { x: p2x, y: p2y }, { x: p3x, y: p3y }] = pts;
 					const dx = p1x;
 					const dy = p1y;
 					const dw = Math.sqrt((p2x - p1x) ** 2 + (p2y - p1y) ** 2);
