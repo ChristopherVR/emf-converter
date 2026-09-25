@@ -548,6 +548,60 @@ describe('wmf-replay', () => {
 		});
 
 		// -----------------------------------------------------------------------
+		// Text (canvas font engine without the `fonts` option)
+		// -----------------------------------------------------------------------
+
+		describe('mETA_TEXTOUT / META_EXTTEXTOUT', () => {
+			it('draws ANSI text at the mapped reference point', () => {
+				const header: WmfHeader = { ...defaultHeader(), boundsRight: 500, boundsBottom: 500 };
+				const view = buildWmf(header, [
+					{
+						type: 0x0521, // META_TEXTOUT: count, string, y, x
+						dataSize: 10,
+						writer: (v, d) => {
+							v.setInt16(d, 3, true);
+							v.setUint8(d + 2, 0x41);
+							v.setUint8(d + 3, 0x42);
+							v.setUint8(d + 4, 0x80);
+							v.setInt16(d + 6, 50, true);
+							v.setInt16(d + 8, 30, true);
+						},
+					},
+				]);
+				const ctx = { ...makeCtxStub(), measureText: vi.fn(() => ({ width: 10 })) };
+				replayWmfRecords(view, ctx as unknown as CanvasRenderingContext2D, header, 500, 500);
+				const fillText = ctx.fillText as ReturnType<typeof vi.fn>;
+				expect(fillText).toHaveBeenCalledOnce();
+				// 0x80 is the euro sign in Windows-1252.
+				expect(fillText.mock.calls[0]).toStrictEqual(['AB€', 30, 50]);
+			});
+
+			it('draws META_EXTTEXTOUT with its clip rectangle and Dx array', () => {
+				const header = defaultHeader();
+				const view = buildWmf(header, [
+					{
+						type: 0x0a32, // y, x, count, options, rect, string, dx
+						dataSize: 24,
+						writer: (v, d) => {
+							v.setInt16(d, 20, true);
+							v.setInt16(d + 2, 10, true);
+							v.setInt16(d + 4, 2, true);
+							v.setUint16(d + 6, 0x0004, true); // ETO_CLIPPED
+							v.setInt16(d + 16, 0x4948, true); // "HI"
+							v.setInt16(d + 18, 7, true);
+							v.setInt16(d + 20, 7, true);
+						},
+					},
+				]);
+				const ctx = { ...makeCtxStub(), measureText: vi.fn(() => ({ width: 10 })) };
+				replayWmfRecords(view, ctx as unknown as CanvasRenderingContext2D, header, 1000, 1000);
+				const fillText = ctx.fillText as ReturnType<typeof vi.fn>;
+				// A Dx array places each glyph on its own.
+				expect(fillText.mock.calls.map((c) => c[0])).toStrictEqual(['H', 'I']);
+			});
+		});
+
+		// -----------------------------------------------------------------------
 		// META_SETROP2 (stores raster-op mode)
 		// -----------------------------------------------------------------------
 

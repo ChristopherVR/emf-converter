@@ -82,6 +82,36 @@ describe('SVG output without any canvas backend', () => {
 		},
 	);
 
+	it.each([
+		['wmf-map-anisotropic', 0],
+		['wmf-map-metric', 0],
+		['wmf-clip-scaled', 0],
+		['wmf-regions-twips', 0],
+		['wmf-bitmaps', 0],
+		['wmf-patterns', 0],
+		['wmf-palette', 0],
+		['wmf-legacy', 0],
+		['wmf-pixels', 0.0001],
+		['wmf-shapes', 0.001],
+	] as const)('plays WMF %s into SVG exactly as Windows (the pure-JS raster mirror of the SVG)', async (name, max) => {
+		const { replayToSvgContext } = await import('./emf-converter');
+		const { SoftwareRasterContext } = await import('./software-raster');
+		const { decodePng } = await import('./png-decoder');
+		const svg = await replayToSvgContext(load(`./__fixtures__/gdi/${name}.wmf`), { dpiScale: 1, gdiAntialias: false });
+		expect(svg!.shadow).toBeInstanceOf(SoftwareRasterContext);
+		const shadow = (svg!.shadow as InstanceType<typeof SoftwareRasterContext>).canvas;
+		const ref = await decodePng(new Uint8Array(load(`./__fixtures__/gdi/${name}.png`)));
+		expect(mismatch({ data: shadow.pixels, width: shadow.width, height: shadow.height }, ref!, 0)).toBeLessThanOrEqual(max);
+	});
+
+	it('keeps WMF pattern brushes as native tiles and blits as images in the SVG', async () => {
+		const { convertMetafileToSvg } = await import('./index');
+		const patterns = await convertMetafileToSvg(load('./__fixtures__/gdi/wmf-patterns.wmf'));
+		expect(patterns).toContain('<pattern ');
+		const bitmaps = await convertMetafileToSvg(load('./__fixtures__/gdi/wmf-bitmaps.wmf'));
+		expect(bitmaps).toContain('<image ');
+	});
+
 	it('renders a text-free ROP3 metafile to a PNG identical to real GDI', async () => {
 		const { convertMetafileToDataUrl } = await import('./index');
 		const { decodePng } = await import('./png-decoder');

@@ -14,8 +14,9 @@
  * painter the GDI rasteriser uses (`paintSpansDeferred`), so the brush
  * pattern, the brush origin and the `SetROP2` mode apply per pixel as in
  * GDI; `InvertRgn` inverts the destination. `FrameRgn` paints the region
- * minus the region shrunk by the frame width and height (the region's
- * intersection with itself moved left, right, up and down by them).
+ * minus the region shrunk by the frame width and height: the region's
+ * intersection with itself moved by them in all eight directions (the
+ * diagonals too; measured against `wmf-regions`).
  *
  * @module wmf-region
  */

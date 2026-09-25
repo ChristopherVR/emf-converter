@@ -170,8 +170,14 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 		return;
 	}
 	const m = gdiDeviceMatrix(p.rCtx);
-	const cw = Math.round(Math.abs(w * m[0]) * 16);
-	const ch = Math.round(Math.abs(h * m[3]) * 16);
+	let cw = Math.round(Math.abs(w * m[0]) * 16);
+	let ch = Math.round(Math.abs(h * m[3]) * 16);
+	if (!penIsNull(p) && !penIsCosmetic(p.rCtx)) {
+		// Under a wide pen the corner ellipse is a whole even number of
+		// pixels on each axis, rounded down (measured: `wmf-shapes`).
+		cw = Math.floor(cw / 32) * 32;
+		ch = Math.floor(ch / 32) * 32;
+	}
 	const cr = canvasRect(box);
 	paintGdiShape(p.rCtx, {
 		build: (c: CanvasContext) => {

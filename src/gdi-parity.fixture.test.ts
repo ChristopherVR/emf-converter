@@ -13,9 +13,13 @@
  */
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 
-import { compareFixture, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
+import { readFileSync } from 'node:fs';
+
+import { compareFixture, fixturePath, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { setSoftwareCanvasOnly } from './emf-canvas-helpers';
+import { parseWmfHeader } from './emf-header-parser';
 import type { EmfConvertOptions } from './index';
+import { extractEmbeddedEmf } from './wmf-embedded-emf';
 
 interface ParityCase {
 	name: string;
@@ -717,6 +721,65 @@ const SMOOTHING_CASES: ParityCase[] = [
 	{ ...close('gpx-smooth-antialias', 0.07), options: { gdiAntialias: true } }, // measured 5.603%
 ];
 
+/**
+ * WMF records, each file played the way Windows' `PlayMetaFile` plays it
+ * (`wmf-records` fixtures: the reference is PlayMetaFile of the very same
+ * bytes onto a white DIB, under a placeable-aware player's
+ * `MM_ANISOTROPIC` mapping). Shapes in `GM_COMPATIBLE` geometry at 96 dpi,
+ * in twips and at a 0.96 scale; every map mode, window/viewport origin,
+ * extent, offset and scale record, placeable bounds off zero and two
+ * non-placeable files; IntersectClipRect/ExcludeClipRect/OffsetClipRgn/
+ * SelectClipRgn with SaveDC/RestoreDC; FillRgn/PaintRgn/InvertRgn/FrameRgn;
+ * DIB blits, StretchDIBits, SetDIBitsToDevice and PatBlt under many ROP3
+ * codes and stretch modes; pattern and hatch brushes; palettes and
+ * PALETTEINDEX colours; SetPixel and flood fills; the object table; escapes
+ * and SetLayout; hand-assembled Win16 records Windows no longer plays; an
+ * embedded EMF. Before this replay (the old canvas-only WMF path) these
+ * measured 4.9% to 100% of pixels off. The residuals: `wmf-shapes*` (wide
+ * pen corners of RoundRect/Ellipse, one arc end pixel, and in the 0.96
+ * scale case PS_INSIDEFRAME boxes one pixel short), `wmf-layout-rtl`
+ * (mirrored lines rasterised after mirroring rather than before),
+ * `wmf-nonplaceable*`/`wmf-pixels*` (single pixels of the same arc and
+ * wide-pen machinery), `wmf-embedded-emf` (the EMF path's own wide-pen
+ * residual).
+ */
+const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', tolerance: 0, maxMismatch });
+
+const WMF_RECORD_CASES: ParityCase[] = [
+	wmf('wmf-shapes', 0.001), // measured 0.073%
+	wmf('wmf-shapes-twips', 0.001), // measured 0.073%
+	wmf('wmf-shapes-scaled', 0.006), // measured 0.484%
+	wmf('wmf-map-anisotropic'),
+	wmf('wmf-map-isotropic'),
+	wmf('wmf-map-text'),
+	wmf('wmf-map-metric'),
+	wmf('wmf-nonplaceable', 0.0001), // measured 0.002%
+	wmf('wmf-nonplaceable-viewport', 0.0003), // measured 0.020%
+	wmf('wmf-placeable-origin'),
+	wmf('wmf-clip'),
+	wmf('wmf-clip-twips'),
+	wmf('wmf-clip-scaled'),
+	wmf('wmf-regions'),
+	wmf('wmf-regions-twips'),
+	wmf('wmf-bitmaps'),
+	wmf('wmf-bitmaps-twips'),
+	wmf('wmf-patterns'),
+	wmf('wmf-legacy'),
+	wmf('wmf-palette'),
+	wmf('wmf-pixels', 0.0001), // measured 0.007%
+	wmf('wmf-pixels-twips', 0.0001), // measured 0.007%
+	wmf('wmf-objects'),
+	wmf('wmf-escapes'),
+	wmf('wmf-layout-rtl', 0.003), // measured 0.235%
+	wmf('wmf-embedded-emf', 0.001), // measured 0.072%
+];
+
+/**
+ * SetTextCharacterExtra and SetTextJustification through the GDI font
+ * engine: GDI's per-character extra and its DDA spread of the break extra.
+ */
+const WMF_TEXT_SPACING_CASES: ParityCase[] = [wmf('wmf-text-spacing', 0.0002)]; // measured 0.006%
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -822,6 +885,30 @@ describe('GDI ground-truth parity', () => {
 		});
 	});
 
+	describe('WMF records played as PlayMetaFile plays them', () => {
+		it.each(WMF_RECORD_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+
+		it('recovers the embedded EMF byte for byte as SetWinMetaFileBits does', () => {
+			const wmfBytes = readFileSync(fixturePath('wmf-embedded-emf.wmf'));
+			const view = new DataView(wmfBytes.buffer, wmfBytes.byteOffset, wmfBytes.byteLength);
+			const embedded = extractEmbeddedEmf(view, parseWmfHeader(view)!.headerSize);
+			expect(embedded).not.toBeNull();
+			expect(Buffer.from(embedded!).equals(readFileSync(fixturePath('wmf-embedded-emf.recovered.emf')))).toBe(true);
+		});
+	});
+
+	describe.skipIf(!windowsFonts())('WMF text spacing via the font engine (Windows fonts)', () => {
+		it.each(WMF_TEXT_SPACING_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()! });
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
 	describe('EMF+ TextureFill brush with a compressed embedded image', () => {
 		it.each(TEXTURE_FILL_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
@@ -882,6 +969,7 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 		...ALIASED_CASES,
 		...IMAGE_DRAW_CASES,
 		...TEXTURE_FILL_CASES,
+		...WMF_RECORD_CASES,
 	];
 	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
 		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
@@ -891,5 +979,13 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 
 	it('returns no PNG for a metafile with text', async () => {
 		expect(await renderFixture('rotate-text-25deg.emf')).toBeNull();
+	});
+
+	describe.skipIf(!windowsFonts())('with the font engine', () => {
+		it.each(WMF_TEXT_SPACING_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()! });
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
 	});
 });
