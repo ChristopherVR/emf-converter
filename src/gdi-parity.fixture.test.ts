@@ -489,7 +489,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
 	fontCase('textx-plus-antialias', 'emf', 0.1414), // measured 11.310%
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0699), // measured 5.590%
-	fontCase('textx-plus-cleartype', 'emf', 0.1785), // measured 14.280%
+	fontCase('textx-plus-cleartype', 'emf', 0.1684), // measured 13.465%
 	fontCase('textx-plus-singlebit', 'emf', 0.0245), // measured 1.960%
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%

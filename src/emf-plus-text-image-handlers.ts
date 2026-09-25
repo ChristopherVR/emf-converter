@@ -29,7 +29,7 @@ import {
 import { isSvgContext } from './svg-context';
 import {
 	ANTIALIASED_QUALITY,
-	CLEARTYPE_QUALITY,
+	CLEARTYPE_NATURAL_QUALITY,
 	NONANTIALIASED_QUALITY,
 	type LogFontSpec,
 } from './gdi-font-engine';
@@ -266,9 +266,10 @@ function fillPlusText(
  * LOGFONT quality equivalent of each GDI+ `TextRenderingHint`:
  * SystemDefault (measured: GDI+ draws it single-bit grid-fitted into a
  * bitmap), SingleBitPerPixelGridFit, SingleBitPerPixel, AntiAliasGridFit,
- * AntiAlias, ClearTypeGridFit.
+ * AntiAlias, ClearTypeGridFit (natural ClearType widths, which match GDI+
+ * more closely than GDI's compatible ones).
  */
-const HINT_QUALITY = [NONANTIALIASED_QUALITY, NONANTIALIASED_QUALITY, NONANTIALIASED_QUALITY, ANTIALIASED_QUALITY, ANTIALIASED_QUALITY, CLEARTYPE_QUALITY];
+const HINT_QUALITY = [NONANTIALIASED_QUALITY, NONANTIALIASED_QUALITY, NONANTIALIASED_QUALITY, ANTIALIASED_QUALITY, ANTIALIASED_QUALITY, CLEARTYPE_NATURAL_QUALITY];
 
 /** GDI+'s leading padding before the first glyph of a DrawString (a sixth of the em). */
 const PLUS_LEADING_EM = 1 / 6;
