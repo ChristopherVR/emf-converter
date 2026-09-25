@@ -14,11 +14,12 @@
  * shape/path handlers (`emf-gdi-draw-shapes.ts`, `emf-gdi-poly-path-handlers.ts`,
  * `emf-gdi-polypolygon-helpers.ts`) call these instead of `gmx`/`gmy` when
  * {@link hasWorldRotation} is true, so a rotated/skewed `EMR_SETWORLDTRANSFORM`
- * renders paths, polygons, rectangles, ellipses, and arcs correctly. Bitmap
- * blits (`emf-gdi-draw-bitmap.ts`) and raster text placement keep the
- * scale-only mapping: their exact per-pixel evaluators assume an
- * axis-aligned destination rectangle, and rotating that is a materially
- * larger change (documented as a remaining limitation in the README).
+ * renders paths, polygons, rectangles, rounded rectangles, ellipses, and
+ * arcs correctly. Bitmap blits (`executeRotatedBlit`,
+ * `emf-gdi-draw-bitmap.ts`) and raster text (`emf-gdi-draw-text.ts`) use
+ * {@link gdiDeviceMatrix} too when the transform rotates or skews; without
+ * one they keep the scale-only mapping and its exact axis-aligned
+ * per-pixel evaluators.
  *
  * Applying the world transform matters in practice even without rotation:
  * GDI+ writes EMF files whose polygon coordinates are pre-multiplied by 16

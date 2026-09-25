@@ -9,30 +9,50 @@
  * This module makes those operations possible by tracking the active clip as a
  * list of {@link ClipShape}s (device-space path-command lists) that are
  * replayed with `ctx.clip(fillRule)`, instead of relying on the opaque canvas
- * clip state. Two properties of the even-odd fill rule do the heavy lifting:
+ * clip state. Two properties of the even-odd fill rule do the heavy lifting
+ * on the fast paths:
  *
  * - **Subtraction**: clipping with `[huge covering rect] + [shape]` under the
- *   `'evenodd'` rule keeps everything *except* the shape, so `A − B` becomes
- *   an ordinary intersection with the inverse of `B`.
- * - **Symmetric difference**: concatenating two simple shapes under
- *   `'evenodd'` yields exactly `A XOR B` (points inside both have winding
- *   count 2 and are excluded).
+ *   `'evenodd'` rule keeps everything *except* the shape, so `A - B` becomes
+ *   an ordinary intersection with the inverse of `B`. This works for any
+ *   "parity" shape: an even-odd shape, or a simple nonzero one whose winding
+ *   is only ever 0 or +/-1.
+ * - **Symmetric difference**: concatenating two parity shapes under
+ *   `'evenodd'` yields exactly `A XOR B` (the crossing parities add).
  *
- * Union and Complement are rebuilt from the tracked shape lists. When the
- * current clip is too complex to recombine exactly (e.g. it is already an
- * intersection of several shapes), the operation falls back to the closest
- * conservative approximation and reports `exact: false`.
+ * Union of two simple shapes whose figures all wind the same way is their
+ * nonzero concatenation.
+ * Every other combination (a clip that is already an intersection of several
+ * shapes, a self-overlapping nonzero path such as an EMR_SELECTCLIPPATH
+ * bracket, Union of arbitrary shapes, ...) is evaluated exactly by the
+ * scanline engine in `emf-clip-scanline.ts`: both operands are scan-converted
+ * at device pixel centres over a finite domain (the canvas), combined span by
+ * span, and returned as disjoint pixel-aligned rectangles. That result is a
+ * `simple` rect-list shape, so later operations stay on the fast paths.
  *
  * @module emf-clip-region
  */
 
+import {
+	deriveClipDomain,
+	flattenClipCmds,
+	isDomainTruncated,
+	scanlineCombineRegions,
+	type ClipDomain,
+} from './emf-clip-scanline';
 import type { CanvasContext } from './emf-types';
+
+export type { ClipDomain } from './emf-clip-scanline';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** A single recorded path command in device (canvas pixel) space. */
+/**
+ * A single recorded path command in device (canvas pixel) space. The set
+ * mirrors the Canvas 2D path-building calls the replay handlers emit, so a
+ * recorded GDI path bracket can be stored verbatim.
+ */
 export type ClipPathCmd =
 	| { op: 'rect'; x: number; y: number; w: number; h: number }
 	| { op: 'moveTo'; x: number; y: number }
@@ -45,6 +65,18 @@ export type ClipPathCmd =
 			cp2y: number;
 			x: number;
 			y: number;
+	  }
+	| { op: 'arcTo'; x1: number; y1: number; x2: number; y2: number; radius: number }
+	| {
+			op: 'ellipse';
+			cx: number;
+			cy: number;
+			rx: number;
+			ry: number;
+			rotation: number;
+			startAngle: number;
+			endAngle: number;
+			ccw: boolean;
 	  }
 	| { op: 'closePath' };
 
@@ -78,7 +110,10 @@ export type ClipCombineOp = 'replace' | 'intersect' | 'union' | 'xor' | 'exclude
 /** Result of a clip combination: the new region and whether it is exact. */
 export interface ClipCombineResult {
 	region: ClipRegion;
-	/** False when the op could only be approximated (see module docs). */
+	/**
+	 * False only when no finite domain was supplied and the result extends
+	 * beyond the geometry-derived one (see {@link combineClip}).
+	 */
 	exact: boolean;
 }
 
@@ -148,6 +183,10 @@ export function translateClipShape(shape: ClipShape, dx: number, dy: number): Cl
 						x: c.x + dx,
 						y: c.y + dy,
 					};
+				case 'arcTo':
+					return { ...c, x1: c.x1 + dx, y1: c.y1 + dy, x2: c.x2 + dx, y2: c.y2 + dy };
+				case 'ellipse':
+					return { ...c, cx: c.cx + dx, cy: c.cy + dy };
 				case 'closePath':
 					return c;
 			}
@@ -167,15 +206,66 @@ export function translateClipRegion(region: ClipRegion, dx: number, dy: number):
 // Boolean combination
 // ---------------------------------------------------------------------------
 
-/** True when the shape can participate in even-odd inversion/composition. */
+/** True when the shape is a simple nonzero shape (winding 0 or +/-1 only). */
 function isComposable(shape: ClipShape): boolean {
 	return shape.simple && shape.fillRule === 'nonzero';
 }
 
 /**
- * The inverse of a simple shape: a huge covering rect concatenated with the
- * shape's own commands, filled even-odd. Points inside the shape gain winding
- * count 2 (excluded); everything else stays included.
+ * True when membership of the shape equals "odd crossing parity": an
+ * even-odd shape, or a composable nonzero one. Such shapes invert exactly
+ * with the huge-rect trick and XOR exactly by even-odd concatenation.
+ */
+function isParity(shape: ClipShape): boolean {
+	return shape.fillRule === 'evenodd' || isComposable(shape);
+}
+
+/**
+ * Common orientation of a simple shape's figures: +1 / -1 when every figure
+ * with non-zero area winds the same way (sign of its signed area), 0 when no
+ * figure has area, and `NaN` for mixed orientations. Because a simple
+ * shape's figures do not overlap, each figure's interior has winding equal
+ * to its orientation.
+ */
+function figureOrientation(shape: ClipShape): number {
+	let o = 0;
+	for (const poly of flattenClipCmds(shape.cmds)) {
+		let area2 = 0;
+		const n = poly.length / 2;
+		for (let i = 0; i < n; i++) {
+			const j = (i + 1) % n;
+			area2 += poly[2 * i] * poly[2 * j + 1] - poly[2 * j] * poly[2 * i + 1];
+		}
+		const s = Math.abs(area2) < 1e-9 ? 0 : Math.sign(area2);
+		if (s === 0) {
+			continue;
+		}
+		if (o !== 0 && s !== o) {
+			return NaN;
+		}
+		o = s;
+	}
+	return o;
+}
+
+/**
+ * True when the nonzero concatenation of two composable shapes is exactly
+ * their union: every figure of both winds the same way, so overlaps reach
+ * winding +/-2 and opposite windings can never cancel out.
+ */
+function canConcatUnion(a: ClipShape, b: ClipShape): boolean {
+	if (!isComposable(a) || !isComposable(b)) {
+		return false;
+	}
+	const oa = figureOrientation(a);
+	const ob = figureOrientation(b);
+	return !Number.isNaN(oa) && !Number.isNaN(ob) && (oa === 0 || ob === 0 || oa === ob);
+}
+
+/**
+ * The inverse of a parity shape: a huge covering rect concatenated with the
+ * shape's own commands, filled even-odd. Points inside the shape gain one
+ * extra crossing (excluded); everything else stays included.
  */
 function invertClipShape(shape: ClipShape): ClipShape {
 	return {
@@ -188,24 +278,56 @@ function invertClipShape(shape: ClipShape): ClipShape {
 	};
 }
 
+/** A point far outside any finite geometry, used to test unboundedness. */
+const FAR_PROBE: ClipDomain = { x: 1 << 23, y: 1 << 23, w: 1, h: 1 };
+
+/**
+ * Exact fallback: evaluate `current op incoming` with the scanline engine
+ * and return the result as a simple, disjoint rect-list shape.
+ *
+ * With an explicit `domain` the result is exact inside it (and the caller
+ * never draws outside it). Without one, the domain is derived from the
+ * operands' finite geometry, and the result is reported exact only when it
+ * does not extend beyond that box (i.e. it is bounded).
+ */
+function scanlineCombine(
+	current: ClipRegion,
+	incoming: ClipRegion,
+	op: ClipCombineOp,
+	domain: ClipDomain | undefined,
+): ClipCombineResult {
+	const dom = domain ?? deriveClipDomain(current, incoming);
+	const rects = scanlineCombineRegions(current, incoming, op, dom);
+	let exact = !isDomainTruncated(dom);
+	if (!domain && scanlineCombineRegions(current, incoming, op, FAR_PROBE).length > 0) {
+		// Unbounded result clipped to a geometry-derived box.
+		exact = false;
+	}
+	return { region: [rects.length > 0 ? rectsClipShape(rects) : emptyClipShape()], exact };
+}
+
 /**
  * Combine the current clip region with a new shape.
  *
  * Semantics (matching GDI `ExtSelectClipRgn` / GDI+ `CombineMode`):
- * - `replace`    → new = shape
- * - `intersect`  → new = current ∩ shape
- * - `union`      → new = current ∪ shape
- * - `xor`        → new = (current ∪ shape) − (current ∩ shape)
- * - `exclude`    → new = current − shape
- * - `complement` → new = shape − current
+ * - `replace`    -> new = shape
+ * - `intersect`  -> new = current AND shape
+ * - `union`      -> new = current OR shape
+ * - `xor`        -> new = (current OR shape) - (current AND shape)
+ * - `exclude`    -> new = current - shape
+ * - `complement` -> new = shape - current
  *
- * All ops are exact when the tracked region is at most one composable shape;
- * more complex regions degrade gracefully (see {@link ClipCombineResult}).
+ * Operations expressible as stacked `ctx.clip()` layers keep their vector
+ * form (see the module docs). Everything else is resolved exactly by
+ * scan conversion over `domain`, the finite device area that will ever be
+ * drawn (normally the canvas: `{ x: 0, y: 0, w: canvasW, h: canvasH }`).
+ * When `domain` is omitted it is derived from the operands' geometry.
  */
 export function combineClip(
 	current: ClipRegion,
 	shape: ClipShape,
 	op: ClipCombineOp,
+	domain?: ClipDomain,
 ): ClipCombineResult {
 	switch (op) {
 		case 'replace':
@@ -215,44 +337,41 @@ export function combineClip(
 			return { region: current ? [...current, shape] : [shape], exact: true };
 
 		case 'exclude': {
-			// current − shape ≡ current ∩ ¬shape
-			if (!isComposable(shape)) {
-				// Cannot invert a complex shape; approximating with intersection.
-				return { region: current ? [...current, shape] : [shape], exact: false };
+			// current - shape == current AND NOT shape
+			if (isParity(shape)) {
+				const inv = invertClipShape(shape);
+				return { region: current ? [...current, inv] : [inv], exact: true };
 			}
-			const inv = invertClipShape(shape);
-			return { region: current ? [...current, inv] : [inv], exact: true };
+			return scanlineCombine(current, [shape], op, domain);
 		}
 
 		case 'union': {
 			if (!current) {
-				// infinite ∪ anything = infinite
+				// infinite OR anything = infinite
 				return { region: null, exact: true };
 			}
-			if (current.length === 1 && isComposable(current[0]) && isComposable(shape)) {
-				// Nonzero winding over concatenated figures approximates the union;
-				// figures wound in opposite directions could cancel, hence not exact.
+			if (current.length === 1 && canConcatUnion(current[0], shape)) {
+				// Same-orientation simple shapes: nonzero concatenation is exactly
+				// the union (overlaps reach winding 2, never 0).
 				return {
 					region: [
 						{ cmds: [...current[0].cmds, ...shape.cmds], fillRule: 'nonzero', simple: false },
 					],
-					exact: false,
+					exact: true,
 				};
 			}
-			// The union is a superset of the current clip; keeping the current clip
-			// unchanged is the closest conservative approximation.
-			return { region: current, exact: false };
+			return scanlineCombine(current, [shape], op, domain);
 		}
 
 		case 'xor': {
 			if (!current) {
-				// infinite XOR shape = ¬shape
-				if (isComposable(shape)) {
+				// infinite XOR shape = NOT shape
+				if (isParity(shape)) {
 					return { region: [invertClipShape(shape)], exact: true };
 				}
-				return { region: [shape], exact: false };
+				return scanlineCombine(current, [shape], op, domain);
 			}
-			if (current.length === 1 && isComposable(current[0]) && isComposable(shape)) {
+			if (current.length === 1 && isParity(current[0]) && isParity(shape)) {
 				// Even-odd over the concatenation is exactly the symmetric difference.
 				return {
 					region: [
@@ -261,24 +380,19 @@ export function combineClip(
 					exact: true,
 				};
 			}
-			// Fall back to current − shape, a subset of the true XOR.
-			if (isComposable(shape)) {
-				return { region: [...current, invertClipShape(shape)], exact: false };
-			}
-			return { region: [...current, shape], exact: false };
+			return scanlineCombine(current, [shape], op, domain);
 		}
 
 		case 'complement': {
-			// shape − current
+			// shape - current
 			if (!current) {
-				// shape − infinite = empty
+				// shape - infinite = empty
 				return { region: [emptyClipShape()], exact: true };
 			}
-			if (current.length === 1 && isComposable(current[0])) {
+			if (current.length === 1 && isParity(current[0])) {
 				return { region: [shape, invertClipShape(current[0])], exact: true };
 			}
-			// Fall back to replacing with the new shape (superset of the result).
-			return { region: [shape], exact: false };
+			return scanlineCombine(current, [shape], op, domain);
 		}
 	}
 }
@@ -287,20 +401,22 @@ export function combineClip(
  * Combine two full regions (each an intersection list or `null` = infinite).
  *
  * Delegates to {@link combineClip} when the incoming region is a single
- * shape; multi-shape incoming regions are handled exactly for `replace` /
- * `intersect` (and several infinite-operand identities) and degrade to a
- * conservative approximation otherwise.
+ * shape. Multi-shape and infinite incoming regions keep the vector form for
+ * `replace` / `intersect`, the infinite-operand identities, and inversions of
+ * a single parity shape; all other combinations are resolved exactly by
+ * scan conversion over `domain` (see {@link combineClip}).
  */
 export function combineClipRegions(
 	current: ClipRegion,
 	incoming: ClipRegion,
 	op: ClipCombineOp,
+	domain?: ClipDomain,
 ): ClipCombineResult {
 	if (op === 'replace') {
 		return { region: incoming, exact: true };
 	}
 	if (incoming && incoming.length === 1) {
-		return combineClip(current, incoming[0], op);
+		return combineClip(current, incoming[0], op, domain);
 	}
 
 	if (!incoming) {
@@ -311,43 +427,44 @@ export function combineClipRegions(
 			case 'union':
 				return { region: null, exact: true };
 			case 'exclude':
-				// current − infinite = empty
+				// current - infinite = empty
 				return { region: [emptyClipShape()], exact: true };
 			case 'xor':
 			case 'complement': {
-				// Both reduce to ¬current (infinite − current / symmetric difference).
+				// Both reduce to NOT current (infinite - current / symmetric difference).
 				if (!current) {
 					return { region: [emptyClipShape()], exact: true };
 				}
-				if (current.length === 1) {
-					return combineClip(null, current[0], 'exclude');
+				if (current.length === 1 && isParity(current[0])) {
+					return { region: [invertClipShape(current[0])], exact: true };
 				}
-				return { region: current, exact: false };
+				return scanlineCombine(current, incoming, op, domain);
 			}
 		}
 	}
 
-	// Incoming region is an intersection of two or more shapes.
+	// Incoming region is an intersection of zero, two, or more shapes.
 	switch (op) {
 		case 'intersect':
 			return { region: current ? [...current, ...incoming] : incoming, exact: true };
 		case 'union':
-			// Union is a superset of the current clip; keep the current clip.
-			return { region: current, exact: false };
-		case 'xor':
-			return { region: current ?? incoming, exact: false };
-		case 'exclude':
-			return { region: current, exact: false };
+			if (!current) {
+				return { region: null, exact: true };
+			}
+			return scanlineCombine(current, incoming, op, domain);
 		case 'complement': {
-			// incoming − current ≡ incoming ∩ ¬current
+			// incoming - current == incoming AND NOT current
 			if (!current) {
 				return { region: [emptyClipShape()], exact: true };
 			}
-			if (current.length === 1) {
-				return combineClip(incoming, current[0], 'exclude');
+			if (current.length === 1 && isParity(current[0])) {
+				return { region: [...incoming, invertClipShape(current[0])], exact: true };
 			}
-			return { region: incoming, exact: false };
+			return scanlineCombine(current, incoming, op, domain);
 		}
+		case 'xor':
+		case 'exclude':
+			return scanlineCombine(current, incoming, op, domain);
 	}
 }
 
@@ -370,6 +487,12 @@ export function replayClipCmds(ctx: CanvasContext, cmds: ClipPathCmd[]): void {
 				break;
 			case 'bezierCurveTo':
 				ctx.bezierCurveTo(c.cp1x, c.cp1y, c.cp2x, c.cp2y, c.x, c.y);
+				break;
+			case 'arcTo':
+				ctx.arcTo(c.x1, c.y1, c.x2, c.y2, c.radius);
+				break;
+			case 'ellipse':
+				ctx.ellipse(c.cx, c.cy, c.rx, c.ry, c.rotation, c.startAngle, c.endAngle, c.ccw);
 				break;
 			case 'closePath':
 				ctx.closePath();

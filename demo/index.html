@@ -3,10 +3,10 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>emf-converter: EMF/WMF → PNG in the browser</title>
+		<title>emf-converter: EMF/WMF → PNG or SVG in the browser</title>
 		<meta
 			name="description"
-			content="A zero-dependency TypeScript library that converts EMF and WMF metafile binaries into PNG data URLs using Canvas, in the browser or Node.js. Try the interactive demo."
+			content="A zero-dependency TypeScript library that converts EMF and WMF metafile binaries into PNG data URLs or SVG (markup, data URL, or React/JSX), in the browser or Node.js. Try the interactive demo."
 		/>
 		<style>
 			:root {
@@ -246,6 +246,36 @@
 				border-radius: 8px;
 				cursor: pointer;
 			}
+			.format-toggle {
+				display: inline-flex;
+				gap: 12px;
+				font-size: 0.9rem;
+				color: var(--muted);
+			}
+			.format-toggle label {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				cursor: pointer;
+			}
+			.actions {
+				display: flex;
+				gap: 10px;
+				margin-top: 10px;
+				flex-wrap: wrap;
+			}
+			.ghost {
+				appearance: none;
+				border: 1px solid var(--border);
+				background: transparent;
+				color: inherit;
+				font-weight: 600;
+				font-size: 0.9rem;
+				padding: 7px 14px;
+				border-radius: 8px;
+				cursor: pointer;
+				text-decoration: none;
+			}
 			button:disabled {
 				opacity: 0.5;
 				cursor: not-allowed;
@@ -352,8 +382,9 @@
 					A zero-dependency TypeScript library that converts
 					<strong>EMF</strong> (Enhanced Metafile) and
 					<strong>WMF</strong> (Windows Metafile) binaries into
-					<strong>PNG data URLs</strong>, replaying their GDI and GDI+
-					drawing records onto a Canvas, entirely in the browser.
+					<strong>PNG data URLs</strong> or <strong>SVG</strong> (markup,
+					a data URL, or React/JSX), replaying their GDI and GDI+ drawing
+					records entirely in the browser.
 				</p>
 				<div class="badges">
 					<span class="badge">zero dependencies</span>
@@ -431,6 +462,17 @@
 					the PNG data URL, or <code class="inline">null</code> when the
 					buffer is invalid or no Canvas backend is available.
 				</p>
+
+				<h3>SVG and React</h3>
+				<pre><code><span class="tok-key">import</span> { createElement } <span class="tok-key">from</span> <span class="tok-str">'react'</span>;
+<span class="tok-key">import</span> { convertMetafileToSvg, convertMetafileToSvgTree, svgTreeToReact } <span class="tok-key">from</span> <span class="tok-str">'emf-converter'</span>;
+
+<span class="tok-com">// Standalone markup (no canvas needed, works in plain Node.js too).</span>
+<span class="tok-key">const</span> svg = <span class="tok-key">await</span> <span class="tok-fn">convertMetafileToSvg</span>(buffer);
+
+<span class="tok-com">// Live React elements, sized and styled like any other element.</span>
+<span class="tok-key">const</span> tree = <span class="tok-key">await</span> <span class="tok-fn">convertMetafileToSvgTree</span>(buffer);
+<span class="tok-key">const</span> element = tree &amp;&amp; <span class="tok-fn">svgTreeToReact</span>(tree, createElement, { width: <span class="tok-str">'100%'</span> });</code></pre>
 			</div>
 		</section>
 
@@ -442,7 +484,7 @@
 					no upload, no server. Pick or drop an
 					<code class="inline">.emf</code> or
 					<code class="inline">.wmf</code> file and it's converted to a PNG
-					on the spot.
+					or an SVG on the spot.
 				</p>
 				<div class="demo-grid">
 					<div>
@@ -456,6 +498,10 @@
 							/>
 						</label>
 						<div class="controls">
+							<div class="format-toggle" role="radiogroup" aria-label="Output format">
+								<label><input type="radio" name="format" value="png" checked /> PNG</label>
+								<label><input type="radio" name="format" value="svg" /> SVG</label>
+							</div>
 							<button type="button" id="convert-button" disabled>
 								Convert
 							</button>
@@ -464,9 +510,9 @@
 					</div>
 					<div>
 						<div class="output">
-							<img id="output-image" alt="Converted PNG output" hidden />
+							<img id="output-image" alt="Converted output" hidden />
 							<div id="output-placeholder">
-								The rasterised PNG appears here.
+								The converted PNG or SVG appears here.
 							</div>
 						</div>
 						<dl class="meta" id="meta-panel" hidden>
@@ -479,6 +525,10 @@
 							<dt>Data-URL length</dt>
 							<dd id="meta-url-len">–</dd>
 						</dl>
+						<div class="actions" id="output-actions" hidden>
+							<a id="download-link" class="ghost" download>Download</a>
+							<button type="button" id="copy-jsx" class="ghost">Copy as TSX component</button>
+						</div>
 					</div>
 				</div>
 			</div>
@@ -517,26 +567,32 @@
 				<h3>Capabilities</h3>
 				<ul class="caps">
 					<li>
-						<strong>Full clip combine modes.</strong> Intersect, Union, Xor,
-						Exclude, Complement, and Replace all work, for classic GDI
-						region ops and for EMF+ clip records with nested region-node
-						trees.
+						<strong>PNG or SVG output.</strong> The same replay drives a
+						Canvas (PNG data URL) or an SVG recorder that needs no canvas
+						at all: markup, a base64 data URL, React elements, or a
+						generated TSX component.
 					</li>
 					<li>
-						<strong>Gradient brushes.</strong> GDI+ linear gradients render
-						as real Canvas linear gradients with their full colour-stop
-						list; path gradients render as radial gradients.
+						<strong>Exact clip combine modes.</strong> Intersect, Union,
+						Xor, Exclude, Complement, and Replace are exact for every clip,
+						including multi-shape and path-bracket clips, for GDI region
+						ops and EMF+ region-node trees.
 					</li>
 					<li>
-						<strong>Raster operations (ROP2).</strong> Every
-						<code class="inline">SetROP2</code> mode is mapped: six map to
-						pixel-exact Canvas compositing, the rest use the closest
-						arithmetic approximation.
+						<strong>Gradients and textures.</strong> GDI+ linear gradients
+						with preset colours and every WrapMode, true boundary-shaped
+						path gradients, and texture brushes, verified against real
+						GDI+ output.
 					</li>
 					<li>
-						<strong>World transforms.</strong> EMF+ affine transforms are
-						fully supported; GDI world-transform scale and translation are
-						applied to every drawing record.
+						<strong>Raster operations.</strong> All 256 ROP3 codes are
+						evaluated bit-for-bit against the destination, and the bitwise
+						<code class="inline">SetROP2</code> modes are exact too.
+					</li>
+					<li>
+						<strong>World transforms.</strong> Full affine GDI and EMF+
+						transforms, including rotated and skewed shapes, blits, and
+						text.
 					</li>
 					<li>
 						<strong>300+ EMF record types</strong>, the full EMF+ (GDI+)
@@ -552,32 +608,16 @@
 				<h2>Limitations</h2>
 				<ul class="lims">
 					<li>
-						<strong>Region-op edge cases are approximated.</strong> All six
-						combine modes are exact while the tracked clip is one
-						composable shape, the common case. A clip that's already an
-						intersection of several shapes, or was set from a live path
-						bracket, falls back to the nearest conservative
-						approximation.
+						<strong>Anti-aliased edges.</strong> GDI rasterises without
+						anti-aliasing while Canvas and SVG renderers smooth shape
+						edges, so a few percent of boundary pixels differ from Windows
+						output. Interiors, fills, and raster ops are exact.
 					</li>
 					<li>
-						<strong>Bitwise ROP2 modes are arithmetic approximations.</strong>
-						Canvas compositing can't reproduce true bitwise AND/OR/XOR
-						against the destination, so those modes use
-						<code class="inline">darken</code> /
-						<code class="inline">lighten</code> /
-						<code class="inline">difference</code> stand-ins.
-					</li>
-					<li>
-						<strong>Gradient details.</strong> Wrap/tile modes clamp
-						instead of tiling, path gradients approximate the true
-						boundary-shaped falloff, and texture (image) brushes fall
-						back to solid black.
-					</li>
-					<li>
-						<strong>GDI rotation/skew is ignored.</strong> Rotation and
-						shear components of the plain-GDI world transform are dropped
-						(EMF+ transforms are unaffected); rotated GDI world transforms
-						are rare in practice.
+						<strong>SVG and destination-reading raster ops.</strong> SVG
+						cannot read what is underneath, so exact ROP2/ROP3 results are
+						embedded as small image patches when a canvas backend is
+						available, and approximated with blend modes otherwise.
 					</li>
 					<li>
 						<strong>Safety limits.</strong> Output is clamped to 8192×8192
@@ -587,8 +627,8 @@
 						<code class="inline">maxRecords</code>.
 					</li>
 					<li>
-						<strong>Font rendering</strong> uses the host Canvas font
-						engine, so glyph metrics may differ from Windows GDI. Supply
+						<strong>Font rendering</strong> uses the host font engine, so
+						glyph metrics may differ from Windows GDI. Supply
 						<code class="inline">fontFamilyMap</code> to remap Windows face
 						names to fonts available in your environment.
 					</li>

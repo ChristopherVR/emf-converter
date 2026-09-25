@@ -23,6 +23,7 @@ import { defaultState } from './emf-types';
 function makeCtxStub(): Record<string, unknown> {
 	return {
 		save: vi.fn<() => void>(),
+		translate: vi.fn<() => void>(),
 		restore: vi.fn<() => void>(),
 		beginPath: vi.fn<() => void>(),
 		closePath: vi.fn<() => void>(),
@@ -187,9 +188,11 @@ describe('emf-gdi-draw-shapes', () => {
 				const result = handleEmfGdiShapeRecord(rCtx, EMR_LINETO, d, 16);
 				expect(result).toBeTruthy();
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.beginPath).toHaveBeenCalledOnce();
-				expect(ctx.moveTo).toHaveBeenCalledOnce();
-				expect(ctx.lineTo).toHaveBeenCalledOnce();
+				// Built once, then rebuilt half a pixel over for the aligned 1px stroke.
+				expect(ctx.beginPath).toHaveBeenCalledTimes(2);
+				expect(ctx.moveTo).toHaveBeenCalledTimes(2);
+				expect(ctx.lineTo).toHaveBeenCalledTimes(2);
+				expect(ctx.translate).toHaveBeenCalledWith(0.5, 0.5);
 				expect(ctx.stroke).toHaveBeenCalledOnce();
 				expect(rCtx.state.curX).toBe(100);
 				expect(rCtx.state.curY).toBe(200);
@@ -273,7 +276,7 @@ describe('emf-gdi-draw-shapes', () => {
 				const result = handleEmfGdiShapeRecord(rCtx, EMR_ROUNDRECT, d, 32);
 				expect(result).toBeTruthy();
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.beginPath).toHaveBeenCalledOnce();
+				expect(ctx.beginPath).toHaveBeenCalledTimes(2); // fill path + aligned stroke path
 				expect(ctx.fill).toHaveBeenCalledOnce();
 				expect(ctx.stroke).toHaveBeenCalledOnce();
 			});
@@ -319,8 +322,8 @@ describe('emf-gdi-draw-shapes', () => {
 				const result = handleEmfGdiShapeRecord(rCtx, EMR_ELLIPSE, d, 24);
 				expect(result).toBeTruthy();
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.beginPath).toHaveBeenCalledOnce();
-				expect(ctx.ellipse).toHaveBeenCalledOnce();
+				expect(ctx.beginPath).toHaveBeenCalledTimes(2); // fill path + aligned stroke path
+				expect(ctx.ellipse).toHaveBeenCalledTimes(2);
 				expect(ctx.fill).toHaveBeenCalledOnce();
 				expect(ctx.stroke).toHaveBeenCalledOnce();
 			});
@@ -412,7 +415,7 @@ describe('emf-gdi-draw-shapes', () => {
 
 				handleEmfGdiShapeRecord(rCtx, EMR_ARCTO, d, 40);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.lineTo).toHaveBeenCalledOnce(); // lineTo for arc start connection
+				expect(ctx.lineTo).toHaveBeenCalledTimes(2); // arc start connection, in the path and its aligned rebuild
 			});
 		});
 
@@ -436,7 +439,7 @@ describe('emf-gdi-draw-shapes', () => {
 				const result = handleEmfGdiShapeRecord(rCtx, EMR_CHORD, d, 40);
 				expect(result).toBeTruthy();
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.closePath).toHaveBeenCalledOnce();
+				expect(ctx.closePath).toHaveBeenCalledTimes(2); // once per build: fill path + aligned stroke path
 				expect(ctx.fill).toHaveBeenCalledOnce();
 				expect(ctx.stroke).toHaveBeenCalledOnce();
 			});
@@ -462,8 +465,8 @@ describe('emf-gdi-draw-shapes', () => {
 				const result = handleEmfGdiShapeRecord(rCtx, EMR_PIE, d, 40);
 				expect(result).toBeTruthy();
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.moveTo).toHaveBeenCalledOnce(); // moveTo center
-				expect(ctx.closePath).toHaveBeenCalledOnce();
+				expect(ctx.moveTo).toHaveBeenCalledTimes(2); // moveTo center, per build
+				expect(ctx.closePath).toHaveBeenCalledTimes(2);
 				expect(ctx.fill).toHaveBeenCalledOnce();
 				expect(ctx.stroke).toHaveBeenCalledOnce();
 			});

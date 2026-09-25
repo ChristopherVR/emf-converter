@@ -20,6 +20,13 @@
  * is also offset by half a device pixel: GDI+ (PixelOffsetMode None) samples
  * a pixel at its integer coordinate, Canvas at its centre.
  *
+ * For a path gradient that pattern is now the FALLBACK paint only: every
+ * tested canvas backend filters a `CanvasPattern` even at an identity
+ * matrix, which left a residual at tile seams, so shape fills go through
+ * the exact per-device-pixel path in `emf-plus-exact-fill.ts` (built on
+ * {@link pathGradientColorAt}). Linear gradients stay a plain
+ * `CanvasGradient`, which is already exact.
+ *
  * @module emf-plus-brush-gradient
  */
 

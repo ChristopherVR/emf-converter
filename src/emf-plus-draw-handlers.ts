@@ -16,6 +16,7 @@ import {
 	EMFPLUS_DRAWLINES,
 	EMFPLUS_FILLPOLYGON,
 } from './emf-constants';
+import { tryFillPlusShapeExact } from './emf-plus-exact-fill';
 import { readRectFromView, readPointFromView } from './emf-plus-read-helpers';
 import { resolveBrushPaint, applyPlusWorldTransform } from './emf-plus-state-handlers';
 import type { CanvasContext, EmfPlusReplayCtx } from './emf-types';
@@ -65,13 +66,32 @@ export function handleEmfPlusDrawRecord(
 				const count = view.getUint32(dataOff + 4, true);
 				const compressed = (recFlags & 0x4000) !== 0;
 				const rectSize = compressed ? 8 : 16;
-				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-				applyPlusWorldTransform(rCtx);
+				const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
 				let rOff = dataOff + 8;
 				for (let i = 0; i < count && rOff + rectSize <= dataOff + recDataSize; i++) {
-					const { x, y, w, h } = readRectFromView(view, rOff, compressed);
-					ctx.fillRect(x, y, w, h);
+					rects.push(readRectFromView(view, rOff, compressed));
 					rOff += rectSize;
+				}
+				const exact = tryFillPlusShapeExact(
+					rCtx,
+					recFlags,
+					brushVal,
+					(c) => {
+						for (const r of rects) {
+							c.rect(r.x, r.y, r.w, r.h);
+						}
+					},
+					rects.flatMap((r) => [
+						{ x: r.x, y: r.y },
+						{ x: r.x + r.w, y: r.y + r.h },
+					]),
+				);
+				if (!exact) {
+					ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
+					applyPlusWorldTransform(rCtx);
+					for (const r of rects) {
+						ctx.fillRect(r.x, r.y, r.w, r.h);
+					}
 				}
 			}
 			return true;
@@ -117,11 +137,20 @@ export function handleEmfPlusDrawRecord(
 					w = view.getFloat32(dataOff + 12, true);
 					h = view.getFloat32(dataOff + 16, true);
 				}
-				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-				applyPlusWorldTransform(rCtx);
-				ctx.beginPath();
-				ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2);
-				ctx.fill();
+				const ellipse = (c: CanvasContext): void => {
+					c.ellipse(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2);
+				};
+				const corners = [
+					{ x, y },
+					{ x: x + w, y: y + h },
+				];
+				if (!tryFillPlusShapeExact(rCtx, recFlags, brushVal, ellipse, corners)) {
+					ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
+					applyPlusWorldTransform(rCtx);
+					ctx.beginPath();
+					ellipse(ctx);
+					ctx.fill();
+				}
 			}
 			return true;
 		}
@@ -164,9 +193,8 @@ export function handleEmfPlusDrawRecord(
 			}
 
 			let aOff = dataOff;
+			const brushVal = isFill ? view.getUint32(aOff, true) : 0;
 			if (isFill) {
-				const brushVal = view.getUint32(aOff, true);
-				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 				aOff += 4;
 			}
 			const startAngle = (view.getFloat32(aOff, true) * Math.PI) / 180;
@@ -197,22 +225,33 @@ export function handleEmfPlusDrawRecord(
 				}
 			}
 
-			applyPlusWorldTransform(rCtx);
-			ctx.beginPath();
 			const cx = x + w / 2;
 			const cy = y + h / 2;
 			const rx = Math.abs(w) / 2;
 			const ry = Math.abs(h) / 2;
 			if (isFill) {
-				ctx.moveTo(cx, cy);
+				const pie = (c: CanvasContext): void => {
+					c.moveTo(cx, cy);
+					c.ellipse(cx, cy, rx, ry, 0, startAngle, startAngle + sweepAngle, sweepAngle < 0);
+					c.closePath();
+				};
+				const corners = [
+					{ x, y },
+					{ x: x + w, y: y + h },
+				];
+				if (!tryFillPlusShapeExact(rCtx, recFlags, brushVal, pie, corners)) {
+					ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
+					applyPlusWorldTransform(rCtx);
+					ctx.beginPath();
+					pie(ctx);
+					ctx.fill();
+				}
+				return true;
 			}
+			applyPlusWorldTransform(rCtx);
+			ctx.beginPath();
 			ctx.ellipse(cx, cy, rx, ry, 0, startAngle, startAngle + sweepAngle, sweepAngle < 0);
-			if (isFill) {
-				ctx.closePath();
-				ctx.fill();
-			} else {
-				ctx.stroke();
-			}
+			ctx.stroke();
 			return true;
 		}
 
@@ -252,21 +291,23 @@ export function handleEmfPlusDrawRecord(
 				const count = view.getUint32(dataOff + 4, true);
 				const compressed = (recFlags & 0x4000) !== 0;
 				const ptSize = compressed ? 4 : 8;
-				ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-				applyPlusWorldTransform(rCtx);
-				ctx.beginPath();
+				const pts: Array<{ x: number; y: number }> = [];
 				let pOff = dataOff + 8;
 				for (let i = 0; i < count && pOff + ptSize <= dataOff + recDataSize; i++) {
-					const pt = readPointFromView(view, pOff, compressed);
-					if (i === 0) {
-						ctx.moveTo(pt.x, pt.y);
-					} else {
-						ctx.lineTo(pt.x, pt.y);
-					}
+					pts.push(readPointFromView(view, pOff, compressed));
 					pOff += ptSize;
 				}
-				ctx.closePath();
-				ctx.fill();
+				const polygon = (c: CanvasContext): void => {
+					pts.forEach((pt, i) => (i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y)));
+					c.closePath();
+				};
+				if (!tryFillPlusShapeExact(rCtx, recFlags, brushVal, polygon, pts)) {
+					ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
+					applyPlusWorldTransform(rCtx);
+					ctx.beginPath();
+					polygon(ctx);
+					ctx.fill();
+				}
 			}
 			return true;
 		}

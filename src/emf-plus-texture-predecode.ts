@@ -18,18 +18,19 @@
  * data is a TextureFill brush with a compressed embedded image (an
  * uncompressed pixel bitmap is already handled synchronously and is left
  * alone), decodes each one asynchronously, and returns a cache keyed by the
- * object record's own `dataOff` in the ORIGINAL buffer. The real replay pass
- * threads this cache through `EmfPlusReplayCtx.textureCache`; when the
- * synchronous brush parser hits the same compressed brush again (at the same
- * `dataOff`, since both passes walk the identical buffer), it uses the
- * cached pixels instead of falling back to a flat colour.
+ * brush object's `cacheKey`: the `dataOff` (in the ORIGINAL buffer) of its
+ * `EMFPLUS_OBJECT` record, or of the first record of a continuation run.
+ * The real replay pass threads this cache through
+ * `EmfPlusReplayCtx.textureCache`; when the synchronous brush parser hits
+ * the same compressed brush again (with the same key, since both passes
+ * walk the identical buffer), it uses the cached pixels instead of falling
+ * back to a flat colour.
  *
- * Scope: only single-record (non-continuation) Brush objects are pre-decoded.
- * A texture brush split across `EMFPLUS_OBJECT` continuation records (large
- * enough to exceed one record) is rare in practice and is left as the
- * existing documented fallback (flat colour); the assembled continuation
- * buffer's offsets do not correspond to this scan's offsets into the
- * original buffer, so caching by `dataOff` would not be meaningful there.
+ * A brush large enough to be split across `EMFPLUS_OBJECT` continuation
+ * records (routinely spread over several `EMR_COMMENT` records) is
+ * reassembled here by {@link feedEmfPlusObjectRecord}, the very function
+ * the replay uses, with one accumulator carried across the whole file, so
+ * the assembled bytes and the cache key agree between the two passes.
  *
  * @module emf-plus-texture-predecode
  */
@@ -49,6 +50,12 @@ import {
 	EMR_EOF,
 } from './emf-constants';
 import {
+	createContinuationAccumulator,
+	feedEmfPlusObjectRecord,
+	type AssembledEmfPlusObject,
+	type ContinuationAccumulator,
+} from './emf-plus-continuation';
+import {
 	findCompressedTextureImageBytes,
 	looksLikeGraphicsVersion,
 	textureBrushImageOffset,
@@ -58,20 +65,55 @@ import type { EmfPlusDecodedTexture, EmfPlusTextureCache } from './emf-types';
 
 /** One candidate compressed-texture image found during the scan. */
 interface Candidate {
-	/** The enclosing `EMFPLUS_OBJECT` record's `dataOff` (the cache key). */
-	dataOff: number;
+	/** The brush object's cache key (see {@link AssembledEmfPlusObject.cacheKey}). */
+	key: number;
+	/** The bytes holding the image: the original view, or an assembled continuation buffer. */
+	view: DataView;
 	byteStart: number;
 	byteEnd: number;
 }
 
 /**
- * Scans one EMF+ record sub-stream (the payload of a single EMR_COMMENT) for
- * non-continuation Brush objects, collecting compressed TextureFill image
- * byte ranges. Mirrors just enough of `replayEmfPlusRecords`' record-walking
- * loop to find OBJECT records; it does not track drawing state, since object
- * records are self-contained.
+ * Collects the compressed TextureFill image byte range of one complete EMF+
+ * object, if it is such a brush.
  */
-function scanEmfPlusStream(view: DataView, offset: number, length: number, out: Candidate[]): void {
+function collectTextureCandidate(obj: AssembledEmfPlusObject, out: Candidate[]): void {
+	const objectType = (obj.flags >> 8) & 0x7f;
+	if (objectType !== EMFPLUS_OBJECTTYPE_BRUSH || obj.dataSize < 8) {
+		return;
+	}
+	const { view, dataOff } = obj;
+	const recEnd = dataOff + obj.dataSize;
+	const hasVersion = looksLikeGraphicsVersion(view.getUint32(dataOff, true));
+	const typeOff = dataOff + (hasVersion ? 4 : 0);
+	if (typeOff + 8 > recEnd || view.getUint32(typeOff, true) !== EMFPLUS_BRUSHTYPE_TEXTUREFILL) {
+		return;
+	}
+	const imgOff = textureBrushImageOffset(view, typeOff + 4, recEnd);
+	if (imgOff === null) {
+		return;
+	}
+	const bytes = findCompressedTextureImageBytes(view, imgOff, recEnd);
+	if (bytes) {
+		out.push({ key: obj.cacheKey, view, byteStart: bytes.start, byteEnd: bytes.end });
+	}
+}
+
+/**
+ * Scans one EMF+ record sub-stream (the payload of a single EMR_COMMENT) for
+ * Brush objects, collecting compressed TextureFill image byte ranges.
+ * Mirrors just enough of `replayEmfPlusRecords`' record-walking loop to find
+ * OBJECT records (reassembling continuation runs through `acc`, which
+ * persists across sub-streams); it does not track drawing state, since
+ * object records are self-contained.
+ */
+function scanEmfPlusStream(
+	view: DataView,
+	offset: number,
+	length: number,
+	acc: ContinuationAccumulator,
+	out: Candidate[],
+): void {
 	const end = offset + length;
 	let off = offset;
 	let recordCount = 0;
@@ -85,27 +127,10 @@ function scanEmfPlusStream(view: DataView, offset: number, length: number, out: 
 			break;
 		}
 		recordCount++;
-		const dataOff = off + 12;
-		const isContinuation = (recFlags & 0x8000) !== 0;
-		if (recType === EMFPLUS_OBJECT && !isContinuation) {
-			const objectType = (recFlags >> 8) & 0x7f;
-			if (objectType === EMFPLUS_OBJECTTYPE_BRUSH && recDataSize >= 8) {
-				const recEnd = dataOff + recDataSize;
-				const hasVersion = looksLikeGraphicsVersion(view.getUint32(dataOff, true));
-				const typeOff = dataOff + (hasVersion ? 4 : 0);
-				if (typeOff + 8 <= recEnd) {
-					const brushType = view.getUint32(typeOff, true);
-					if (brushType === EMFPLUS_BRUSHTYPE_TEXTUREFILL) {
-						const b = typeOff + 4;
-						const imgOff = textureBrushImageOffset(view, b, recEnd);
-						if (imgOff !== null) {
-							const bytes = findCompressedTextureImageBytes(view, imgOff, recEnd);
-							if (bytes) {
-								out.push({ dataOff, byteStart: bytes.start, byteEnd: bytes.end });
-							}
-						}
-					}
-				}
+		if (recType === EMFPLUS_OBJECT) {
+			const assembled = feedEmfPlusObjectRecord(acc, view, recFlags, off + 12, recDataSize);
+			if (assembled) {
+				collectTextureCandidate(assembled, out);
 			}
 		}
 		off += recSize;
@@ -119,6 +144,7 @@ function scanEmfPlusStream(view: DataView, offset: number, length: number, out: 
  */
 function scanEmfForTextureCandidates(view: DataView): Candidate[] {
 	const candidates: Candidate[] = [];
+	const acc = createContinuationAccumulator();
 	let offset = 0;
 	const maxOffset = view.byteLength;
 	let recordCount = 0;
@@ -135,7 +161,7 @@ function scanEmfForTextureCandidates(view: DataView): Candidate[] {
 			const commentDataSize = view.getUint32(dataOff, true);
 			const sig = view.getUint32(dataOff + 4, true);
 			if (sig === EMFPLUS_SIGNATURE && commentDataSize > 4) {
-				scanEmfPlusStream(view, dataOff + 8, commentDataSize - 4, candidates);
+				scanEmfPlusStream(view, dataOff + 8, commentDataSize - 4, acc, candidates);
 			}
 		} else if (recType === EMR_EOF) {
 			break;
@@ -211,10 +237,10 @@ export async function preDecodeEmfPlusTextures(view: DataView): Promise<EmfPlusT
 	}
 	emfLog(`preDecodeEmfPlusTextures: found ${candidates.length} compressed-texture candidate(s)`);
 	for (const c of candidates) {
-		const decoded = await decodeCompressedBytesToRgba(view, c.byteStart, c.byteEnd);
+		const decoded = await decodeCompressedBytesToRgba(c.view, c.byteStart, c.byteEnd);
 		if (decoded) {
-			cache.set(c.dataOff, decoded);
-			emfLog(`preDecodeEmfPlusTextures: decoded texture at dataOff=0x${c.dataOff.toString(16)}: ${decoded.width}x${decoded.height}`);
+			cache.set(c.key, decoded);
+			emfLog(`preDecodeEmfPlusTextures: decoded texture for key=0x${c.key.toString(16)}: ${decoded.width}x${decoded.height}`);
 		}
 	}
 	return cache;

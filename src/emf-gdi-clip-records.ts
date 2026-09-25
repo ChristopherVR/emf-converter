@@ -1,13 +1,13 @@
 /**
  * EMF GDI clip-region record handlers: IntersectClipRect, ExcludeClipRect,
  * ExtSelectClipRgn, OffsetClipRgn, plus the shared `gdiCombineClip` helper
- * used by the polygon/path clip records too (EMR_SELECTCLIPPATH).
+ * used by the path clip record too (EMR_SELECTCLIPPATH, which combines the
+ * recorded BeginPath/EndPath geometry as a clip shape).
  *
  * @module emf-gdi-clip-records
  */
 
 import {
-	applyClipShapes,
 	combineClip,
 	rectClipShape,
 	rectsClipShape,
@@ -30,54 +30,23 @@ import type { EmfGdiReplayCtx } from './emf-types';
  * Combine the tracked clip region with a new device-space shape and rebuild
  * the canvas clip state.
  *
- * When the active clip contains an untracked component (EMR_SELECTCLIPPATH
- * clips with the live ctx path, which cannot be recorded), only ops that can
- * be layered incrementally on top of the existing canvas clip are applied
- * (`intersect`, and `exclude` via the even-odd inversion); the rest degrade
- * conservatively.
+ * Every combination is exact: ops the even-odd tricks cannot express are
+ * scan-converted over the canvas (the GDI device surface, which bounds every
+ * GDI region anyway), see `combineClip`. Path-bracket clips
+ * (EMR_SELECTCLIPPATH) arrive here as recorded shapes too, so they combine
+ * like any other region.
  */
 export function gdiCombineClip(rCtx: EmfGdiReplayCtx, shape: ClipShape, op: ClipCombineOp): void {
-	const { ctx } = rCtx;
-
-	if (rCtx.clipUntracked && op !== 'replace') {
-		switch (op) {
-			case 'intersect':
-			case 'complement': {
-				// complement ⊆ shape, so intersecting with the shape is the closest
-				// stackable approximation.
-				ctx.save();
-				rCtx.clipSaveDepth++;
-				applyClipShapes(ctx, [shape]);
-				if (op === 'complement') {
-					emfLog('gdiCombineClip: complement on untracked clip: approximated as intersect');
-				}
-				return;
-			}
-			case 'exclude':
-			case 'xor': {
-				// current − shape stacks as an intersection with ¬shape. For xor this
-				// yields the (current − shape) subset of the symmetric difference.
-				const inv = combineClip(null, shape, 'exclude');
-				ctx.save();
-				rCtx.clipSaveDepth++;
-				applyClipShapes(ctx, inv.region ?? [shape]);
-				if (op === 'xor') {
-					emfLog('gdiCombineClip: xor on untracked clip: approximated as exclude');
-				}
-				return;
-			}
-			case 'union':
-				emfLog('gdiCombineClip: union on untracked clip: clip left unchanged');
-				return;
-		}
-	}
-
-	const res = combineClip(op === 'replace' ? null : (rCtx.clipRegion ?? null), shape, op);
+	const res = combineClip(op === 'replace' ? null : (rCtx.clipRegion ?? null), shape, op, {
+		x: 0,
+		y: 0,
+		w: rCtx.canvasW,
+		h: rCtx.canvasH,
+	});
 	if (!res.exact) {
-		emfLog(`gdiCombineClip: '${op}' approximated (region too complex for exact combination)`);
+		emfLog(`gdiCombineClip: '${op}' approximated (region exceeds the scanline domain)`);
 	}
 	rCtx.clipRegion = res.region;
-	rCtx.clipUntracked = false;
 	reapplyClipRegion(rCtx, res.region);
 }
 
@@ -110,7 +79,7 @@ function handleExcludeClipRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: 
 }
 
 /** RegionMode (MS-EMF 2.1.29) → boolean combine op. */
-const RGN_MODE_OPS: Record<number, ClipCombineOp> = {
+export const RGN_MODE_OPS: Record<number, ClipCombineOp> = {
 	1: 'intersect', // RGN_AND
 	2: 'union', // RGN_OR
 	3: 'xor', // RGN_XOR
@@ -137,7 +106,6 @@ function handleExtSelectClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize:
 		// A null region is only meaningful with RGN_COPY: reset to no clip.
 		if (op === 'replace') {
 			rCtx.clipRegion = null;
-			rCtx.clipUntracked = false;
 			reapplyClipRegion(rCtx, null);
 			emfLog('EMR_EXTSELECTCLIPRGN: RGN_COPY with empty region: clip reset');
 		}
@@ -186,10 +154,6 @@ function handleOffsetClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: nu
 	if (recSize >= 16) {
 		const dx = rCtx.view.getInt32(dataOff, true);
 		const dy = rCtx.view.getInt32(dataOff + 4, true);
-		if (rCtx.clipUntracked) {
-			emfLog(`EMR_OFFSETCLIPRGN: offset=(${dx},${dy}) skipped: active clip is untracked`);
-			return true;
-		}
 		if (rCtx.clipRegion) {
 			rCtx.clipRegion = translateClipRegion(rCtx.clipRegion, gmw(rCtx, dx), gmh(rCtx, dy));
 			reapplyClipRegion(rCtx, rCtx.clipRegion);

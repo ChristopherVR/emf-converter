@@ -7,7 +7,6 @@
 
 import { reapplyClipRegion } from './emf-clip-region';
 import { readColorRef } from './emf-color-helpers';
-import { emfLog } from './emf-logging';
 import {
 	EMR_SAVEDC,
 	EMR_RESTOREDC,
@@ -60,17 +59,10 @@ export function handleEmfGdiStateRecord(
 				rCtx.clipSaveDepth--;
 			}
 			rCtx.clipStack ??= [];
-			rCtx.clipStack.push({
-				region: rCtx.clipRegion ?? null,
-				untracked: rCtx.clipUntracked ?? false,
-			});
+			rCtx.clipStack.push({ region: rCtx.clipRegion ?? null });
 			rCtx.stateStack.push(cloneState(state));
 			ctx.save();
-			if (rCtx.clipUntracked) {
-				emfLog('EMR_SAVEDC: untracked clip (SELECTCLIPPATH) cannot be re-applied, dropped');
-				rCtx.clipUntracked = false;
-				rCtx.clipRegion = null;
-			} else if (rCtx.clipRegion) {
+			if (rCtx.clipRegion) {
 				reapplyClipRegion(rCtx, rCtx.clipRegion);
 			}
 			return true;
@@ -98,10 +90,8 @@ export function handleEmfGdiStateRecord(
 					const clipSnapshot = rCtx.clipStack?.pop();
 					Object.assign(state, restored);
 					ctx.restore();
-					// Restore the clip that was active when the DC was saved. An
-					// untracked snapshot cannot be rebuilt; leave the clip cleared.
+					// Restore the clip that was active when the DC was saved.
 					rCtx.clipRegion = clipSnapshot?.region ?? null;
-					rCtx.clipUntracked = false;
 					if (rCtx.clipRegion) {
 						reapplyClipRegion(rCtx, rCtx.clipRegion);
 					}

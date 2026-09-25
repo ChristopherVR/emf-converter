@@ -285,6 +285,57 @@ describe('emf-gdi-draw-text-bitmap', () => {
 				expect(ctx.translate).not.toHaveBeenCalled();
 				expect(ctx.fillText.mock.calls).toEqual([['A', 50, 100]]);
 			});
+
+			it('shears the glyphs under a skewed world transform via its normalised linear part', () => {
+				const rCtx = makeRCtx(); // sx = sy = 0.5
+				(rCtx.ctx as unknown as Record<string, unknown>).transform = vi.fn<() => void>();
+				// x' = x + 0.25*y, y' = 0.35*x + y (the skew-rect fixture's transform).
+				rCtx.state.worldTransform = [1, 0.35, 0.25, 1, 0, 0];
+				const offset = 0;
+				const dataOff = 8;
+				rCtx.view.setInt32(dataOff + 28, 100, true); // refX
+				rCtx.view.setInt32(dataOff + 32, 200, true); // refY
+				rCtx.view.setUint32(dataOff + 36, 1, true);
+				rCtx.view.setUint32(dataOff + 40, 76, true);
+				rCtx.view.setUint16(offset + 76, 65, true); // 'A'
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, offset, dataOff, 80);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: number[][] } }>;
+				// Device matrix = [0.5, 0.175, 0.125, 0.5]; reference point
+				// (100 + 50, 35 + 200) * 0.5 = (75, 117.5).
+				expect(ctx.translate.mock.calls).toEqual([[75, 117.5]]);
+				const [a, b, c, d, e, f] = ctx.transform.mock.calls[0];
+				const ax = Math.hypot(0.5, 0.175);
+				const ay = Math.hypot(0.125, 0.5);
+				expect(a).toBeCloseTo(0.5 / ax, 10);
+				expect(b).toBeCloseTo(0.175 / ax, 10);
+				// The skew survives: the mapped y axis is NOT perpendicular to x.
+				expect(c).toBeCloseTo(0.125 / ay, 10);
+				expect(d).toBeCloseTo(0.5 / ay, 10);
+				expect([e, f]).toEqual([0, 0]);
+				expect(ctx.rotate).not.toHaveBeenCalled();
+				expect(ctx.fillText.mock.calls).toEqual([['A', 0, 0]]);
+			});
+
+			it('keeps a pure world rotation a pure rotation of the glyphs', () => {
+				const rCtx = makeRCtx();
+				(rCtx.ctx as unknown as Record<string, unknown>).transform = vi.fn<() => void>();
+				const t = (25 * Math.PI) / 180;
+				rCtx.state.worldTransform = [Math.cos(t), Math.sin(t), -Math.sin(t), Math.cos(t), 0, 0];
+				const offset = 0;
+				const dataOff = 8;
+				rCtx.view.setUint32(dataOff + 36, 1, true);
+				rCtx.view.setUint32(dataOff + 40, 76, true);
+				rCtx.view.setUint16(offset + 76, 65, true); // 'A'
+
+				handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, offset, dataOff, 80);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: number[][] } }>;
+				const [a, b, c, d] = ctx.transform.mock.calls[0];
+				expect(a).toBeCloseTo(Math.cos(t), 10);
+				expect(b).toBeCloseTo(Math.sin(t), 10);
+				expect(c).toBeCloseTo(-Math.sin(t), 10);
+				expect(d).toBeCloseTo(Math.cos(t), 10);
+			});
 		});
 
 		// -----------------------------------------------------------------------

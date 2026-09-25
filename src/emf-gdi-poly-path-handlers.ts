@@ -24,7 +24,10 @@ import {
 	EMR_STROKEPATH,
 	EMR_SELECTCLIPPATH,
 } from './emf-constants';
+import type { ClipShape } from './emf-clip-region';
+import { gdiCombineClip, RGN_MODE_OPS } from './emf-gdi-clip-records';
 import { gmapPoint } from './emf-gdi-coord';
+import { emfLog } from './emf-logging';
 import { gdiPathRecorder, replayGdiPathCmds } from './emf-gdi-path-record';
 import { fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
 import {
@@ -281,30 +284,25 @@ export function handleEmfGdiPolyPathRecord(
 		}
 
 		case EMR_SELECTCLIPPATH: {
-			// The bracketed path lives only in the canvas' current path, so it
-			// cannot be recorded into the tracked clip region. Mark the clip as
-			// untracked; ops that need an exact region fall back conservatively
-			// (see gdiCombineClip). RGN_COPY (5) replaces the clip, every other
-			// mode is approximated by intersecting with the path.
+			// The bracketed path was recorded command by command into
+			// `rCtx.pathCmds` (device space), so it becomes an ordinary tracked
+			// clip shape and every RegionMode combines exactly (gdiCombineClip).
+			// GDI converts the path to a region using the current polygon fill
+			// mode (ALTERNATE = even-odd), which is what carves holes out of
+			// multi-figure clip paths. The figures may overlap, so the shape is
+			// not `simple`.
 			const clipMode = recSize >= 12 ? rCtx.view.getUint32(dataOff, true) : 5;
-			try {
-				if (clipMode === 5) {
-					while (rCtx.clipSaveDepth > 0) {
-						ctx.restore();
-						rCtx.clipSaveDepth--;
-					}
-				}
-				ctx.save();
-				rCtx.clipSaveDepth++;
-				// GDI converts the path to a region using the current polygon fill
-				// mode (ALTERNATE = even-odd), which is what carves holes out of
-				// multi-figure clip paths.
-				ctx.clip(state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
-				rCtx.clipRegion = null;
-				rCtx.clipUntracked = true;
-			} catch {
-				/* ignore clip errors */
+			const op = RGN_MODE_OPS[clipMode];
+			if (!op) {
+				emfLog(`EMR_SELECTCLIPPATH: unknown RegionMode ${clipMode}: ignored`);
+				return true;
 			}
+			const shape: ClipShape = {
+				cmds: rCtx.pathCmds.slice(),
+				fillRule: state.polyFillMode === 2 ? 'nonzero' : 'evenodd',
+				simple: false,
+			};
+			gdiCombineClip(rCtx, shape, op);
 			return true;
 		}
 

@@ -29,6 +29,7 @@ import { emfWarn } from './emf-logging';
 import { applyRop3, classifyRop3, clampPositiveRect, evalRop3, rop3Index, rop3Operands } from './emf-rop3';
 import type { Rop3Pattern, Rop3Plan } from './emf-rop3';
 import type { AnyCanvas, CanvasContext, EmfGdiReplayCtx } from './emf-types';
+import { canReadBack } from './svg-context';
 
 /** A decoded blit: destination rect (canvas px, may be negative) and optional source. */
 interface BlitRequest {
@@ -206,6 +207,32 @@ function fillRectWith(
  * result through `drawImage` so the active clip still applies (unlike a raw
  * `putImageData`).
  */
+/**
+ * ROP3 codes that combine ONE operand with the destination through AND, OR
+ * or XOR, expressed as `[operand-only ROP index, blend mode]`: the operand
+ * layer is evaluated alone (its result does not depend on D) and composited
+ * with a blend mode that equals the bitwise op for black/white operands
+ * (multiply = AND, screen = OR, difference = XOR) and approximates it for
+ * other colours. Used only when the destination cannot be read back (SVG
+ * output without a canvas backend), where the exact per-pixel evaluation is
+ * impossible; the transparent-bitmap idiom (SRCAND mask + SRCPAINT/SRCINVERT
+ * image) is exact this way.
+ */
+const ROP3_BLEND_APPROX: Record<number, [number, GlobalCompositeOperation]> = {
+	0x88: [0xcc, 'multiply'], // SRCAND: S & D
+	0x22: [0x33, 'multiply'], // ~S & D
+	0xee: [0xcc, 'screen'], // SRCPAINT: S | D
+	0xbb: [0x33, 'screen'], // MERGEPAINT: ~S | D
+	0x66: [0xcc, 'difference'], // SRCINVERT: S ^ D
+	0x99: [0x33, 'difference'], // ~(S ^ D)
+	0xa0: [0xf0, 'multiply'], // P & D
+	0x0a: [0x0f, 'multiply'], // ~P & D
+	0xfa: [0xf0, 'screen'], // P | D
+	0xaf: [0x0f, 'screen'], // ~P | D
+	0x5a: [0xf0, 'difference'], // PATINVERT: P ^ D
+	0xa5: [0x0f, 'difference'], // ~(P ^ D)
+};
+
 function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, usesP: boolean, usesS: boolean): void {
 	const { ctx } = rCtx;
 	const rect = clampPositiveRect(req.dx, req.dy, req.dw, req.dh, rCtx.canvasW, rCtx.canvasH);
@@ -215,6 +242,17 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 	if (typeof ctx.getImageData !== 'function') {
 		emfWarn('runTernary: context cannot read pixels back; ROP3 skipped');
 		return;
+	}
+	let blend: GlobalCompositeOperation = 'source-over';
+	if (!canReadBack(ctx) && rop3Operands(index).usesD) {
+		const approx = ROP3_BLEND_APPROX[index];
+		if (!approx) {
+			emfWarn(`runTernary: ROP3 0x${index.toString(16)} needs the destination, which SVG output cannot read; skipped`);
+			return;
+		}
+		[index, blend] = approx;
+		usesP = rop3Operands(index).usesP;
+		usesS = rop3Operands(index).usesS;
 	}
 	const brush = realizeBrush(rCtx.state);
 	if (usesP && brush.kind === 'none') {
@@ -238,7 +276,7 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 	canvasPutImageData(layer.ctx, dst, 0, 0);
 	ctx.save();
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
-	ctx.globalCompositeOperation = 'source-over';
+	ctx.globalCompositeOperation = blend;
 	ctx.globalAlpha = 1;
 	canvasDrawImage(ctx, layer.canvas, rect.x, rect.y, rect.w, rect.h);
 	ctx.restore();
@@ -257,7 +295,14 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
  * Technique ("draw to a scratch canvas in device space then combine"): the
  * exact per-pixel ROP3 combine still runs on an UNROTATED local raster
  * (sized from the transform's true per-axis magnitude via `Math.hypot`, not
- * just `a`/`d`, so a rotated blit is not mis-sized), but each local pixel's
+ * just `a`/`d`, so a rotated blit is not mis-sized). That sizing is exact
+ * for a skew as well, not an approximation: the local raster's axes ARE the
+ * mapped basis vectors (the placement below uses them unchanged), so one
+ * local step moves exactly one device pixel along each mapped axis. Under a
+ * skew the two axes are no longer perpendicular, so the raster holds
+ * `1 / sin(angle between the axes)` samples per device pixel of area:
+ * slightly oversampled, never undersampled, and every device pixel in the
+ * parallelogram still receives a texel. Each local pixel's
  * destination operand (D) is sampled from its actual rotated DEVICE
  * position (nearest-neighbour, read once from a single bounding-box
  * `getImageData`) rather than from the same local index `applyRop3` assumes.
@@ -287,6 +332,10 @@ function executeRotatedBlit(
 		return; // D: leaves the destination untouched.
 	}
 	const operands = rop3Operands(index);
+	if (!canReadBack(ctx) && operands.usesD) {
+		emfWarn('executeRotatedBlit: rotated destination-reading ROP3 needs pixel read-back; skipped in SVG output');
+		return;
+	}
 	if (typeof ctx.getImageData !== 'function') {
 		emfWarn('executeRotatedBlit: context cannot read pixels back; rotated ROP3 skipped');
 		return;

@@ -30,6 +30,9 @@ function mockCtx() {
 		closePath: vi.fn(() => calls.push({ method: 'closePath', args: [] })),
 		fill: vi.fn((rule?: string) => calls.push({ method: 'fill', args: [rule] })),
 		stroke: vi.fn(() => calls.push({ method: 'stroke', args: [] })),
+		save: vi.fn(() => calls.push({ method: 'save', args: [] })),
+		restore: vi.fn(() => calls.push({ method: 'restore', args: [] })),
+		translate: vi.fn((x: number, y: number) => calls.push({ method: 'translate', args: [x, y] })),
 		// Stubs needed by applyPen / applyBrush
 		setLineDash: vi.fn<() => void>(),
 		lineWidth: 1,
@@ -158,10 +161,13 @@ describe('emf-gdi-polypolygon-helpers', () => {
 
 			handlePolyPolygon32(rCtx, 0, dataOff, recSize);
 
-			expect(ctx.beginPath).toHaveBeenCalledOnce();
+			// Built once for the fill, then rebuilt half a pixel over for the
+			// GDI-aligned 1px stroke.
+			expect(ctx.beginPath).toHaveBeenCalledTimes(2);
+			expect(ctx.translate).toHaveBeenCalledWith(0.5, 0.5);
 			expect(ctx.moveTo).toHaveBeenCalledWith(0, 0);
-			expect(ctx.lineTo).toHaveBeenCalledTimes(2);
-			expect(ctx.closePath).toHaveBeenCalledOnce();
+			expect(ctx.lineTo).toHaveBeenCalledTimes(4);
+			expect(ctx.closePath).toHaveBeenCalledTimes(2);
 			expect(ctx.stroke).toHaveBeenCalledOnce();
 		});
 
@@ -182,9 +188,9 @@ describe('emf-gdi-polypolygon-helpers', () => {
 
 			handlePolyPolygon32(rCtx, 0, dataOff, recSize);
 
-			// Two polygons = two moveTo calls and two closePath calls
-			expect(ctx.moveTo).toHaveBeenCalledTimes(2);
-			expect(ctx.closePath).toHaveBeenCalledTimes(2);
+			// Two polygons = two moveTo and two closePath calls per build (fill + aligned stroke)
+			expect(ctx.moveTo).toHaveBeenCalledTimes(4);
+			expect(ctx.closePath).toHaveBeenCalledTimes(4);
 		});
 
 		it('bails out when numPolys is 0', () => {
@@ -255,9 +261,9 @@ describe('emf-gdi-polypolygon-helpers', () => {
 
 			handlePolyPolyline32(rCtx, 0, dataOff, recSize);
 
-			expect(ctx.beginPath).toHaveBeenCalledOnce();
+			expect(ctx.beginPath).toHaveBeenCalledTimes(2); // path + aligned stroke rebuild
 			expect(ctx.moveTo).toHaveBeenCalledWith(0, 0);
-			expect(ctx.lineTo).toHaveBeenCalledTimes(2);
+			expect(ctx.lineTo).toHaveBeenCalledTimes(4);
 			// Polyline does NOT call closePath or fill
 			expect(ctx.closePath).not.toHaveBeenCalled();
 			expect(ctx.fill).not.toHaveBeenCalled();
@@ -280,10 +286,10 @@ describe('emf-gdi-polypolygon-helpers', () => {
 
 			handlePolyPolygon16(rCtx, 0, dataOff, recSize);
 
-			expect(ctx.beginPath).toHaveBeenCalledOnce();
+			expect(ctx.beginPath).toHaveBeenCalledTimes(2); // fill path + aligned stroke path
 			expect(ctx.moveTo).toHaveBeenCalledWith(10, 20);
-			expect(ctx.lineTo).toHaveBeenCalledTimes(2);
-			expect(ctx.closePath).toHaveBeenCalledOnce();
+			expect(ctx.lineTo).toHaveBeenCalledTimes(4);
+			expect(ctx.closePath).toHaveBeenCalledTimes(2);
 		});
 
 		it('bails out when point data extends beyond record size', () => {

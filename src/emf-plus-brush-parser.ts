@@ -544,8 +544,69 @@ function lerpArgb(a: number, b: number, t: number): number {
 	return out >>> 0;
 }
 
-/** Segments per flattened cubic Bezier (far finer than any colour step needs). */
-const BEZIER_STEPS = 24;
+/**
+ * Flatness tolerance (brush-space units) a path-gradient boundary's Bezier
+ * segments are flattened to: GDI+'s own `FlatnessDefault` (0.25). GDI+
+ * fills a path gradient as the boundary polygon flattened at this
+ * tolerance, so a finer flattening (this parser once used 24 fixed
+ * segments per curve) paints pixels along a curved boundary that GDI+
+ * leaves to the next tile or the background (measured against the real
+ * GDI+ `grad-path-ellipse-*` fixtures: about 0.72% mismatching pixels at 24
+ * segments, 0.13% at this tolerance).
+ */
+const BEZIER_FLATNESS = 0.25;
+
+/** Recursion cap for {@link flattenCubic} (at most 2^10 segments per curve). */
+const MAX_BEZIER_DEPTH = 10;
+
+interface Pt {
+	x: number;
+	y: number;
+}
+
+/** Distance from `p` to the line through `a` and `b` (or to `a` when they coincide). */
+function distanceToLine(p: Pt, a: Pt, b: Pt): number {
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
+	const len = Math.hypot(dx, dy);
+	if (len < 1e-12) {
+		return Math.hypot(p.x - a.x, p.y - a.y);
+	}
+	return Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / len;
+}
+
+/**
+ * Flattens a cubic Bezier by recursive halving (de Casteljau) until both
+ * control points lie within {@link BEZIER_FLATNESS} of the chord, appending
+ * each segment's end point with its curve parameter `t` (within
+ * `[t0, t1]`) to `out`. The start point `p0` is not appended.
+ */
+export function flattenCubic(
+	p0: Pt,
+	p1: Pt,
+	p2: Pt,
+	p3: Pt,
+	out: Array<Pt & { t: number }>,
+	t0 = 0,
+	t1 = 1,
+	depth = 0,
+): void {
+	const flat = Math.max(distanceToLine(p1, p0, p3), distanceToLine(p2, p0, p3)) <= BEZIER_FLATNESS;
+	if (flat || depth >= MAX_BEZIER_DEPTH) {
+		out.push({ x: p3.x, y: p3.y, t: t1 });
+		return;
+	}
+	const mid = (a: Pt, b: Pt): Pt => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+	const p01 = mid(p0, p1);
+	const p12 = mid(p1, p2);
+	const p23 = mid(p2, p3);
+	const p012 = mid(p01, p12);
+	const p123 = mid(p12, p23);
+	const pm = mid(p012, p123);
+	const tm = (t0 + t1) / 2;
+	flattenCubic(p0, p01, p012, pm, out, t0, tm, depth + 1);
+	flattenCubic(pm, p123, p23, p3, out, tm, t1, depth + 1);
+}
 
 /**
  * Flattens the first figure of a GDI+ path (Start/Line/Bezier point types)
@@ -572,14 +633,11 @@ function flattenFirstFigure(
 			const p3 = points[k + 2];
 			const c0 = colorAt(k - 1);
 			const c3 = colorAt(k + 2);
-			for (let i = 1; i <= BEZIER_STEPS; i++) {
-				const t = i / BEZIER_STEPS;
-				const u = 1 - t;
-				outPts.push({
-					x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
-					y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
-				});
-				outArgb.push(lerpArgb(c0, c3, t));
+			const flat: Array<{ x: number; y: number; t: number }> = [];
+			flattenCubic(p0, p1, p2, p3, flat);
+			for (const v of flat) {
+				outPts.push({ x: v.x, y: v.y });
+				outArgb.push(lerpArgb(c0, c3, v.t));
 			}
 			k += 2;
 			if (types[k] & 0x80) {
@@ -609,13 +667,17 @@ function flattenFirstFigure(
 /**
  * Parse an EMF+ Brush object. Never returns null for structurally valid
  * input: unknown brush types degrade to a solid black brush, matching GDI+
- * fallback behaviour.
+ * fallback behaviour. `cacheKey` looks up a pre-decoded compressed texture
+ * in `textureCache`; it defaults to `dataOff`, the key of a single-record
+ * object (a reassembled continuation run passes its first record's offset
+ * instead, see `emf-plus-continuation.ts`).
  */
 export function parseEmfPlusBrushObject(
 	view: DataView,
 	dataOff: number,
 	recDataSize: number,
 	textureCache?: EmfPlusTextureCache,
+	cacheKey: number = dataOff,
 ): EmfPlusBrush | null {
 	if (recDataSize < 8) {
 		return null;
@@ -641,10 +703,9 @@ export function parseEmfPlusBrushObject(
 			return { kind: 'plus-brush', color: 'rgba(0,0,0,1)' };
 
 		case EMFPLUS_BRUSHTYPE_TEXTUREFILL: {
-			// Keyed by the enclosing OBJECT record's dataOff: see
-			// EmfPlusReplayCtx.textureCache and the async pre-decode pass
+			// See EmfPlusReplayCtx.textureCache and the async pre-decode pass
 			// (emf-plus-texture-predecode.ts) that populates it.
-			const predecoded = textureCache?.get(dataOff);
+			const predecoded = textureCache?.get(cacheKey);
 			const brush = parseTextureBrush(view, b, end, predecoded);
 			return brush ?? { kind: 'plus-brush', color: 'rgba(0,0,0,1)' };
 		}

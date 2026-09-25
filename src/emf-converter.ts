@@ -1,34 +1,50 @@
 /**
- * Public API, a single auto-detecting entry point consumed by the rest of
- * the application.
+ * Public API: auto-detecting EMF/WMF conversion to PNG or SVG.
  *
- * The conversion pipeline for both formats follows the same high-level steps:
- * 1. Parse the file header to determine logical bounds and canvas dimensions
+ * The conversion pipeline for both formats and both outputs follows the same
+ * high-level steps:
+ * 1. Parse the file header to determine logical bounds and output dimensions
  *    (tried as EMF first, then WMF, to auto-detect the format).
- * 2. Create an in-memory canvas (OffscreenCanvas preferred, HTMLCanvasElement
- *    fallback, or the optional `@napi-rs/canvas` Node.js backend).
- * 3. Replay every metafile record onto the canvas context in order.
+ * 2. Create a drawing surface: an in-memory canvas (OffscreenCanvas
+ *    preferred, HTMLCanvasElement fallback, or the optional `@napi-rs/canvas`
+ *    Node.js backend) for PNG output, or an {@link SvgContext} recorder for
+ *    SVG output.
+ * 3. Replay every metafile record onto the surface in order.
  * 4. Resolve "deferred images", bitmap / embedded-metafile draws that require
  *    async image decoding (via {@link createImageBitmap} or, in Node.js, the
- *    `@napi-rs/canvas` `loadImage` helper).
- * 5. Export the canvas contents as a `data:image/png;base64,...` URL.
+ *    `@napi-rs/canvas` `loadImage` helper). SVG output embeds PNG/JPEG/GIF/
+ *    WebP bytes verbatim and nested metafiles as nested SVG, with no decode.
+ * 5. Export: a `data:image/png;base64,...` URL, or an SVG tree that can be
+ *    serialised to markup, a data URL, React elements, or JSX source.
  *
  * @module emf-converter
  */
 
 import {
 	canvasDrawImage,
+	canvasGetImageData,
+	canvasPutImageData,
+	computeSurfaceSize,
 	createCanvas,
+	createImageDataCompat,
+	createTempCanvas,
 	decodeDeferredImageBytes,
 	ensureNodeCanvasModule,
 	exportCanvasToPngDataUrl,
 	DEFAULT_DPI_SCALE,
+	type Drawable,
 } from './emf-canvas-helpers';
+import { decodeDibToImageData } from './emf-dib-decoder';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
 import { emfLog, emfWarn } from './emf-logging';
+import { resampleImage } from './emf-plus-image-resample';
 import { preDecodeEmfPlusTextures } from './emf-plus-texture-predecode';
 import { replayEmfRecords } from './emf-record-replay';
-import type { CanvasContext, DeferredImageDraw } from './emf-types';
+import type { AnyCanvas, CanvasContext, DeferredImageDraw, DeferredImageResample } from './emf-types';
+import { SvgContext } from './svg-context';
+import type { ImagePayload } from './svg-context';
+import { svgMarkupToDataUrl, svgTreeToDataUrl, svgTreeToString } from './svg-tree';
+import type { SvgNode } from './svg-tree';
 import { replayWmfRecords } from './wmf-replay';
 
 /**
@@ -41,8 +57,8 @@ export interface EmfConvertOptions {
 	maxHeight?: number;
 	/**
 	 * DPI scale factor for higher-resolution output.
-	 * Default is 2 (HiDPI). Set to 1 for 1:1 pixel mapping.
-	 * Values above 4 are clamped to 4 to prevent excessive memory usage.
+	 * Default is 1 (1:1 pixel mapping). Values above 4 are clamped to 4 to
+	 * prevent excessive memory usage.
 	 */
 	dpiScale?: number;
 	/**
@@ -62,11 +78,232 @@ export interface EmfConvertOptions {
 	 * 'ms shell dlg': 'Tahoma' }`. Applied to GDI, WMF, and EMF+ text.
 	 */
 	fontFamilyMap?: Record<string, string>;
+	/**
+	 * Antialias plain-GDI (EMF) vector shapes: Rectangle, Ellipse, RoundRect,
+	 * Polygon, Polyline, arcs, and bracketed paths. Default `true`, Canvas's
+	 * own smooth edges. `false` rasterises their fills and strokes the way
+	 * Windows GDI does, without antialiasing and on GDI's own pixel grid, for
+	 * output that matches what Windows paints pixel for pixel. It reads back
+	 * and rewrites each shape's bounding box, so it is noticeably slower on
+	 * shape-heavy files. EMF+ drawing and text are unaffected.
+	 */
+	gdiAntialias?: boolean;
+}
+
+/**
+ * Options for the SVG outputs ({@link convertMetafileToSvg} and friends).
+ * `maxWidth`/`maxHeight`/`dpiScale`/`maxCanvasDimension` set the SVG's
+ * coordinate space (its `viewBox` and default `width`/`height`) and the
+ * resolution of any embedded raster content; vector content stays sharp at
+ * any display size.
+ */
+export interface SvgConvertOptions extends EmfConvertOptions {
+	/**
+	 * Evaluate raster operations that read the destination (exact ROP3 blits,
+	 * exact bitwise ROP2) against a hidden raster mirror of the drawing, and
+	 * embed the pixels they change as image patches. Needs a canvas backend
+	 * (browser/worker canvas, or `@napi-rs/canvas` in Node.js); without one,
+	 * or when set to `false`, those operations fall back to SVG blend modes
+	 * (`mix-blend-mode`), which are exact for the common mask ROPs on
+	 * black/white masks and approximate otherwise. Default `true`.
+	 */
+	exactRasterOps?: boolean;
+	/**
+	 * Emit `width`/`height` attributes on the root `<svg>` (the `viewBox` is
+	 * always emitted). Set `false` for a fluid SVG that fills its container.
+	 * Default `true`.
+	 */
+	includeSize?: boolean;
+	/**
+	 * Prefix for every generated element id (clip paths, gradients,
+	 * patterns). Ids must be unique within an HTML document, so give each
+	 * inlined SVG its own prefix. Defaults to a per-process counter
+	 * (`emf1-`, `emf2-`, ...).
+	 */
+	idPrefix?: string;
+}
+
+const MAX_METAFILE_RECURSION = 3;
+
+// ---------------------------------------------------------------------------
+// Shared replay
+// ---------------------------------------------------------------------------
+
+/** A drawing surface the replay can target. */
+interface Surface {
+	ctx: CanvasContext;
+	width: number;
+	height: number;
+}
+
+/** Creates the output surface once the logical size is known. */
+type SurfaceFactory = (logicalW: number, logicalH: number) => Surface | null;
+
+/**
+ * Detects the format, replays every record onto the surface the factory
+ * creates, and returns that surface plus the deferred image draws. `null`
+ * when the buffer is neither a valid EMF nor WMF, its bounds are empty, the
+ * surface could not be created, or replay threw.
+ */
+async function replayMetafile(
+	buffer: ArrayBuffer,
+	options: EmfConvertOptions | undefined,
+	createSurface: SurfaceFactory,
+): Promise<{ surface: Surface; deferredImages: DeferredImageDraw[] } | null> {
+	emfLog(`replayMetafile: input buffer ${buffer.byteLength} bytes`);
+	if (buffer.byteLength >= 16) {
+		const hdrBytes = new Uint8Array(buffer, 0, 16);
+		emfLog(
+			`replayMetafile: first 16 bytes: [${Array.from(hdrBytes)
+				.map((b) => b.toString(16).padStart(2, '0'))
+				.join(' ')}]`,
+		);
+	}
+	const opts = options ?? {};
+	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
+	const view = new DataView(buffer);
+
+	// Detection tries EMF first: parseEmfHeader is a cheap, side-effect-free
+	// probe that returns null unless the buffer starts with EMR_HEADER.
+	let emfHeader: ReturnType<typeof parseEmfHeader> = null;
+	try {
+		emfHeader = parseEmfHeader(view);
+	} catch (err) {
+		emfWarn('replayMetafile: parseEmfHeader threw during detection:', err instanceof Error ? err.message : err);
+	}
+
+	if (emfHeader) {
+		emfLog('replayMetafile: detected EMF (valid EMR_HEADER)');
+		try {
+			// Decode any compressed EMF+ TextureFill brush images up front: the
+			// replay pass is synchronous end-to-end and cannot perform the async
+			// image decode a compressed brush needs mid-fill (unlike DrawImage,
+			// whose actual draw is deferred). A no-op for files without them.
+			const textureCache = await preDecodeEmfPlusTextures(view);
+			const renderBounds = getRenderableEmfBounds(emfHeader);
+			if (!renderBounds) {
+				emfLog('replayMetafile: getRenderableEmfBounds returned null');
+				return null;
+			}
+			const surface = createSurface(
+				renderBounds.right - renderBounds.left,
+				renderBounds.bottom - renderBounds.top,
+			);
+			if (!surface) {
+				emfLog('replayMetafile: surface creation failed');
+				return null;
+			}
+			surface.ctx.save();
+			const deferredImages = replayEmfRecords(
+				view,
+				surface.ctx,
+				renderBounds,
+				surface.width,
+				surface.height,
+				dpiScale,
+				{
+					maxRecords: opts.maxRecords,
+					maxRecordsEmfPlus: opts.maxRecords,
+					fontFamilyMap: opts.fontFamilyMap,
+					textureCache,
+					gdiAntialias: opts.gdiAntialias,
+				},
+			);
+			// Clears any clipping regions record handlers installed.
+			surface.ctx.restore();
+			emfLog(`replayMetafile: EMF replay done, ${deferredImages.length} deferred images`);
+			return { surface, deferredImages };
+		} catch (err) {
+			emfWarn('replayMetafile: EMF EXCEPTION:', err instanceof Error ? err.message : err);
+			console.warn('[emf-converter] EMF conversion failed:', err instanceof Error ? err.message : err);
+			return null;
+		}
+	}
+
+	emfLog('replayMetafile: not EMF, trying WMF');
+	try {
+		const header = parseWmfHeader(view);
+		if (!header) {
+			emfLog('replayMetafile: parseWmfHeader returned null');
+			return null;
+		}
+		const logicalW = header.boundsRight - header.boundsLeft;
+		const logicalH = header.boundsBottom - header.boundsTop;
+		if (logicalW <= 0 || logicalH <= 0) {
+			emfLog('replayMetafile: invalid WMF dimensions');
+			return null;
+		}
+		const surface = createSurface(logicalW, logicalH);
+		if (!surface) {
+			return null;
+		}
+		surface.ctx.save();
+		replayWmfRecords(view, surface.ctx, header, surface.width, surface.height, {
+			maxRecords: opts.maxRecords,
+			fontFamilyMap: opts.fontFamilyMap,
+		});
+		surface.ctx.restore();
+		return { surface, deferredImages: [] };
+	} catch (err) {
+		emfWarn('replayMetafile: WMF EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] WMF conversion failed:', err instanceof Error ? err.message : err);
+		return null;
+	}
+}
+
+/** Copies possibly-shared image bytes into a plain `ArrayBuffer`. */
+function toPlainBuffer(data: ArrayBuffer | SharedArrayBuffer): ArrayBuffer {
+	const plain = new ArrayBuffer(data.byteLength);
+	new Uint8Array(plain).set(new Uint8Array(data));
+	return plain;
 }
 
 // ---------------------------------------------------------------------------
-// Deferred-image post-processing
+// PNG output
 // ---------------------------------------------------------------------------
+
+/**
+ * Draws a decoded raster image resampled per device pixel the way GDI+
+ * does (see `emf-plus-image-resample.ts`), compositing the result at an
+ * integer device offset under an identity transform so Canvas copies it
+ * unfiltered. Returns `false`, having drawn nothing, when the backend lacks
+ * the pixel access this needs or the mapping is degenerate; the caller then
+ * falls back to a plain Canvas `drawImage`.
+ */
+function drawResampledImage(
+	ctx: CanvasContext,
+	decoded: { drawable: Drawable; width: number; height: number },
+	spec: DeferredImageResample,
+): boolean {
+	const canvas = (ctx as { canvas?: { width?: unknown; height?: unknown } }).canvas;
+	const surfaceW = canvas?.width;
+	const surfaceH = canvas?.height;
+	if (typeof surfaceW !== 'number' || typeof surfaceH !== 'number') {
+		return false;
+	}
+	const { width, height } = decoded;
+	const source = createTempCanvas(width, height);
+	if (!source) {
+		return false;
+	}
+	canvasDrawImage(source.ctx, decoded.drawable, 0, 0, width, height);
+	const pixels = canvasGetImageData(source.ctx, 0, 0, width, height);
+	const block = resampleImage(pixels.data, width, height, spec, { w: surfaceW, h: surfaceH });
+	if (!block) {
+		return false;
+	}
+	const out = createTempCanvas(block.w, block.h);
+	if (!out) {
+		return false;
+	}
+	canvasPutImageData(out.ctx, createImageDataCompat(block.rgba, block.w, block.h), 0, 0);
+	ctx.save();
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
+	ctx.imageSmoothingEnabled = false;
+	canvasDrawImage(ctx, out.canvas, block.x, block.y, block.w, block.h);
+	ctx.restore();
+	return true;
+}
 
 /**
  * Processes images whose drawing was deferred during the synchronous record
@@ -75,105 +312,55 @@ export interface EmfConvertOptions {
  *
  * The canvas transform is set per-image so the bitmap lands at the correct
  * position, then reset to identity when all images have been drawn.
- *
- * @param ctx            - The 2D rendering context of the output canvas.
- * @param deferredImages - The list of deferred image-draw descriptors
- *                         accumulated during GDI / EMF+ record replay.
  */
-const MAX_METAFILE_RECURSION = 3;
-
 async function processDeferredImages(
 	ctx: CanvasContext,
 	deferredImages: DeferredImageDraw[],
-	recursionDepth: number = 0,
+	recursionDepth: number,
 ): Promise<void> {
-	emfLog(
-		`processDeferredImages: processing ${deferredImages.length} deferred images (recursionDepth=${recursionDepth})...`,
-	);
-
+	emfLog(`processDeferredImages: ${deferredImages.length} deferred images (recursionDepth=${recursionDepth})`);
 	for (let idx = 0; idx < deferredImages.length; idx++) {
 		const img = deferredImages[idx];
-		emfLog(
-			`  Deferred image [${idx}]: isMetafile=${img.isMetafile}, dataLen=${img.imageData.byteLength}, ` +
-				`dest=(${img.dx.toFixed(1)},${img.dy.toFixed(1)},${img.dw.toFixed(1)},${img.dh.toFixed(1)}), ` +
-				`transform=[${img.transform.map((v) => v.toFixed(3)).join(',')}]`,
-		);
 		try {
-			// Copy to a plain ArrayBuffer, since SharedArrayBuffer is not accepted
-			// as a BlobPart by the Blob constructor in TypeScript 5.x strict mode.
-			const plainBuffer = new ArrayBuffer(img.imageData.byteLength);
-			const dstBytes = new Uint8Array(plainBuffer);
-			dstBytes.set(new Uint8Array(img.imageData));
+			const plainBuffer = toPlainBuffer(img.imageData);
+			// Restore the affine transform active when the draw was recorded.
+			ctx.setTransform(...img.transform);
 
-			// Restore the affine transform that was active when the image draw was
-			// originally encountered, so the bitmap is placed correctly on canvas.
-			ctx.setTransform(
-				img.transform[0],
-				img.transform[1],
-				img.transform[2],
-				img.transform[3],
-				img.transform[4],
-				img.transform[5],
-			);
-
+			let bytes = plainBuffer;
+			let mime: string | undefined;
 			if (img.isMetafile) {
-				// Embedded metafiles must be recursively converted to a raster image
-				// before they can be drawn.
 				if (recursionDepth >= MAX_METAFILE_RECURSION) {
-					emfWarn(
-						`  Deferred image [${idx}]: skipping embedded metafile, recursion depth ${recursionDepth} >= ${MAX_METAFILE_RECURSION}`,
-					);
+					emfWarn(`  Deferred image [${idx}]: skipping embedded metafile, recursion depth ${recursionDepth}`);
 					continue;
 				}
-				emfLog(`  Deferred image [${idx}]: recursively converting embedded metafile...`);
-				const metafileDataUrl = await convertMetafileToDataUrl(
-					plainBuffer,
-					undefined,
-					recursionDepth + 1,
-				);
-				if (metafileDataUrl) {
-					// Decode the data-URL back to raw bytes so it can be handed to the
-					// active canvas backend's image decoder.
-					emfLog(
-						`  Deferred image [${idx}]: metafile converted, dataUrl length=${metafileDataUrl.length}`,
-					);
-					const byteString = atob(metafileDataUrl.split(',')[1]);
-					const mimeMatch = metafileDataUrl.match(/data:([^;]+)/);
-					const mime = mimeMatch ? mimeMatch[1] : 'image/png';
-					const ab = new ArrayBuffer(byteString.length);
-					const ia = new Uint8Array(ab);
-					for (let i = 0; i < byteString.length; i++) {
-						ia[i] = byteString.charCodeAt(i);
-					}
-					emfLog(`  Deferred image [${idx}]: decoding ${ab.byteLength} byte image (${mime})...`);
-					const decoded = await decodeDeferredImageBytes(ab, mime);
-					if (decoded) {
-						emfLog(`  Deferred image [${idx}]: decoded ${decoded.width}×${decoded.height}`);
-						canvasDrawImage(ctx, decoded.drawable, img.dx, img.dy, img.dw, img.dh);
-						decoded.close();
-					} else {
-						emfWarn(`  Deferred image [${idx}]: no image decoder available`);
-					}
-				} else {
+				const metafileDataUrl = await convertMetafileToDataUrl(plainBuffer, undefined, recursionDepth + 1);
+				if (!metafileDataUrl) {
 					emfWarn(`  Deferred image [${idx}]: metafile conversion returned null`);
+					continue;
 				}
-			} else {
-				emfLog(`  Deferred image [${idx}]: decoding ${plainBuffer.byteLength} byte image...`);
-				const decoded = await decodeDeferredImageBytes(plainBuffer);
-				if (decoded) {
-					emfLog(`  Deferred image [${idx}]: decoded ${decoded.width}×${decoded.height}`);
+				const byteString = atob(metafileDataUrl.split(',')[1]);
+				mime = metafileDataUrl.match(/data:([^;]+)/)?.[1] ?? 'image/png';
+				bytes = new ArrayBuffer(byteString.length);
+				const ia = new Uint8Array(bytes);
+				for (let i = 0; i < byteString.length; i++) {
+					ia[i] = byteString.charCodeAt(i);
+				}
+			}
+			const decoded = await decodeDeferredImageBytes(bytes, mime);
+			if (decoded) {
+				if (!(img.resample && drawResampledImage(ctx, decoded, img.resample))) {
 					canvasDrawImage(ctx, decoded.drawable, img.dx, img.dy, img.dw, img.dh);
-					decoded.close();
-				} else {
-					emfWarn(`  Deferred image [${idx}]: no image decoder available`);
 				}
+				decoded.close();
+			} else {
+				emfWarn(`  Deferred image [${idx}]: no image decoder available`);
 			}
 		} catch (imgErr) {
 			const errMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
 			emfWarn(`  Deferred image [${idx}]: DRAW FAILED: ${errMsg}`);
 			console.warn(
 				'[emf-converter] Deferred image draw failed:',
-				imgErr instanceof Error ? imgErr.message : imgErr,
+				errMsg,
 				`(isMetafile=${img.isMetafile}, dataLen=${img.imageData.byteLength})`,
 			);
 		}
@@ -181,10 +368,6 @@ async function processDeferredImages(
 	// Reset to identity so subsequent callers start with a clean transform.
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
-
-// ---------------------------------------------------------------------------
-// convertMetafileToDataUrl
-// ---------------------------------------------------------------------------
 
 /**
  * Converts an EMF (Enhanced Metafile) or WMF (Windows Metafile) binary buffer
@@ -195,23 +378,12 @@ async function processDeferredImages(
  * starts with a valid `EMR_HEADER` record, so it doubles as a safe format
  * sniff. When that probe fails, the buffer is parsed as WMF instead.
  *
- * For EMF: parses the EMF header, iterates over all EMR records, and replays
- * them onto an in-memory canvas. Embedded EMF+ (GDI+) records found inside
- * EMR_COMMENT payloads are handled transparently.
- *
- * For WMF: parses the optional Aldus placeable header and the standard WMF
- * header, then replays all META_* records onto a canvas.
- *
- * The canvas is rendered at a configurable DPI scale (default 1x, 1:1 pixel
- * mapping) via {@link EmfConvertOptions.dpiScale}. On the first call in a
- * given process, the optional Node.js canvas backend (`@napi-rs/canvas`) is
- * loaded once and cached; see {@link ensureNodeCanvasModule}.
- *
  * Returns `null` when:
  * - The buffer matches neither a valid EMF header nor a valid WMF header.
  * - The logical bounds are zero-sized or negative.
  * - No canvas API is available (browser/worker canvas, or the optional
- *   `@napi-rs/canvas` package in plain Node.js).
+ *   `@napi-rs/canvas` package in plain Node.js). SVG output
+ *   ({@link convertMetafileToSvg}) needs no canvas at all.
  *
  * @param buffer  - The raw EMF or WMF file bytes.
  * @param options - Optional {@link EmfConvertOptions} controlling output size,
@@ -225,211 +397,284 @@ export async function convertMetafileToDataUrl(
 	recursionDepth: number = 0,
 ): Promise<string | null> {
 	// Resolve (and cache) the optional Node.js canvas backend once, up front,
-	// before any synchronous replay work begins. createCanvas/createTempCanvas
-	// are called synchronously deep inside the replay pipeline and consult the
-	// cached result rather than awaiting anything themselves.
+	// before any synchronous replay work begins.
 	await ensureNodeCanvasModule();
-
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
-		emfWarn(
-			`convertMetafileToDataUrl: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION}, refusing to convert`,
-		);
+		emfWarn(`convertMetafileToDataUrl: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION}`);
 		return null;
 	}
-
-	emfLog(`convertMetafileToDataUrl: input buffer ${buffer.byteLength} bytes`);
-	if (buffer.byteLength >= 16) {
-		const hdrBytes = new Uint8Array(buffer, 0, 16);
-		emfLog(
-			`convertMetafileToDataUrl: first 16 bytes: [${Array.from(hdrBytes)
-				.map((b) => b.toString(16).padStart(2, '0'))
-				.join(' ')}]`,
-		);
-	}
-
-	const view = new DataView(buffer);
-	let emfHeader: ReturnType<typeof parseEmfHeader> = null;
-	try {
-		emfHeader = parseEmfHeader(view);
-	} catch (err) {
-		emfWarn(
-			'convertMetafileToDataUrl: parseEmfHeader threw during detection:',
-			err instanceof Error ? err.message : err,
-		);
-		emfHeader = null;
-	}
-	if (emfHeader) {
-		emfLog('convertMetafileToDataUrl: detected EMF (valid EMR_HEADER)');
-		return convertEmfInternal(buffer, view, emfHeader, options, recursionDepth);
-	}
-	emfLog('convertMetafileToDataUrl: not EMF, trying WMF');
-	return convertWmfInternal(buffer, view, options, recursionDepth);
-}
-
-// ---------------------------------------------------------------------------
-// EMF path
-// ---------------------------------------------------------------------------
-
-async function convertEmfInternal(
-	buffer: ArrayBuffer,
-	view: DataView,
-	header: NonNullable<ReturnType<typeof parseEmfHeader>>,
-	options: EmfConvertOptions | undefined,
-	recursionDepth: number,
-): Promise<string | null> {
 	const opts = options ?? {};
-	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
-	const effectiveMaxWidth = opts.maxWidth;
-	const effectiveMaxHeight = opts.maxHeight;
-
-	try {
-		emfLog('=== convertEmfInternal START ===');
-		emfLog(
-			`Input buffer: ${buffer.byteLength} bytes, maxWidth=${effectiveMaxWidth}, maxHeight=${effectiveMaxHeight}, dpiScale=${dpiScale}`,
-		);
-
-		// Decode any compressed EMF+ TextureFill brush images up front: the
-		// replay pass below is synchronous end-to-end and cannot perform the
-		// async image decode a compressed brush needs mid-fill (unlike
-		// DrawImage, whose actual draw is deferred to processDeferredImages).
-		// A no-op (empty map, resolves immediately) for the overwhelmingly
-		// common case of a file with no such brushes.
-		const textureCache = await preDecodeEmfPlusTextures(view);
-		const replayOptions = {
-			maxRecords: opts.maxRecords,
-			maxRecordsEmfPlus: opts.maxRecords,
-			fontFamilyMap: opts.fontFamilyMap,
-			textureCache,
-		};
-
-		const renderBounds = getRenderableEmfBounds(header);
-		if (!renderBounds) {
-			emfLog('convertEmfInternal: getRenderableEmfBounds returned null, returning null');
-			return null;
-		}
-
-		const logicalW = renderBounds.right - renderBounds.left;
-		const logicalH = renderBounds.bottom - renderBounds.top;
-		emfLog(`convertEmfInternal: logicalSize=${logicalW}×${logicalH}`);
-
+	let canvas: AnyCanvas | null = null;
+	const result = await replayMetafile(buffer, opts, (w, h) => {
 		const setup = createCanvas(
-			logicalW,
-			logicalH,
-			effectiveMaxWidth,
-			effectiveMaxHeight,
-			dpiScale,
-			opts.maxCanvasDimension,
-		);
-		if (!setup) {
-			emfLog('convertEmfInternal: createCanvas returned null, returning null');
-			return null;
-		}
-
-		const { canvas, ctx } = setup;
-		emfLog(
-			`convertEmfInternal: canvas created ${canvas.width}×${canvas.height} (dpiScale=${dpiScale})`,
-		);
-
-		ctx.save();
-
-		emfLog('convertEmfInternal: starting replayEmfRecords...');
-		const deferredImages = replayEmfRecords(
-			view,
-			ctx,
-			renderBounds,
-			canvas.width,
-			canvas.height,
-			dpiScale,
-			replayOptions,
-		);
-		emfLog(`convertEmfInternal: replayEmfRecords returned ${deferredImages.length} deferred images`);
-
-		// Restore the canvas state saved before replay, this clears any
-		// clipping regions that GDI record handlers may have installed.
-		ctx.restore();
-
-		await processDeferredImages(ctx, deferredImages, recursionDepth);
-
-		emfLog('convertEmfInternal: exporting canvas to PNG data URL...');
-		const result = await exportCanvasToPngDataUrl(canvas);
-		if (result) {
-			emfLog(`convertEmfInternal: SUCCESS, data URL length=${result.length}`);
-		} else {
-			emfWarn('convertEmfInternal: exportCanvasToPngDataUrl returned null');
-		}
-		emfLog('=== convertEmfInternal END ===');
-		return result;
-	} catch (err) {
-		emfWarn('convertEmfInternal: EXCEPTION:', err instanceof Error ? err.message : err);
-		console.warn('[emf-converter] EMF conversion failed:', err instanceof Error ? err.message : err);
-		return null;
-	}
-}
-
-// ---------------------------------------------------------------------------
-// WMF path
-// ---------------------------------------------------------------------------
-
-async function convertWmfInternal(
-	buffer: ArrayBuffer,
-	view: DataView,
-	options: EmfConvertOptions | undefined,
-	recursionDepth: number,
-): Promise<string | null> {
-	const opts = options ?? {};
-	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
-	const effectiveMaxWidth = opts.maxWidth;
-	const effectiveMaxHeight = opts.maxHeight;
-	const replayOptions = {
-		maxRecords: opts.maxRecords,
-		fontFamilyMap: opts.fontFamilyMap,
-	};
-
-	try {
-		emfLog(
-			'=== convertWmfInternal START ===',
-			`buffer=${buffer.byteLength} bytes, dpiScale=${dpiScale}`,
-		);
-		const header = parseWmfHeader(view);
-		if (!header) {
-			emfLog('convertWmfInternal: parseWmfHeader returned null');
-			return null;
-		}
-
-		const logicalW = header.boundsRight - header.boundsLeft;
-		const logicalH = header.boundsBottom - header.boundsTop;
-		emfLog(`convertWmfInternal: logicalSize=${logicalW}×${logicalH}`);
-
-		if (logicalW <= 0 || logicalH <= 0) {
-			emfLog('convertWmfInternal: invalid dimensions, returning null');
-			return null;
-		}
-
-		const setup = createCanvas(
-			logicalW,
-			logicalH,
-			effectiveMaxWidth,
-			effectiveMaxHeight,
-			dpiScale,
+			w,
+			h,
+			opts.maxWidth,
+			opts.maxHeight,
+			opts.dpiScale ?? DEFAULT_DPI_SCALE,
 			opts.maxCanvasDimension,
 		);
 		if (!setup) {
 			return null;
 		}
-
-		const { canvas, ctx } = setup;
-
-		ctx.save();
-		replayWmfRecords(view, ctx, header, canvas.width, canvas.height, replayOptions);
-		ctx.restore();
-
-		const result = await exportCanvasToPngDataUrl(canvas);
-		emfLog(`convertWmfInternal: result=${result ? `dataUrl len=${result.length}` : 'null'}`);
-		emfLog('=== convertWmfInternal END ===');
-		return result;
-	} catch (err) {
-		emfWarn('convertWmfInternal: EXCEPTION:', err instanceof Error ? err.message : err);
-		console.warn('[emf-converter] WMF conversion failed:', err instanceof Error ? err.message : err);
+		canvas = setup.canvas;
+		return { ctx: setup.ctx, width: setup.canvas.width, height: setup.canvas.height };
+	});
+	if (!result || !canvas) {
 		return null;
 	}
+	try {
+		await processDeferredImages(result.surface.ctx, result.deferredImages, recursionDepth);
+		const url = await exportCanvasToPngDataUrl(canvas);
+		if (!url) {
+			emfWarn('convertMetafileToDataUrl: exportCanvasToPngDataUrl returned null');
+		}
+		return url;
+	} catch (err) {
+		emfWarn('convertMetafileToDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
+		return null;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SVG output
+// ---------------------------------------------------------------------------
+
+let svgDocumentCounter = 0;
+
+/** Identifies image bytes browsers and SVG renderers display natively. */
+export function sniffImageMime(bytes: Uint8Array): string | null {
+	const b = bytes;
+	if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+		return 'image/png';
+	}
+	if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+		return 'image/jpeg';
+	}
+	if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
+		return 'image/gif';
+	}
+	if (
+		b.length >= 12 &&
+		b[0] === 0x52 &&
+		b[1] === 0x49 &&
+		b[2] === 0x46 &&
+		b[3] === 0x46 &&
+		b[8] === 0x57 &&
+		b[9] === 0x45 &&
+		b[10] === 0x42 &&
+		b[11] === 0x50
+	) {
+		return 'image/webp';
+	}
+	return null;
+}
+
+/** Intrinsic pixel size of a payload (PNG/JPEG/GIF/WebP headers are parsed), or `null`. */
+function payloadSize(p: ImagePayload): { w: number; h: number } | null {
+	if (p.kind === 'rgba') {
+		return { w: p.width, h: p.height };
+	}
+	if (p.kind !== 'encoded') {
+		return null;
+	}
+	const b = p.bytes;
+	const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+	try {
+		if (p.mime === 'image/png' && b.length >= 24) {
+			return { w: dv.getUint32(16), h: dv.getUint32(20) };
+		}
+		if (p.mime === 'image/gif' && b.length >= 10) {
+			return { w: dv.getUint16(6, true), h: dv.getUint16(8, true) };
+		}
+		if (p.mime === 'image/jpeg') {
+			for (let i = 2; i + 9 < b.length; ) {
+				if (b[i] !== 0xff) {
+					i++;
+					continue;
+				}
+				const marker = b[i + 1];
+				const len = dv.getUint16(i + 2);
+				if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+					return { w: dv.getUint16(i + 7), h: dv.getUint16(i + 5) };
+				}
+				i += 2 + len;
+			}
+		}
+		if (p.mime === 'image/webp' && b.length >= 30) {
+			const chunk = String.fromCharCode(b[12], b[13], b[14], b[15]);
+			if (chunk === 'VP8X') {
+				return { w: 1 + (b[24] | (b[25] << 8) | (b[26] << 16)), h: 1 + (b[27] | (b[28] << 8) | (b[29] << 16)) };
+			}
+			if (chunk === 'VP8 ') {
+				return { w: dv.getUint16(26, true) & 0x3fff, h: dv.getUint16(28, true) & 0x3fff };
+			}
+			if (chunk === 'VP8L') {
+				const bits = dv.getUint32(21, true);
+				return { w: (bits & 0x3fff) + 1, h: ((bits >> 14) & 0x3fff) + 1 };
+			}
+		}
+	} catch {
+		/* truncated header */
+	}
+	return null;
+}
+
+/** Decodes a BMP file (`BM` + BITMAPFILEHEADER + DIB) without any canvas. */
+function decodeBmpFile(bytes: ArrayBuffer): ImagePayload | null {
+	const view = new DataView(bytes);
+	if (view.byteLength < 26 || view.getUint8(0) !== 0x42 || view.getUint8(1) !== 0x4d) {
+		return null;
+	}
+	const bitsOffset = view.getUint32(10, true);
+	const image = decodeDibToImageData(view, 14, bitsOffset, view.byteLength - bitsOffset);
+	return image ? { kind: 'rgba', data: image.data, width: image.width, height: image.height } : null;
+}
+
+/**
+ * Resolves deferred image draws into their reserved SVG slots (so each keeps
+ * its recorded z-order and clip): browser-native formats are embedded
+ * verbatim, BMP is decoded in JS, embedded metafiles become nested SVG, and
+ * anything else (e.g. TIFF) is decoded through the canvas backend when one
+ * exists.
+ */
+async function processDeferredImagesSvg(
+	svg: SvgContext,
+	deferredImages: DeferredImageDraw[],
+	options: SvgConvertOptions,
+	recursionDepth: number,
+): Promise<void> {
+	for (let idx = 0; idx < deferredImages.length; idx++) {
+		const img = deferredImages[idx];
+		try {
+			const bytes = toPlainBuffer(img.imageData);
+			let payload: ImagePayload | null = null;
+			if (img.isMetafile) {
+				if (recursionDepth >= MAX_METAFILE_RECURSION) {
+					emfWarn(`  Deferred image [${idx}]: skipping embedded metafile, recursion depth ${recursionDepth}`);
+					continue;
+				}
+				const nested = await convertMetafileToSvgTree(
+					bytes,
+					{ ...options, includeSize: true, idPrefix: undefined },
+					recursionDepth + 1,
+				);
+				if (nested) {
+					payload = { kind: 'url', url: svgTreeToDataUrl(nested) };
+				}
+			} else {
+				const u8 = new Uint8Array(bytes);
+				const mime = sniffImageMime(u8);
+				if (mime) {
+					payload = { kind: 'encoded', bytes: u8, mime };
+				} else {
+					payload = decodeBmpFile(bytes);
+					if (!payload) {
+						const decoded = await decodeDeferredImageBytes(bytes);
+						if (decoded) {
+							const temp = createCanvas(decoded.width, decoded.height, undefined, undefined, 1);
+							if (temp) {
+								canvasDrawImage(temp.ctx, decoded.drawable, 0, 0, decoded.width, decoded.height);
+								const px = temp.ctx.getImageData(0, 0, decoded.width, decoded.height);
+								payload = {
+									kind: 'rgba',
+									data: px.data as Uint8ClampedArray,
+									width: decoded.width,
+									height: decoded.height,
+								};
+							}
+							decoded.close();
+						}
+					}
+				}
+			}
+			if (!payload) {
+				emfWarn(`  Deferred image [${idx}]: unsupported image data for SVG output`);
+				continue;
+			}
+			const slot = (img.svgSlot as SvgNode | undefined) ?? svg.reserveSlot();
+			const natural = img.resample ? payloadSize(payload) : null;
+			if (img.resample && natural) {
+				// Exact source-rect → device mapping (crop, rotation, shear);
+				// the browser's own smooth scaling stands in for GDI+'s kernel.
+				const r = img.resample;
+				svg.fillSlotCropped(slot, payload, r.toDevice, natural, r.srcX, r.srcY, r.srcW, r.srcH);
+			} else {
+				svg.fillSlot(slot, payload, img.transform, img.dx, img.dy, img.dw, img.dh);
+			}
+		} catch (err) {
+			emfWarn(`  Deferred image [${idx}]: SVG embed failed: ${err instanceof Error ? err.message : err}`);
+		}
+	}
+}
+
+/**
+ * Converts an EMF or WMF buffer (format auto-detected) into an SVG document
+ * tree, the common source for every SVG output form: serialise it with
+ * {@link svgTreeToString} / {@link svgTreeToDataUrl}, render it in React
+ * with {@link svgTreeToReact}, or generate component source with
+ * {@link svgTreeToJsx}.
+ *
+ * Unlike PNG output this needs no canvas implementation: vectors, text,
+ * gradients, clipping, and bitmaps are all recorded in pure JavaScript. A
+ * canvas backend, when present, is used only to evaluate destination-
+ * reading raster operations exactly (see {@link SvgConvertOptions.exactRasterOps})
+ * and to measure text.
+ *
+ * @returns The root `<svg>` node, or `null` for an invalid/empty metafile.
+ */
+export async function convertMetafileToSvgTree(
+	buffer: ArrayBuffer,
+	options?: SvgConvertOptions,
+	recursionDepth: number = 0,
+): Promise<SvgNode | null> {
+	await ensureNodeCanvasModule();
+	if (recursionDepth > MAX_METAFILE_RECURSION) {
+		return null;
+	}
+	const opts = options ?? {};
+	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
+	const idPrefix = opts.idPrefix ?? `emf${++svgDocumentCounter}-`;
+	let svg: SvgContext | null = null;
+	const result = await replayMetafile(buffer, opts, (lw, lh) => {
+		const size = computeSurfaceSize(lw, lh, opts.maxWidth, opts.maxHeight, dpiScale, opts.maxCanvasDimension);
+		const shadow =
+			opts.exactRasterOps === false
+				? null
+				: (createCanvas(lw, lh, opts.maxWidth, opts.maxHeight, dpiScale, opts.maxCanvasDimension)?.ctx ?? null);
+		svg = new SvgContext(size.w, size.h, { shadow, idPrefix });
+		return { ctx: svg as unknown as CanvasContext, width: size.w, height: size.h };
+	});
+	if (!result || !svg) {
+		return null;
+	}
+	const target: SvgContext = svg;
+	await processDeferredImagesSvg(target, result.deferredImages, opts, recursionDepth);
+	return target.toTree({ includeSize: opts.includeSize });
+}
+
+/**
+ * Converts an EMF or WMF buffer into standalone SVG markup
+ * (`<svg xmlns="http://www.w3.org/2000/svg" ...>...</svg>`).
+ *
+ * @returns The SVG markup, or `null` for an invalid/empty metafile.
+ */
+export async function convertMetafileToSvg(buffer: ArrayBuffer, options?: SvgConvertOptions): Promise<string | null> {
+	const tree = await convertMetafileToSvgTree(buffer, options);
+	return tree ? svgTreeToString(tree) : null;
+}
+
+/**
+ * Converts an EMF or WMF buffer into a base64 SVG data URL
+ * (`data:image/svg+xml;base64,...`), usable directly as an `<img src>`.
+ *
+ * @returns The data URL, or `null` for an invalid/empty metafile.
+ */
+export async function convertMetafileToSvgDataUrl(
+	buffer: ArrayBuffer,
+	options?: SvgConvertOptions,
+): Promise<string | null> {
+	const markup = await convertMetafileToSvg(buffer, options);
+	return markup ? svgMarkupToDataUrl(markup) : null;
 }

@@ -132,17 +132,18 @@ function handleExtTextOutW(
 	}
 
 	// A rotated/skewed EMR_SETWORLDTRANSFORM rotates ExtTextOutW's placement
-	// AND its glyphs on real GDI (measured against a real fixture: see
-	// `probe-rotate-text-25deg` under `src/__fixtures__/gdi`), the same as it
-	// does for vector shapes. `gmx`/`gmy`/`gmw`/`gmh` only carry the
-	// transform's scale/translation, so the rotated case maps the reference
-	// point through the full affine (`gmapPoint`) and folds the transform's
-	// own rotation angle into the same `ctx.rotate()` call already used for
-	// the font's escapement, and scales the font size / advances from the
-	// device matrix's actual per-axis magnitudes instead of just `d`/`a`
-	// (exact for a pure rotation + uniform scale; skew is approximated by
-	// this magnitude, consistent with the rest of this module's rotation
-	// support).
+	// AND its glyphs on real GDI (measured against a real fixture:
+	// `rotate-text-25deg` under `src/__fixtures__/gdi`), the same as it does
+	// for vector shapes. `gmx`/`gmy`/`gmw`/`gmh` only carry the transform's
+	// scale/translation, so the rotated case maps the reference point through
+	// the full affine (`gmapPoint`) and draws the run under the device
+	// matrix's NORMALISED linear part: each basis vector divided by its own
+	// length, so the font is realised at the transformed em height
+	// (`fontScale`, the length of the mapped y axis) and advances at the
+	// length of the mapped x axis (`advanceScale`), while the normalised
+	// matrix carries the rotation AND any skew (or reflection) onto the
+	// glyphs themselves. For a pure rotation this is exactly the rotation by
+	// `atan2(b, a)` it replaces.
 	const rotated = hasWorldRotation(rCtx);
 	const m = rotated ? gdiDeviceMatrix(rCtx) : null;
 	const fontScale = m ? Math.hypot(m[2], m[3]) : Math.abs(gmh(rCtx, 1));
@@ -162,13 +163,28 @@ function handleExtTextOutW(
 	}
 
 	const basePoint = m ? gmapPoint(rCtx, refX, refY) : { x: gmx(rCtx, refX), y: gmy(rCtx, refY) };
-	const worldAngle = m ? Math.atan2(m[1], m[0]) : 0;
-	const radians = worldAngle + escapementToCanvasRadians(state.fontEscapementTenthDeg);
+	const escapement = escapementToCanvasRadians(state.fontEscapementTenthDeg);
 
-	if (radians !== 0) {
+	if (m && fontScale > 0 && advanceScale) {
 		ctx.save();
 		ctx.translate(basePoint.x, basePoint.y);
-		ctx.rotate(radians);
+		ctx.transform(
+			m[0] / advanceScale,
+			m[1] / advanceScale,
+			m[2] / fontScale,
+			m[3] / fontScale,
+			0,
+			0,
+		);
+		if (escapement !== 0) {
+			ctx.rotate(escapement);
+		}
+		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale);
+		ctx.restore();
+	} else if (escapement !== 0) {
+		ctx.save();
+		ctx.translate(basePoint.x, basePoint.y);
+		ctx.rotate(escapement);
 		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale);
 		ctx.restore();
 	} else {

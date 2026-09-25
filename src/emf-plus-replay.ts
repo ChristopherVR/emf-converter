@@ -12,7 +12,8 @@ import {
 	EMFPLUS_OBJECT,
 	MAX_RECORDS_EMFPLUS_DEFAULT,
 } from './emf-constants';
-import { emfLog, emfWarn } from './emf-logging';
+import { emfLog } from './emf-logging';
+import { createContinuationAccumulator, feedEmfPlusObjectRecord } from './emf-plus-continuation';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
 import { handleEmfPlusStateRecord } from './emf-plus-state-handlers';
@@ -72,8 +73,8 @@ export function replayEmfPlusRecords(
 	offset: number,
 	length: number,
 	ctx: CanvasContext,
-	_canvasW: number,
-	_canvasH: number,
+	canvasW: number,
+	canvasH: number,
 	state?: EmfPlusState,
 	dpiScale: number = 1,
 	maxRecords: number = MAX_RECORDS_EMFPLUS_DEFAULT,
@@ -95,14 +96,14 @@ export function replayEmfPlusRecords(
 		clipRegion: s.clipRegion,
 		pageUnit: 2,
 		pageScale: 1,
-		continuationBuffer: null,
-		continuationObjectId: -1,
-		continuationObjectType: 0,
-		continuationTotalSize: 0,
-		continuationOffset: 0,
+		...(s.continuation ?? createContinuationAccumulator()),
 		dpiScale,
+		canvasW,
+		canvasH,
 		fontFamilyMap,
 		textureCache,
+		interpolationMode: s.interpolationMode,
+		pixelOffsetMode: s.pixelOffsetMode,
 	};
 
 	const end = offset + length;
@@ -144,91 +145,18 @@ export function replayEmfPlusRecords(
 				break;
 
 			case EMFPLUS_OBJECT: {
-				const isContinuation = (recFlags & 0x8000) !== 0;
-				const objectId = recFlags & 0xff;
-
-				if (isContinuation) {
-					// Start or continue accumulating data
-					if (rCtx.continuationBuffer === null) {
-						// First continuation record: has totalObjectSize (UINT32) at start
-						if (recDataSize >= 4) {
-							const totalSize = view.getUint32(dataOff, true);
-							const objectType = (recFlags >> 8) & 0x7f;
-							const MAX_CONTINUATION_BYTES = 64 * 1024 * 1024; // 64 MiB hard cap
-							const remainingEmfPlusBytes = view.byteLength - dataOff;
-							// Reject implausible / hostile sizes. Setting totalSize to 0
-							// makes the subsequent block skip allocation, and the
-							// continuationBuffer remains null so trailing records will
-							// not be appended. recDataSize is already <= remainingEmfPlusBytes.
-							if (
-								!Number.isFinite(totalSize) ||
-								totalSize <= 0 ||
-								totalSize > MAX_CONTINUATION_BYTES ||
-								totalSize > remainingEmfPlusBytes ||
-								recDataSize - 4 < 0
-							) {
-								emfWarn(
-									`EMFPLUS_OBJECT continuation: rejecting invalid totalObjectSize=${totalSize} (remaining=${remainingEmfPlusBytes}, recDataSize=${recDataSize})`,
-								);
-							} else {
-								rCtx.continuationTotalSize = totalSize;
-								rCtx.continuationObjectId = objectId;
-								rCtx.continuationObjectType = objectType;
-								rCtx.continuationBuffer = new Uint8Array(totalSize);
-								const chunkSize = recDataSize - 4;
-								const chunk = new Uint8Array(
-									view.buffer,
-									view.byteOffset + dataOff + 4,
-									Math.min(chunkSize, totalSize),
-								);
-								rCtx.continuationBuffer.set(chunk, 0);
-								rCtx.continuationOffset = chunk.length;
-							}
-						}
-					} else {
-						// Subsequent continuation record: append raw data
-						const remaining = rCtx.continuationTotalSize - rCtx.continuationOffset;
-						const chunk = new Uint8Array(
-							view.buffer,
-							view.byteOffset + dataOff,
-							Math.min(recDataSize, remaining),
-						);
-						rCtx.continuationBuffer.set(chunk, rCtx.continuationOffset);
-						rCtx.continuationOffset += chunk.length;
-					}
-				} else if (rCtx.continuationBuffer !== null && objectId === rCtx.continuationObjectId) {
-					// Final record of a continuation sequence: append last chunk & parse
-					const remaining = rCtx.continuationTotalSize - rCtx.continuationOffset;
-					const chunk = new Uint8Array(
-						view.buffer,
-						view.byteOffset + dataOff,
-						Math.min(recDataSize, remaining),
-					);
-					rCtx.continuationBuffer.set(chunk, rCtx.continuationOffset);
-
-					// Parse the fully-assembled object
-					const completeView = new DataView(
-						rCtx.continuationBuffer.buffer,
-						rCtx.continuationBuffer.byteOffset,
-						rCtx.continuationBuffer.byteLength,
-					);
-					const assembledFlags = (rCtx.continuationObjectType << 8) | objectId;
+				// Continuation runs are reassembled by the same code the texture
+				// pre-decode pass uses, so a pre-decoded texture's cache key
+				// (cacheKey) matches here.
+				const assembled = feedEmfPlusObjectRecord(rCtx, view, recFlags, dataOff, recDataSize);
+				if (assembled) {
 					handleEmfPlusObjectRecord(
-						{ ...rCtx, view: completeView },
-						assembledFlags,
-						0,
-						rCtx.continuationTotalSize,
+						assembled.view === view ? rCtx : { ...rCtx, view: assembled.view },
+						assembled.flags,
+						assembled.dataOff,
+						assembled.dataSize,
+						assembled.cacheKey,
 					);
-
-					// Reset continuation state
-					rCtx.continuationBuffer = null;
-					rCtx.continuationObjectId = -1;
-					rCtx.continuationObjectType = 0;
-					rCtx.continuationTotalSize = 0;
-					rCtx.continuationOffset = 0;
-				} else {
-					// Normal non-continuation record
-					handleEmfPlusObjectRecord(rCtx, recFlags, dataOff, recDataSize);
 				}
 				break;
 			}
@@ -277,6 +205,16 @@ export function replayEmfPlusRecords(
 		state.saveIdMap = rCtx.saveIdMap;
 		state.clipRegion = rCtx.clipRegion ?? null;
 		state.clipSaveDepth = rCtx.clipSaveDepth;
+		state.continuation = {
+			continuationBuffer: rCtx.continuationBuffer,
+			continuationObjectId: rCtx.continuationObjectId,
+			continuationObjectType: rCtx.continuationObjectType,
+			continuationTotalSize: rCtx.continuationTotalSize,
+			continuationOffset: rCtx.continuationOffset,
+			continuationKey: rCtx.continuationKey,
+		};
+		state.interpolationMode = rCtx.interpolationMode;
+		state.pixelOffsetMode = rCtx.pixelOffsetMode;
 	}
 
 	ctx.setTransform(1, 0, 0, 1, 0, 0);

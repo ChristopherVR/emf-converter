@@ -6,10 +6,15 @@
  * `scripts/gdi-fixtures/generate.ps1` on Windows). Each case replays the
  * metafile at `dpiScale: 1` on the `@napi-rs/canvas` backend and bounds the
  * share of pixels whose largest channel differs by more than `tolerance`.
+ * The harness aligns the two images by device coordinate (an EMF's canvas
+ * starts at its header bounds, which a rotated shape can push above/left of
+ * the device origin), so a residual is a real rendering difference, never
+ * a registration offset.
  */
 import { describe, it, expect } from 'vitest';
 
 import { compareFixture } from './__fixtures__/gdi-parity-harness';
+import type { EmfConvertOptions } from './index';
 
 interface ParityCase {
 	name: string;
@@ -18,6 +23,8 @@ interface ParityCase {
 	tolerance: number;
 	/** Largest share of mismatching pixels allowed (0 = pixel-exact). */
 	maxMismatch: number;
+	/** Converter options on top of `dpiScale: 1`. */
+	options?: EmfConvertOptions;
 }
 
 const exact = (name: string): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch: 0 });
@@ -82,50 +89,55 @@ const LINEAR_TILE_CASES: ParityCase[] = [
  * Path-gradient boundary-shaped rendering (not a radial approximation, see
  * `pathGradientColorAt`) for an elliptical boundary, an explicit
  * rectangle with a custom blend curve, and an off-centre triangle, each
- * across every WrapMode. `clamp` (no tiling) is closest to exact; the tile
- * modes carry a real, measured residual at the tile seam and at the
- * boundary edge itself (Canvas's supersampled pattern raster vs GDI+'s
- * unsampled per-pixel fill), honestly reflected in the wider tolerances here
- * and in the README's Limitations section.
+ * across every WrapMode. Filled one device pixel at a time
+ * (`pathGradientSampler`, `emf-plus-exact-fill.ts`): each pixel's integer
+ * origin is folded into the boundary's tile per WrapMode (mirrored tiles
+ * one device pixel off a mathematical mirror, as GDI+ mirrors its raster
+ * texel-for-texel) instead of reading a supersampled, filtered
+ * `CanvasPattern`, and a curved boundary is flattened at GDI+'s own 0.25
+ * flatness. Measured mismatch: 0% for the rectangle in every mode, at most
+ * 0.013% for the Clamp cases, and 0.10% to 0.14% for the tiled ellipse and
+ * triangle (single pixels where the flattened boundary edge itself rounds
+ * the other way), down from 0.4% to 6.5% with the pattern.
  */
 const PATH_TILE_CASES: ParityCase[] = [
-	close('grad-path-ellipse-clamp', 0.008),
-	close('grad-path-ellipse-tile', 0.05),
-	close('grad-path-ellipse-flipx', 0.05),
-	close('grad-path-ellipse-flipy', 0.05),
-	close('grad-path-ellipse-flipxy', 0.05),
-	close('grad-path-rect-blend-clamp', 0.02),
-	close('grad-path-rect-blend-tile', 0.005),
-	close('grad-path-rect-blend-flipx', 0.04),
-	close('grad-path-rect-blend-flipy', 0.06),
-	close('grad-path-rect-blend-flipxy', 0.08),
-	close('grad-path-triangle-clamp', 0.008),
-	close('grad-path-triangle-tile', 0.03),
-	close('grad-path-triangle-flipx', 0.03),
-	close('grad-path-triangle-flipy', 0.03),
-	close('grad-path-triangle-flipxy', 0.03),
+	close('grad-path-ellipse-clamp', 0.001),
+	close('grad-path-ellipse-tile', 0.003),
+	close('grad-path-ellipse-flipx', 0.003),
+	close('grad-path-ellipse-flipy', 0.003),
+	close('grad-path-ellipse-flipxy', 0.003),
+	close('grad-path-rect-blend-clamp', 0.001),
+	close('grad-path-rect-blend-tile', 0.001),
+	close('grad-path-rect-blend-flipx', 0.001),
+	close('grad-path-rect-blend-flipy', 0.001),
+	close('grad-path-rect-blend-flipxy', 0.001),
+	close('grad-path-triangle-clamp', 0.001),
+	close('grad-path-triangle-tile', 0.003),
+	close('grad-path-triangle-flipx', 0.003),
+	close('grad-path-triangle-flipy', 0.003),
+	close('grad-path-triangle-flipxy', 0.003),
 ];
 
 /**
  * GDI DIB/monochrome pattern-brush FILLS (Rectangle/Ellipse/Polygon/
  * RoundRect), not blits: exercises `fillCurrentPathWithGdiPattern`
  * (`emf-gdi-shape-paint.ts`), which fills the shape's path exactly, one
- * device pixel at a time, using the same `sampleTile` sampler the exact
- * ROP3 blit evaluator uses. Not `exact()`/tolerance-0 because a non-hatch
- * pattern-fill vector shape's own boundary (an ellipse's curve, a rotated
- * polygon's diagonal edge, a rounded rectangle's corner arc) is still drawn
- * by Canvas's own anti-aliased `fill()`/`stroke()`, which does not exactly
- * match GDI's non-antialiased edge rasterisation; the pattern itself is
- * pixel-exact in the interior. `maxMismatch` is set from the ratio measured
- * against real GDI fixtures (see `src/__fixtures__/gdi/pattern-fill-*`),
- * with headroom.
+ * device pixel at a time, sampled at GDI's own pixel centres, using the
+ * same `sampleTile` sampler the exact ROP3 blit evaluator uses. The 1px pen
+ * outline is aligned to GDI's pixel grid (`gdiStrokeAlign`), so the
+ * axis-aligned cases are exact but for a handful of hairline corner pixels;
+ * the ellipse's and polygon's curved/diagonal outline is still Canvas's
+ * antialiased `stroke()` by default (see the `gdiAntialias: false` block
+ * below for the non-antialiased mode). `maxMismatch` is set from the ratio
+ * measured against real GDI fixtures (see
+ * `src/__fixtures__/gdi/pattern-fill-*`), with headroom.
  */
 const PATTERN_FILL_CASES: ParityCase[] = [
-	close('pattern-fill-rect-mono', 0.06),
-	close('pattern-fill-rect-color', 0.05),
-	close('pattern-fill-ellipse-color', 0.05),
-	close('pattern-fill-polygon-color', 0.05),
-	close('pattern-fill-roundrect-mono', 0.06),
+	close('pattern-fill-rect-mono', 0.005), // measured 0.02%
+	close('pattern-fill-rect-color', 0.002), // measured 0.00%
+	close('pattern-fill-ellipse-color', 0.04), // measured 3.08%
+	close('pattern-fill-polygon-color', 0.035), // measured 2.52%
+	close('pattern-fill-roundrect-mono', 0.01), // measured 0.62%
 ];
 
 /**
@@ -133,31 +145,38 @@ const PATTERN_FILL_CASES: ParityCase[] = [
  * plain-GDI vector drawing: Rectangle, Ellipse, Polygon, and RoundRect,
  * under a rotated or skewed (non-axis-aligned) transform. Exercises
  * `gmapPoint` (full-affine point mapping) and `gdiEllipseParams` (affine
- * ellipse decomposition via eigendecomposition) in `emf-gdi-coord.ts`.
- * `maxMismatch` reflects the same Canvas-anti-aliasing-vs-GDI residual as
- * the pattern-fill cases above, now compounded by the rotation itself
- * touching every boundary pixel (there are no axis-aligned edges left to
- * rasterise exactly); see `src/__fixtures__/gdi/rotate-*` and `skew-rect`.
+ * ellipse decomposition via eigendecomposition) in `emf-gdi-coord.ts`, and
+ * the rounded rectangle's logical-space Bezier corners mapped through the
+ * full affine (`appendRoundRectPath`, `emf-gdi-draw-shapes.ts`).
+ * `maxMismatch` is the Canvas-antialiasing-vs-GDI residual along the
+ * rotated edges, where every boundary pixel is partly covered (the
+ * `gdiAntialias: false` block below takes it to near zero); see
+ * `src/__fixtures__/gdi/rotate-*` and `skew-rect`.
+ * `rotate-rect-25deg` measured 9.79% before the harness aligned images by
+ * device coordinate: the shape reaches above the device origin, so its EMF
+ * bounds (and the replayed canvas) start at y = -7.
  */
 const ROTATION_CASES: ParityCase[] = [
-	close('rotate-rect-25deg', 0.15),
-	close('rotate-ellipse-40deg', 0.05),
-	close('rotate-polygon-15deg', 0.05),
-	close('rotate-roundrect-30deg', 0.06),
-	close('skew-rect', 0.05),
+	close('rotate-rect-25deg', 0.02), // measured 1.32%
+	close('rotate-ellipse-40deg', 0.025), // measured 1.91%
+	close('rotate-polygon-15deg', 0.03), // measured 2.07%
+	close('rotate-roundrect-30deg', 0.03), // measured 2.27%
+	close('skew-rect', 0.025), // measured 1.73%
 ];
 
 /**
  * Exact bitwise `SetROP2` combine (`emf-rop2-exact.ts`) for the AND/OR/XOR
  * family of modes (`R2_MASKPEN`, `R2_MERGEPEN`, `R2_XORPEN`, and their
  * `NOT*` variants), a single grid fixture covering all 16 `SetROP2` modes
- * as a filled + stroked Rectangle over a striped background. Not
- * `exact()`/tolerance-0: each cell's 1px pen stroke is still Canvas's own
- * anti-aliased line, not GDI's non-antialiased one; the bitwise-combined
- * fill interior is pixel-exact. See `src/__fixtures__/gdi/rop2-bitwise-grid`.
+ * as a filled + stroked Rectangle over a striped background. The bitwise
+ * modes combine per pixel with binary (non-antialiased) coverage, the pen
+ * border on GDI's pixel grid and the brush on the Rectangle's interior only
+ * (GDI never combines a border pixel twice); the residual is in the modes
+ * Canvas composites natively, whose fill edge stays antialiased by default.
+ * See `src/__fixtures__/gdi/rop2-bitwise-grid`.
  */
 const ROP2_EXACT_CASES: ParityCase[] = [
-	close('rop2-bitwise-grid', 0.15),
+	close('rop2-bitwise-grid', 0.005), // measured 0.23%
 	/**
 	 * Same 16 modes, but the shape is a `BeginPath`/`EndPath` bracket
 	 * (`MoveToEx`/`LineTo`/`CloseFigure`) filled+stroked via
@@ -169,7 +188,7 @@ const ROP2_EXACT_CASES: ParityCase[] = [
 	 * combine and used the `darken`/`lighten`/`difference` approximation
 	 * unconditionally (a documented residual, now closed).
 	 */
-	close('rop2-bitwise-path-bracket', 0.12),
+	close('rop2-bitwise-path-bracket', 0.03), // measured 2.11%
 ];
 
 /**
@@ -184,20 +203,50 @@ const ROP2_EXACT_CASES: ParityCase[] = [
  * (`rotate-text-25deg`).
  */
 const ROTATION_AFFINE_CASES: ParityCase[] = [
-	close('rotate-bitblt-25deg', 0.02),
-	close('rotate-text-25deg', 0.05),
+	close('rotate-bitblt-25deg', 0.01), // measured 0.67%
+	close('rotate-text-25deg', 0.035), // measured 2.39%
+];
+
+/**
+ * The same GDI vector fixtures with `gdiAntialias: false`: every fill and
+ * stroke rasterised one device pixel at a time, without antialiasing, on
+ * GDI's own pixel grid (fills point-sampled at GDI's pixel centres with its
+ * top-left rule, 1px strokes along pixel centres). What is left is
+ * single-pixel stepping differences along steep lines and curves (GDI's
+ * own line DDA picks a neighbouring pixel at some steps).
+ */
+const aliased = (name: string, maxMismatch: number): ParityCase => ({
+	...close(name, maxMismatch),
+	options: { gdiAntialias: false },
+});
+
+const ALIASED_CASES: ParityCase[] = [
+	aliased('pattern-fill-rect-mono', 0.001), // measured 0.00%
+	aliased('pattern-fill-rect-color', 0.001), // measured 0.00%
+	aliased('pattern-fill-ellipse-color', 0.003), // measured 0.14%
+	aliased('pattern-fill-polygon-color', 0.001), // measured 0.01%
+	aliased('pattern-fill-roundrect-mono', 0.001), // measured 0.00%
+	aliased('rotate-rect-25deg', 0.001), // measured 0.01%
+	aliased('rotate-ellipse-40deg', 0.002), // measured 0.10%
+	aliased('rotate-polygon-15deg', 0.001), // measured 0.03%
+	aliased('rotate-roundrect-30deg', 0.002), // measured 0.10%
+	aliased('skew-rect', 0.004), // measured 0.22%
+	aliased('rop2-bitwise-grid', 0.001), // measured 0.00%
+	aliased('rop2-bitwise-path-bracket', 0.003), // measured 0.18%
 ];
 
 /**
  * EMF+ `DrawImage` of a standalone Image object recorded as a real,
  * PNG-backed `Bitmap` (`BitmapDataType` = Compressed per [MS-EMFPLUS]
- * 2.1.1.2; see `parseEmfPlusImageObject`, `emf-plus-object-complex.ts`).
- * `close()` rather than `exact()`: DrawImage resamples the source bitmap
- * (a 2x and a non-integer scale here), and the two DrawImage calls are
- * verified to land in the right place with the right content, not to be
- * byte-identical to GDI+'s own resampler.
+ * 2.1.1.2; see `parseEmfPlusImageObject`, `emf-plus-object-complex.ts`),
+ * drawn at a 2x and a non-integer scale. Resampled per device pixel the way
+ * GDI+ does under its default InterpolationMode Bilinear and PixelOffsetMode
+ * None (`emf-plus-image-resample.ts`) rather than by Canvas `drawImage`:
+ * measured 0% mismatch (down from 17.8%). Not `exact()`: about 0.2% of the
+ * pixels still differ by a few levels of blend rounding (well inside the
+ * 8-level tolerance).
  */
-const IMAGE_DRAW_CASES: ParityCase[] = [close('image-draw-png', 0.22)];
+const IMAGE_DRAW_CASES: ParityCase[] = [close('image-draw-png', 0.001)];
 
 /**
  * An EMF+ TextureFill brush (`emf-plus-brush-parser.ts`) whose embedded
@@ -205,19 +254,17 @@ const IMAGE_DRAW_CASES: ParityCase[] = [close('image-draw-png', 0.22)];
  * serialises this as a compressed image (see the note in `GdiFixtures.cs`),
  * exercising the async pre-decode pass (`emf-plus-texture-predecode.ts`)
  * rather than the synchronous uncompressed-pixel-bitmap path the unit tests
- * already cover. `close()`, not `exact()`: the tile is painted through a
- * Canvas `CanvasPattern`, which every tested canvas backend filters at tile
- * seams regardless of `imageSmoothingEnabled` (the same pre-existing,
- * separately-documented residual as the GDI pattern-brush-fill cases
- * above); a coarse (8px) test block keeps this measurement about the
- * decode-and-paint path working, not that residual.
+ * already cover. Pixel-exact: the fill samples the texture per device pixel
+ * (`textureSampler`, `emf-plus-exact-fill.ts`) and composites it unfiltered,
+ * instead of painting through a `CanvasPattern` (which every tested canvas
+ * backend filters even at an identity matrix, 25% mismatch here).
  */
-const TEXTURE_FILL_CASES: ParityCase[] = [close('texture-fill-compressed', 0.28)];
+const TEXTURE_FILL_CASES: ParityCase[] = [exact('texture-fill-compressed')];
 
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -225,7 +272,7 @@ describe('GDI ground-truth parity', () => {
 
 	describe('linear gradient WrapMode tiling', () => {
 		it.each(LINEAR_TILE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -233,7 +280,7 @@ describe('GDI ground-truth parity', () => {
 
 	describe('path gradient boundary shape + WrapMode tiling', () => {
 		it.each(PATH_TILE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -241,7 +288,7 @@ describe('GDI ground-truth parity', () => {
 
 	describe('GDI pattern-brush fills (Rectangle/Ellipse/Polygon/RoundRect)', () => {
 		it.each(PATTERN_FILL_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -249,7 +296,7 @@ describe('GDI ground-truth parity', () => {
 
 	describe('GDI world-transform rotation/skew', () => {
 		it.each(ROTATION_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -257,7 +304,7 @@ describe('GDI ground-truth parity', () => {
 
 	describe('exact bitwise ROP2 modes', () => {
 		it.each(ROP2_EXACT_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -265,7 +312,15 @@ describe('GDI ground-truth parity', () => {
 
 	describe('rotated world-transform bitmap blits and text placement', () => {
 		it.each(ROTATION_AFFINE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('GDI vector shapes with gdiAntialias: false', () => {
+		it.each(ALIASED_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -273,7 +328,7 @@ describe('GDI ground-truth parity', () => {
 
 	describe('EMF+ DrawImage of a real PNG-backed Bitmap', () => {
 		it.each(IMAGE_DRAW_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
@@ -281,7 +336,7 @@ describe('GDI ground-truth parity', () => {
 
 	describe('EMF+ TextureFill brush with a compressed embedded image', () => {
 		it.each(TEXTURE_FILL_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
-			const diff = await compareFixture(c.name, c.ext, c.tolerance);
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});

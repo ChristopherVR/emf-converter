@@ -79,6 +79,30 @@ describe('clip shape builders', () => {
 // ---------------------------------------------------------------------------
 
 describe('translateClipShape / translateClipRegion', () => {
+	it('translates arcTo and ellipse commands', () => {
+		const shape: ClipShape = {
+			cmds: [
+				{ op: 'arcTo', x1: 1, y1: 2, x2: 3, y2: 4, radius: 5 },
+				{
+					op: 'ellipse',
+					cx: 1,
+					cy: 2,
+					rx: 3,
+					ry: 4,
+					rotation: 0,
+					startAngle: 0,
+					endAngle: 1,
+					ccw: false,
+				},
+			],
+			fillRule: 'evenodd',
+			simple: false,
+		};
+		const t = translateClipShape(shape, 10, 20);
+		expect(t.cmds[0]).toEqual({ op: 'arcTo', x1: 11, y1: 22, x2: 13, y2: 24, radius: 5 });
+		expect(t.cmds[1]).toMatchObject({ cx: 11, cy: 22, rx: 3, ry: 4 });
+	});
+
 	it('translates rect, line, and bezier commands', () => {
 		const shape: ClipShape = {
 			cmds: [
@@ -166,26 +190,58 @@ describe('combineClip', () => {
 		expect(res.region![0].fillRule).toBe('evenodd');
 	});
 
-	it('xor over a complex region falls back to exclude (not exact)', () => {
-		const res = combineClip([rect(), rect(1, 1)], rect(5, 5), 'xor');
-		expect(res.exact).toBe(false);
-		expect(res.region).toHaveLength(3);
-		expect(res.region![2].fillRule).toBe('evenodd');
+	it('xor over a complex region is resolved exactly into disjoint rects', () => {
+		// current = [0,10)^2 AND [1,11)^2 = [1,10)^2; XOR [5,15)^2
+		const res = combineClip([rect(), rect(1, 1)], rect(5, 5), 'xor', {
+			x: 0,
+			y: 0,
+			w: 20,
+			h: 20,
+		});
+		expect(res.exact).toBe(true);
+		expect(res.region).toHaveLength(1);
+		expect(res.region![0].simple).toBe(true);
+		expect(res.region![0].cmds).toEqual([
+			{ op: 'rect', x: 1, y: 1, w: 9, h: 4 },
+			{ op: 'rect', x: 1, y: 5, w: 4, h: 5 },
+			{ op: 'rect', x: 10, y: 5, w: 5, h: 5 },
+			{ op: 'rect', x: 5, y: 10, w: 10, h: 5 },
+		]);
 	});
 
 	it('union with no clip stays unclipped; union of simple shapes concatenates nonzero', () => {
 		expect(combineClip(null, rect(), 'union')).toEqual({ region: null, exact: true });
 		const res = combineClip([rect()], rect(20, 20), 'union');
+		expect(res.exact).toBe(true);
 		expect(res.region).toHaveLength(1);
 		expect(res.region![0].fillRule).toBe('nonzero');
 		expect(res.region![0].cmds).toHaveLength(2);
 	});
 
-	it('union over a complex region keeps the current clip (conservative)', () => {
+	it('union of opposite-wound figures is not concatenated (windings would cancel)', () => {
+		const res = combineClip([rect(0, 0, 10, 10)], rect(15, 5, -10, 10), 'union', {
+			x: 0,
+			y: 0,
+			w: 20,
+			h: 20,
+		});
+		expect(res.exact).toBe(true);
+		// [0,10)x[0,10) OR [5,15)x[5,15), as banded rects
+		expect(res.region![0].cmds).toEqual([
+			{ op: 'rect', x: 0, y: 0, w: 10, h: 5 },
+			{ op: 'rect', x: 0, y: 5, w: 15, h: 5 },
+			{ op: 'rect', x: 5, y: 10, w: 10, h: 5 },
+		]);
+	});
+
+	it('union over a complex region is resolved exactly', () => {
 		const current = [rect(), rect(1, 1)];
-		const res = combineClip(current, rect(50, 50), 'union');
-		expect(res.region).toBe(current);
-		expect(res.exact).toBe(false);
+		const res = combineClip(current, rect(50, 50), 'union', { x: 0, y: 0, w: 64, h: 64 });
+		expect(res.exact).toBe(true);
+		expect(res.region![0].cmds).toEqual([
+			{ op: 'rect', x: 1, y: 1, w: 9, h: 9 },
+			{ op: 'rect', x: 50, y: 50, w: 10, h: 10 },
+		]);
 	});
 
 	it('complement: shape minus current', () => {

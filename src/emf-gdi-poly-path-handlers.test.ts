@@ -28,6 +28,7 @@ import { defaultState } from './emf-types';
 function makeCtxStub(): Record<string, ReturnType<typeof vi.fn> | unknown> {
 	return {
 		save: vi.fn<() => void>(),
+		translate: vi.fn<() => void>(),
 		restore: vi.fn<() => void>(),
 		beginPath: vi.fn<() => void>(),
 		closePath: vi.fn<() => void>(),
@@ -284,7 +285,9 @@ describe('emf-gdi-poly-path-handlers', () => {
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
 				// moveTo should NOT be called from the data (since isTo = true)
 				// but beginPath is called
-				expect(ctx.bezierCurveTo).toHaveBeenCalledOnce();
+				// Once in the path, once in its half-pixel-aligned stroke rebuild.
+				expect(ctx.bezierCurveTo).toHaveBeenCalledTimes(2);
+				expect(ctx.moveTo).not.toHaveBeenCalled();
 			});
 		});
 
@@ -300,7 +303,8 @@ describe('emf-gdi-poly-path-handlers', () => {
 				handleEmfGdiPolyPathRecord(rCtx, EMR_POLYLINETO16, 0, dataOff, 28 + pts.length * 4);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
 				// All points should be lineTo (no moveTo since isTo = true)
-				expect(ctx.lineTo).toHaveBeenCalledTimes(2);
+				expect(ctx.lineTo).toHaveBeenCalledTimes(4); // path + aligned stroke rebuild
+				expect(ctx.moveTo).not.toHaveBeenCalled();
 			});
 		});
 
@@ -420,6 +424,42 @@ describe('emf-gdi-poly-path-handlers', () => {
 				const rCtx = makeRCtx();
 				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 8);
 				expect(rCtx.clipSaveDepth).toBe(1);
+			});
+
+			it('tracks the recorded path as the clip region with the polygon fill mode', () => {
+				const rCtx = makeRCtx();
+				rCtx.pathCmds = [{ op: 'rect', x: 10, y: 10, w: 20, h: 20 }];
+				rCtx.state.polyFillMode = 1; // ALTERNATE
+				rCtx.view.setUint32(8, 5, true); // RGN_COPY
+				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);
+				expect(rCtx.clipRegion).toEqual([
+					{ cmds: [{ op: 'rect', x: 10, y: 10, w: 20, h: 20 }], fillRule: 'evenodd', simple: false },
+				]);
+			});
+
+			it('combines a path clip exactly with RGN_OR over an existing multi-shape clip', () => {
+				const rCtx = makeRCtx();
+				rCtx.clipRegion = [
+					{ cmds: [{ op: 'rect', x: 0, y: 0, w: 50, h: 50 }], fillRule: 'nonzero', simple: true },
+					{ cmds: [{ op: 'rect', x: 10, y: 10, w: 50, h: 50 }], fillRule: 'nonzero', simple: true },
+				];
+				rCtx.pathCmds = [{ op: 'rect', x: 70, y: 0, w: 10, h: 10 }];
+				rCtx.state.polyFillMode = 2; // WINDING
+				rCtx.view.setUint32(8, 2, true); // RGN_OR
+				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);
+				expect(rCtx.clipRegion).toHaveLength(1);
+				expect(rCtx.clipRegion![0].cmds).toEqual([
+					{ op: 'rect', x: 70, y: 0, w: 10, h: 10 },
+					{ op: 'rect', x: 10, y: 10, w: 40, h: 40 },
+				]);
+			});
+
+			it('ignores an unknown RegionMode', () => {
+				const rCtx = makeRCtx();
+				rCtx.view.setUint32(8, 9, true);
+				handleEmfGdiPolyPathRecord(rCtx, EMR_SELECTCLIPPATH, 0, 8, 12);
+				expect(rCtx.clipSaveDepth).toBe(0);
+				expect(rCtx.clipRegion).toBeUndefined();
 			});
 		});
 

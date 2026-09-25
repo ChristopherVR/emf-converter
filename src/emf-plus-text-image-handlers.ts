@@ -15,13 +15,59 @@ import {
 	EMFPLUS_DRAWIMAGEPOINTS,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
+import { mulMatrix } from './emf-plus-brush-gradient';
+import { tryFillPlusShapeExact } from './emf-plus-exact-fill';
+import { isHalfPixelOffset, resampleKernelFor } from './emf-plus-image-resample';
 import { replayEmfPlusPath } from './emf-plus-path';
 import {
 	resolveBrushPaint,
 	applyPlusWorldTransform,
 	getPageUnitMultiplier,
+	plusWorldMatrix,
 } from './emf-plus-state-handlers';
-import type { EmfPlusReplayCtx, TransformMatrix } from './emf-types';
+import { isSvgContext } from './svg-context';
+import type { DeferredImageResample, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
+
+/** GDI+ `UnitPixel` (MS-EMFPLUS 2.1.1.33): the only source-rectangle unit resampled per pixel. */
+const UNIT_PIXEL = 2;
+
+/**
+ * Builds the GDI+-matching resampling descriptor for a raster
+ * `DrawImage`/`DrawImagePoints` (see `emf-plus-image-resample.ts`), from the
+ * record's source rectangle (at `dataOff + 4`: SrcUnit, then a RectF) and
+ * `toWorld`, the matrix taking source pixels to world coordinates. Returns
+ * `undefined` (the draw keeps Canvas `drawImage` scaling) for a metafile
+ * image, a non-pixel source unit, a degenerate source rectangle, or an
+ * `InterpolationMode` that is not modelled.
+ */
+function imageResampleSpec(
+	rCtx: EmfPlusReplayCtx,
+	dataOff: number,
+	isMetafile: boolean,
+	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
+): DeferredImageResample | undefined {
+	const { view } = rCtx;
+	const kernel = resampleKernelFor(rCtx.interpolationMode ?? 0);
+	if (isMetafile || !kernel || view.getUint32(dataOff + 4, true) !== UNIT_PIXEL) {
+		return undefined;
+	}
+	const srcX = view.getFloat32(dataOff + 8, true);
+	const srcY = view.getFloat32(dataOff + 12, true);
+	const srcW = view.getFloat32(dataOff + 16, true);
+	const srcH = view.getFloat32(dataOff + 20, true);
+	if (!(srcW > 0 && srcH > 0) || !Number.isFinite(srcX + srcY + srcW + srcH)) {
+		return undefined;
+	}
+	return {
+		srcX,
+		srcY,
+		srcW,
+		srcH,
+		toDevice: mulMatrix(plusWorldMatrix(rCtx), toWorld(srcX, srcY, srcW, srcH)),
+		kernel,
+		halfPixelOffset: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0),
+	};
+}
 
 // ---------------------------------------------------------------------------
 // Main handler
@@ -44,10 +90,21 @@ export function handleEmfPlusTextImageRecord(
 				const pathId = recFlags & 0xff;
 				const pathObj = objectTable.get(pathId);
 				if (pathObj && pathObj.kind === 'plus-path') {
-					ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-					applyPlusWorldTransform(rCtx);
-					replayEmfPlusPath(ctx, pathObj);
-					ctx.fill();
+					// replayEmfPlusPath issues its own beginPath(), harmlessly
+					// repeating the one tryFillPlusShapeExact has already issued.
+					const exact = tryFillPlusShapeExact(
+						rCtx,
+						recFlags,
+						brushVal,
+						(c) => replayEmfPlusPath(c, pathObj),
+						pathObj.points,
+					);
+					if (!exact) {
+						ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
+						applyPlusWorldTransform(rCtx);
+						replayEmfPlusPath(ctx, pathObj);
+						ctx.fill();
+					}
 				}
 			}
 			return true;
@@ -211,6 +268,15 @@ export function handleEmfPlusTextImageRecord(
 							wt[5] * s,
 						] as TransformMatrix,
 						isMetafile: imgObj.type === 2,
+						svgSlot: isSvgContext(rCtx.ctx) ? rCtx.ctx.reserveSlot() : undefined,
+						resample: imageResampleSpec(rCtx, dataOff, imgObj.type === 2, (sx, sy, sw, sh) => [
+							dw / sw,
+							0,
+							0,
+							dh / sh,
+							dx - (sx * dw) / sw,
+							dy - (sy * dh) / sh,
+						]),
 					});
 					emfLog(`DrawImage: queued deferred image (total=${rCtx.deferredImages.length})`);
 				} else {
@@ -276,6 +342,17 @@ export function handleEmfPlusTextImageRecord(
 							wt2[5] * s2,
 						] as TransformMatrix,
 						isMetafile: imgObj.type === 2,
+						svgSlot: isSvgContext(rCtx.ctx) ? rCtx.ctx.reserveSlot() : undefined,
+						// The three points are the destinations of the source
+						// rectangle's top-left, top-right and bottom-left corners,
+						// so any rotation or shear is carried exactly here.
+						resample: imageResampleSpec(rCtx, dataOff, imgObj.type === 2, (sx, sy, sw, sh) => {
+							const a = (p2x - p1x) / sw;
+							const b = (p2y - p1y) / sw;
+							const c = (p3x - p1x) / sh;
+							const d = (p3y - p1y) / sh;
+							return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
+						}),
 					});
 					emfLog(`DrawImagePoints: queued deferred image (total=${rCtx.deferredImages.length})`);
 				} else {

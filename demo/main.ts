@@ -2,8 +2,9 @@
  * Interactive in-browser demo for emf-converter.
  *
  * Loads an EMF or WMF file the user picks (or drops), reads it as an
- * ArrayBuffer, dispatches to the matching converter based on extension /
- * magic bytes, and renders the resulting PNG data URL into an <img>.
+ * ArrayBuffer, converts it to the chosen output (PNG, or SVG), and renders
+ * the resulting data URL into an <img>. SVG output can also be downloaded or
+ * copied as a ready-to-paste TSX component.
  *
  * The library is imported straight from source so `bun build` bundles a
  * single browser-ready `main.js` for GitHub Pages.
@@ -11,7 +12,7 @@
  * @module demo/main
  */
 
-import { convertMetafileToDataUrl } from '../src/index';
+import { convertMetafileToDataUrl, convertMetafileToSvgTree, svgTreeToDataUrl, svgTreeToJsx } from '../src/index';
 
 // ---------------------------------------------------------------------------
 // Element lookup helpers
@@ -37,6 +38,9 @@ const metaSize = requireEl<HTMLSpanElement>('meta-size');
 const metaTime = requireEl<HTMLSpanElement>('meta-time');
 const metaUrlLen = requireEl<HTMLSpanElement>('meta-url-len');
 const metaPanel = requireEl<HTMLDivElement>('meta-panel');
+const outputActions = requireEl<HTMLDivElement>('output-actions');
+const downloadLink = requireEl<HTMLAnchorElement>('download-link');
+const copyJsxButton = requireEl<HTMLButtonElement>('copy-jsx');
 
 // ---------------------------------------------------------------------------
 // State
@@ -44,6 +48,22 @@ const metaPanel = requireEl<HTMLDivElement>('meta-panel');
 
 /** The currently selected file, retained so the Convert button can re-run. */
 let selectedFile: File | null = null;
+
+/** TSX source for the last SVG conversion, for the copy button. */
+let lastJsx: string | null = null;
+
+/** The output format picked in the radio group. */
+function selectedFormat(): 'png' | 'svg' {
+	const checked = document.querySelector<HTMLInputElement>('input[name="format"]:checked');
+	return checked?.value === 'svg' ? 'svg' : 'png';
+}
+
+/** A PascalCase component name derived from the file name. */
+function componentNameFor(fileName: string): string {
+	const base = fileName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9]+(.)?/g, (_m, c: string | undefined) => (c ?? '').toUpperCase());
+	const name = base.charAt(0).toUpperCase() + base.slice(1);
+	return /^[A-Z]/.test(name) ? name : `Metafile${name}`;
+}
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -96,6 +116,7 @@ function showError(message: string): void {
 	outputImage.hidden = true;
 	outputPlaceholder.hidden = false;
 	metaPanel.hidden = true;
+	outputActions.hidden = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,8 +137,17 @@ async function convertSelectedFile(): Promise<void> {
 		const buffer = await file.arrayBuffer();
 		const kind = sniffKindForDisplay(buffer, file.name);
 
+		const format = selectedFormat();
 		const start = performance.now();
-		const dataUrl = await convertMetafileToDataUrl(buffer);
+		let dataUrl: string | null;
+		lastJsx = null;
+		if (format === 'svg') {
+			const tree = await convertMetafileToSvgTree(buffer);
+			dataUrl = tree ? svgTreeToDataUrl(tree) : null;
+			lastJsx = tree ? svgTreeToJsx(tree, { componentName: componentNameFor(file.name) }) : null;
+		} else {
+			dataUrl = await convertMetafileToDataUrl(buffer);
+		}
 		const elapsed = performance.now() - start;
 
 		if (dataUrl === null) {
@@ -137,7 +167,13 @@ async function convertSelectedFile(): Promise<void> {
 		metaUrlLen.textContent = `${dataUrl.length.toLocaleString()} chars`;
 		metaPanel.hidden = false;
 
-		setStatus(`Converted as ${kind.toUpperCase()} in ${elapsed.toFixed(1)} ms.`, 'ok');
+		downloadLink.href = dataUrl;
+		downloadLink.download = `${file.name.replace(/\.[^.]+$/, '')}.${format}`;
+		downloadLink.textContent = `Download .${format}`;
+		copyJsxButton.hidden = lastJsx === null;
+		outputActions.hidden = false;
+
+		setStatus(`Converted ${kind.toUpperCase()} to ${format.toUpperCase()} in ${elapsed.toFixed(1)} ms.`, 'ok');
 	} catch (err) {
 		const detail = err instanceof Error ? err.message : String(err);
 		showError(`Conversion failed: ${detail}`);
@@ -166,6 +202,24 @@ fileInput.addEventListener('change', () => {
 
 convertButton.addEventListener('click', () => {
 	void convertSelectedFile();
+});
+
+for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="format"]')) {
+	radio.addEventListener('change', () => {
+		if (selectedFile !== null) {
+			void convertSelectedFile();
+		}
+	});
+}
+
+copyJsxButton.addEventListener('click', () => {
+	if (lastJsx === null) {
+		return;
+	}
+	navigator.clipboard.writeText(lastJsx).then(
+		() => setStatus('TSX component copied to the clipboard.', 'ok'),
+		() => setStatus('Clipboard access was denied by the browser.', 'error'),
+	);
 });
 
 // Drag-and-drop onto the label drop zone.

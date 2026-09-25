@@ -28,11 +28,18 @@ import type { EmfPlusReplayCtx, EmfPlusRegionNode } from './emf-types';
 // Main dispatcher
 // ---------------------------------------------------------------------------
 
+/**
+ * Parses one complete EMF+ object (already reassembled from any
+ * continuation run, see `emf-plus-continuation.ts`) into the object table.
+ * `cacheKey` identifies the object instance for the pre-decoded texture
+ * cache; it defaults to `dataOff`, the key of a single-record object.
+ */
 export function handleEmfPlusObjectRecord(
 	rCtx: EmfPlusReplayCtx,
 	recFlags: number,
 	dataOff: number,
 	recDataSize: number,
+	cacheKey: number = dataOff,
 ): void {
 	const { view, objectTable } = rCtx;
 	const objectId = recFlags & 0xff;
@@ -43,7 +50,7 @@ export function handleEmfPlusObjectRecord(
 		// Brush
 		// ---------------------------------------------------------------
 		case EMFPLUS_OBJECTTYPE_BRUSH: {
-			const brush = parseEmfPlusBrushObject(view, dataOff, recDataSize, rCtx.textureCache);
+			const brush = parseEmfPlusBrushObject(view, dataOff, recDataSize, rCtx.textureCache, cacheKey);
 			if (brush) {
 				objectTable.set(objectId, brush);
 			}

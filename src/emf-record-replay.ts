@@ -119,6 +119,7 @@ export function replayEmfRecords(
 		sx,
 		sy,
 		pathCmds: [],
+		gdiAntialias: replayOptions.gdiAntialias,
 	};
 
 	let offset = 0;

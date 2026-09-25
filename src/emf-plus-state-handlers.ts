@@ -12,6 +12,7 @@ import {
 	type ClipCombineOp,
 	type ClipCombineResult,
 	type ClipPathCmd,
+	type ClipDomain,
 	type ClipRegion,
 	type ClipShape,
 } from './emf-clip-region';
@@ -234,13 +235,16 @@ const MAX_REGION_FLATTEN_DEPTH = 64;
 /**
  * Flatten an EMF+ region node tree into a tracked clip region (a list of
  * intersecting shapes, or `null` for the infinite region). Boolean combine
- * nodes are resolved through {@link combineClipRegions}; combinations that
- * cannot be expressed exactly set `exact: false`.
+ * nodes are resolved exactly through {@link combineClipRegions}, which
+ * scan-converts over `domain` (the canvas) when the vector form cannot hold
+ * the result. `exact` is false only when no domain is given and an unbounded
+ * result had to be cut to the geometry's bounding box.
  */
 export function flattenRegionNode(
 	node: EmfPlusRegionNode,
 	m: TransformMatrix,
 	depth: number = 0,
+	domain?: ClipDomain,
 ): ClipCombineResult {
 	if (depth > MAX_REGION_FLATTEN_DEPTH) {
 		emfWarn(`flattenRegionNode: depth limit (${MAX_REGION_FLATTEN_DEPTH}) exceeded`);
@@ -256,10 +260,10 @@ export function flattenRegionNode(
 		case 'empty':
 			return { region: [emptyClipShape()], exact: true };
 		case 'combine': {
-			const left = flattenRegionNode(node.left, m, depth + 1);
-			const right = flattenRegionNode(node.right, m, depth + 1);
+			const left = flattenRegionNode(node.left, m, depth + 1, domain);
+			const right = flattenRegionNode(node.right, m, depth + 1, domain);
 			const op = REGION_NODE_OPS[node.combineMode] ?? 'intersect';
-			const combined = combineClipRegions(left.region, right.region, op);
+			const combined = combineClipRegions(left.region, right.region, op, domain);
 			return { region: combined.region, exact: combined.exact && left.exact && right.exact };
 		}
 	}
@@ -274,6 +278,17 @@ const PLUS_COMBINE_OPS: Record<number, ClipCombineOp> = {
 	4: 'exclude',
 	5: 'complement',
 };
+
+/**
+ * The device-pixel domain for exact scanline clip combination: the canvas,
+ * when the replay knows its size; otherwise derived from the geometry.
+ */
+function plusClipDomain(rCtx: EmfPlusReplayCtx): ClipDomain | undefined {
+	if (rCtx.canvasW === undefined || rCtx.canvasH === undefined) {
+		return undefined;
+	}
+	return { x: 0, y: 0, w: rCtx.canvasW, h: rCtx.canvasH };
+}
 
 /** Rebuild the canvas clip from the tracked EMF+ clip region. */
 function reapplyPlusClip(rCtx: EmfPlusReplayCtx): void {
@@ -294,9 +309,14 @@ function applyPlusClipRegion(
 	if (!op) {
 		emfWarn(`${opName}: unknown CombineMode ${combineMode}, falling back to Intersect`);
 	}
-	const res = combineClipRegions(rCtx.clipRegion ?? null, incoming, op ?? 'intersect');
+	const res = combineClipRegions(
+		rCtx.clipRegion ?? null,
+		incoming,
+		op ?? 'intersect',
+		plusClipDomain(rCtx),
+	);
 	if (!res.exact) {
-		emfWarn(`${opName}: CombineMode ${combineMode} approximated (region too complex)`);
+		emfWarn(`${opName}: CombineMode ${combineMode} approximated (no canvas domain for an unbounded result)`);
 	}
 	rCtx.clipRegion = res.region;
 	reapplyPlusClip(rCtx);
@@ -449,9 +469,14 @@ export function handleEmfPlusStateRecord(
 			const combineMode = (recFlags >> 8) & 0x0f;
 			const regionObj = rCtx.objectTable.get(regionId);
 			if (regionObj && regionObj.kind === 'plus-region' && regionObj.nodes.length > 0) {
-				const flattened = flattenRegionNode(regionObj.nodes[0], plusDeviceMatrix(rCtx));
+				const flattened = flattenRegionNode(
+					regionObj.nodes[0],
+					plusDeviceMatrix(rCtx),
+					0,
+					plusClipDomain(rCtx),
+				);
 				if (!flattened.exact) {
-					emfWarn('SetClipRegion: region tree approximated (unsupported boolean combination)');
+					emfWarn('SetClipRegion: region tree approximated (no canvas domain for an unbounded result)');
 				}
 				applyPlusClipRegion(rCtx, flattened.region, combineMode, 'SetClipRegion');
 			}
@@ -527,11 +552,18 @@ export function handleEmfPlusStateRecord(
 			return true;
 		}
 
+		// ---- image resampling hints (see emf-plus-image-resample.ts) ----
+		case EMFPLUS_SETINTERPOLATIONMODE:
+			rCtx.interpolationMode = recFlags & 0xff;
+			return true;
+
+		case EMFPLUS_SETPIXELOFFSETMODE:
+			rCtx.pixelOffsetMode = recFlags & 0xff;
+			return true;
+
 		// ---- rendering hints (accepted, ignored) ----
 		case EMFPLUS_SETANTIALIASMODE:
 		case EMFPLUS_SETTEXTRENDERINGHINT:
-		case EMFPLUS_SETINTERPOLATIONMODE:
-		case EMFPLUS_SETPIXELOFFSETMODE:
 		case EMFPLUS_SETCOMPOSITINGQUALITY:
 			return true;
 

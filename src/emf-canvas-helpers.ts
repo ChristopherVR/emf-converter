@@ -25,6 +25,7 @@ import {
 	R2_XORPEN,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
+import { SoftwareRasterCanvas } from './software-raster';
 import type { AnyCanvas, CanvasContext, DrawState, GdiObject } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -101,19 +102,21 @@ export function isNodeCanvasBackendReady(): boolean {
  */
 export const DEFAULT_DPI_SCALE = 1;
 
-export function createCanvas(
+/**
+ * The output surface size for a metafile of logical size `width`×`height`:
+ * scaled by `dpiScale` (clamped to 1..4), fitted within `maxWidth`/
+ * `maxHeight` (aspect ratio preserved), then hard-capped at
+ * `maxCanvasDimension`. Shared by the raster canvas and the SVG backend so
+ * both produce the same coordinate space.
+ */
+export function computeSurfaceSize(
 	width: number,
 	height: number,
 	maxWidth?: number,
 	maxHeight?: number,
 	dpiScale: number = DEFAULT_DPI_SCALE,
 	maxCanvasDimension: number = MAX_CANVAS_DIMENSION,
-): {
-	canvas: AnyCanvas;
-	ctx: CanvasContext;
-	scaleX: number;
-	scaleY: number;
-} | null {
+): { w: number; h: number; scaleX: number; scaleY: number } {
 	const effectiveScale = Math.max(1, Math.min(dpiScale, 4));
 	let w = Math.round(width * effectiveScale);
 	let h = Math.round(height * effectiveScale);
@@ -143,8 +146,23 @@ export function createCanvas(
 			`[emf-converter] Canvas size clamped from ${w}×${h} to ${clampedW}×${clampedH}. Output may lose detail.`,
 		);
 	}
-	w = clampedW;
-	h = clampedH;
+	return { w: clampedW, h: clampedH, scaleX, scaleY };
+}
+
+export function createCanvas(
+	width: number,
+	height: number,
+	maxWidth?: number,
+	maxHeight?: number,
+	dpiScale: number = DEFAULT_DPI_SCALE,
+	maxCanvasDimension: number = MAX_CANVAS_DIMENSION,
+): {
+	canvas: AnyCanvas;
+	ctx: CanvasContext;
+	scaleX: number;
+	scaleY: number;
+} | null {
+	const { w, h, scaleX, scaleY } = computeSurfaceSize(width, height, maxWidth, maxHeight, dpiScale, maxCanvasDimension);
 
 	try {
 		if (typeof OffscreenCanvas !== 'undefined') {
@@ -236,7 +254,12 @@ export function createTempCanvas(
 		}
 		return { canvas, ctx };
 	}
-	return null;
+	// No canvas implementation at all: only the SVG backend gets this far
+	// (the raster pipeline already failed to create its main canvas). A pure
+	// JS raster covers the scratch-surface bitmap work it needs; see
+	// `software-raster.ts`.
+	const soft = new SoftwareRasterCanvas(width, height);
+	return { canvas: soft as unknown as AnyCanvas, ctx: soft.ctx as unknown as CanvasContext };
 }
 
 // ---------------------------------------------------------------------------
@@ -761,8 +784,8 @@ export function canvasCreatePattern(
  * Constructs an `ImageData` in whichever backend is active: the global DOM /
  * worker constructor when present, otherwise `@napi-rs/canvas`'s own class
  * (plain Node.js has no global `ImageData`, so every decoded DIB used to throw
- * there and fail the whole conversion). Throws only when neither exists,
- * which matches the old behaviour in that environment.
+ * there and fail the whole conversion). When neither exists, a plain
+ * `{ data, width, height }` object is returned.
  */
 export function createImageDataCompat(data: Uint8ClampedArray, width: number, height: number): ImageData {
 	if (typeof ImageData !== 'undefined') {
@@ -776,5 +799,7 @@ export function createImageDataCompat(data: Uint8ClampedArray, width: number, he
 		) => ImageData;
 		return new Ctor(data, width, height);
 	}
-	throw new ReferenceError('ImageData is not defined');
+	// No canvas implementation (SVG output in plain Node.js): a structurally
+	// identical plain object serves every consumer in this package.
+	return { data, width, height, colorSpace: 'srgb' } as unknown as ImageData;
 }

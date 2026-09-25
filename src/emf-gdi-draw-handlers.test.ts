@@ -11,6 +11,7 @@ import { defaultState } from './emf-types';
 function makeCtxStub(): Record<string, unknown> {
 	return {
 		save: vi.fn<() => void>(),
+		translate: vi.fn<() => void>(),
 		restore: vi.fn<() => void>(),
 		beginPath: vi.fn<() => void>(),
 		closePath: vi.fn<() => void>(),

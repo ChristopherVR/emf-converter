@@ -274,6 +274,8 @@ export interface ReplayOptions {
 	 * brush's fill uses the real image instead of falling back to black.
 	 */
 	textureCache?: EmfPlusTextureCache;
+	/** `EmfConvertOptions.gdiAntialias`: `false` rasterises GDI vector shapes without antialiasing. */
+	gdiAntialias?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +422,7 @@ export interface EmfPlusDecodedTexture {
 	rgba: Uint8ClampedArray;
 }
 
-/** Maps an `EMFPLUS_OBJECT` record's `dataOff` to its pre-decoded texture image. */
+/** Maps a brush object's cache key (see {@link EmfPlusReplayCtx.textureCache}) to its pre-decoded texture image. */
 export type EmfPlusTextureCache = Map<number, EmfPlusDecodedTexture>;
 
 /** An EMF+ (GDI+) brush object (solid colour, hatch, gradient, or texture). */
@@ -565,6 +567,35 @@ export interface DeferredImageDraw {
 	transform: TransformMatrix;
 	/** When true, imageData is an embedded EMF/WMF metafile that must be recursively converted. */
 	isMetafile?: boolean;
+	/**
+	 * SVG output only: the placeholder reserved at the draw's position in the
+	 * record stream (see `SvgContext.reserveSlot`), so the image keeps its
+	 * recorded z-order and clip once decoded.
+	 */
+	svgSlot?: unknown;
+	/**
+	 * Present for an EMF+ raster `DrawImage`/`DrawImagePoints` whose
+	 * `InterpolationMode` is modelled by `emf-plus-image-resample.ts`: the
+	 * image is then resampled per device pixel the way GDI+ does, instead of
+	 * being scaled by Canvas `drawImage` into `dx`/`dy`/`dw`/`dh` (which
+	 * remain as the fallback).
+	 */
+	resample?: DeferredImageResample;
+}
+
+/** How to resample a deferred EMF+ image draw the way GDI+ does (see {@link DeferredImageDraw.resample}). */
+export interface DeferredImageResample {
+	/** Source rectangle, in image pixels. */
+	srcX: number;
+	srcY: number;
+	srcW: number;
+	srcH: number;
+	/** Maps a source-pixel coordinate to a device-pixel coordinate. */
+	toDevice: TransformMatrix;
+	/** Resampling kernel, from the active GDI+ `InterpolationMode`. */
+	kernel: 'nearest' | 'bilinear';
+	/** True under `PixelOffsetMode` Half/HighQuality (pixel centres), false under None/Default. */
+	halfPixelOffset: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +623,24 @@ export interface EmfPlusState {
 	clipRegion: ClipRegion;
 	/** Number of canvas save() brackets currently open for clip management. */
 	clipSaveDepth: number;
+	/**
+	 * An `EMFPLUS_OBJECT` continuation run still being reassembled when the
+	 * previous `EMR_COMMENT` batch ended (runs routinely span several
+	 * comments); see `emf-plus-continuation.ts`.
+	 */
+	continuation?: Pick<
+		EmfPlusReplayCtx,
+		| 'continuationBuffer'
+		| 'continuationObjectId'
+		| 'continuationObjectType'
+		| 'continuationTotalSize'
+		| 'continuationOffset'
+		| 'continuationKey'
+	>;
+	/** Active GDI+ `InterpolationMode` (`EmfPlusSetInterpolationMode`; 0 = Default when absent). */
+	interpolationMode?: number;
+	/** Active GDI+ `PixelOffsetMode` (`EmfPlusSetPixelOffsetMode`; 0 = Default when absent). */
+	pixelOffsetMode?: number;
 }
 
 /**
@@ -719,8 +768,21 @@ export interface EmfPlusReplayCtx {
 	continuationTotalSize: number;
 	/** Byte offset into continuationBuffer for the next chunk. */
 	continuationOffset: number;
+	/**
+	 * `dataOff` of the first record of the continuation run in progress: the
+	 * run's texture-cache key (see `emf-plus-continuation.ts`).
+	 */
+	continuationKey?: number;
 	/** DPI scale factor applied to the canvas (1 = normal, 2 = HiDPI). */
 	dpiScale: number;
+	/**
+	 * Canvas size in device pixels: the finite domain over which clip
+	 * combinations that need scan conversion are evaluated. When absent the
+	 * domain is derived from the clip geometry.
+	 */
+	canvasW?: number;
+	/** Canvas height in device pixels (see {@link canvasW}). */
+	canvasH?: number;
 	/** Optional lowercased-face → CSS-family overrides for text rendering. */
 	fontFamilyMap?: Record<string, string>;
 	/**
@@ -730,15 +792,21 @@ export interface EmfPlusReplayCtx {
 	 */
 	clipRegion?: ClipRegion;
 	/**
-	 * Pre-decoded EMF+ TextureFill brush images, keyed by the enclosing
-	 * `EMFPLUS_OBJECT` record's `dataOff` (stable across the async pre-scan
-	 * pass and this synchronous replay pass, since both walk the same raw
-	 * buffer at the same offsets for a non-continuation object record). Set
-	 * once by {@link preDecodeEmfPlusTextures} before replay begins; consulted
-	 * by `parseEmfPlusBrushObject` when a TextureFill brush's embedded image
-	 * is a compressed (PNG/JPEG) bitmap the synchronous parse cannot decode.
+	 * Pre-decoded EMF+ TextureFill brush images, keyed by the brush object's
+	 * `cacheKey` (`emf-plus-continuation.ts`): the `dataOff` of its
+	 * `EMFPLUS_OBJECT` record, or of the first record of a continuation run.
+	 * Stable across the async pre-scan pass and this synchronous replay pass,
+	 * since both walk the same raw buffer and reassemble continuation runs
+	 * with the same code. Set once by {@link preDecodeEmfPlusTextures} before
+	 * replay begins; consulted by `parseEmfPlusBrushObject` when a
+	 * TextureFill brush's embedded image is a compressed (PNG/JPEG) bitmap
+	 * the synchronous parse cannot decode.
 	 */
 	textureCache?: EmfPlusTextureCache;
+	/** Active GDI+ `InterpolationMode` (0 = Default when absent); see {@link EmfPlusState.interpolationMode}. */
+	interpolationMode?: number;
+	/** Active GDI+ `PixelOffsetMode` (0 = Default when absent); see {@link EmfPlusState.pixelOffsetMode}. */
+	pixelOffsetMode?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -786,14 +854,8 @@ export interface EmfGdiReplayCtx {
 	 * operations can rebuild the clip state.
 	 */
 	clipRegion?: ClipRegion;
-	/**
-	 * True when the active canvas clip contains a component this tracker
-	 * cannot represent (e.g. EMR_SELECTCLIPPATH clips with the live ctx path).
-	 * While set, region ops that require rebuilding fall back conservatively.
-	 */
-	clipUntracked?: boolean;
 	/** Saved clip regions parallel to {@link stateStack} (EMR_SAVEDC). */
-	clipStack?: Array<{ region: ClipRegion; untracked: boolean }>;
+	clipStack?: Array<{ region: ClipRegion }>;
 	/** Logical bounding rectangle from the EMF header. */
 	bounds: EmfBounds;
 	/** Output canvas width in pixels. */
@@ -811,4 +873,11 @@ export interface EmfGdiReplayCtx {
 	 * canvas for the exact bitwise ROP2 combine. See `emf-gdi-path-record.ts`.
 	 */
 	pathCmds: import('./emf-gdi-path-record').GdiPathCmd[];
+	/**
+	 * `false` renders GDI vector fills and strokes without antialiasing, one
+	 * device pixel at a time, the way GDI itself rasterises them (see
+	 * `emf-gdi-shape-paint.ts`). Omitted/`true` keeps Canvas's antialiased
+	 * `fill()`/`stroke()`. Threaded from {@link ReplayOptions.gdiAntialias}.
+	 */
+	gdiAntialias?: boolean;
 }
