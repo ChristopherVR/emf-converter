@@ -175,14 +175,20 @@ export function scaleViewportExt(m: WmfMapping, xNum: number, xDen: number, yNum
 /**
  * Hands mapping `m` to the shared GDI replay context: its window/viewport
  * mapping (always active) with the viewport scaled from playback-device
- * pixels to canvas pixels (`kx`, `ky`: canvas pixels per device pixel).
+ * pixels to canvas pixels (`kx`, `ky`: canvas pixels per device pixel),
+ * mirrored across a device `mirrorWidth` pixels wide under `LAYOUT_RTL`.
  */
-export function applyWmfMapping(rCtx: EmfGdiReplayCtx, m: WmfMapping, kx: number, ky: number): void {
+export function applyWmfMapping(rCtx: EmfGdiReplayCtx, m: WmfMapping, kx: number, ky: number, mirrorWidth = 0): void {
 	rCtx.useMappingMode = true;
 	rCtx.windowOrg = { x: m.winOrg.x, y: m.winOrg.y };
 	rCtx.windowExt = { cx: m.winExt.cx || 1, cy: m.winExt.cy || 1 };
 	rCtx.viewportOrg = { x: m.vpOrg.x * kx, y: m.vpOrg.y * ky };
 	rCtx.viewportExt = { cx: (m.vpExt.cx || 1) * kx, cy: (m.vpExt.cy || 1) * ky };
+	if (mirrorWidth > 0) {
+		// LAYOUT_RTL: device x becomes width - x after the mapping (measured).
+		rCtx.viewportOrg.x = mirrorWidth * kx - rCtx.viewportOrg.x;
+		rCtx.viewportExt.cx = -rCtx.viewportExt.cx;
+	}
 }
 
 /** How a WMF is played: the playback surface's size and the DC's mapping before the first record. */

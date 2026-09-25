@@ -77,7 +77,7 @@ describe('emf-types', () => {
 			const s = defaultState();
 			expect(s.textColor).toBe('#000000');
 			expect(s.bkColor).toBe('#ffffff');
-			expect(s.bkMode).toBe(1); // TRANSPARENT
+			expect(s.bkMode).toBe(2); // OPAQUE: a fresh GDI DC (and PlayEnhMetaFile) starts opaque
 		});
 
 		it('returns correct default font values', () => {

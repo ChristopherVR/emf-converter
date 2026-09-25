@@ -4,13 +4,15 @@
  * and shape painter the EMF records use (`paintGdiShape`,
  * `emf-gdi-shape-paint.ts`), but with the geometry GDI builds when it plays
  * a WMF, which it always does in the `GM_COMPATIBLE` graphics mode:
- *   - the box's corners go to device space (28.4 fixed point, as for EMF)
- *     and are ordered, and the right and bottom edges are then pulled in by
- *     one device pixel: the box excludes its right/bottom edge, in device
- *     space, whatever the mapping;
+ *   - every point lands on a whole device pixel (`fixPoint` rounds to them
+ *     under `rCtx.wholeDevicePixels`), and so does the pen width;
+ *   - the box's corners are ordered and its right and bottom edges pulled
+ *     in by one device pixel: the box excludes its right/bottom edge, in
+ *     device space, whatever the mapping (see {@link compatBox} for the
+ *     null-pen and `PS_INSIDEFRAME` boxes);
  *   - arcs run in the arc direction as seen in DEVICE space (a mirroring
- *     mapping does not reverse them), from the radials through the start
- *     and end points mapped to device space.
+ *     mapping does not reverse them), and their radials are measured about
+ *     the centre of the box as given, not of the box it shrank.
  * (An EMF records the same calls already converted to `GM_ADVANCED`'s
  * inclusive logical boxes, so the EMF handlers cannot be reused as-is.)
  *
@@ -27,10 +29,11 @@ import { isExactRop2Bitwise } from './emf-rop2-exact';
 import type { CanvasContext } from './emf-types';
 import { axisBox, type FixBox } from './gdi-raster';
 import type { WmfPlayer } from './wmf-player';
-import { EmfRecordWriter, playEmfRecord } from './wmf-emf-bridge';
 
 /** `PS_NULL`. */
 const PS_NULL = 5;
+/** `PS_INSIDEFRAME`. */
+const PS_INSIDEFRAME = 6;
 
 /** A compatible-mode device box in canvas FIX, inclusive (`x0 <= x1`, `y0 <= y1`). */
 interface CompatBox {
@@ -40,34 +43,54 @@ interface CompatBox {
 	y1: number;
 }
 
+/** How {@link compatBox} builds a box. */
+interface CompatBoxOptions {
+	/** Pull the right/bottom edge in by a device pixel (false: the box as given, for the arc radials). */
+	exclusive?: boolean;
+	/** An Ellipse/RoundRect/Chord/Pie (a null pen changes their box). */
+	curved?: boolean;
+}
+
 /**
  * The inclusive device box GDI draws `l, t, r, b` into under
- * `GM_COMPATIBLE` (see the module doc).
+ * `GM_COMPATIBLE` (see the module doc), in canvas FIX. Measured against
+ * `wmf-shapes*`:
+ *   - a curved shape drawn with a null pen is one device pixel smaller
+ *     still on the right and bottom, and then grown by a quarter pixel on
+ *     every side (the quarter pixel `GM_ADVANCED` also adds, see
+ *     `curvedFixBox` in `emf-gdi-draw-shapes.ts`);
+ *   - a `PS_INSIDEFRAME` pen wider than a pixel moves the left/top edge in
+ *     by half its width (rounded down) and the right/bottom edge by half
+ *     of one less, so the whole stroke lies inside the box.
  */
-export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: number, shrink = 1, curved = false): CompatBox {
+export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: number, opts: CompatBoxOptions = {}): CompatBox {
+	const exclusive = opts.exclusive !== false;
 	const a = fixPoint(p.rCtx, l, t);
 	const c = fixPoint(p.rCtx, r, b);
-	const px = Math.round(16 * p.kx * shrink);
-	const py = Math.round(16 * p.ky * shrink);
-	const g = curved && penIsNull(p) ? Number(process.env.WMF_G ?? 4) : 0;
-	const g2 = curved && penIsNull(p) ? Number(process.env.WMF_G2 ?? -12) : 0;
+	const ux = 16 * p.kx;
+	const uy = 16 * p.ky;
 	const box = {
-		x0: Math.min(a[0], c[0]) - g,
-		y0: Math.min(a[1], c[1]) - g,
-		x1: Math.max(a[0], c[0]) - px + g2,
-		y1: Math.max(a[1], c[1]) - py + g2,
+		x0: Math.min(a[0], c[0]),
+		y0: Math.min(a[1], c[1]),
+		x1: Math.max(a[0], c[0]) - (exclusive ? Math.round(ux) : 0),
+		y1: Math.max(a[1], c[1]) - (exclusive ? Math.round(uy) : 0),
 	};
-	const st = p.rCtx.state;
-	if (shrink !== 0 && (st.penStyle & 0x0f) === 6) {
-		// PS_INSIDEFRAME: the box shrinks so the whole pen lies inside it.
-		const w = Math.round(penDeviceWidth(p.rCtx));
+	if (!exclusive) {
+		return box;
+	}
+	if (opts.curved && penIsNull(p)) {
+		box.x0 -= Math.round(ux / 4);
+		box.y0 -= Math.round(uy / 4);
+		box.x1 -= Math.round((ux * 3) / 4);
+		box.y1 -= Math.round((uy * 3) / 4);
+	}
+	if ((p.rCtx.state.penStyle & 0x0f) === PS_INSIDEFRAME) {
+		const w = Math.round(penDeviceWidth(p.rCtx) / p.kx);
 		if (w > 1) {
-			const lo = Number(process.env.WMF_IFA ?? Math.floor(w / 2)) * 16;
-			const hi = Number(process.env.WMF_IFB ?? Math.floor((w - 1) / 2)) * 16;
-			box.x0 += lo;
-			box.y0 += lo;
-			box.x1 -= hi;
-			box.y1 -= hi;
+			box.x0 += Math.round(Math.floor(w / 2) * ux);
+			box.y0 += Math.round(Math.floor(w / 2) * uy);
+			box.x1 -= Math.round(Math.floor((w - 1) / 2) * ux);
+			box.y1 -= Math.round(Math.floor((w - 1) / 2) * uy);
 		}
 	}
 	return box;
@@ -142,7 +165,7 @@ export function wmfRectangle(p: WmfPlayer, l: number, t: number, r: number, b: n
 
 /** `META_ROUNDRECT`: `w`, `h` are the corner ellipse's logical width and height. */
 export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: number, w: number, h: number): void {
-	const box = compatBox(p, l, t, r, b, 1, true);
+	const box = compatBox(p, l, t, r, b, { curved: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
@@ -182,7 +205,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 
 /** `META_ELLIPSE`. */
 export function wmfEllipse(p: WmfPlayer, l: number, t: number, r: number, b: number): void {
-	const box = compatBox(p, l, t, r, b, 1, true);
+	const box = compatBox(p, l, t, r, b, { curved: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
@@ -212,19 +235,13 @@ export function wmfArcFamily(
 	xe: number,
 	ye: number,
 ): void {
-	if (process.env.WMF_ARCEMF) {
-		const w = new EmfRecordWriter(kind === 'arc' ? 45 : kind === 'chord' ? 46 : 47, 48);
-		w.i32(Math.min(l, r)).i32(Math.min(t, b)).i32(Math.max(l, r) - 1).i32(Math.max(t, b) - 1).i32(xs).i32(ys).i32(xe).i32(ye);
-		playEmfRecord(p.rCtx, w.finish());
-		return;
-	}
-	const box = compatBox(p, l, t, r, b, Number(process.env.WMF_ARCSHRINK ?? 1), kind !== 'arc');
+	const box = compatBox(p, l, t, r, b, { curved: kind !== 'arc' });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
 	// GDI measures the radials' angles about the centre of the box as given,
 	// not of the box it shrank: move them with the centre.
-	const raw = compatBox(p, l, t, r, b, 0);
+	const raw = compatBox(p, l, t, r, b, { exclusive: false });
 	const rdx = (box.x0 + box.x1 - raw.x0 - raw.x1) / 2;
 	const rdy = (box.y0 + box.y1 - raw.y0 - raw.y1) / 2;
 	const s0 = fixPoint(p.rCtx, xs, ys);

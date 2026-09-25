@@ -181,7 +181,7 @@ export function createWmfPlayer(
 	const playback = wmfPlayback(view, header);
 	const kx = canvasW / playback.width;
 	const ky = canvasH / playback.height;
-	const state: DrawState = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap, bkMode: 2 };
+	const state: DrawState = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap };
 	const rCtx: EmfGdiReplayCtx = {
 		ctx,
 		view,
@@ -232,7 +232,7 @@ export function createWmfPlayer(
 
 /** Re-derives the shared context's mapping after a mapping record. */
 function remap(p: WmfPlayer): void {
-	applyWmfMapping(p.rCtx, p.mapping, p.kx, p.ky);
+	applyWmfMapping(p.rCtx, p.mapping, p.kx, p.ky, p.layout & 1 ? p.devW : 0);
 }
 
 /** The WMF-only part of the DC state, for `META_SAVEDC`. */
@@ -411,7 +411,9 @@ export function playWmfRecord(p: WmfPlayer, recType: number, offset: number, rec
 			return;
 		case META_SETLAYOUT:
 			if (has(4)) {
+				// LAYOUT_RTL (bit 0) mirrors everything drawn after it.
 				p.layout = view.getUint32(d, true);
+				remap(p);
 			}
 			return;
 		case META_SETRELABS:

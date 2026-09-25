@@ -13,8 +13,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getRenderableEmfBounds, parseEmfHeader } from '../emf-header-parser';
+import { getRenderableEmfBounds, parseEmfHeader, parseWmfHeader } from '../emf-header-parser';
 import { convertMetafileToDataUrl, type EmfConvertOptions } from '../index';
+import { extractEmbeddedEmf } from '../wmf-embedded-emf';
 
 export interface PixelDiff {
 	/** Pixels compared (the overlap of the two images). */
@@ -100,6 +101,16 @@ export async function renderFixture(file: string, options: EmfConvertOptions = {
 		const origin = emfDeviceOrigin(bytes);
 		image.originX = origin.x;
 		image.originY = origin.y;
+	} else {
+		// A WMF carrying an EMF plays as that EMF, on the EMF's own canvas.
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		const header = parseWmfHeader(view);
+		const embedded = header ? extractEmbeddedEmf(view, header.headerSize) : null;
+		if (embedded) {
+			const origin = emfDeviceOrigin(Buffer.from(embedded));
+			image.originX = origin.x;
+			image.originY = origin.y;
+		}
 	}
 	return image;
 }

@@ -3185,8 +3185,226 @@ public static class GdiFixtures
 		WmfPlayCase("wmf-legacy", 180, 160, WmfLegacyRecords(), new int[] { 0, 0, 180, 160 }, 96);
 	}
 
+	static int PalIndex(int i) { return 0x01000000 | i; }
+
+	/** LOGPALETTE (version 0x300) or PALETTEENTRY run bytes for `colors` with `flags`. */
+	static byte[] WmfPalEntries(int[] colors, byte flags, bool header)
+	{
+		var ms = new MemoryStream();
+		var bw = new BinaryWriter(ms);
+		if (header) { bw.Write((short)0x300); bw.Write((short)colors.Length); }
+		foreach (int c in colors) { bw.Write((byte)(c & 0xff)); bw.Write((byte)((c >> 8) & 0xff)); bw.Write((byte)((c >> 16) & 0xff)); bw.Write(flags); }
+		return ms.ToArray();
+	}
+
+	/** One swatch row: a Rectangle per brush colour reference in `refs`. */
+	static void WmfSwatches(IntPtr hdc, int y, int[] refs)
+	{
+		for (int i = 0; i < refs.Length; i++)
+		{
+			WithObjects(hdc, CreatePen(0, 0, 0), CreateSolidBrush(refs[i]), delegate { Rectangle(hdc, 4 + i * 14, y, 16 + i * 14, y + 12); });
+		}
+	}
+
+	static void WmfPaletteSheet(IntPtr hdc)
+	{
+		int[] idx = new int[22];
+		for (int i = 0; i < 22; i++) { idx[i] = PalIndex(i == 21 ? 40 : i); }
+		// Before any palette: the default palette's 20 entries, then out of range.
+		WmfSwatches(hdc, 4, idx);
+		int[] cols = { Rgb(200, 30, 30), Rgb(30, 160, 60), Rgb(40, 60, 200), Rgb(230, 200, 20), Rgb(150, 30, 170), Rgb(20, 180, 190), Rgb(250, 130, 20), Rgb(90, 90, 90) };
+		IntPtr pal = WmfApi.CreatePalette(WmfPalEntries(cols, 1, true)); // PC_RESERVED entries
+		WmfApi.SelectPalette(hdc, pal, false);
+		WmfApi.RealizePalette(hdc);
+		WmfSwatches(hdc, 20, new[] { PalIndex(0), PalIndex(1), PalIndex(2), PalIndex(3), PalIndex(4), PalIndex(5), PalIndex(6), PalIndex(7), PalIndex(8), PalIndex(12), 0x02102030, 0x02C08040 });
+		// A pen and a background colour through the palette.
+		IntPtr keep = CreateSolidBrush(PalIndex(2));
+		IntPtr okeep = SelectObject(hdc, keep);
+		SetBkMode(hdc, 2);
+		SetBkColor(hdc, PalIndex(3));
+		WithObjects(hdc, CreatePen(0, 3, PalIndex(4)), CreateHatchBrush(5, PalIndex(1)), delegate { Rectangle(hdc, 180, 20, 250, 60); });
+		// Changing entries re-colours what is selected.
+		WmfApi.SetPaletteEntries(pal, 2, 2, WmfPalEntries(new[] { Rgb(255, 0, 255), Rgb(0, 0, 0) }, 1, false));
+		WithObjects(hdc, CreatePen(5, 0, 0), IntPtr.Zero, delegate { Rectangle(hdc, 4, 40, 40, 60); });
+		WmfSwatches(hdc, 64, new[] { PalIndex(0), PalIndex(1), PalIndex(2), PalIndex(3) });
+		WmfApi.AnimatePalette(pal, 0, 2, WmfPalEntries(new[] { Rgb(0, 255, 0), Rgb(255, 255, 0) }, 1, false));
+		WmfSwatches(hdc, 80, new[] { PalIndex(0), PalIndex(1), PalIndex(2), PalIndex(3) });
+		WmfApi.ResizePalette(pal, 4);
+		WmfSwatches(hdc, 96, new[] { PalIndex(0), PalIndex(3), PalIndex(5), PalIndex(9) });
+		WmfApi.ResizePalette(pal, 10);
+		WmfSwatches(hdc, 112, new[] { PalIndex(0), PalIndex(3), PalIndex(5), PalIndex(9) });
+		WmfApi.SetPixel(hdc, 120, 100, PalIndex(0));
+		WmfApi.SetPixel(hdc, 122, 100, PalIndex(1));
+		// An 8 bpp DIB_PAL_COLORS bitmap: its colour table is palette indices.
+		var bmi = new byte[40 + 8 * 2];
+		Array.Copy(WmfPackedDib(1, 1, 8, false, null, delegate (int x, int y) { return 0; }), bmi, 40);
+		Array.Copy(BitConverter.GetBytes(8), 0, bmi, 32, 4);
+		for (int i = 0; i < 8; i++) { Array.Copy(BitConverter.GetBytes((short)(7 - i)), 0, bmi, 40 + i * 2, 2); }
+		Array.Copy(BitConverter.GetBytes(8), 0, bmi, 4, 4);
+		Array.Copy(BitConverter.GetBytes(8), 0, bmi, 8, 4);
+		var bits = new byte[8 * 8];
+		for (int i = 0; i < bits.Length; i++) { bits[i] = (byte)((i % 8 + i / 8) % 8); }
+		WmfApi.StretchDIBits(hdc, 140, 70, 32, 32, 0, 0, 8, 8, bits, bmi, 1, 0x00CC0020);
+		SelectObject(hdc, okeep);
+		DeleteObject(keep);
+	}
+
+	/** SetPixel, and FloodFill / ExtFloodFill against drawn borders and surfaces. */
+	static void WmfPixelSheet(IntPtr hdc, int k)
+	{
+		Func<int, int> S = delegate (int v) { return v * k; };
+		Fill(hdc, 0, 0, S(240), S(64), Rgb(255, 255, 255));
+		for (int i = 0; i < 40; i++) { WmfApi.SetPixel(hdc, S(4 + (i * 7) % 60), S(4 + (i * 11) % 30), Palette[i % 6]); }
+		WithObjects(hdc, CreatePen(0, S(2), Rgb(0x20, 0x20, 0x90)), CreateSolidBrush(Rgb(0xF0, 0xF0, 0xF0)), delegate
+		{
+			Ellipse(hdc, S(70), S(4), S(150), S(60));
+			Rectangle(hdc, S(160), S(4), S(230), S(60));
+		});
+		WithObjects(hdc, CreatePen(0, 0, Rgb(0x90, 0x10, 0x10)), IntPtr.Zero, delegate
+		{
+			MoveToEx(hdc, S(160), S(30), IntPtr.Zero); LineTo(hdc, S(230), S(31));
+			MoveToEx(hdc, S(190), S(4), IntPtr.Zero); LineTo(hdc, S(191), S(60));
+		});
+		WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0x30, 0xC0, 0x60)), delegate { WmfApi.FloodFill(hdc, S(110), S(30), Rgb(0x20, 0x20, 0x90)); });
+		WithObjects(hdc, IntPtr.Zero, CreateHatchBrush(4, Rgb(0xC0, 0x40, 0x20)), delegate { WmfApi.ExtFloodFill(hdc, S(170), S(10), Rgb(0xF0, 0xF0, 0xF0), 1); });
+		WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0x20, 0x80, 0xE0)), delegate
+		{
+			SetROP2(hdc, 7);
+			WmfApi.ExtFloodFill(hdc, S(210), S(50), Rgb(0x90, 0x10, 0x10), 0);
+			SetROP2(hdc, 13);
+			WmfApi.ExtFloodFill(hdc, S(20), S(50), Rgb(0x10, 0x10, 0x10), 1); // not the surface colour: nothing
+		});
+	}
+
+	/** SetTextCharacterExtra and SetTextJustification with ANSI TextOut / ExtTextOut. */
+	static void WmfTextSpacingSheet(IntPtr hdc)
+	{
+		Fill(hdc, 0, 0, 360, 140, Rgb(255, 255, 255));
+		var lf = TxLf("Arial", -16, 400, false, 3);
+		TxWithFont(hdc, lf, delegate
+		{
+			SetBkMode(hdc, 1);
+			SetTextColor(hdc, 0);
+			WmfApi.TextOutA(hdc, 6, 6, "Spacing, plain.", 15);
+			WmfApi.SetTextCharacterExtra(hdc, 3);
+			WmfApi.TextOutA(hdc, 6, 26, "Spacing, extra 3.", 17);
+			WmfApi.SetTextCharacterExtra(hdc, -1);
+			WmfApi.TextOutA(hdc, 6, 46, "Spacing, extra -1.", 18);
+			WmfApi.SetTextCharacterExtra(hdc, 0);
+			WmfApi.SetTextJustification(hdc, 23, 3);
+			WmfApi.TextOutA(hdc, 6, 66, "Justified by three breaks", 25);
+			WmfApi.SetTextJustification(hdc, 0, 0);
+			WmfApi.SetTextCharacterExtra(hdc, 2);
+			WmfApi.SetTextJustification(hdc, 10, 2);
+			WmfApi.TextOutA(hdc, 6, 86, "Both at once here", 17);
+			WmfApi.SetTextJustification(hdc, 0, 0);
+			SetTextAlign(hdc, 2); // TA_RIGHT
+			WmfApi.TextOutA(hdc, 350, 106, "Right aligned extra", 19);
+		});
+	}
+
+	/** An EMF whose WMF rendering (GetWinMetaFileBits) carries it in MFCOMMENT escapes; SetWinMetaFileBits recovers it. */
+	static void WmfEmbeddedEmfCase(string name, int w, int h, GdiDraw draw)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmPerPxX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8);
+		double mmPerPxY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT();
+		frame.Right = (int)Math.Round(w * mmPerPxX); frame.Bottom = (int)Math.Round(h * mmPerPxY);
+		IntPtr mdc = CreateEnhMetaFileW(screen, null, ref frame, null);
+		draw(mdc);
+		IntPtr emf = CloseEnhMetaFile(mdc);
+		uint size = WmfApi.GetWinMetaFileBits(emf, 0, null, 8, screen);
+		var raw = new byte[size];
+		WmfApi.GetWinMetaFileBits(emf, size, raw, 8, screen);
+		DeleteEnhMetaFile(emf);
+		// The picture at 96 dpi: frame .01 mm -> pixels.
+		File.WriteAllBytes(Path.Combine(outDir, name + ".wmf"), WmfPlaceable(raw, 0, 0, frame.Right * 96 / 2540, frame.Bottom * 96 / 2540, 96));
+		var mfp = new METAFILEPICT { mm = 8, xExt = frame.Right, yExt = frame.Bottom, hMF = IntPtr.Zero };
+		IntPtr back = WmfApi.SetWinMetaFileBits((uint)raw.Length, raw, screen, ref mfp);
+		using (var dib = new Dib(screen, w, h))
+		{
+			// The recovered EMF (written below: byte for byte the embedded one)
+			// played one to one on its reference device, as the EMF fixtures are:
+			// the same calls painted straight onto the bitmap.
+			Fill(dib.Dc, 0, 0, w, h, Rgb(255, 255, 255));
+			draw(dib.Dc);
+			dib.SavePng(Path.Combine(outDir, name + ".png"));
+		}
+		uint n = WmfApi.GetEnhMetaFileBits(back, 0, null);
+		var bytes = new byte[n];
+		WmfApi.GetEnhMetaFileBits(back, n, bytes);
+		File.WriteAllBytes(Path.Combine(outDir, name + ".recovered.emf"), bytes);
+		DeleteEnhMetaFile(back);
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	/** Object slots: deletes in odd orders, a palette and a region holding slots, a deleted brush still selected. */
+	static void WmfObjectSheet(IntPtr hdc)
+	{
+		IntPtr a = CreateSolidBrush(Palette[0]);
+		IntPtr b = CreateSolidBrush(Palette[1]);
+		IntPtr c = CreateSolidBrush(Palette[2]);
+		IntPtr pal = WmfApi.CreatePalette(WmfPalEntries(new[] { Palette[3], Palette[4] }, 0, true));
+		WmfApi.SelectPalette(hdc, pal, false);
+		SelectObject(hdc, a); Rectangle(hdc, 4, 4, 30, 30);
+		SelectObject(hdc, b); Rectangle(hdc, 34, 4, 60, 30);
+		SelectObject(hdc, c);
+		DeleteObject(a);
+		IntPtr rgn = WmfApi.CreateRectRgn(0, 0, 200, 200);
+		WmfApi.SelectClipRgn(hdc, rgn);
+		DeleteObject(rgn);
+		IntPtr d = CreateSolidBrush(Palette[5]);
+		SelectObject(hdc, b); Rectangle(hdc, 64, 4, 90, 30);
+		SelectObject(hdc, d); Rectangle(hdc, 94, 4, 120, 30);
+		DeleteObject(c);
+		IntPtr e = CreateSolidBrush(PalIndex(1));
+		SelectObject(hdc, e); Rectangle(hdc, 124, 4, 150, 30);
+		DeleteObject(e); // still selected: keeps painting
+		Rectangle(hdc, 4, 34, 30, 60);
+		SelectObject(hdc, GetStockObject(0));
+		DeleteObject(b); DeleteObject(d);
+	}
+
+	static void WmfMiscCases()
+	{
+		WmfPixelCase("wmf-palette", 320, 130, delegate (IntPtr hdc) { WmfPaletteSheet(hdc); });
+		WmfPixelCase("wmf-pixels", 240, 64, delegate (IntPtr hdc) { WmfPixelSheet(hdc, 1); });
+		WmfPlayCase("wmf-pixels-twips", 240, 64, WmfRecord(delegate (IntPtr hdc) { WmfPixelSheet(hdc, 15); }), new int[] { 0, 0, 3600, 960 }, 1440);
+		WmfPixelCase("wmf-text-spacing", 360, 130, delegate (IntPtr hdc) { WmfTextSpacingSheet(hdc); });
+		WmfPixelCase("wmf-objects", 160, 64, delegate (IntPtr hdc) { WmfObjectSheet(hdc); });
+		WmfEmbeddedEmfCase("wmf-embedded-emf", 240, 120, delegate (IntPtr hdc)
+		{
+			WithObjects(hdc, CreatePen(0, 3, Rgb(0x20, 0x20, 0x80)), CreateSolidBrush(Rgb(0xE0, 0x90, 0x30)), delegate
+			{
+				Ellipse(hdc, 10, 10, 110, 90);
+				Rectangle(hdc, 120, 20, 230, 100);
+			});
+			WithObjects(hdc, CreatePen(0, 1, 0), CreateHatchBrush(5, Rgb(0x20, 0x80, 0x20)), delegate { RoundRect(hdc, 60, 40, 180, 110, 20, 20); });
+		});
+		// Escapes a player ignores, SetMapperFlags, SetLayout.
+		WmfPixelCase("wmf-escapes", 160, 60, delegate (IntPtr hdc)
+		{
+			WmfApi.Escape(hdc, 15, 5, new byte[] { (byte)'n', (byte)'o', (byte)'t', (byte)'e', 0 }, IntPtr.Zero);
+			WmfApi.SetMapperFlags(hdc, 1);
+			WmfProbe(hdc, 4, 4, 1, Palette[1]);
+			WmfApi.Escape(hdc, 4101, 0, null, IntPtr.Zero);
+			WmfProbe(hdc, 80, 4, 1, Palette[2]);
+		});
+		WmfPixelCase("wmf-layout-rtl", 160, 60, delegate (IntPtr hdc)
+		{
+			WmfProbe(hdc, 4, 4, 1, Palette[1]);
+			WmfApi.SetLayout(hdc, 1);
+			WmfProbe(hdc, 4, 10, 1, Palette[2]);
+			WithObjects(hdc, CreatePen(0, 0, 0), CreateSolidBrush(Palette[3]), delegate { Rectangle(hdc, 70, 44, 100, 56); });
+			WmfApi.SetLayout(hdc, 0);
+			WmfProbe(hdc, 100, 20, 1, Palette[4]);
+		});
+	}
+
 	static void WmfRecordCases()
 	{
+		WmfMiscCases();
 		WmfBitmapCases();
 		WmfShapeCases();
 		WmfMappingCases();

@@ -193,8 +193,9 @@ describe('emf-gdi-state-handlers', () => {
 
 			it('ignores if recSize < 12', () => {
 				const rCtx = makeRCtx();
+				rCtx.state.bkMode = 1;
 				handleEmfGdiStateRecord(rCtx, EMR_SETBKMODE, 0, 8, 8);
-				expect(rCtx.state.bkMode).toBe(1); // default TRANSPARENT
+				expect(rCtx.state.bkMode).toBe(1);
 			});
 		});
 

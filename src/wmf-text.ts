@@ -81,18 +81,16 @@ function spacedDx(p: WmfPlayer, codes: number[]): number[] | null {
 	const kx = Math.hypot(m[0], m[1]) || 1;
 	const extraDev = Math.round(p.charExtra * kx);
 	const breakChar = 0x20;
-	const breaks = codes.filter((c) => c === breakChar).length;
-	const justify = p.justifyCount > 0 ? Math.round(p.justifyExtra * kx) : 0;
-	const per = breaks > 0 ? Math.trunc(justify / breaks) : 0;
-	let rem = breaks > 0 ? justify - per * breaks : 0;
+	const count = p.justifyCount;
+	const justify = count > 0 ? Math.round(p.justifyExtra * kx) : 0;
+	// GDI spreads the extra over the breaks like a line DDA: break i (from 0)
+	// widens by round((i + 1) * extra / count) - round(i * extra / count).
+	const share = (i: number) => Math.round(((i + 1) * justify) / count) - Math.round((i * justify) / count);
+	let seen = 0;
 	return adv.map((a, i) => {
 		let d = a + extraDev;
-		if (codes[i] === breakChar && breaks > 0) {
-			d += per;
-			if (rem !== 0) {
-				d += Math.sign(rem);
-				rem -= Math.sign(rem);
-			}
+		if (codes[i] === breakChar && count > 0) {
+			d += share(seen++);
 		}
 		return d / kx;
 	});

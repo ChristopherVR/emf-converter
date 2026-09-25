@@ -200,7 +200,7 @@ export interface DrawState {
 	textColor: string;
 	/** Current background colour used for opaque text backgrounds. */
 	bkColor: string;
-	/** Background mode: 1 = TRANSPARENT, 2 = OPAQUE. */
+	/** Background mode: 1 = TRANSPARENT, 2 = OPAQUE (a fresh GDI DC's default). */
 	bkMode: number;
 	/**
 	 * Current signed LOGFONT `lfHeight`, in logical units. See
@@ -246,7 +246,7 @@ export interface DrawState {
 
 /**
  * Creates a fresh {@link DrawState} initialised with Win32 GDI defaults:
- * black pen, white brush, transparent background mode, identity transform, etc.
+ * black pen, white brush, opaque background mode, identity transform, etc.
  *
  * @returns A new default DrawState instance.
  */
@@ -263,7 +263,7 @@ export function defaultState(): DrawState {
 		stretchBltMode: 1,
 		textColor: '#000000',
 		bkColor: '#ffffff',
-		bkMode: 1,
+		bkMode: 2,
 		// Negative (character-height convention) so the no-font-selected default
 		// resolves to exactly 12px, matching this library's historical fallback.
 		fontHeight: -12,
