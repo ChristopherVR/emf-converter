@@ -1,25 +1,59 @@
 /**
  * Wide (geometric) pens for the GDI rasteriser: turns a {@link GdiRasterPath}
- * into the polygons GDI fills for a pen wider than one pixel.
+ * into the outline figures GDI fills for a pen wider than one pixel.
  *
- * What is known exactly (measured against real GDI, `WidenPath` +
- * `GetPath` at 28.4 precision): a wide stroke is the WINDING fill of the
- * widened outline (240 of 240 random polylines, every cap and join, fill
- * exactly what GDI paints), and a round cap or join is traced with a pen
- * "nib" polygon that GDI keeps in a normalised octant frame and flips or
- * transposes into each segment's octant (`nibFrame`). For pens of one to six
- * pixels the nib is a fixed pixel-shaped polygon, reproduced here as
- * measured (`SMALL_NIBS`). GDI adjusts a few nib vertices further by the
- * exact slope of each segment and builds larger nibs octant by octant; those
- * refinements are not reproduced (the larger nib here is a polygon through
- * the same extreme points), and neither is GDI's exact vertex placement for
- * flat/square caps and miter/bevel joins, which are built from the exact
- * offset geometry rounded to 28.4. See the `gdi-raster` fixtures for the
- * measured residual.
+ * Everything here was fitted against real GDI (`WidenPath` + `GetPath`
+ * under a 1/16 world scale, which reads the widened outline back at 28.4
+ * precision; the WINDING fill of that outline is exactly what GDI paints
+ * when it strokes directly):
  *
- * The outline is assembled as a union of convex pieces (each segment's
- * body, each join, each cap), all oriented the same way so a WINDING fill
- * paints their union.
+ * - The pen is a polygon. Up to six pixels (a width under 6.5 px) it is
+ *   one of Hobby's digital pens (`HOBBY`, vertices on the half-pixel grid);
+ *   wider, it is GDI's flattened ellipse of the pen box, of which only the
+ *   first half (right, then over the top) is flattened, the second half
+ *   being its reflection through the centre, and whose vertical half axis
+ *   snaps to whole pixels (`penPolygon`).
+ * - A segment's draw vertices are the pen vertices furthest to its left
+ *   and right (`drawVertices`, with GDI's tie-break for segments parallel
+ *   to a pen edge).
+ * - Round caps and round joins trace the pen vertices between two side
+ *   points; a vertex is pulled one 28.4 unit towards the pen centre when
+ *   the point it is placed around lies exactly on a pixel.
+ * - A pen with round caps and round joins (every `CreatePen` pen) runs its
+ *   sides through the draw vertices rounded to the half-pixel grid. Other
+ *   pens run their sides through the "perpendicular" (`flatVector`): the
+ *   pen boundary point where the tangent is parallel to the segment,
+ *   interpolated parabolically between the draw vertex and its neighbour,
+ *   rounded to the half-pixel grid with a bias that depends on the
+ *   segment's direction. Square caps extend by the half width along the
+ *   segment (`squareExtension`), miter joins meet at the rounded
+ *   intersection of the two side lines.
+ * - An open figure becomes one outline: start cap, right side forward
+ *   (with a join at each vertex), end cap, left side backward. A closed
+ *   figure becomes two: the right side forward and the left side backward,
+ *   each with a join at every vertex. The inner side of a join passes
+ *   through the vertex itself.
+ * - Geometric dash patterns cut the figure into pieces by exact arc length,
+ *   the cut points rounded to 28.4; each piece is widened as an open figure
+ *   with the directions of the path segments it lies on. With round or
+ *   square caps the stock styles shorten every dash by the pen width.
+ * - The first and last flattened segment of a Bezier take their draw
+ *   vertices from the curve's end tangents (`GdiFigure.tangents`).
+ *
+ * Callers apply two record-level rules measured on direct drawing: a
+ * `Rectangle` stroked with a wide `CreatePen` pen uses miter joins, and an
+ * `Ellipse` or `RoundRect` is stroked with round caps and joins whatever
+ * the pen's style (`paintRasterPath`).
+ *
+ * Measured against 15,000 random two-segment polylines (widths 2 to 12 px,
+ * endpoints on whole pixels), the share that fills exactly GDI's pixels:
+ * round caps and joins (every `CreatePen` pen) 3,000 of 3,000; square caps
+ * with round joins, and flat or square caps with bevel or miter joins,
+ * 99.3% to 99.5%; round caps with bevel or miter joins 97.5%; flat caps
+ * with round joins 97.2%; 299 of 300 random dashed polylines. The residual
+ * is GDI's inclusion of a pen vertex exactly at the end of a join or cap
+ * arc (mostly for the flattened pens of 7 px and more), and the half-pixel
+ * rounding of the perpendicular for 8 px pens.
  *
  * @module gdi-raster-widen
  */
@@ -45,325 +79,664 @@ export interface WidenOptions {
 	 * with caps.
 	 */
 	dashes?: number[] | null;
+	/**
+	 * Whether each dash is shortened by the pen width so its round or square
+	 * caps end where the dash does: true for the stock styles (`PS_DASH` to
+	 * `PS_DASHDOTDOT`), false for `PS_USERSTYLE` (measured).
+	 */
+	shortenDashes?: boolean;
 }
 
+type Pt = [number, number];
+
 /**
- * GDI's nibs for pens one to six pixels wide, in the normalised octant
- * frame (x-major, both deltas non-negative), as `[x, y, ...]` FIX offsets
- * (measured with `WidenPath`; identical for every segment slope of those
- * widths except for the rare exact-diagonal adjustments).
+ * Hobby's digital pens for widths of one to six pixels, as GDI holds them
+ * (FIX, centred on the pen position, counter-clockwise on screen starting
+ * at the top right). Measured with `WidenPath`: the front of a round cap
+ * shows these vertices exactly.
  */
-const SMALL_NIBS: number[][] = [
-	[0, -8, -7, 0, 0, 8, 7, 0],
-	[8, -16, -7, -15, -15, 0, -8, 16, 7, 15, 15, 0],
-	[8, -24, -7, -23, -23, -7, -23, 7, -8, 24, 7, 23, 23, 7, 23, -7],
-	[8, -32, -7, -31, -23, -23, -31, -7, -31, 7, -23, 23, -8, 32, 7, 31, 23, 23, 31, 7, 31, -7, 23, -23],
-	[8, -40, -7, -39, -23, -31, -31, -23, -39, -7, -39, 7, -31, 23, -23, 31, -8, 40, 7, 39, 23, 31, 31, 23, 39, 7, 39, -7, 31, -23, 23, -31],
-	[8, -48, -7, -47, -23, -39, -39, -23, -47, -7, -47, 7, -39, 23, -23, 39, -8, 48, 7, 47, 23, 39, 39, 23, 47, 7, 47, -7, 39, -23, 23, -39],
+const HOBBY: Pt[][] = [
+	[[0, -8], [-8, 0], [0, 8], [8, 0]],
+	[[8, -16], [-8, -16], [-16, 0], [-8, 16], [8, 16], [16, 0]],
+	[[8, -24], [-8, -24], [-24, -8], [-24, 8], [-8, 24], [8, 24], [24, 8], [24, -8]],
+	[[8, -32], [-8, -32], [-24, -24], [-32, -8], [-32, 8], [-24, 24], [-8, 32], [8, 32], [24, 24], [32, 8], [32, -8], [24, -24]],
+	[[8, -40], [-8, -40], [-24, -32], [-32, -24], [-40, -8], [-40, 8], [-32, 24], [-24, 32], [-8, 40], [8, 40], [24, 32], [32, 24], [40, 8], [40, -8], [32, -24], [24, -32]],
+	[[8, -48], [-8, -48], [-24, -40], [-40, -24], [-48, -8], [-48, 8], [-40, 24], [-24, 40], [-8, 48], [8, 48], [24, 40], [40, 24], [48, 8], [48, -8], [40, -24], [24, -40]],
 ];
 
+/** Widths (FIX) below this use a Hobby pen. */
+const HOBBY_LIMIT = 104;
+
 /**
- * The nib polygon for a pen `width` FIX wide, in the normalised octant
- * frame: GDI's own table up to six pixels (a width rounds to its nearest
- * whole pixel count there), otherwise a flattened ellipse spanning GDI's
- * measured extremes (horizontal half-width `floor((w - 1) / 2)`, vertical
- * half-height snapped to whole pixels, `8 * floor((w + 9) / 16)`).
+ * Half-pixel offsets GDI adds to the perpendicular of a flattened pen of
+ * this many whole pixels, per half of the pen (`+` for a draw vertex in the
+ * flattened first half, `-` in the reflected half). Measured; widths not
+ * listed use none.
  */
-export function penNib(width: number): number[] {
-	const n = Math.floor(width / 16 + 0.5);
-	if (n >= 1 && n <= 6 && width < 104) {
-		return SMALL_NIBS[n - 1];
+const FLAT_VECTOR_OFFSET: Record<number, Pt> = { 7: [0, 0.5], 8: [0, 0.5], 9: [0.5, 0.5], 10: [0.5, 0] };
+
+const penCache = new Map<number, Pt[]>();
+
+/**
+ * GDI's pen polygon for a pen `width` FIX wide (see the module doc), in
+ * pen order (counter-clockwise on screen, the second half the reflection of
+ * the first).
+ */
+export function penPolygon(width: number): Pt[] {
+	const cached = penCache.get(width);
+	if (cached) {
+		return cached;
 	}
-	const hx = Math.floor((width - 1) / 2);
-	const hy = 8 * Math.floor((width + 9) / 16);
-	const f = flattenBezierPath(ellipseBeziers(-hx, -hy, hx, hy));
-	return f.slice(0, f.length - 2);
+	let pen: Pt[];
+	if (width < HOBBY_LIMIT) {
+		const n = Math.min(6, Math.max(1, Math.floor(width / 16 + 0.5)));
+		pen = HOBBY[n - 1];
+	} else {
+		const rx = Math.ceil(width / 2);
+		const ry = 8 * Math.floor((width + 9) / 16);
+		const f = flattenBezierPath(ellipseBeziers(-rx, -ry, rx, ry));
+		// The flattened first half runs from (rx, 0) over the top to (-rx, 0).
+		const half: Pt[] = [];
+		for (let i = 0; i + 1 < f.length; i += 2) {
+			half.push([f[i], f[i + 1]]);
+			if (i > 0 && f[i + 1] === 0) {
+				break;
+			}
+		}
+		half.pop();
+		pen = [...half, ...half.map((p): Pt => [0 - p[0] || 0, 0 - p[1] || 0])];
+	}
+	penCache.set(width, pen);
+	return pen;
 }
 
-/** A segment's octant frame: `real = swap ? (sx * v, sy * u) : (sx * u, sy * v)`. */
-interface Frame {
-	sx: number;
-	sy: number;
-	swap: boolean;
+/**
+ * The pen's draw vertices for a segment running (`dx`, `dy`): the indices
+ * of the vertex furthest to the left of the segment (in screen terms, the
+ * side the path's left edge runs along) and of its reflection, furthest
+ * right. A segment parallel to a pen edge touches two vertices: GDI takes
+ * the one further along the segment's direction normalised to point
+ * rightwards (or downwards when steeper than 2:1).
+ */
+export function drawVertices(pen: readonly Pt[], dx: number, dy: number): [number, number] {
+	const n = pen.length;
+	const axisVertex = pen.some((q) => q[1] === 0);
+	const steep = Math.abs(dy) > 2 * Math.abs(dx) || (Math.abs(dy) === 2 * Math.abs(dx) && axisVertex);
+	const s = (steep ? dy < 0 : dx < 0 || (dx === 0 && dy < 0)) ? -1 : 1;
+	let best = 0;
+	let bestH = -Infinity;
+	let bestAlong = 0;
+	for (let i = 0; i < n; i++) {
+		const h = dy * pen[i][0] - dx * pen[i][1];
+		const along = s * (dx * pen[i][0] + dy * pen[i][1]);
+		if (h > bestH || (h === bestH && along > bestAlong)) {
+			bestH = h;
+			best = i;
+			bestAlong = along;
+		}
+	}
+	return [best, (best + n / 2) % n];
 }
 
-/** GDI's octant normalisation of a segment direction (measured: a zero dx counts as negative, a zero dy as positive, an exact diagonal is y-major when it runs downwards). */
-function nibFrame(dx: number, dy: number): Frame {
-	const ax = Math.abs(dx);
-	const ay = Math.abs(dy);
-	return { sx: dx > 0 ? 1 : -1, sy: dy >= 0 ? 1 : -1, swap: ay > ax || (ay === ax && dy > 0) };
+/** `v` rounded to the half-pixel (8 FIX) grid, halves away from zero. */
+function halfPixel(v: number): number {
+	return Math.sign(v) * 8 * Math.floor((Math.abs(v) + 4) / 8);
 }
 
-/** `nib` carried into `frame` (flat pairs). */
-function orientNib(nib: number[], frame: Frame): number[] {
-	const out = new Array<number>(nib.length);
-	for (let i = 0; i < nib.length; i += 2) {
-		const u = nib[i];
-		const v = nib[i + 1];
-		if (frame.swap) {
-			out[i] = frame.sx * v;
-			out[i + 1] = frame.sy * u;
+/**
+ * GDI's perpendicular for a segment running (`dx`, `dy`) with a pen
+ * `width` FIX wide: the offset (FIX, on the half-pixel grid) of the right
+ * side of a flat-, square- or bevel/miter-joined stroke; the left side is
+ * its negation. The pen boundary point whose tangent is parallel to the
+ * segment is found by parabolic interpolation of the pen's support around
+ * the draw vertex, then rounded to the half-pixel grid after a half-unit
+ * bias along the segment's (normalised) direction.
+ */
+export function flatVector(width: number, dx0: number, dy0: number): Pt {
+	let dx = dx0;
+	let dy = dy0;
+	const flip = dx < 0 || (dx === 0 && dy < 0);
+	if (flip) {
+		dx = -dx;
+		dy = -dy;
+	}
+	const pen = penPolygon(width);
+	const n = pen.length;
+	const nx = -dy;
+	const ny = dx;
+	let best = 0;
+	let bh = -Infinity;
+	for (let i = 0; i < n; i++) {
+		const h = nx * pen[i][0] + ny * pen[i][1];
+		if (h > bh) {
+			bh = h;
+			best = i;
+		}
+	}
+	const P = pen[(best + n - 1) % n];
+	const N = pen[(best + 1) % n];
+	const D = pen[best];
+	const hP = nx * P[0] + ny * P[1];
+	const hN = nx * N[0] + ny * N[1];
+	const [B, hB, hS] = hP >= hN ? [P, hP, hN] : [N, hN, hP];
+	const den = 2 * (bh - hB + (bh - hS));
+	const w = den === 0 ? 0 : (hB - hS) / den;
+	const off = width % 16 === 0 && width >= HOBBY_LIMIT ? FLAT_VECTOR_OFFSET[width / 16] : undefined;
+	const sgn = best < n / 2 ? 1 : -1;
+	const ox = off ? sgn * off[0] : 0;
+	const oy = off ? sgn * off[1] : 0;
+	const r = (v: number) => 8 * Math.floor((v + 4) / 8);
+	const vx = r(D[0] + (B[0] - D[0]) * w + 0.5 * Math.sign(dy) + ox);
+	const vy = r(D[1] + (B[1] - D[1]) * w + 0.5 * Math.sign(dx) + oy);
+	return flip ? [-vx, -vy] : [vx, vy];
+}
+
+/** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
+export function squareExtension(width: number, dx: number, dy: number): Pt {
+	const len = Math.hypot(dx, dy);
+	const r = width / 2;
+	return [Math.floor((dx / len) * r + 0.5), Math.floor((dy / len) * r + 0.5)];
+}
+
+/** Turn sign at a join: `cross(a, b)`, and for an exact reversal the side GDI treats as outer. */
+function turnSign(ax: number, ay: number, bx: number, by: number): number {
+	const c = ax * by - ay * bx;
+	if (c !== 0) {
+		return c;
+	}
+	if (ax * bx + ay * by >= 0) {
+		return 0;
+	}
+	const sx = ax >= 0 ? 1 : -1;
+	const sy = ay >= 0 ? 1 : -1;
+	const swap = Math.abs(ay) > Math.abs(ax) || (Math.abs(ay) === Math.abs(ax) && ay > 0);
+	return sx * sy < 0 !== swap ? -1 : 1;
+}
+
+interface Seg {
+	dx: number;
+	dy: number;
+	/** Left and right draw vertex indices. */
+	L: number;
+	R: number;
+	/** Right perpendicular (`flatVector`). */
+	v: Pt;
+	/** Square-cap extension. */
+	e: Pt;
+}
+
+/** Builds one pen's outlines; `out` collects finished figures. */
+class Outliner {
+	private readonly pen: Pt[];
+	private readonly n: number;
+	private readonly rr: boolean;
+	private readonly roundJoinSides: boolean;
+	private readonly maxX: number;
+	private pts: Pt[] = [];
+
+	constructor(
+		private readonly opts: WidenOptions,
+		private readonly out: number[][],
+	) {
+		this.pen = penPolygon(opts.width);
+		this.n = this.pen.length;
+		this.rr = opts.cap === 'round' && opts.join === 'round';
+		this.roundJoinSides = opts.join === 'round' && opts.cap !== 'flat';
+		this.maxX = Math.max(...this.pen.map((q) => Math.abs(q[0])));
+	}
+
+	/**
+	 * Segment `a`..`b`. `dir` (a dash's path segment) replaces its direction;
+	 * `drawDir` (a curve's end tangent) only picks the draw vertices, the
+	 * perpendicular following the chord (measured on Bezier ends).
+	 */
+	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Pt): Seg {
+		const dx = dir ? dir[0] : b[0] - a[0];
+		const dy = dir ? dir[1] : b[1] - a[1];
+		const d = drawDir ?? [dx, dy];
+		const [L, R] = drawVertices(this.pen, d[0], d[1]);
+		return { dx, dy, L, R, v: flatVector(this.opts.width, dx, dy), e: squareExtension(this.opts.width, dx, dy) };
+	}
+
+	private push(p: Pt, v: Pt): void {
+		this.pts.push([p[0] + v[0], p[1] + v[1]]);
+	}
+
+	/** Pen vertex `k` placed around `p` (pulled one unit inwards when `p` is on a pixel). */
+	private penAt(p: Pt, k: number): void {
+		const q = this.pen[k];
+		if ((p[0] & 15) === 0 && (p[1] & 15) === 0) {
+			this.push(p, [q[0] - Math.sign(q[0]), q[1] - Math.sign(q[1])]);
 		} else {
-			out[i] = frame.sx * u;
-			out[i + 1] = frame.sy * v;
+			this.push(p, q);
 		}
 	}
-	return out;
-}
 
-/** Convex hull (monotone chain) of flat points, counter-clockwise in y-down coordinates' math sense, as flat pairs. */
-function convexHull(pts: number[]): number[] {
-	const p: Array<[number, number]> = [];
-	for (let i = 0; i < pts.length; i += 2) {
-		p.push([pts[i], pts[i + 1]]);
-	}
-	p.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-	if (p.length < 3) {
-		return p.flat();
-	}
-	const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-	const lower: Array<[number, number]> = [];
-	for (const q of p) {
-		while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) {
-			lower.pop();
+	/** Pen vertices from index `a` to index `b` in pen order, ends included on request. */
+	private walk(p: Pt, a: number, b: number, inclA: boolean, inclB: boolean): void {
+		if (inclA) {
+			this.penAt(p, a);
 		}
-		lower.push(q);
-	}
-	const upper: Array<[number, number]> = [];
-	for (let i = p.length - 1; i >= 0; i--) {
-		const q = p[i];
-		while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) {
-			upper.pop();
+		if (a === b) {
+			return;
 		}
-		upper.push(q);
+		for (let k = (a + 1) % this.n; k !== b; k = (k + 1) % this.n) {
+			this.penAt(p, k);
+		}
+		if (inclB) {
+			this.penAt(p, b);
+		}
 	}
-	lower.pop();
-	upper.pop();
-	return [...lower, ...upper].flat();
-}
 
-/** Signed area sign of a flat polygon (positive = counter-clockwise in the math sense). */
-function orientation(poly: number[]): number {
-	let a = 0;
-	for (let i = 0; i < poly.length; i += 2) {
-		const j = (i + 2) % poly.length;
-		a += poly[i] * poly[j + 1] - poly[j] * poly[i + 1];
-	}
-	return Math.sign(a);
-}
-
-/** `poly` oriented positively (reversed if needed), so WINDING fills of many pieces union. */
-function positive(poly: number[]): number[] {
-	if (orientation(poly) >= 0) {
-		return poly;
-	}
-	const out: number[] = [];
-	for (let i = poly.length - 2; i >= 0; i -= 2) {
-		out.push(poly[i], poly[i + 1]);
-	}
-	return out;
-}
-
-/** Splits a polyline (flat pairs) into dash pieces of `dashes` (on, off, ...) FIX lengths. */
-function dashPolyline(pts: number[], dashes: number[], closed: boolean): number[][] {
-	const seq = closed ? [...pts, pts[0], pts[1]] : pts;
-	const period = dashes.reduce((a, b) => a + b, 0);
-	if (period <= 0) {
-		return [seq];
-	}
-	const out: number[][] = [];
-	let idx = 0;
-	let left = dashes[0];
-	let on = true;
-	let cur: number[] | null = [seq[0], seq[1]];
-	for (let i = 0; i + 3 < seq.length; i += 2) {
-		let x0 = seq[i];
-		let y0 = seq[i + 1];
-		const x1 = seq[i + 2];
-		const y1 = seq[i + 3];
-		let len = Math.hypot(x1 - x0, y1 - y0);
-		while (len > 0) {
-			if (left >= len) {
-				left -= len;
-				if (on && cur) {
-					cur.push(x1, y1);
+	/**
+	 * Pen vertices angularly inside the wedge from side offset `A` to side
+	 * offset `B` (pen order, decreasing screen angle), in that order. A
+	 * vertex exactly on `A`'s ray is included when `startIncl`, one on `B`'s
+	 * ray when `endIncl`.
+	 */
+	private wedge(p: Pt, A: Pt, B: Pt, startIncl: boolean, endIncl: boolean): void {
+		const TWO = Math.PI * 2;
+		const aA = Math.atan2(A[1], A[0]);
+		const angleOf = (Q: Pt) => {
+			let v = (aA - Math.atan2(Q[1], Q[0])) % TWO;
+			if (v < 0) {
+				v += TWO;
+			}
+			return v;
+		};
+		const onRay = (R: Pt, Q: Pt) => R[0] * Q[1] - R[1] * Q[0] === 0 && R[0] * Q[0] + R[1] * Q[1] > 0;
+		const W = onRay(A, B) ? TWO : angleOf(B);
+		const list: [number, number][] = [];
+		for (let k = 0; k < this.n; k++) {
+			const Q = this.pen[k];
+			if (onRay(A, Q)) {
+				if (startIncl) {
+					list.push([0, k]);
 				}
-				len = 0;
+			} else if (onRay(B, Q)) {
+				if (endIncl) {
+					list.push([W, k]);
+				}
 			} else {
-				const t = left / len;
-				const mx = Math.round(x0 + (x1 - x0) * t);
-				const my = Math.round(y0 + (y1 - y0) * t);
-				if (on && cur) {
-					cur.push(mx, my);
-					out.push(cur);
-					cur = null;
-				} else {
-					cur = [mx, my];
-				}
-				on = !on;
-				idx = (idx + 1) % dashes.length;
-				left = dashes[idx];
-				len -= Math.hypot(mx - x0, my - y0);
-				x0 = mx;
-				y0 = my;
-				if (left <= 0 && dashes.every((d) => d <= 0)) {
-					return out;
+				const a = angleOf(Q);
+				if (a < W) {
+					list.push([a, k]);
 				}
 			}
 		}
+		list.sort((x, y) => x[0] - y[0]);
+		for (const [, k] of list) {
+			this.penAt(p, k);
+		}
 	}
-	if (on && cur && cur.length >= 4) {
+
+	/** Side offset of segment `s` at a join. */
+	private joinSide(s: Seg, side: 'L' | 'R'): Pt {
+		if (this.roundJoinSides) {
+			const q = this.pen[side === 'L' ? s.L : s.R];
+			return [halfPixel(q[0]), halfPixel(q[1])];
+		}
+		return side === 'R' ? s.v : [-s.v[0], -s.v[1]];
+	}
+
+	/** Side offset of segment `s` at a cap. */
+	private capSide(s: Seg, side: 'L' | 'R'): Pt {
+		if (this.rr) {
+			const q = this.pen[side === 'L' ? s.L : s.R];
+			return [halfPixel(q[0]), halfPixel(q[1])];
+		}
+		return side === 'R' ? s.v : [-s.v[0], -s.v[1]];
+	}
+
+	/** A cap at `p` from the `from` side of `s` round to the other side (`start`: around the back). */
+	private cap(p: Pt, s: Seg, start: boolean): void {
+		const from: 'L' | 'R' = start ? 'L' : 'R';
+		const to: 'L' | 'R' = start ? 'R' : 'L';
+		const { cap } = this.opts;
+		if (cap === 'round') {
+			this.push(p, this.capSide(s, from));
+			if (this.rr) {
+				this.walk(p, s[from], s[to], false, false);
+			} else {
+				const A = this.capSide(s, from);
+				this.wedge(p, A, [-A[0], -A[1]], true, false);
+			}
+			this.push(p, this.capSide(s, to));
+			return;
+		}
+		const sv = this.capSide(s, from);
+		const ev = this.capSide(s, to);
+		if (cap === 'square') {
+			const e: Pt = start ? [-s.e[0], -s.e[1]] : s.e;
+			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
+			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
+		} else {
+			this.push(p, sv);
+			this.push(p, ev);
+		}
+	}
+
+	/**
+	 * The join at `p` on `side`, coming along `a` and leaving along `b` in
+	 * outline order (for the left side, walked backwards, `a` is the later
+	 * segment).
+	 */
+	private join(p: Pt, a: Seg, b: Seg, side: 'L' | 'R', outer: boolean): void {
+		const { join, cap, width, miterLimit } = this.opts;
+		const sa = this.joinSide(a, side);
+		const sb = this.joinSide(b, side);
+		const Da = side === 'R' ? a.R : a.L;
+		const Db = side === 'R' ? b.R : b.L;
+		if (this.roundJoinSides && Da === Db) {
+			this.push(p, sa);
+			return;
+		}
+		this.push(p, sa);
+		if (outer) {
+			if (join === 'round') {
+				if (this.roundJoinSides) {
+					// The left side (walked backwards) keeps the pen's extreme
+					// vertex after a steep segment (measured).
+					const q = this.pen[Db];
+					const steep = Math.abs(b.dy) > Math.abs(b.dx);
+					const incl = side === 'L' && steep && Math.abs(q[0]) === this.maxX && q[0] * q[1] <= 0;
+					this.walk(p, Da, Db, false, incl);
+				} else {
+					const anti = sa[0] === -sb[0] && sa[1] === -sb[1];
+					this.wedge(p, sa, sb, !anti, !anti);
+				}
+			} else if (join === 'miter') {
+				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit);
+				if (m) {
+					this.push(p, m);
+				}
+			}
+		} else {
+			this.pts.push([p[0], p[1]]);
+			if (join === 'round' && cap === 'flat') {
+				// Flat-capped round joins loop round the pen on the inner side too.
+				this.push(p, sb);
+				this.wedge(p, sb, sa, false, false);
+				this.push(p, sa);
+				this.pts.push([p[0], p[1]]);
+			}
+		}
+		this.push(p, sb);
+	}
+
+	/** Emits the current figure. */
+	private flush(): void {
+		const out: number[] = [];
+		let lx = NaN;
+		let ly = NaN;
+		for (const [x, y] of this.pts) {
+			if (x !== lx || y !== ly) {
+				out.push(x, y);
+				lx = x;
+				ly = y;
+			}
+		}
+		while (out.length >= 4 && out[0] === out[out.length - 2] && out[1] === out[out.length - 1]) {
+			out.length -= 2;
+		}
+		if (out.length >= 6) {
+			this.out.push(out);
+		}
+		this.pts = [];
+	}
+
+	/**
+	 * Outlines an open polyline (distinct consecutive points). `dirs` (a
+	 * dash's segment directions) replaces each segment's own direction, and
+	 * lets a single point stand for a zero-length dash along `dirs[0]`;
+	 * `draws` (curve end tangents) picks draw vertices only.
+	 */
+	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[]): void {
+		if (P.length < 2 && !dirs?.[0]) {
+			this.dot(P[0]);
+			return;
+		}
+		const segs: Seg[] = [];
+		for (let i = 0; i + 1 < P.length; i++) {
+			segs.push(this.seg(P[i], P[i + 1], dirs?.[i], draws?.[i]));
+		}
+		if (segs.length === 0) {
+			const s = this.seg(P[0], P[0], dirs?.[0] as Pt, draws?.[0]);
+			this.cap(P[0], s, true);
+			this.cap(P[0], s, false);
+			this.flush();
+			return;
+		}
+		this.cap(P[0], segs[0], true);
+		for (let i = 0; i + 1 < segs.length; i++) {
+			const s = segs[i];
+			const t = segs[i + 1];
+			const tr = turnSign(s.dx, s.dy, t.dx, t.dy);
+			if (tr === 0) {
+				this.push(P[i + 1], this.joinSide(s, 'R'));
+			} else {
+				this.join(P[i + 1], s, t, 'R', tr < 0);
+			}
+		}
+		this.cap(P[P.length - 1], segs[segs.length - 1], false);
+		for (let i = segs.length - 1; i > 0; i--) {
+			const s = segs[i];
+			const t = segs[i - 1];
+			const tr = turnSign(t.dx, t.dy, s.dx, s.dy);
+			if (tr === 0) {
+				this.push(P[i], this.joinSide(s, 'L'));
+			} else {
+				this.join(P[i], s, t, 'L', tr > 0);
+			}
+		}
+		this.flush();
+	}
+
+	/** Outlines a closed polygon (distinct consecutive points, not repeating the first). */
+	closed(P: Pt[], draws?: (Pt | undefined)[]): void {
+		const m = P.length;
+		const segs: Seg[] = [];
+		for (let i = 0; i < m; i++) {
+			segs.push(this.seg(P[i], P[(i + 1) % m], undefined, draws?.[i]));
+		}
+		// Right side forward, starting at the second vertex.
+		for (let j = 1; j <= m; j++) {
+			const i = j % m;
+			const s = segs[(i + m - 1) % m];
+			const t = segs[i];
+			const tr = turnSign(s.dx, s.dy, t.dx, t.dy);
+			if (tr === 0) {
+				this.push(P[i], this.joinSide(s, 'R'));
+			} else {
+				this.join(P[i], s, t, 'R', tr < 0);
+			}
+		}
+		this.flush();
+		// Left side backward, starting at the first vertex.
+		for (let j = 0; j < m; j++) {
+			const i = (m - j) % m;
+			const s = segs[i];
+			const t = segs[(i + m - 1) % m];
+			const tr = turnSign(t.dx, t.dy, s.dx, s.dy);
+			if (tr === 0) {
+				this.push(P[i], this.joinSide(s, 'L'));
+			} else {
+				this.join(P[i], s, t, 'L', tr > 0);
+			}
+		}
+		this.flush();
+	}
+
+	/** A zero-length figure: the whole pen for a round cap, nothing otherwise. */
+	private dot(p: Pt): void {
+		if (this.opts.cap !== 'round') {
+			return;
+		}
+		for (let k = 0; k < this.n; k++) {
+			this.push(p, this.pen[k]);
+		}
+		this.flush();
+	}
+}
+
+/** A dash: its points and, per piece segment, the direction of the path segment it lies on. */
+interface DashPiece {
+	pts: Pt[];
+	dirs: Pt[];
+	/** Curve end tangents (draw vertices only) per piece segment. */
+	draws: (Pt | undefined)[];
+}
+
+/**
+ * Cuts a polyline into dash pieces of `dashes` (on, off, ...) FIX lengths
+ * by exact arc length, the cut points rounded to 28.4. With round or
+ * square caps (`shorten`, the pen width) GDI shortens every dash by the
+ * pen width so the caps end where the dash does; a dash no longer than the
+ * width becomes a single capped point.
+ */
+function dashPieces(P: Pt[], tangents: (Pt | undefined)[], pattern: number[], shorten: number): DashPiece[] {
+	const out: DashPiece[] = [];
+	const dashes: number[] = [];
+	for (let i = 0; i < pattern.length; i += 2) {
+		const on = pattern[i];
+		const off = pattern[i + 1] ?? 0;
+		const s = Math.min(on, shorten);
+		dashes.push(on - s, off + s);
+	}
+	if (dashes.reduce((a, b) => a + b, 0) <= 0) {
+		return [];
+	}
+	let idx = 0;
+	let left = dashes[0];
+	let on = true;
+	let cur: DashPiece | null = { pts: [P[0]], dirs: [], draws: [] };
+	for (let i = 0; i + 1 < P.length; i++) {
+		const [x0, y0] = P[i];
+		const [x1, y1] = P[i + 1];
+		const dir: Pt = [x1 - x0, y1 - y0];
+		const len = Math.hypot(dir[0], dir[1]);
+		let t = 0;
+		while (len - t > left || (left === 0 && on)) {
+			t += left;
+			const q: Pt = [Math.floor(x0 + (dir[0] * t) / len + 0.5), Math.floor(y0 + (dir[1] * t) / len + 0.5)];
+			if (on && cur) {
+				cur.pts.push(q);
+				cur.dirs.push(dir);
+				cur.draws.push(tangents[i]);
+				out.push(cur);
+				cur = null;
+			} else {
+				cur = { pts: [q], dirs: [], draws: [] };
+			}
+			on = !on;
+			idx = (idx + 1) % dashes.length;
+			left = dashes[idx];
+		}
+		left -= len - t;
+		if (on && cur) {
+			cur.pts.push(P[i + 1]);
+			cur.dirs.push(dir);
+			cur.draws.push(tangents[i]);
+		}
+	}
+	if (on && cur && cur.dirs.length > 0) {
 		out.push(cur);
 	}
 	return out;
 }
 
-/**
- * The polygons (flat FIX pairs, each positively oriented) whose WINDING
- * union is the widened outline of `path` for a wide pen (see the module
- * doc for which parts match GDI exactly).
- */
-export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
-	const out: number[][] = [];
-	const nib = penNib(opts.width);
-	const half = opts.width / 2;
-	for (const fig of path.figures) {
-		const raw = fig.pts;
-		// Drop repeated points.
-		const pts: number[] = [];
-		for (let i = 0; i < raw.length; i += 2) {
-			if (pts.length === 0 || pts[pts.length - 2] !== raw[i] || pts[pts.length - 1] !== raw[i + 1]) {
-				pts.push(raw[i], raw[i + 1]);
-			}
-		}
-		if (fig.closed && pts.length >= 4 && pts[0] === pts[pts.length - 2] && pts[1] === pts[pts.length - 1]) {
-			pts.length -= 2;
-		}
-		if (pts.length === 2) {
-			// A single point: GDI paints the nib (round) or a pen-sized square.
-			if (opts.cap === 'round') {
-				const n = orientNib(nib, nibFrame(1, 0));
-				out.push(positive(convexHull(n.map((v, i) => v + pts[i % 2]))));
-			}
-			continue;
-		}
-		const pieces = opts.dashes && opts.dashes.length > 0 ? dashPolyline(pts, opts.dashes, fig.closed) : [fig.closed ? [...pts, pts[0], pts[1]] : pts];
-		const closedWhole = fig.closed && !(opts.dashes && opts.dashes.length > 0);
-		for (const piece of pieces) {
-			widenPolyline(piece, closedWhole, opts, nib, half, out);
+/** `pts` (flat pairs) as points without consecutive duplicates. */
+function distinct(pts: readonly number[]): Pt[] {
+	const out: Pt[] = [];
+	for (let i = 0; i + 1 < pts.length; i += 2) {
+		const q: Pt = [pts[i], pts[i + 1]];
+		const last = out[out.length - 1];
+		if (!last || last[0] !== q[0] || last[1] !== q[1]) {
+			out.push(q);
 		}
 	}
 	return out;
 }
 
-/** Widens one polyline (flat pairs; `closed` means its last point equals its first and the ends join). */
-function widenPolyline(pts: number[], closed: boolean, opts: WidenOptions, nib: number[], half: number, out: number[][]): void {
-	const n = pts.length / 2;
-	if (n < 2) {
-		return;
-	}
-	const roundAll = opts.cap === 'round' && opts.join === 'round';
-	for (let i = 0; i + 1 < n; i++) {
-		const x0 = pts[i * 2];
-		const y0 = pts[i * 2 + 1];
-		const x1 = pts[i * 2 + 2];
-		const y1 = pts[i * 2 + 3];
-		const dx = x1 - x0;
-		const dy = y1 - y0;
-		const len = Math.hypot(dx, dy);
-		if (len === 0) {
-			continue;
-		}
-		if (roundAll) {
-			const nb = orientNib(nib, nibFrame(dx, dy));
-			const hullPts: number[] = [];
-			for (let k = 0; k < nb.length; k += 2) {
-				hullPts.push(x0 + nb[k], y0 + nb[k + 1], x1 + nb[k], y1 + nb[k + 1]);
+/**
+ * The outline figures (flat FIX pairs) whose WINDING fill is the stroke of
+ * `path` with a wide pen, as GDI builds them (see the module doc).
+ */
+export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
+	const out: number[][] = [];
+	const outliner = new Outliner(opts, out);
+	const dashed = !!opts.dashes && opts.dashes.length > 0;
+	for (const fig of path.figures) {
+		// Distinct points, and per remaining segment the curve tangent GDI
+		// widens it with (when it is a flattened Bezier's first or last).
+		let P: Pt[] = [];
+		const dirs: (Pt | undefined)[] = [];
+		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
+			const q: Pt = [fig.pts[i], fig.pts[i + 1]];
+			const last = P[P.length - 1];
+			if (last && last[0] === q[0] && last[1] === q[1]) {
+				continue;
 			}
-			out.push(positive(convexHull(hullPts)));
-			continue;
-		}
-		// Body: the segment offset by half the width either side, extended for
-		// a square cap at an open end.
-		const ux = dx / len;
-		const uy = dy / len;
-		const nx = -uy * half;
-		const ny = ux * half;
-		const first = i === 0 && !closed;
-		const last = i + 2 === n && !closed;
-		const ext0 = first && opts.cap === 'square' ? half : 0;
-		const ext1 = last && opts.cap === 'square' ? half : 0;
-		const ax = x0 - ux * ext0;
-		const ay = y0 - uy * ext0;
-		const bx = x1 + ux * ext1;
-		const by = y1 + uy * ext1;
-		out.push(
-			positive([ax + nx, ay + ny, bx + nx, by + ny, bx - nx, by - ny, ax - nx, ay - ny].map((v) => Math.round(v))),
-		);
-		if (first && opts.cap === 'round') {
-			out.push(roundDot(x0, y0, dx, dy, nib));
-		}
-		if (last && opts.cap === 'round') {
-			out.push(roundDot(x1, y1, dx, dy, nib));
-		}
-	}
-	if (roundAll) {
-		return;
-	}
-	// Joins at interior vertices (and the closing vertex of a closed figure).
-	const count = closed ? n - 1 : n - 2;
-	for (let j = 0; j < count; j++) {
-		const vi = closed ? (j + 1) % (n - 1) : j + 1;
-		const pi = vi === 0 ? n - 2 : vi - 1;
-		const ni = vi + 1;
-		const vx = pts[vi * 2];
-		const vy = pts[vi * 2 + 1];
-		const d0x = vx - pts[pi * 2];
-		const d0y = vy - pts[pi * 2 + 1];
-		const d1x = pts[ni * 2] - vx;
-		const d1y = pts[ni * 2 + 1] - vy;
-		const l0 = Math.hypot(d0x, d0y);
-		const l1 = Math.hypot(d1x, d1y);
-		if (l0 === 0 || l1 === 0) {
-			continue;
-		}
-		if (opts.join === 'round') {
-			out.push(roundDot(vx, vy, d1x, d1y, nib));
-			continue;
-		}
-		const turn = d0x * d1y - d0y * d1x;
-		if (turn === 0) {
-			continue;
-		}
-		// Outer side offsets of the two segments at the vertex.
-		const s = turn > 0 ? -1 : 1;
-		const o0x = (s * -d0y * half) / l0;
-		const o0y = (s * d0x * half) / l0;
-		const o1x = (s * -d1y * half) / l1;
-		const o1y = (s * d1x * half) / l1;
-		const piece = [vx, vy, vx + o0x, vy + o0y];
-		if (opts.join === 'miter') {
-			// Miter point: intersection of the two offset lines.
-			const denom = d0x * d1y - d0y * d1x;
-			const t = ((o1x - o0x) * d1y - (o1y - o0y) * d1x) / denom;
-			const mx = vx + o0x + d0x * t;
-			const my = vy + o0y + d0y * t;
-			const miterLen = Math.hypot(mx - vx, my - vy) / half;
-			if (miterLen <= opts.miterLimit) {
-				piece.push(mx, my);
+			if (last) {
+				dirs.push(fig.tangents?.get(i / 2 - 1));
 			}
+			P.push(q);
 		}
-		piece.push(vx + o1x, vy + o1y);
-		out.push(positive(piece.map((v) => Math.round(v))));
+		if (P.length === 0) {
+			continue;
+		}
+		const closed = fig.closed && P.length >= 2;
+		if (closed && P.length >= 2 && P[0][0] === P[P.length - 1][0] && P[0][1] === P[P.length - 1][1]) {
+			// The last segment becomes the closing one and keeps its direction.
+			P = P.slice(0, -1);
+		}
+		if (dashed) {
+			const run = closed ? [...P, P[0]] : P;
+			const shorten = opts.cap === 'flat' || opts.shortenDashes === false ? 0 : opts.width;
+			for (const piece of dashPieces(run, closed ? [...dirs, undefined] : dirs, opts.dashes as number[], shorten)) {
+				// Drop repeated points, keeping each remaining segment's direction.
+				const pts: Pt[] = [piece.pts[0]];
+				const pdirs: Pt[] = [];
+				const pdraws: (Pt | undefined)[] = [];
+				for (let i = 1; i < piece.pts.length; i++) {
+					const q = piece.pts[i];
+					const last = pts[pts.length - 1];
+					if (q[0] !== last[0] || q[1] !== last[1]) {
+						pts.push(q);
+						pdirs.push(piece.dirs[i - 1]);
+						pdraws.push(piece.draws[i - 1]);
+					}
+				}
+				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]]);
+			}
+		} else if (closed && P.length >= 3) {
+			outliner.closed(P, dirs);
+		} else if (closed && P.length === 2) {
+			outliner.open([P[0], P[1], P[0]]);
+		} else {
+			outliner.open(P, undefined, dirs);
+		}
 	}
+	return out;
 }
 
-/** The nib, oriented for direction (`dx`, `dy`), placed at (`x`, `y`). */
-function roundDot(x: number, y: number, dx: number, dy: number, nib: number[]): number[] {
-	const nb = orientNib(nib, nibFrame(dx, dy));
-	const p: number[] = [];
-	for (let k = 0; k < nb.length; k += 2) {
-		p.push(x + nb[k], y + nb[k + 1]);
+/**
+ * The miter point (FIX offset from the join, rounded) where the side lines
+ * `sa + t * da` and `sb + u * db` meet, or `null` when the miter would be
+ * longer than `limit` half widths (GDI then bevels).
+ */
+function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number): Pt | null {
+	const den = da[0] * db[1] - da[1] * db[0];
+	if (den === 0) {
+		return null;
 	}
-	return positive(convexHull(p));
+	const wx = sb[0] - sa[0];
+	const wy = sb[1] - sa[1];
+	const t = (wx * db[1] - wy * db[0]) / den;
+	const mx = sa[0] + da[0] * t;
+	const my = sa[1] + da[1] * t;
+	if (Math.hypot(mx, my) > (limit * width) / 2) {
+		return null;
+	}
+	return [Math.floor(mx + 0.5), Math.floor(my + 0.5)];
 }

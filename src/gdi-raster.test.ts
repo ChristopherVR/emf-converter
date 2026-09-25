@@ -21,7 +21,7 @@ import {
 	styleGapsUseBackground,
 	toFix,
 } from './gdi-raster';
-import { penNib, widenPath } from './gdi-raster-widen';
+import { drawVertices, flatVector, penPolygon, squareExtension, widenPath } from './gdi-raster-widen';
 
 /** Lit pixels of a line as "x,y" strings, in drawing order. */
 function line(x0: number, y0: number, x1: number, y1: number): string[] {
@@ -274,9 +274,37 @@ describe('pen styles', () => {
 });
 
 describe('widenPath', () => {
-	it('uses GDI’s pixel nibs for pens up to six pixels', () => {
-		expect(penNib(16)).toEqual([0, -8, -7, 0, 0, 8, 7, 0]);
-		expect(penNib(48).length).toBe(16);
+	it('uses Hobby pens up to six pixels and a flattened ellipse beyond', () => {
+		expect(penPolygon(32)).toEqual([[8, -16], [-8, -16], [-16, 0], [-8, 16], [8, 16], [16, 0]]);
+		expect(penPolygon(48).length).toBe(8);
+		// 10 px: the flattened first half, then its reflection through the centre.
+		expect(penPolygon(160)).toEqual([[80, 0], [57, -56], [0, -80], [-57, -56], [-80, 0], [-57, 56], [0, 80], [57, 56]]);
+	});
+
+	it('picks the draw vertices GDI strokes a segment with', () => {
+		const pen = penPolygon(48);
+		const [l, r] = drawVertices(pen, 1000, 0);
+		expect(pen[l]).toEqual([8, -24]);
+		expect(pen[r]).toEqual([-8, 24]);
+	});
+
+	it('rounds the perpendicular to the half-pixel grid as GDI does', () => {
+		// 6 px pen, slope 9/64 exactly: the x component sits on GDI's threshold.
+		expect(flatVector(96, 64000, 9000)).toEqual([0, 48]);
+		expect(flatVector(96, 64000, 9001)).toEqual([-8, 48]);
+		expect(squareExtension(48, 384, -448)).toEqual([16, -18]);
+	});
+
+	it('builds the exact outline of a round-pen polyline', () => {
+		const p = new GdiRasterPath();
+		p.moveTo(1600, 1600);
+		p.lineTo(1520, 1280);
+		p.lineTo(1168, 1200);
+		const figs = widenPath(p, { width: 64, cap: 'round', join: 'round', miterLimit: 10 });
+		// Measured with WidenPath + GetPath (start cap pulled on the pixel grid).
+		expect(figs).toEqual([
+			[1568, 1608, 1577, 1623, 1593, 1631, 1607, 1631, 1623, 1623, 1631, 1607, 1632, 1592, 1552, 1272, 1543, 1257, 1528, 1248, 1176, 1168, 1161, 1169, 1145, 1177, 1137, 1193, 1137, 1207, 1145, 1223, 1160, 1232, 1512, 1312, 1520, 1280, 1488, 1288],
+		]);
 	});
 
 	it('covers a round-capped horizontal line with GDI’s thickness', () => {

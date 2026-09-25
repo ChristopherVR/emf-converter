@@ -1768,7 +1768,8 @@ public static class GdiFixtures
 					int w = 5 + (c + j) % 3 * 2;
 					IntPtr pen = ExtPen(PS_GEOMETRIC | caps[c] | joins[j], w, Palette[(c * 3 + j) % 8] ^ 0x303030, null);
 					int ox = 8 + j * 78, oy = 10 + c * 62;
-					SetMiterLimit(hdc, c == 2 ? 1.5f : 10f, IntPtr.Zero);
+					// EMR_SETMITERLIMIT records a whole number, so the limit is one too.
+					SetMiterLimit(hdc, c == 2 ? 2f : 10f, IntPtr.Zero);
 					WithObjects(hdc, pen, IntPtr.Zero, delegate
 					{
 						Polyline(hdc, new[] { P(ox, oy + 40), P(ox + 15, oy), P(ox + 30, oy + 40), P(ox + 45, oy + 5), P(ox + 64, oy + 20) }, 5);
@@ -2487,6 +2488,40 @@ public static class GdiFixtures
 		TxRotatedAlignSheet("textx-rotalign-world", true, -20);
 	}
 
+	// Wide pens beyond the small (Hobby) nibs: flattened-ellipse pens of 7 to
+	// 14 px on closed polygons, ellipses, Bezier curves, rectangles and
+	// dashed polylines, in both graphics modes (category "gdi-raster").
+	static void RasterWideExtraCases()
+	{
+		GdiCase("raster-wide-extra", 240, 240, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 240);
+			IntPtr nb = GetStockObject(5);
+			IntPtr obr = SelectObject(hdc, nb);
+			uint[] caps = { 0, PS_ENDCAP_SQUARE, PS_ENDCAP_FLAT };
+			uint[] joins = { 0, PS_JOIN_BEVEL, PS_JOIN_MITER };
+			int[] widths = { 7, 9, 10, 12, 14 };
+			for (int k = 0; k < 15; k++)
+			{
+				SetGraphicsMode(hdc, k % 2 == 0 ? 1 : 2);
+				int w = widths[k % 5];
+				uint style = PS_GEOMETRIC | caps[k % 3] | joins[(k / 3) % 3] | (k >= 12 ? (uint)(k - 11) : 0u);
+				IntPtr pen = k % 4 == 3 ? CreatePen(0, w, Palette[k % 8] ^ 0x505050) : ExtPen(style, w, Palette[k % 8] ^ 0x505050, null);
+				int ox = 12 + (k % 5) * 46, oy = 14 + (k / 5) * 76;
+				WithObjects(hdc, pen, IntPtr.Zero, delegate
+				{
+					if (k % 5 == 0) { Polygon(hdc, new[] { P(ox, oy), P(ox + 30, oy + 8), P(ox + 14, oy + 40) }, 3); }
+					else if (k % 5 == 1) { Ellipse(hdc, ox - 4, oy, ox + 31, oy + 27); }
+					else if (k % 5 == 2) { PolyBezier(hdc, new[] { P(ox - 2, oy + 40), P(ox + 4, oy - 12), P(ox + 30, oy + 60), P(ox + 34, oy + 6) }, 4); }
+					else if (k % 5 == 3) { Rectangle(hdc, ox, oy + 4, ox + 30, oy + 36); }
+					else { Polyline(hdc, new[] { P(ox - 4, oy + 50), P(ox + 10, oy), P(ox + 22, oy + 44), P(ox + 34, oy + 8) }, 4); }
+				});
+			}
+			SetGraphicsMode(hdc, 1);
+			SelectObject(hdc, obr);
+		});
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
@@ -2501,6 +2536,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "rotation-affine") { RotationAffineBlitTextCases(); }
 		if (which == "all" || which == "text-extra") { TextExtraCases(); }
 		if (which == "all" || which == "gdi-raster") { RasterCases(); }
+		if (which == "all" || which == "gdi-raster") { RasterWideExtraCases(); }
 		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxSmoothingCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
 	}
 }

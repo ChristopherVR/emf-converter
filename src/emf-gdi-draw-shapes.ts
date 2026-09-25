@@ -241,6 +241,7 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 						appendRect(c);
 					},
 					raster: () => rectRasterPath(box),
+					rectangle: true,
 					fill: true,
 					stroke: true,
 					axisRect: isAxisBox(box) ? {} : undefined,
@@ -262,6 +263,7 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 					c.rect(x, y, w, h);
 				},
 				raster: () => rectRasterPath(box),
+				rectangle: true,
 				fill: true,
 				stroke: true,
 				axisRect: { interior: rectangleInterior(state, x, y, w, h, penScale(rCtx)) },
@@ -439,6 +441,7 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 					drawRoundRect(c);
 				},
 				raster: () => raster(curvedFixBox(rCtx, l, t, r, b)),
+				roundPen: true,
 				fill: true,
 				stroke: true,
 			});
@@ -504,6 +507,7 @@ function handleEllipse(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number):
 					c.ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, 0, Math.PI * 2);
 				},
 				raster: () => ellipseRasterPath(curvedFixBox(rCtx, l, t, r, b)),
+				roundPen: true,
 				fill: true,
 				stroke: true,
 			});

@@ -301,6 +301,18 @@ export interface RasterPaintOptions {
 	fillPath?: GdiRasterPath | null;
 	/** Dash-pattern cursor to continue (consecutive `LineTo` records share one). */
 	style?: StyleState;
+	/**
+	 * `path` is a `Rectangle` record's outline (`rectRasterPath`, which runs
+	 * in GDI's own order from the top right corner). GDI strokes it with
+	 * miter joins for a wide `CreatePen` pen (measured; an `ExtCreatePen`
+	 * pen keeps its own join).
+	 */
+	rectangle?: boolean;
+	/**
+	 * `path` is an `Ellipse` or `RoundRect` record's outline: GDI strokes it
+	 * with round caps and joins whatever the pen's own (measured).
+	 */
+	roundPen?: boolean;
 }
 
 /**
@@ -335,10 +347,19 @@ export function paintRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, opts
 		const dashes = state.penExtended ? geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1)) : null;
 		const polys = widenPath(path, {
 			width: Math.round(widthPx * 16),
-			cap: !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
-			join: !state.penExtended || joinBits === 0 ? 'round' : joinBits === 0x1000 ? 'bevel' : 'miter',
+			cap: opts.roundPen || !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
+			join: opts.roundPen
+				? 'round'
+				: opts.rectangle && !state.penExtended
+					? 'miter'
+					: !state.penExtended || joinBits === 0
+						? 'round'
+						: joinBits === 0x1000
+							? 'bevel'
+							: 'miter',
 			miterLimit: state.miterLimit ?? 10,
 			dashes: dashes ? dashes.map((v) => v * 16) : null,
+			shortenDashes: (flags & 0x0f) !== 7,
 		});
 		paintSpansDeferred(rCtx, fillPolygonSpans(polys, true), { kind: 'solid', rgb: rgbOf(state.penColor) }, state.rop2);
 		return true;

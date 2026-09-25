@@ -491,6 +491,10 @@ export interface GdiShape {
 	 * pixels out of the fill.
 	 */
 	axisRect?: { interior?: (target: CanvasContext) => void };
+	/** A `Rectangle` record: a wide pen strokes it as GDI does (see `RasterPaintOptions.rectangle`). */
+	rectangle?: boolean;
+	/** An `Ellipse`/`RoundRect` record: a wide pen strokes it with round caps and joins whatever its style. */
+	roundPen?: boolean;
 	/** Dash-pattern position to continue (consecutive `LineTo` records). */
 	style?: StyleState;
 }
@@ -550,7 +554,7 @@ export function paintGdiShape(rCtx: EmfGdiReplayCtx, shape: GdiShape): void {
 		return;
 	}
 	if ((cosmetic || penIsWidened(rCtx)) && (aliased || bitwise)) {
-		paintRasterPath(rCtx, getPath(), { fill: false, stroke: true, style: shape.style });
+		paintRasterPath(rCtx, getPath(), { fill: false, stroke: true, style: shape.style, rectangle: shape.rectangle, roundPen: shape.roundPen });
 		return;
 	}
 	const pattern = cosmeticPattern(rCtx);

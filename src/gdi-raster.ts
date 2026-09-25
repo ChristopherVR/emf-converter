@@ -787,6 +787,13 @@ export function arcBeziers(
 export interface GdiFigure {
 	pts: number[];
 	closed: boolean;
+	/**
+	 * Directions a wide pen uses instead of a flattened segment's own, keyed
+	 * by the segment's first point index: the first and last segment of a
+	 * flattened Bezier take its end tangents (GDI widens a curve with the
+	 * tangents at its ends; measured on ellipse outlines).
+	 */
+	tangents?: Map<number, [number, number]>;
 }
 
 /**
@@ -820,7 +827,29 @@ export class GdiRasterPath {
 			this.moveTo(last ? last[0] : c1x, last ? last[1] : c1y);
 		}
 		const p = this.current!.pts;
-		flattenBezier(p[p.length - 2], p[p.length - 1], c1x, c1y, c2x, c2y, x, y, p);
+		this.flattenInto(p[p.length - 2], p[p.length - 1], c1x, c1y, c2x, c2y, x, y);
+	}
+
+	/** Flattens one Bezier onto the open figure, recording its end tangents. */
+	private flattenInto(x0: number, y0: number, c1x: number, c1y: number, c2x: number, c2y: number, x3: number, y3: number): void {
+		const f = this.current!;
+		const first = f.pts.length / 2 - 1;
+		flattenBezier(x0, y0, c1x, c1y, c2x, c2y, x3, y3, f.pts);
+		const last = f.pts.length / 2 - 2;
+		if (last <= first) {
+			return;
+		}
+		const tangent = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): [number, number] | null => {
+			if (bx !== ax || by !== ay) return [bx - ax, by - ay];
+			if (cx !== ax || cy !== ay) return [cx - ax, cy - ay];
+			if (dx !== ax || dy !== ay) return [dx - ax, dy - ay];
+			return null;
+		};
+		const t0 = tangent(x0, y0, c1x, c1y, c2x, c2y, x3, y3);
+		const t1 = tangent(c2x, c2y, x3, y3, x3, y3, x3, y3) ?? tangent(c1x, c1y, x3, y3, x3, y3, x3, y3) ?? tangent(x0, y0, x3, y3, x3, y3, x3, y3);
+		f.tangents ??= new Map();
+		if (t0) f.tangents.set(first, t0);
+		if (t1) f.tangents.set(last, t1);
 	}
 
 	/**
@@ -833,9 +862,8 @@ export class GdiRasterPath {
 		} else {
 			this.lineTo(pts[0], pts[1]);
 		}
-		const p = this.current!.pts;
 		for (let i = 2; i + 5 < pts.length; i += 6) {
-			flattenBezier(pts[i - 2], pts[i - 1], pts[i], pts[i + 1], pts[i + 2], pts[i + 3], pts[i + 4], pts[i + 5], p);
+			this.flattenInto(pts[i - 2], pts[i - 1], pts[i], pts[i + 1], pts[i + 2], pts[i + 3], pts[i + 4], pts[i + 5]);
 		}
 	}
 
@@ -850,7 +878,7 @@ export class GdiRasterPath {
 	/** Appends every figure of `other`. */
 	append(other: GdiRasterPath): void {
 		for (const f of other.figures) {
-			this.figures.push({ pts: f.pts.slice(), closed: f.closed });
+			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents) });
 		}
 		this.current = null;
 	}

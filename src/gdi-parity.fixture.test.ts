@@ -287,12 +287,13 @@ const ALIASED_CASES: ParityCase[] = [
  * both directions, ALTERNATE vs WINDING polygon fills, bracketed paths, XOR
  * double-combination, cosmetic and geometric pen styles, wide pens with
  * every cap and join, rotated/mirrored/stretched/skewed blits, and a
- * 800-shape benchmark drawing. Under `gdiAntialias: false`:
- *   - exact at tolerance 0: everything but the rows below;
- *   - `raster-wide-pens`, `raster-wide-joins`, `raster-dash-geometric`: GDI
- *     adjusts its pen nib per segment slope and places flat/square caps and
- *     miter/bevel joins by its own rounding, which `gdi-raster-widen.ts`
- *     approximates.
+ * 800-shape benchmark drawing, plus wide flattened-ellipse pens on closed
+ * figures, curves and dashes (`raster-wide-extra`). Every one is exact at
+ * tolerance 0 under `gdiAntialias: false` except `raster-wide-extra`'s two
+ * Bezier curves: a 10 px flat-capped round-joined pen (GDI leaves out a pen
+ * vertex at a few joins of the flattened curve) and a dashed 10 px curve
+ * (GDI's direct dashed curve differs from its own `WidenPath`, which the
+ * widener reproduces exactly).
  */
 const raster = (name: string, maxMismatch = 0): ParityCase => ({
 	name,
@@ -318,9 +319,10 @@ const RASTER_CASES: ParityCase[] = [
 	raster('raster-arcs'), // was 0.117%
 	raster('raster-paths'), // was 0.057%
 	raster('raster-blit-rotated'), // was 0.350%
-	raster('raster-wide-pens', 0.006), // measured 0.420%
-	raster('raster-wide-joins', 0.013), // measured 0.991%
-	raster('raster-dash-geometric', 0.045), // measured 3.943%
+	raster('raster-wide-pens'), // was 0.420%
+	raster('raster-wide-joins'), // was 0.991%
+	raster('raster-dash-geometric'), // was 3.943%
+	raster('raster-wide-extra', 0.002), // measured 0.155%
 ];
 
 /**
@@ -351,6 +353,7 @@ const RASTER_AA_CASES: ParityCase[] = [
 	close('raster-wide-pens', 0.075), // measured 6.36%
 	close('raster-wide-joins', 0.06), // measured 4.87%
 	close('raster-blit-rotated', 0), // measured 0.00%
+	close('raster-wide-extra', 0.07), // measured 5.53%
 	close('raster-bench-shapes', 0.17), // measured 15.87%
 ];
 
