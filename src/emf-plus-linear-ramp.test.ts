@@ -82,6 +82,19 @@ describe('buildLinearRampTable', () => {
 		expect(t.knots[6]).toBe(42);
 	});
 
+	it('holds a gamma-corrected knot in 10-bit linear light', () => {
+		// GDI+'s raw output of this ramp at 1/16: (194, 18, 77); the unquantised
+		// 2.2 curve gives green 17.02, i.e. 17.
+		const t = buildLinearRampTable(ramp({ startArgb: 0xffc8001e, endArgb: 0xff003cff, gammaCorrected: true }), { x: 0, y: 0, w: 256, h: 1 });
+		expect(Array.from(t.knots.subarray(4, 8))).toEqual([194, 18, 77, 255]);
+	});
+
+	it('rounds the exact half-level knot of a translucent colour down', () => {
+		// GDI+ PARGB of a ramp from transparent to blue at alpha 200: knot 1 is alpha 13 over blue 12.
+		const t = buildLinearRampTable(ramp({ startArgb: 0x00ff0000, endArgb: 0xc80000ff }), { x: 0, y: 0, w: 256, h: 1 });
+		expect(Array.from(t.knots.subarray(4, 8))).toEqual([0, 0, 12, 13]);
+	});
+
 	it('premultiplies translucent knots', () => {
 		const t = buildLinearRampTable(ramp({ startArgb: 0x00ff0000, endArgb: 0xff0000ff }), { x: 0, y: 0, w: 10, h: 1 });
 		expect(Array.from(t.knots.subarray(0, 4))).toEqual([0, 0, 0, 0]);

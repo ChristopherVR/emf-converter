@@ -18,11 +18,13 @@
  *   points it has 16, 64 or 256 intervals, chosen from the brush
  *   rectangle's `width + height` in brush units (above 128: 64; above 512:
  *   256), not from the gradient's device length.
- * - A knot is the curve's colour at `k / N` rounded half up. With
- *   `GammaCorrection` the curve is evaluated in linear light (each end or
- *   preset colour raised to the power 2.2, interpolated, and re-encoded with
- *   the power 1 / 2.2) before rounding; the per-pixel interpolation between
- *   knots stays linear.
+ * - A knot is the curve's colour at `k / N` rounded half up (a translucent
+ *   colour's premultiplied value sits a hair below its exact product, so
+ *   its halves round down). With `GammaCorrection` the curve is evaluated
+ *   in linear light (each end or preset colour raised to the power 2.2 and
+ *   interpolated), held in 10 bits and re-encoded with the power 1 / 2.2
+ *   before rounding; the per-pixel interpolation between knots stays
+ *   linear.
  * - A pixel's ramp coordinate `u = t * N` runs in 16.16 fixed point, as
  *   an affine form of the device pixel whose three coefficients (the value
  *   at device (0, 0) and the steps per pixel in x and in y) are each rounded
@@ -119,7 +121,12 @@ function premultiplied(argb: number, gamma: boolean): [number, number, number, n
 	const k = a / 255;
 	const ch = (shift: number): number => {
 		const v = (argb >>> shift) & 0xff;
-		return (gamma ? 255 * Math.pow(v / 255, GAMMA) : v) * k;
+		// A translucent colour's premultiplied value lands a hair below the exact
+		// product, so a knot exactly half-way between levels rounds down
+		// (measured on the raw PARGB output of a ramp to alpha 200: its knot at
+		// 1/16 is alpha 13 over blue 12, while a ramp to an opaque colour
+		// rounds the same half up).
+		return (gamma ? 255 * Math.pow(v / 255, GAMMA) : v) * k * (a < 255 ? 1 - 2 ** -40 : 1);
 	};
 	return [ch(16), ch(8), ch(0), a];
 }
@@ -175,13 +182,20 @@ function rampColorAt(ramp: EmfPlusLinearRamp, t: number): [number, number, numbe
 	return mix(start, end, ramp.blend ? piecewise(ramp.blend.positions, ramp.blend.factors, t) : t);
 }
 
-/** Re-encodes a linear-light premultiplied channel to gamma space. */
+/**
+ * Re-encodes a linear-light premultiplied channel to gamma space. GDI+
+ * holds the linear value in 10 bits (rounded to 1/1023) before the
+ * inverse power: measured on 16 random two-colour gamma ramps, every one
+ * of their 768 knot channels matched, where the unquantised curve was off
+ * by one level on about one in eight (and by more in the darks).
+ */
 function encode(v: number, a: number): number {
 	if (a <= 0) {
 		return 0;
 	}
 	const k = a / 255;
-	return 255 * Math.pow(Math.max(0, v / k / 255), 1 / GAMMA) * k;
+	const linear = Math.round(Math.min(1, Math.max(0, v / k / 255)) * 1023) / 1023;
+	return 255 * Math.pow(linear, 1 / GAMMA) * k;
 }
 
 /**
