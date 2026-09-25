@@ -120,6 +120,9 @@ export function parseEmfPlusPenObject(
 	}
 	if (penFlags & PEN_COMPOUND_LINE) {
 		const n = u32() ?? 0;
+		if (n >= 2 && n <= MAX_PEN_ARRAY && o + n * 4 <= end) {
+			pen.compound = Array.from({ length: n }, (_, k) => view.getFloat32(o + k * 4, true));
+		}
 		o += Math.min(n, MAX_PEN_ARRAY) * 4;
 	}
 	for (const flag of [PEN_CUSTOM_START_CAP, PEN_CUSTOM_END_CAP]) {

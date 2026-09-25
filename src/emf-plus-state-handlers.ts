@@ -179,7 +179,25 @@ export function plusWorldMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
 /** Apply the current EMF+ world transform to the canvas, incorporating page units and DPI scale. */
 export function applyPlusWorldTransform(rCtx: EmfPlusReplayCtx): void {
 	const m = plusWorldMatrix(rCtx);
-	rCtx.ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+	const d = plusCanvasShift(rCtx);
+	rCtx.ctx.setTransform(m[0], m[1], m[2], m[3], m[4] + d, m[5] + d);
+}
+
+/**
+ * Canvas-space shift between GDI+'s antialiased pixel grid and Canvas's for
+ * vector geometry. GDI+'s antialiasing (SmoothingMode AntiAlias/HighQuality)
+ * averages an 8x4 grid of samples that, under `PixelOffsetMode`
+ * None/Default/HighSpeed, spans [x - 0.5, x + 0.5) around device pixel x
+ * (measured on single edges at 1/64-pixel steps); Canvas's pixel x covers
+ * [x, x + 1), so antialiased geometry is drawn half a pixel right and down.
+ * Under Half/HighQuality GDI+'s grid is Canvas's. Aliased GDI+ drawing
+ * (SmoothingMode None, the default) samples pixel x at x, which the
+ * unshifted Canvas edge of whole-pixel geometry already reproduces, so
+ * there is no shift. Pixel-indexed samplers (gradients, textures, images)
+ * are unaffected: they evaluate device pixel x at GDI+'s point.
+ */
+export function plusCanvasShift(rCtx: EmfPlusReplayCtx): number {
+	return rCtx.antiAlias && !isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0) ? 0.5 : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -330,14 +348,14 @@ function reapplyPlusClip(rCtx: EmfPlusReplayCtx): void {
  * rebuild the canvas clip state.
  */
 /**
- * Under `gdiAntialias: false` (raster output), an incoming EMF+ clip region
+ * Unless `gdiAntialias: true` (raster output), an incoming EMF+ clip region
  * as GDI+ itself holds it: the set of device pixels whose sample point lies
  * inside (see `aliasedSampleShift`), as disjoint pixel rectangles, instead
  * of a vector clip Canvas would antialias. Otherwise the region unchanged.
  */
 function pixelSnapPlusClip(rCtx: EmfPlusReplayCtx, incoming: ClipRegion): ClipRegion {
 	const domain = plusClipDomain(rCtx);
-	if (rCtx.gdiAntialias !== false || !incoming || !domain || isSvgContext(rCtx.ctx)) {
+	if (rCtx.gdiAntialias === true || !incoming || !domain || isSvgContext(rCtx.ctx)) {
 		return incoming;
 	}
 	const shift = (isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0) ? 0 : 0.5) - 1 / 32;
@@ -610,7 +628,7 @@ export function handleEmfPlusStateRecord(
 			rCtx.textRenderingHint = recFlags & 0xff;
 			return true;
 
-		// ---- antialiasing (honoured for fills and strokes under gdiAntialias: false) ----
+		// ---- antialiasing (honoured for fills and strokes unless gdiAntialias: true) ----
 		case EMFPLUS_SETANTIALIASMODE:
 			rCtx.antiAlias = (recFlags & 0x01) !== 0;
 			return true;

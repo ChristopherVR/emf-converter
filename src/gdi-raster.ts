@@ -474,7 +474,9 @@ class HfdBasis {
 /**
  * Flattens the cubic Bezier `p0..p3` (FIX) exactly as GDI does, appending
  * the resulting points AFTER `p0` (the start point is the caller's current
- * point) to `out` as flat `x, y` pairs.
+ * point) to `out` as flat `x, y` pairs. `tolerance` scales both HFD error
+ * tests: 1 is GDI's; GDI+ flattens with the same fixed-point HFD at 3/8 of
+ * it (see `GDIPLUS_HFD_TOLERANCE`, emf-plus-raster.ts).
  */
 export function flattenBezier(
 	p0x: number,
@@ -486,14 +488,17 @@ export function flattenBezier(
 	p3x: number,
 	p3y: number,
 	out: number[],
+	tolerance: number = 1,
 ): void {
+	const testInitial = HFD_TEST_INITIAL * tolerance;
+	const testNormal = HFD_TEST_NORMAL * tolerance;
 	const x = new HfdBasis(p0x, p1x, p2x, p3x);
 	const y = new HfdBasis(p0y, p1y, p2y, p3y);
 	let cSteps = 1;
 	let cShift = 0;
 	while (
 		cShift < 40 &&
-		(x.error() > HFD_TEST_INITIAL * 2 ** cShift || y.error() > HFD_TEST_INITIAL * 2 ** cShift)
+		(x.error() > testInitial * 2 ** cShift || y.error() > testInitial * 2 ** cShift)
 	) {
 		cShift += 2;
 		x.lazyHalve(cShift);
@@ -503,15 +508,15 @@ export function flattenBezier(
 	x.steadyState(cShift);
 	y.steadyState(cShift);
 	for (let guard = 0; cSteps > 0 && guard < 1 << 20; guard++) {
-		if (Math.max(x.error(), y.error()) > HFD_TEST_NORMAL) {
+		if (Math.max(x.error(), y.error()) > testNormal) {
 			x.halve();
 			y.halve();
 			cSteps *= 2;
 		}
 		while (
 			cSteps % 2 === 0 &&
-			x.parentErrorDividedBy4() <= HFD_TEST_NORMAL / 4 &&
-			y.parentErrorDividedBy4() <= HFD_TEST_NORMAL / 4
+			x.parentErrorDividedBy4() <= testNormal / 4 &&
+			y.parentErrorDividedBy4() <= testNormal / 4
 		) {
 			x.double();
 			y.double();

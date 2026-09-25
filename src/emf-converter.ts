@@ -92,7 +92,13 @@ export interface EmfConvertOptions {
 	 * Windows GDI does, with its own 28.4 fixed-point geometry, fill rule,
 	 * line algorithm and Bezier flattening, for output that matches what
 	 * Windows paints pixel for pixel; it is at least as fast as the default.
-	 * EMF+ drawing and text are unaffected.
+	 *
+	 * EMF+ fills, strokes and clips follow the GDI+ `SmoothingMode` the file
+	 * records, as GDI+ does, unless this is `true`: None, Default and
+	 * HighSpeed are drawn aliased on GDI+'s pixel grid, AntiAlias and
+	 * HighQuality with GDI+'s 8 x 4-sample antialiasing, and clip regions are
+	 * GDI+'s pixel sets. `true` draws every EMF+ edge with Canvas's own
+	 * smoothing instead. SVG output always keeps vector edges.
 	 */
 	gdiAntialias?: boolean;
 	/**

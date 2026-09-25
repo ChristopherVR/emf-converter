@@ -35,8 +35,9 @@ import { mulMatrix, pathGradientColorAt } from './emf-plus-brush-gradient';
 import { writeTextureColor } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { linearRampSampler } from './emf-plus-linear-ramp';
-import { applyPlusWorldTransform, plusWorldMatrix } from './emf-plus-state-handlers';
+import { applyPlusWorldTransform, plusCanvasShift, plusWorldMatrix } from './emf-plus-state-handlers';
 import { flatteningContext } from './emf-plus-flatten';
+import { figuresBox, rasterizePlusFill, recordPlusFigures, type FixFigure } from './emf-plus-raster';
 import { isSvgContext } from './svg-context';
 import type {
 	CanvasContext,
@@ -316,9 +317,10 @@ export function tryFillPlusShapeExact(
 	if (!size || typeof ctx.clip !== 'function' || typeof ctx.drawImage !== 'function') {
 		return false;
 	}
-	if (isPlusAliased(rCtx)) {
+	const mode = plusRasterMode(rCtx);
+	if (mode !== 'canvas') {
 		const any = anyBrushSampler(rCtx, flags, brushIdOrColor);
-		if (any && fillPlusShapeAliased(rCtx, any, buildPath, points, fillRule, size)) {
+		if (any && fillPlusShapeGdiplus(rCtx, any, buildPath, points, fillRule, size, mode)) {
 			return true;
 		}
 	}
@@ -379,9 +381,12 @@ export function paintBrushThroughMask(
 	sampler: DeviceBrushSampler,
 	box: { x: number; y: number; w: number; h: number },
 	drawCoverage: (c: CanvasContext) => void,
-	aliased: boolean = false,
+	mode: PlusRasterMode | boolean = 'canvas',
 	hitTest?: (c: CanvasContext, x: number, y: number) => boolean,
 ): boolean {
+	const rasterMode: PlusRasterMode = mode === true ? 'aliased' : mode === false ? 'canvas' : mode;
+	const aliased = rasterMode === 'aliased';
+	const gdiplusAa = rasterMode === 'gdiplus-aa';
 	const { ctx } = rCtx;
 	if (typeof ctx.drawImage !== 'function' || box.w * box.h > MAX_EXACT_PIXELS) {
 		return false;
@@ -401,13 +406,38 @@ export function paintBrushThroughMask(
 	// `hitTest` (`isPointInPath`/`isPointInStroke` on the geometry
 	// `drawCoverage` left current), or, without one, whether it is at least
 	// half covered.
-	const shift = aliased ? aliasedSampleShift(rCtx) : 0;
-	m.setTransform(device[0], device[1], device[2], device[3], device[4] - box.x + shift, device[5] - box.y + shift);
+	const shift = aliased ? aliasedSampleShift(rCtx) : plusCanvasShift(rCtx);
+	m.setTransform(device[0], device[1], device[2], device[3], device[4] - box.x + shift + Number(process.env.HDX ?? 0), device[5] - box.y + shift + Number(process.env.HDY ?? 0));
 	m.fillStyle = '#000';
 	m.strokeStyle = '#000';
-	// Aliased: curves become the polygon GDI+ flattens them to (emf-plus-flatten.ts).
-	drawCoverage(aliased ? flatteningContext(m, device) : m);
+	// GDI+ modes: curves become the polygon GDI+ flattens them to (emf-plus-flatten.ts).
+	drawCoverage(rasterMode !== 'canvas' ? flatteningContext(m, device) : m);
 	const coverage = canvasGetImageData(m, 0, 0, box.w, box.h).data;
+	if (gdiplusAa && hitTest && typeof m.isPointInPath === 'function') {
+		// GDI+'s antialiasing: the share of an 8 x 4 sample grid inside the
+		// geometry. With the half-pixel canvas shift, device pixel x's
+		// samples at x - 0.5 + i/8, y - 0.5 + j/4 land at canvas x + i/8,
+		// y + j/4 (a left or top edge exactly on a sample includes it). Only
+		// partly covered pixels need sampling.
+		for (let i = 3; i < coverage.length; i += 4) {
+			const cv = coverage[i];
+			if (cv === 0 || cv === 255) {
+				continue;
+			}
+			const p = (i - 3) / 4;
+			const px = p % box.w;
+			const py = Math.floor(p / box.w);
+			let k = 0;
+			for (let sj = 0; sj < 4; sj++) {
+				for (let si = 0; si < 8; si++) {
+					if (hitTest(m, px + si / 8 + AA_SAMPLE_NUDGE, py + sj / 4 + AA_SAMPLE_NUDGE)) {
+						k++;
+					}
+				}
+			}
+			coverage[i] = Math.round((k * 255) / 32);
+		}
+	}
 	if (aliased) {
 		const probe = hitTest && typeof m.isPointInPath === 'function' ? hitTest : null;
 		for (let i = 3; i < coverage.length; i += 4) {
@@ -456,14 +486,30 @@ export function aliasedSampleShift(rCtx: EmfPlusReplayCtx): number {
 	return (isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0) ? 0 : 0.5) - 1 / 32;
 }
 
+/** Canvas-space nudge of a GDI+ antialiasing sample, so an edge exactly on it counts it in. */
+const AA_SAMPLE_NUDGE = 1 / 1024;
+
 /**
- * True when EMF+ fills and strokes must be rasterised without antialiasing,
- * on GDI+'s own pixel grid: the `gdiAntialias: false` option is set, the
- * recorded GDI+ `SmoothingMode` is not antialiased (GDI+'s default), and
- * the output is raster (SVG keeps vector edges).
+ * How EMF+ fills and strokes are rasterised: `'aliased'` on GDI+'s pixel
+ * grid (SmoothingMode None, Default or HighSpeed: what GDI+ paints, a pixel
+ * is painted when its sample point is inside), `'gdiplus-aa'` with GDI+'s
+ * 8 x 4-sample antialiasing (SmoothingMode AntiAlias or HighQuality), or
+ * `'canvas'` with Canvas's own antialiasing (SVG output, and the
+ * `gdiAntialias: true` option, which keeps every edge smooth).
  */
+export type PlusRasterMode = 'canvas' | 'aliased' | 'gdiplus-aa';
+
+/** The {@link PlusRasterMode} for the current record (see its doc). */
+export function plusRasterMode(rCtx: EmfPlusReplayCtx): PlusRasterMode {
+	if (rCtx.gdiAntialias === true || isSvgContext(rCtx.ctx)) {
+		return 'canvas';
+	}
+	return rCtx.antiAlias ? 'gdiplus-aa' : 'aliased';
+}
+
+/** True when EMF+ drawing is rasterised aliased on GDI+'s grid (see {@link plusRasterMode}). */
 export function isPlusAliased(rCtx: EmfPlusReplayCtx): boolean {
-	return rCtx.gdiAntialias === false && !rCtx.antiAlias && !isSvgContext(rCtx.ctx);
+	return plusRasterMode(rCtx) === 'aliased';
 }
 
 /** A sampler painting one flat colour (packed ARGB) everywhere. */
@@ -513,19 +559,41 @@ function anyBrushSampler(rCtx: EmfPlusReplayCtx, flags: number, brushIdOrColor: 
 }
 
 /**
- * Fills a shape without antialiasing, on GDI+'s pixel grid (see
- * {@link isPlusAliased}): the shape's coverage is thresholded per pixel at
- * GDI+'s sample point and every covered pixel takes the brush colour.
+ * Fills a shape the way GDI+ rasterises it (see {@link plusRasterMode}):
+ * aliased on its pixel grid, or with its 8 x 4-sample antialiasing, every
+ * covered pixel taking the brush colour. The geometry is recorded as GDI+
+ * holds it (28.4 vertices, curves flattened by its HFD) and scan-converted
+ * by GDI+'s own rules (emf-plus-raster.ts); a path the recorder cannot
+ * model falls back to Canvas coverage sampled at GDI+'s points.
  */
-function fillPlusShapeAliased(
+function fillPlusShapeGdiplus(
 	rCtx: EmfPlusReplayCtx,
 	sampler: DeviceBrushSampler,
 	buildPath: (ctx: CanvasContext) => void,
 	points: ReadonlyArray<{ x: number; y: number }> | null,
 	fillRule: CanvasFillRule,
 	size: { w: number; h: number },
+	mode: PlusRasterMode,
 ): boolean {
-	const box = deviceBounds(points, plusWorldMatrix(rCtx), size);
+	const device = plusWorldMatrix(rCtx);
+	let figures: FixFigure[] | null = null;
+	try {
+		figures = recordPlusFigures(buildPath, device, mode === 'aliased');
+	} catch {
+		figures = null;
+	}
+	if (figures) {
+		const fbox = figuresBox(figures, size);
+		if (!fbox) {
+			return true; // Empty or entirely off the surface.
+		}
+		if (fbox.w * fbox.h <= MAX_EXACT_PIXELS) {
+			const half = isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0);
+			const coverage = rasterizePlusFill(figures, fillRule === 'evenodd', mode === 'gdiplus-aa', half, fbox);
+			return compositeBrushCoverage(rCtx, sampler, fbox, coverage);
+		}
+	}
+	const box = deviceBounds(points, device, size);
 	if (!box) {
 		return true;
 	}
@@ -538,7 +606,7 @@ function fillPlusShapeAliased(
 			buildPath(c);
 			c.fill(fillRule);
 		},
-		true,
+		mode,
 		(c, x, y) => c.isPointInPath(x, y, fillRule),
 	);
 }

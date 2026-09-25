@@ -1964,6 +1964,38 @@ public static class GdiFixtures
 		return p;
 	}
 
+	// Shapes under each SmoothingMode: None (GDI+'s default), HighSpeed,
+	// AntiAlias and HighQuality (GDI+'s 8x4-sample antialiasing).
+	static void GpxSmoothingCases()
+	{
+		const int W = 160, H = 100;
+		foreach (var sm in new[] { SmoothingMode.None, SmoothingMode.HighSpeed, SmoothingMode.AntiAlias, SmoothingMode.HighQuality })
+		{
+			var mode = sm;
+			GpCase("gpx-smooth-" + mode.ToString().ToLowerInvariant(), W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SmoothingMode = mode;
+				using (var b = new SolidBrush(Color.FromArgb(255, 30, 90, 200)))
+				{
+					g.FillEllipse(b, 6.3f, 5.7f, 50.2f, 37.9f);
+					g.FillPolygon(b, new PointF[] { new PointF(70.2f, 4.9f), new PointF(118.7f, 30.3f), new PointF(80.1f, 46.6f) });
+				}
+				using (var p = new GraphicsPath())
+				{
+					p.AddBezier(125, 8, 170, 20, 110, 60, 150, 48);
+					p.AddLine(150, 48, 128, 40);
+					using (var b = new SolidBrush(Color.FromArgb(255, 200, 40, 40)))
+					{ g.FillPath(b, p); }
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 20, 120, 40), 3.5f))
+				{ g.DrawEllipse(pen, 12.4f, 55.2f, 60.1f, 38.3f); }
+				using (var pen = new Pen(Color.FromArgb(255, 90, 20, 120), 1f))
+				{ g.DrawLine(pen, 85.3f, 60.2f, 155.7f, 93.1f); g.DrawLine(pen, 90.1f, 95.4f, 130.6f, 55.8f); }
+			});
+		}
+	}
+
 	static void GpxPathFillModeCases()
 	{
 		const int W = 160, H = 100;
@@ -2469,6 +2501,6 @@ public static class GdiFixtures
 		if (which == "all" || which == "rotation-affine") { RotationAffineBlitTextCases(); }
 		if (which == "all" || which == "text-extra") { TextExtraCases(); }
 		if (which == "all" || which == "gdi-raster") { RasterCases(); }
-		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
+		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxSmoothingCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
 	}
 }

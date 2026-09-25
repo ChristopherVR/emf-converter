@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 import { writeTextureColor } from './emf-plus-brush-texture';
-import { aliasedSampleShift, cssColorToArgb, isPlusAliased, solidSampler } from './emf-plus-exact-fill';
+import { aliasedSampleShift, cssColorToArgb, isPlusAliased, plusRasterMode, solidSampler } from './emf-plus-exact-fill';
 import { parseEmfPlusPenObject } from './emf-plus-object-complex';
 import { applyPlusPenStyle, canvasLineCap, canvasLineJoin, penDashArray, strokePlusGeometry } from './emf-plus-stroke';
 import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx } from './emf-types';
@@ -129,10 +129,15 @@ describe('aliased EMF+ helpers', () => {
 		expect(aliasedSampleShift({ pixelOffsetMode: 4 } as EmfPlusReplayCtx)).toBe(-1 / 32);
 	});
 
-	it('is aliased only under gdiAntialias: false with GDI+ antialiasing off', () => {
+	it('follows the recorded SmoothingMode unless gdiAntialias: true', () => {
 		const ctx = {} as CanvasContext;
 		expect(isPlusAliased({ ctx, gdiAntialias: false } as EmfPlusReplayCtx)).toBe(true);
-		expect(isPlusAliased({ ctx, gdiAntialias: false, antiAlias: true } as EmfPlusReplayCtx)).toBe(false);
-		expect(isPlusAliased({ ctx } as EmfPlusReplayCtx)).toBe(false);
+		expect(isPlusAliased({ ctx } as EmfPlusReplayCtx)).toBe(true);
+		expect(isPlusAliased({ ctx, antiAlias: true } as EmfPlusReplayCtx)).toBe(false);
+		expect(plusRasterMode({ ctx } as EmfPlusReplayCtx)).toBe('aliased');
+		expect(plusRasterMode({ ctx, antiAlias: true } as EmfPlusReplayCtx)).toBe('gdiplus-aa');
+		expect(plusRasterMode({ ctx, gdiAntialias: false, antiAlias: true } as EmfPlusReplayCtx)).toBe('gdiplus-aa');
+		expect(plusRasterMode({ ctx, gdiAntialias: true } as EmfPlusReplayCtx)).toBe('canvas');
+		expect(plusRasterMode({ ctx, gdiAntialias: true, antiAlias: true } as EmfPlusReplayCtx)).toBe('canvas');
 	});
 });

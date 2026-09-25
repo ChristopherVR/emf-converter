@@ -131,11 +131,12 @@ describe('tryFillPlusShapeExact', () => {
 		} as unknown as EmfPlusReplayCtx;
 	}
 
-	it('declines inline colours and plain solid brushes', () => {
+	it('declines inline colours and plain solid brushes under gdiAntialias: true', () => {
 		const rCtx = rCtxWith({ canvas: { width: 10, height: 10 }, clip: () => {}, drawImage: () => {} }, {
 			kind: 'plus-brush',
 			color: 'red',
 		});
+		rCtx.gdiAntialias = true;
 		expect(tryFillPlusShapeExact(rCtx, 0x8000, 0xffff0000, () => {}, null)).toBe(false);
 		expect(tryFillPlusShapeExact(rCtx, 0, 1, () => {}, null)).toBe(false);
 	});

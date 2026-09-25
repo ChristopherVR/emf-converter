@@ -577,6 +577,11 @@ export interface EmfPlusPen {
 	dashPattern?: number[] | null;
 	/** GDI+ `PenAlignment`: 0 Center, 1 Inset. */
 	alignment?: number;
+	/**
+	 * Compound line (`PenDataCompoundLine`): ascending pairs of fractions of
+	 * the pen width, each pair one parallel band of the stroke.
+	 */
+	compound?: number[] | null;
 	/** Pen transform (`PenDataTransform`), applied to the pen's width and shape. */
 	transform?: TransformMatrix | null;
 	/**
