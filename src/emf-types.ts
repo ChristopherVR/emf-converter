@@ -645,6 +645,11 @@ export interface EmfPlusStringFormat {
 	alignment: number;
 	/** Vertical (line) alignment: 0=Near, 1=Center, 2=Far. */
 	lineAlignment: number;
+	/** Space before / after the text, in ems (GenericDefault: 1/6), when recorded. */
+	leadingMargin?: number;
+	trailingMargin?: number;
+	/** Advance-width multiplier (GenericDefault: 1.03, GenericTypographic: 1), when recorded. */
+	tracking?: number;
 }
 
 /** An EMF+ (GDI+) image-attributes object (colour remapping, gamma, etc.). Currently a stub. */

@@ -365,6 +365,36 @@ describe('gdi-text-render', () => {
 		expect(columns(ink, 15)).toEqual([10]);
 	});
 
+	it('carries grayscale coverage as alpha on a transparent canvas, matching the blend over white', async () => {
+		const napi = await import('@napi-rs/canvas');
+		await ensureNodeCanvasModule();
+		const gray = fonts.realize(spec({ height: -20, quality: 4, ignoreGasp: true }))!;
+		expect(gray.mode).toBe('gray');
+		const draw = (white: boolean): Uint8ClampedArray => {
+			const canvas = napi.createCanvas(40, 30);
+			const ctx = canvas.getContext('2d') as unknown as CanvasContext;
+			if (white) {
+				ctx.fillStyle = '#ffffff';
+				ctx.fillRect(0, 0, 40, 30);
+			}
+			paintGdiTextRun(ctx, gray, run({ x: 10.3, codes: [0x49, 0x49], textColor: '#204080' }));
+			return (ctx as unknown as CanvasRenderingContext2D).getImageData(0, 0, 40, 30).data;
+		};
+		const clear = draw(false);
+		const white = draw(true);
+		let partial = 0;
+		for (let i = 0; i < clear.length; i += 4) {
+			const a = clear[i + 3] / 255;
+			if (a > 0 && a < 1) {
+				partial++;
+			}
+			for (let c = 0; c < 3; c++) {
+				expect(Math.abs(clear[i + c] * a + 255 * (1 - a) - white[i + c])).toBeLessThanOrEqual(1.5);
+			}
+		}
+		expect(partial).toBeGreaterThan(0);
+	});
+
 	it('exposes the run\'s glyph coverage as a device-space mask', () => {
 		const cov = gdiTextCoverage(font, run())!;
 		expect([cov.x, cov.y, cov.width, cov.height, cov.channels]).toEqual([10, 13, 3, 7, 1]);

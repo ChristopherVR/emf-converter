@@ -79,6 +79,11 @@ export interface LogFontSpec {
 	 * SingleBitPerPixel / AntiAlias text rendering hints). GDI never does.
 	 */
 	unhinted?: boolean;
+	/**
+	 * Antialias whatever the font's `gasp` table says (GDI+'s AntiAlias
+	 * hints do; GDI turns grayscale off where `gasp` asks).
+	 */
+	ignoreGasp?: boolean;
 }
 
 /**
@@ -843,7 +848,7 @@ export class GdiFontCollection {
 					best,
 					ppem,
 					ppemX,
-					this.modeFor(best, spec.quality, ppem),
+					this.modeFor(best, spec.quality, ppem, spec.ignoreGasp),
 					synthBold,
 					synthItalic,
 					cellHeight,
@@ -867,7 +872,7 @@ export class GdiFontCollection {
 	}
 
 	/** Rendering mode for a LOGFONT quality at a ppem (honouring the font's `gasp`). */
-	private modeFor(font: TtfFont, quality: number, ppem: number): GdiTextMode {
+	private modeFor(font: TtfFont, quality: number, ppem: number, ignoreGasp = false): GdiTextMode {
 		let mode: GdiTextMode;
 		switch (quality) {
 			case NONANTIALIASED_QUALITY:
@@ -882,7 +887,7 @@ export class GdiFontCollection {
 			default:
 				mode = this.defaultSmoothing;
 		}
-		if (mode === 'gray') {
+		if (mode === 'gray' && !ignoreGasp) {
 			const range = font.gasp.find((r) => ppem <= r.maxPpem);
 			if (range && (range.behavior & 2) === 0) {
 				return 'mono';

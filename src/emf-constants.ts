@@ -174,6 +174,8 @@ export const EMR_COMMENT_UNICODE_END = 0x00000080;
 export const EMFPLUS_HEADER = 0x4001;
 export const EMFPLUS_ENDOFFILE = 0x4002;
 export const EMFPLUS_GETDC = 0x4004;
+/** EmfPlusClear: fills the drawing surface (within the clip) with an ARGB colour. */
+export const EMFPLUS_CLEAR = 0x4009;
 export const EMFPLUS_OBJECT = 0x4008;
 export const EMFPLUS_FILLRECTS = 0x400a;
 export const EMFPLUS_DRAWRECTS = 0x400b;

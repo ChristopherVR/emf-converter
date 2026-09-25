@@ -424,6 +424,23 @@ describe('emf-plus-object-parser', () => {
 			}
 		});
 
+		it('reads the margins and tracking when recorded', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			rCtx.view.setUint32(d, 0xdbc01002, true);
+			rCtx.view.setFloat32(d + 36, 1 / 6, true); // LeadingMargin
+			rCtx.view.setFloat32(d + 40, 1 / 6, true); // TrailingMargin
+			rCtx.view.setFloat32(d + 44, 1.03, true); // Tracking
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_STRINGFORMAT, 11), d, 60);
+			const sf = rCtx.objectTable.get(11);
+			expect(sf?.kind).toBe('plus-stringformat');
+			if (sf?.kind === 'plus-stringformat') {
+				expect(sf.leadingMargin).toBeCloseTo(1 / 6, 6);
+				expect(sf.trailingMargin).toBeCloseTo(1 / 6, 6);
+				expect(sf.tracking).toBeCloseTo(1.03, 6);
+			}
+		});
+
 		it('ignores string format with recDataSize < 16', () => {
 			const rCtx = makeRCtx();
 			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_STRINGFORMAT, 0), 0, 12);

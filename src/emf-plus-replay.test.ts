@@ -202,6 +202,18 @@ describe('emf-plus-replay', () => {
 			expect(ctx.fillRect as ReturnType<typeof vi.fn>).toHaveBeenCalledOnce();
 		});
 
+		it('fills the surface for EmfPlusClear', () => {
+			const buf = new ArrayBuffer(64);
+			const view = new DataView(buf);
+			const off = writeEmfPlusRecord(view, 0, 0x4009, 0, 4, (v, d) => {
+				v.setUint32(d, 0xffffffff, true); // opaque white
+			});
+			writeEmfPlusRecord(view, off, EMFPLUS_ENDOFFILE, 0, 0);
+			const ctx = makeCtxStub();
+			replayEmfPlusRecords(view, 0, off + 12, ctx as unknown as CanvasRenderingContext2D, 300, 200);
+			expect(ctx.fillRect as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(0, 0, 300, 200);
+		});
+
 		it('breaks on invalid recSize (too small)', () => {
 			const buf = new ArrayBuffer(32);
 			const view = new DataView(buf);

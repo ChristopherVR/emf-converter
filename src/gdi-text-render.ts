@@ -96,6 +96,39 @@ function parseHex(c: string): [number, number, number] {
 	return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+/**
+ * Writes into `out` (at `o`) a colour and alpha for a text pixel over a
+ * transparent destination (a metafile drawn onto a transparent canvas),
+ * where GDI's gamma blend has no backdrop to work on yet. The pair is
+ * exact once composited over white (what GDI draws on and what most
+ * viewers show), and keeps roughly the coverage as alpha otherwise.
+ * `blend(s, d, c)` is the per-channel blend of text `s` over `d`.
+ */
+function blendOverUnknown(
+	out: Uint8ClampedArray,
+	o: number,
+	rgb: readonly number[],
+	blend: (s: number, d: number, c: number) => number,
+): void {
+	const onWhite = [0, 0, 0];
+	let a = 0;
+	let minWhite = 255;
+	for (let c = 0; c < 3; c++) {
+		onWhite[c] = blend(rgb[c], 255, c);
+		a += 1 - (onWhite[c] - blend(rgb[c], 0, c)) / 255;
+		minWhite = Math.min(minWhite, onWhite[c]);
+	}
+	// The alpha must at least darken white to the darkest channel.
+	a = Math.min(1, Math.max(a / 3, 1 - minWhite / 255));
+	if (a <= 0) {
+		return;
+	}
+	for (let c = 0; c < 3; c++) {
+		out[o + c] = Math.round((onWhite[c] - 255 * (1 - a)) / a);
+	}
+	out[o + 3] = Math.round(a * 255);
+}
+
 /** Blends one channel of text `s` over background `d` at coverage `k` (0..16). */
 function blendGray(s: number, d: number, k: number): number {
 	if (k <= 1) {
@@ -241,10 +274,11 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 		// hints keep the fractional x (to 1/64 pixel) in the glyph itself.
 		const ox = font.gridFit ? Math.round(origin.x) : Math.floor(origin.x);
 		const subX = font.gridFit ? 0 : Math.round((origin.x - ox) * 64);
-		origins.push({ x: ox + subX / 64, y: Math.round(origin.y), along, down });
+		const oy = Math.round(origin.y);
+		origins.push({ x: ox + subX / 64, y: oy, along, down });
 		const g = font.glyph(glyphs[i], gm, subX);
 		if (g.bitmap) {
-			placed.push({ x: ox + g.bitmap.left, y: Math.round(origin.y) - g.bitmap.top, bitmap: g.bitmap });
+			placed.push({ x: ox + g.bitmap.left, y: oy - g.bitmap.top, bitmap: g.bitmap });
 		}
 		along += adv[i];
 		down += advY[i];
@@ -479,11 +513,13 @@ function compositeGlyphs(
 			rgba[o + 1] = g;
 			rgba[o + 2] = b;
 			rgba[o + 3] = 255;
-		} else if (dst) {
+		} else if (dst && dst[o + 3] === 255) {
 			rgba[o] = blendGray(r, dst[o], k);
 			rgba[o + 1] = blendGray(g, dst[o + 1], k);
 			rgba[o + 2] = blendGray(b, dst[o + 2], k);
 			rgba[o + 3] = 255;
+		} else if (dst) {
+			blendOverUnknown(rgba, o, [r, g, b], (s, d) => blendGray(s, d, k));
 		} else {
 			rgba[o] = r;
 			rgba[o + 1] = g;
@@ -688,6 +724,11 @@ function compositeClearType(
 		const a2 = alpha[i * 3 + 2];
 		if (!a0 && !a1 && !a2) continue;
 		const o = i * 4;
+		if (dst[o + 3] !== 255) {
+			const cov = [a0 / 255, a1 / 255, a2 / 255];
+			blendOverUnknown(rgba, o, rgb, (s, d, c) => blendCt(s, d, cov[c]));
+			continue;
+		}
 		rgba[o] = blendCt(rgb[0], dst[o], a0 / 255);
 		rgba[o + 1] = blendCt(rgb[1], dst[o + 1], a1 / 255);
 		rgba[o + 2] = blendCt(rgb[2], dst[o + 2], a2 / 255);

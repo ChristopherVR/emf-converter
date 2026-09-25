@@ -8,10 +8,12 @@
 import {
 	EMFPLUS_HEADER,
 	EMFPLUS_ENDOFFILE,
+	EMFPLUS_CLEAR,
 	EMFPLUS_GETDC,
 	EMFPLUS_OBJECT,
 	MAX_RECORDS_EMFPLUS_DEFAULT,
 } from './emf-constants';
+import { argbToRgba } from './emf-color-helpers';
 import { emfLog } from './emf-logging';
 import { createContinuationAccumulator, feedEmfPlusObjectRecord } from './emf-plus-continuation';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
@@ -36,6 +38,7 @@ const EMFPLUS_REC_NAMES: Record<number, string> = {
 	0x4002: 'EndOfFile',
 	0x4004: 'GetDC',
 	0x4008: 'Object',
+	0x4009: 'Clear',
 	0x400a: 'FillRects',
 	0x400b: 'DrawRects',
 	0x400c: 'FillPolygon',
@@ -151,6 +154,25 @@ export function replayEmfPlusRecords(
 
 			case EMFPLUS_GETDC:
 				break;
+
+			case EMFPLUS_CLEAR: {
+				// Graphics.Clear: every pixel inside the clip becomes the colour,
+				// replacing (not blending with) what was there.
+				if (recDataSize >= 4) {
+					const argb = view.getUint32(dataOff, true);
+					ctx.save();
+					ctx.setTransform(1, 0, 0, 1, 0, 0);
+					ctx.globalAlpha = 1;
+					ctx.globalCompositeOperation = 'source-over';
+					if (argb >>> 24 !== 0xff) {
+						ctx.clearRect(0, 0, canvasW, canvasH);
+					}
+					ctx.fillStyle = argbToRgba(argb);
+					ctx.fillRect(0, 0, canvasW, canvasH);
+					ctx.restore();
+				}
+				break;
+			}
 
 			case EMFPLUS_OBJECT: {
 				// Continuation runs are reassembled by the same code the texture

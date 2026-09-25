@@ -98,11 +98,17 @@ export function handleEmfPlusObjectRecord(
 				const sfFlags = view.getUint32(dataOff + 4, true);
 				const alignment = view.getUint32(dataOff + 12, true);
 				const lineAlignment = view.getUint32(dataOff + 16, true);
+				// LeadingMargin, TrailingMargin and Tracking follow the
+				// digit-substitution, first-tab-offset and hotkey fields.
+				const hasSpacing = recDataSize >= 48;
 				objectTable.set(objectId, {
 					kind: 'plus-stringformat',
 					flags: sfFlags,
 					alignment: alignment ?? 0,
 					lineAlignment: lineAlignment ?? 0,
+					leadingMargin: hasSpacing ? view.getFloat32(dataOff + 36, true) : undefined,
+					trailingMargin: hasSpacing ? view.getFloat32(dataOff + 40, true) : undefined,
+					tracking: hasSpacing ? view.getFloat32(dataOff + 44, true) : undefined,
 				});
 			}
 			break;

@@ -40,6 +40,7 @@ import type {
 	EmfPlusFont,
 	EmfPlusImage,
 	EmfPlusReplayCtx,
+	EmfPlusStringFormat,
 	TransformMatrix,
 } from './emf-types';
 
@@ -272,6 +273,9 @@ const HINT_QUALITY = [NONANTIALIASED_QUALITY, NONANTIALIASED_QUALITY, NONANTIALI
 /** GDI+'s leading padding before the first glyph of a DrawString (a sixth of the em). */
 const PLUS_LEADING_EM = 1 / 6;
 
+/** GDI+'s default StringFormat tracking (advance multiplier). */
+const PLUS_DEFAULT_TRACKING = 1.03;
+
 function rgbaToHex(c: string): string | null {
 	const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(c.trim());
 	if (m) {
@@ -296,6 +300,7 @@ function drawPlusStringWithEngine(
 	layoutY: number,
 	paint: string | CanvasGradient | CanvasPattern,
 	alignment: number,
+	format?: EmfPlusStringFormat,
 ): boolean {
 	const fonts = rCtx.fonts;
 	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
@@ -320,25 +325,37 @@ function drawPlusStringWithEngine(
 		pitchAndFamily: 0,
 		quality,
 		unhinted: hint === 2 || hint === 4,
+		// AntiAlias ignores the font's gasp table (measured: Arial 16 px is
+		// grayscale there, but single-bit under AntiAliasGridFit, as in GDI).
+		ignoreGasp: hint === 4,
 	};
 	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
 	if (!realized) {
 		return false;
 	}
 	const ttf = realized.ttf;
-	const ascent = Math.ceil((emPx * ttf.winAscent) / ttf.unitsPerEm);
-	const x = m[0] * layoutX + m[4] + emPx * PLUS_LEADING_EM;
+	const unhinted = spec.unhinted === true;
+	// Grid-fitted hints put the baseline on a whole pixel; the others keep
+	// GDI+'s fractional one (rounded when the glyphs are placed).
+	const exactAscent = (emPx * ttf.winAscent) / ttf.unitsPerEm;
+	const ascent = unhinted ? exactAscent : Math.ceil(exactAscent);
+	const x = m[0] * layoutX + m[4] + emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
 	const y = m[3] * layoutY + m[5] + ascent;
 	const codes: number[] = [];
 	for (let i = 0; i < text.length; i++) {
 		codes.push(text.charCodeAt(i));
 	}
+	// Without grid fitting GDI+ spaces glyphs by their linear advances times
+	// the format's tracking (1.03 for the default format, 1 for
+	// GenericTypographic; measured with MeasureString).
+	const tracking = format?.tracking ?? PLUS_DEFAULT_TRACKING;
+	const dx = unhinted ? codes.map((c) => realized.advance(realized.glyphIndex(c)) * tracking) : null;
 	paintGdiTextRun(rCtx.ctx, realized, {
 		codes,
 		glyphIndices: false,
 		x,
 		y,
-		dx: null,
+		dx,
 		dy: null,
 		textAlign: 0x18,
 		textColor: color,
@@ -440,7 +457,8 @@ export function handleEmfPlusTextImageRecord(
 						const sf = objectTable.get(formatId);
 						const paint = resolveBrushPaint(rCtx, recFlags, brushVal);
 						const alignment = sf && sf.kind === 'plus-stringformat' ? sf.alignment : 0;
-						if (drawPlusStringWithEngine(rCtx, font, text, layoutX, layoutY, paint, alignment)) {
+						const format = sf && sf.kind === 'plus-stringformat' ? sf : undefined;
+						if (drawPlusStringWithEngine(rCtx, font, text, layoutX, layoutY, paint, alignment, format)) {
 							return true;
 						}
 						const bold = font.flags & 1 ? 'bold ' : '';
