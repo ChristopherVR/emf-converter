@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 
 import { readFileSync } from 'node:fs';
 
-import { compareFixture, fixturePath, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
+import { compareFixture, fixturePath, loadReference, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { setSoftwareCanvasOnly } from './emf-canvas-helpers';
 import { parseWmfHeader } from './emf-header-parser';
 import type { EmfConvertOptions } from './index';
@@ -780,6 +780,51 @@ const WMF_RECORD_CASES: ParityCase[] = [
  */
 const WMF_TEXT_SPACING_CASES: ParityCase[] = [wmf('wmf-text-spacing', 0.0002)]; // measured 0.006%
 
+/**
+ * EMF records that had no handler before (`emf-records` fixtures, drawn
+ * directly by GDI onto a 32bpp DIB, in the default Windows-exact mode):
+ * palettes and PALETTEINDEX / DIBPALETTEINDEX / PALETTERGB colours and
+ * DIB_PAL_COLORS bitmaps, AlphaBlend (every constant alpha and every
+ * per-pixel alpha, premultiplied or not, stretched, mirrored),
+ * TransparentBlt, MaskBlt, PlgBlt (mask included), banded SetDIBitsToDevice,
+ * GradientFill rectangles and triangles, FillRgn / FrameRgn / InvertRgn /
+ * PaintRgn, ExtFloodFill, AngleArc, PolyDraw / PolyDraw16,
+ * PolyPolyline16 and Flatten / Widen / AbortPath. Every one is pixel-exact
+ * but for the wide-pen widener's known residual (`gdi-raster-widen.ts`):
+ * `emfrec-anglearc` (a 7 px flat-capped miter pen along the arc; the
+ * AngleArc path itself matches GDI's `GetPath` point for point),
+ * `emfrec-path-flatten` (the same pen on a flattened curve) and the
+ * WidenPath outlines.
+ */
+const emfrec = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
+
+const EMF_RECORD_CASES: ParityCase[] = [
+	emfrec('emfrec-palette-index'),
+	emfrec('emfrec-palette-dib'),
+	emfrec('emfrec-alphablend'),
+	emfrec('emfrec-alphablend-sweep'),
+	emfrec('emfrec-transparentblt'),
+	emfrec('emfrec-maskblt'),
+	emfrec('emfrec-plgblt'),
+	emfrec('emfrec-setdibits'),
+	emfrec('emfrec-gradient-rect'),
+	emfrec('emfrec-gradient-tri'),
+	emfrec('emfrec-fillrgn'),
+	emfrec('emfrec-fillrgn-scaled'),
+	emfrec('emfrec-framergn'),
+	emfrec('emfrec-invertrgn'),
+	emfrec('emfrec-paintrgn'),
+	emfrec('emfrec-floodfill'),
+	emfrec('emfrec-polydraw16'),
+	emfrec('emfrec-polydraw32'),
+	emfrec('emfrec-polypolyline16'),
+	emfrec('emfrec-path-abort'),
+	emfrec('emfrec-anglearc', 0.001), // measured 0.062%
+	emfrec('emfrec-path-flatten', 0.0005), // measured 0.011%
+	emfrec('emfrec-path-widen', 0.002), // measured 0.157%
+	emfrec('emfrec-path-widen-outline', 0.015), // measured 1.184%
+];
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -901,6 +946,20 @@ describe('GDI ground-truth parity', () => {
 		});
 	});
 
+	describe('EMF records added with the emf-records fixtures', () => {
+		it.each(EMF_RECORD_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+
+		it('SetMapperFlags(ASPECT_FILTERING) changes nothing Windows paints', async () => {
+			const on = await loadReference('emfrec-text-mapperflags');
+			const off = await loadReference('emfrec-text-mapperflags-off');
+			expect(Buffer.from(on.data).equals(Buffer.from(off.data))).toBe(true);
+		});
+	});
+
 	describe.skipIf(!windowsFonts())('WMF text spacing via the font engine (Windows fonts)', () => {
 		it.each(WMF_TEXT_SPACING_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()! });
@@ -970,6 +1029,7 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 		...IMAGE_DRAW_CASES,
 		...TEXTURE_FILL_CASES,
 		...WMF_RECORD_CASES,
+		...EMF_RECORD_CASES,
 	];
 	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
 		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);

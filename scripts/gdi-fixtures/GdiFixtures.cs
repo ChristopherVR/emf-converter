@@ -3917,6 +3917,7 @@ public static class GdiFixtures
 		GdiCase("emfrec-path-flatten", 220, 170, delegate (IntPtr hdc)
 		{
 			Stripes(hdc, 220, 170);
+			SetGraphicsMode(hdc, 2); // GM_ADVANCED: the EMF's own meaning of RoundRect/Ellipse
 			WithObjects(hdc, CreatePen(2, 0, Rgb(0x10, 0x10, 0x10)), GetStockObject(5), delegate
 			{
 				BeginPath(hdc);
@@ -3952,6 +3953,7 @@ public static class GdiFixtures
 			ErApi.SelectClipPath(hdc, 5);
 			WithObjects(hdc, GetStockObject(8), CreateHatchBrush(5, Rgb(0x80, 0, 0x80)), delegate { Rectangle(hdc, 100, 100, 220, 170); });
 			ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+			SetGraphicsMode(hdc, 1);
 		});
 
 		GdiCase("emfrec-path-widen", 240, 200, delegate (IntPtr hdc)
@@ -4196,6 +4198,9 @@ public static class GdiFixtures
 		{
 			Fill(hdc, 0, 0, 220, 150, Rgb(0xFF, 0xFF, 0xFF));
 			int black = Rgb(0, 0, 0);
+			// R2_MASKPEN (black pen AND white) paints the borders pixel-exact in
+			// every output mode, so the fill reads the same destination everywhere.
+			SetROP2(hdc, 9);
 			WithObjects(hdc, CreatePen(0, 0, black), GetStockObject(5), delegate
 			{
 				Ellipse(hdc, 6, 6, 90, 70);
@@ -4204,6 +4209,7 @@ public static class GdiFixtures
 				Polygon(hdc, new[] { P(40, 80), P(80, 110), P(40, 145), P(6, 110) }, 4);
 				Rectangle(hdc, 150, 80, 215, 145);
 			});
+			SetROP2(hdc, 13);
 			Fill(hdc, 100, 80, 140, 145, Rgb(0x20, 0x40, 0xC0));
 			Fill(hdc, 110, 90, 130, 100, Rgb(0xFF, 0xFF, 0xFF));
 			Fill(hdc, 115, 110, 125, 140, Rgb(0x20, 0x40, 0xC1));

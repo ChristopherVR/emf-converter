@@ -17,6 +17,7 @@ import { handleEmfGdiBitmapRecord } from './emf-gdi-draw-bitmap';
 import { handleEmfGdiDrawTextRecord } from './emf-gdi-draw-text';
 import { handleEmfGdiClipRecord } from './emf-gdi-clip-records';
 import { handleEmfGdiFloodFillRecord } from './emf-gdi-floodfill';
+import { handleEmfGdiGradientFillRecord } from './emf-gdi-gradient-fill';
 import { handleEmfGdiRegionRecord } from './emf-gdi-region-records';
 import type { EmfGdiReplayCtx } from './emf-types';
 
@@ -33,6 +34,7 @@ export function handleEmfGdiTextBitmapRecord(
 		handleEmfGdiBlendBlitRecord(rCtx, recType, offset, dataOff, recSize) ||
 		handleEmfGdiClipRecord(rCtx, recType, dataOff, recSize) ||
 		handleEmfGdiRegionRecord(rCtx, recType, dataOff, recSize) ||
-		handleEmfGdiFloodFillRecord(rCtx, recType, dataOff, recSize)
+		handleEmfGdiFloodFillRecord(rCtx, recType, dataOff, recSize) ||
+		handleEmfGdiGradientFillRecord(rCtx, recType, dataOff, recSize)
 	);
 }
