@@ -819,6 +819,21 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
 	recordCase('gpx-rec-tsclip', 0),
 	recordCase('gpx-rec-tsclip-state', 0),
 	recordCase('gpx-rec-tsgraphics', 0),
+	recordCase('gpx-rec-customcap', 0.001), // measured 0.025%
+	recordCase('gpx-rec-customcap-aa', 0.002), // measured 0.114%
+];
+
+/**
+ * TextContrast on antialiased and ClearType text (Windows fonts): GDI+
+ * lightens grayscale coverage a to 1 - (1 - a)^(1 / gamma) and blends
+ * ClearType channels as value^gamma, gamma = 1 + contrast / 10. The
+ * residual is the glyph shapes (as in the brush-filled text cases); per
+ * row the mean signed error no longer drifts with the contrast (ClearType
+ * 6.39% before, grayscale 6.64%).
+ */
+const TEXT_CONTRAST_CASES: ParityCase[] = [
+	close('gpx-rec-textcontrast', 0.075), // measured 6.444%
+	close('gpx-rec-textcontrast-cleartype', 0.05), // measured 4.008%
 ];
 
 describe('GDI ground-truth parity', () => {
@@ -912,6 +927,14 @@ describe('GDI ground-truth parity', () => {
 
 	describe.skipIf(!windowsFonts())('EMF+ brush-filled text via the font engine (Windows fonts)', () => {
 		it.each(TEXT_BRUSH_FONT_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe.skipIf(!windowsFonts())('EMF+ TextContrast via the font engine (Windows fonts)', () => {
+		it.each(TEXT_CONTRAST_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
 			expect(diff).not.toBeNull();
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);

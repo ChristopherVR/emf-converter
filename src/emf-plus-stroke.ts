@@ -39,6 +39,7 @@ import {
 	type FixFigure,
 } from './emf-plus-raster';
 import { applyPlusWorldTransform, brushPaint, plusWorldMatrix } from './emf-plus-state-handlers';
+import { customCapGeometry } from './emf-plus-custom-cap';
 import { widenFigures, type DevicePen } from './emf-plus-widen';
 import { isSvgContext } from './svg-context';
 import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
@@ -248,6 +249,9 @@ export function strokePlusGeometry(
 				return;
 			}
 		}
+		if (hasCustomCap(pen) && !pen.transform && fillCustomCapStroke(rCtx, pen, buildPath, closedFigure)) {
+			return;
+		}
 		ctx.strokeStyle = pen.brush ? brushPaint(rCtx, pen.brush) : pen.color;
 	}
 	applyPlusWorldTransform(rCtx);
@@ -311,7 +315,9 @@ function strokeGdiplus(
 	};
 	const antialias = mode === 'gdiplus-aa';
 	let fix: FixFigure[];
-	if (width <= NOMINAL_PEN_MAX && !devicePen.dash) {
+	if (hasCustomCap(pen)) {
+		fix = customCapOutline(figures, width, devicePen, pen).map((poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
+	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash) {
 		fix = nominalLineQuads(figures, antialias).map((q) => q.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
 	} else {
 		fix = widenFigures(figures, devicePen).map((poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
@@ -325,6 +331,118 @@ function strokeGdiplus(
 	}
 	const coverage = rasterizePlusFill(fix, false, antialias, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), box);
 	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
+}
+
+/** True when a pen carries a custom start or end cap. */
+function hasCustomCap(pen: EmfPlusPen): boolean {
+	return !!(pen.customStartCap || pen.customEndCap);
+}
+
+/**
+ * The outline GDI+ fills for a pen with custom line caps
+ * (`emf-plus-custom-cap.ts`), as device polygons for ONE nonzero fill: the
+ * figures shortened by the caps, widened (never thinner than one device
+ * pixel, and never drawn as a nominal-width line: GDI+ widens a custom-capped
+ * pen whatever its width) with flat ends where a cap sits, their polygons
+ * reversed to GDI+'s orientation, then the caps' own polygons.
+ */
+function customCapOutline(
+	figures: ReadonlyArray<DeviceFigure>,
+	width: number,
+	devicePen: DevicePen,
+	pen: EmfPlusPen,
+): Array<Array<{ x: number; y: number }>> {
+	const geo = customCapGeometry(figures, width, pen.customStartCap ?? null, pen.customEndCap ?? null);
+	const outline: Array<Array<{ x: number; y: number }>> = [];
+	geo.figures.forEach((fig, i) => {
+		const capped = geo.capped[i];
+		const figPen: DevicePen = {
+			...devicePen,
+			half: Math.max(width, 1) / 2,
+			startCap: capped.start ? 0 : devicePen.startCap,
+			endCap: capped.end ? 0 : devicePen.endCap,
+		};
+		for (const poly of widenFigures([fig], figPen)) {
+			outline.push(poly.slice().reverse());
+		}
+	});
+	outline.push(...geo.polygons);
+	return outline;
+}
+
+/**
+ * Strokes a custom-capped pen as a vector fill (SVG output and
+ * `gdiAntialias: true`): the same outline GDI+ fills ({@link customCapOutline}),
+ * mapped back to world space and filled nonzero with the pen's paint, so it
+ * stays a single exact shape. Returns `false` when the geometry cannot be
+ * recorded or the device matrix is singular.
+ */
+function fillCustomCapStroke(
+	rCtx: EmfPlusReplayCtx,
+	pen: EmfPlusPen,
+	buildPath: (c: CanvasContext) => void,
+	closedFigure: boolean,
+): boolean {
+	const device = plusWorldMatrix(rCtx);
+	const sx = Math.hypot(device[0], device[1]);
+	const det = device[0] * device[3] - device[1] * device[2];
+	if (!(sx > 0) || !Number.isFinite(det) || Math.abs(det) < 1e-12) {
+		return false;
+	}
+	let figures: DeviceFigure[];
+	try {
+		figures = recordDeviceFigures(buildPath, device);
+	} catch {
+		return false;
+	}
+	if (closedFigure) {
+		figures = figures.map((f) => ({ ...f, closed: true }));
+	}
+	const width = (pen.width || 1) * sx;
+	const dash = penDashArray(pen).map((v) => v * sx);
+	const devicePen: DevicePen = {
+		half: width / 2,
+		join: pen.lineJoin ?? 0,
+		miterLimit: pen.miterLimit && pen.miterLimit >= 1 ? pen.miterLimit : 10,
+		startCap: pen.startCap ?? 0,
+		endCap: pen.endCap ?? 0,
+		dashCap: pen.dashCap ?? 0,
+		dash: dash.length > 0 ? dash : null,
+		dashOffset: (pen.dashOffset ?? 0) * (pen.width || 1) * sx,
+		compound: pen.compound ?? null,
+		inset: pen.alignment === 1,
+	};
+	const inv: TransformMatrix = [
+		device[3] / det,
+		-device[1] / det,
+		-device[2] / det,
+		device[0] / det,
+		(device[2] * device[5] - device[3] * device[4]) / det,
+		(device[1] * device[4] - device[0] * device[5]) / det,
+	];
+	const { ctx } = rCtx;
+	ctx.save();
+	try {
+		ctx.fillStyle = pen.brush ? brushPaint(rCtx, pen.brush) : pen.color;
+		applyPlusWorldTransform(rCtx);
+		ctx.beginPath();
+		for (const poly of customCapOutline(figures, width, devicePen, pen)) {
+			poly.forEach((p, i) => {
+				const x = inv[0] * p.x + inv[2] * p.y + inv[4];
+				const y = inv[1] * p.x + inv[3] * p.y + inv[5];
+				if (i === 0) {
+					ctx.moveTo(x, y);
+				} else {
+					ctx.lineTo(x, y);
+				}
+			});
+			ctx.closePath();
+		}
+		ctx.fill('nonzero');
+	} finally {
+		ctx.restore();
+	}
+	return true;
 }
 
 /** True for the identity matrix. */

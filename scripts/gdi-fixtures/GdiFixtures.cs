@@ -3902,6 +3902,112 @@ public static class GdiFixtures
 		}
 	}
 
+
+	// Pens with custom line caps: AdjustableArrowCap (filled, outlined, with
+	// MiddleInset and WidthScale) and CustomLineCap with a fill path and with
+	// a stroke path (BaseInset, WidthScale, stroke caps and join), on lines,
+	// a polyline with sharp turns near its ends, a Bezier and a cardinal
+	// spline, at pen widths 1, 2 and 4.5.
+	static void EprCustomCapDraw(Graphics g, SmoothingMode sm)
+	{
+		const int W = 160, H = 100;
+		g.FillRectangle(Brushes.White, 0, 0, W, H);
+		g.SmoothingMode = sm;
+		using (var filled = new AdjustableArrowCap(3f, 4f, true))
+		using (var open = new AdjustableArrowCap(2.5f, 3f, false))
+		using (var mid = new AdjustableArrowCap(3.5f, 4.5f, true))
+		using (var small = new AdjustableArrowCap(4f, 3f, true))
+		using (var fillPath = new GraphicsPath())
+		using (var linePath = new GraphicsPath())
+		{
+			mid.MiddleInset = 1.5f;
+			small.WidthScale = 0.6f;
+			// A kite crossing the negative y axis (required of a fill path).
+			fillPath.AddPolygon(new PointF[] { new PointF(-1.5f, -1.2f), new PointF(0f, 2f), new PointF(1.5f, -1.2f), new PointF(0f, -0.4f) });
+			linePath.AddLines(new PointF[] { new PointF(-1.5f, -0.6f), new PointF(0f, 1.4f), new PointF(1.5f, -0.6f) });
+			using (var fillCap = new CustomLineCap(fillPath, null, LineCap.Flat, 0.5f))
+			using (var lineCap = new CustomLineCap(null, linePath, LineCap.Round, 1f))
+			{
+				fillCap.WidthScale = 1.5f;
+				lineCap.StrokeJoin = LineJoin.Round;
+				lineCap.SetStrokeCaps(LineCap.Round, LineCap.Triangle);
+				using (var pen = new Pen(Color.FromArgb(255, 30, 60, 200), 2f))
+				{
+					pen.CustomEndCap = filled;
+					g.DrawLine(pen, 8.3f, 10.2f, 70.6f, 14.9f);
+					pen.CustomStartCap = open;
+					g.DrawLine(pen, 12.1f, 30.4f, 66.8f, 22.2f);
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 200, 40, 40), 4.5f))
+				{
+					pen.CustomStartCap = small;
+					pen.CustomEndCap = mid;
+					g.DrawLine(pen, 90.4f, 8.6f, 150.3f, 30.1f);
+					pen.CustomStartCap = lineCap;
+					pen.CustomEndCap = fillCap;
+					g.DrawLine(pen, 88.2f, 45.3f, 148.7f, 42.4f);
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 20, 140, 60), 1f))
+				{
+					pen.CustomStartCap = open;
+					pen.CustomEndCap = filled;
+					g.DrawLines(pen, new PointF[] { new PointF(10.2f, 45.3f), new PointF(40.6f, 40.1f), new PointF(42.3f, 55.7f), new PointF(70.8f, 52.4f), new PointF(72.1f, 48.6f) });
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 120, 40, 160), 2f))
+				{
+					pen.CustomEndCap = mid;
+					pen.CustomStartCap = fillCap;
+					g.DrawBezier(pen, 12.4f, 90.2f, 25.1f, 55.3f, 55.7f, 98.4f, 70.3f, 68.1f);
+				}
+				using (var pen = new Pen(Color.FromArgb(255, 200, 120, 0), 4.5f))
+				{
+					pen.CustomEndCap = lineCap;
+					pen.CustomStartCap = filled;
+					g.DrawCurve(pen, new PointF[] { new PointF(92.3f, 90.1f), new PointF(110.4f, 62.2f), new PointF(128.6f, 88.3f), new PointF(150.2f, 64.7f) });
+				}
+			}
+		}
+	}
+
+	static void EprCustomCapCases()
+	{
+		GpCase("gpx-rec-customcap", 160, 100, delegate (Graphics g) { EprCustomCapDraw(g, SmoothingMode.None); });
+		GpCase("gpx-rec-customcap-aa", 160, 100, delegate (Graphics g) { EprCustomCapDraw(g, SmoothingMode.AntiAlias); });
+	}
+
+		// TextContrast (0 to 12, GDI+'s default 4) on antialiased and ClearType
+	// text: GDI+ lightens a glyph's coverage a with the text gamma
+	// 1 + contrast / 10, as 1 - (1 - a)^(1 / gamma).
+	static void EprTextContrastCases()
+	{
+		foreach (var hint in new[] { TextRenderingHint.AntiAliasGridFit, TextRenderingHint.ClearTypeGridFit })
+		{
+			var h = hint;
+			GpCase("gpx-rec-textcontrast" + (h == TextRenderingHint.ClearTypeGridFit ? "-cleartype" : ""), 360, 190, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, 360, 190);
+				g.TextRenderingHint = h;
+				using (var f = new Font("Arial", 40, FontStyle.Bold, GraphicsUnit.Pixel))
+				using (var dark = new SolidBrush(Color.FromArgb(255, 20, 30, 90)))
+				using (var bg = new SolidBrush(Color.FromArgb(255, 30, 40, 60)))
+				{
+					int[] contrasts = { 0, 4, 8, 12 };
+					for (int i = 0; i < contrasts.Length; i++)
+					{
+						g.TextContrast = contrasts[i];
+						g.DrawString("Wav" + contrasts[i], f, dark, 4, 2 + i * 46);
+					}
+					g.FillRectangle(bg, 180, 0, 180, 190);
+					for (int i = 0; i < contrasts.Length; i++)
+					{
+						g.TextContrast = contrasts[i];
+						g.DrawString("Sky" + contrasts[i], f, Brushes.White, 184, 2 + i * 46);
+					}
+				}
+			});
+		}
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
@@ -3917,7 +4023,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "text-extra") { TextExtraCases(); }
 		if (which == "all" || which == "gdi-raster") { RasterCases(); }
 		if (which == "all" || which == "gdi-raster") { RasterWideExtraCases(); }
-		if (which == "all" || which == "emfplus-records") { EprCurveCases(); EprCompressedCases(); EprRegionCases(); EprRelativeCases(); EprPlaybackOnlyCases(); EprStateCases(); EprCompositingCases(); EprHatchCases(); }
+		if (which == "all" || which == "emfplus-records") { EprCurveCases(); EprCompressedCases(); EprRegionCases(); EprRelativeCases(); EprPlaybackOnlyCases(); EprStateCases(); EprCompositingCases(); EprHatchCases(); EprCustomCapCases(); EprTextContrastCases(); }
 		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxSmoothingCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
 		if (which == "all" || which == "wmf-records") { WmfRecordCases(); }
 	}

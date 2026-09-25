@@ -15,6 +15,7 @@ import { toPlusFix } from './emf-plus-raster';
 import { readPlusPoints, readPointRCoord, PLUS_FLAG_COMPRESSED, PLUS_FLAG_RELATIVE } from './emf-plus-read-helpers';
 import { maskBounds, regionPixelMask } from './emf-plus-region-mask';
 import { cardinalSplineBeziers } from './emf-plus-spline';
+import { applyTextContrast, textGamma } from './emf-plus-text-image-handlers';
 import { containerRectTransform, decodeTsClipRects } from './emf-plus-state-handlers';
 
 function bytes(...v: number[]): DataView {
@@ -202,5 +203,25 @@ describe('regionPixelMask', () => {
 		expect(count(regionPixelMask({ type: 'infinite' }, id, box, false))).toBe(100);
 		expect(maskBounds(regionPixelMask(a, id, box, false)!, box)).toStrictEqual({ x: 1, y: 1, w: 5, h: 5 });
 		expect(maskBounds(new Uint8Array(100), box)).toBeNull();
+	});
+});
+
+describe('text contrast', () => {
+	it('maps TextContrast to the text gamma 1 + contrast / 10', () => {
+		expect(textGamma(undefined)).toBeCloseTo(1.4);
+		expect(textGamma(0)).toBe(1);
+		expect(textGamma(12)).toBeCloseTo(2.2);
+		expect(textGamma(40)).toBeCloseTo(2.2);
+	});
+
+	it('lightens grayscale coverage like GDI+ (black on white: 68 at contrast 0 is 99 at 4, 140 at 12)', () => {
+		const at4 = new Uint8ClampedArray([255 - 68, 0, 255]);
+		const at12 = new Uint8ClampedArray([255 - 68]);
+		applyTextContrast(at4, textGamma(4));
+		applyTextContrast(at12, textGamma(12));
+		expect(255 - at4[0]).toBe(99);
+		expect(255 - at12[0]).toBe(140);
+		expect(at4[1]).toBe(0);
+		expect(at4[2]).toBe(255);
 	});
 });

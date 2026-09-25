@@ -584,6 +584,13 @@ export interface EmfPlusPen {
 	 * the pen width, each pair one parallel band of the stroke.
 	 */
 	compound?: number[] | null;
+	/**
+	 * Custom line caps (`PenDataCustomStartCap`/`PenDataCustomEndCap`, an
+	 * `EmfPlusCustomLineCap` each; see `emf-plus-custom-cap.ts`), drawn at
+	 * the ends of every open figure in place of the start/end cap.
+	 */
+	customStartCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
+	customEndCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
 	/** Pen transform (`PenDataTransform`), applied to the pen's width and shape. */
 	transform?: TransformMatrix | null;
 	/**

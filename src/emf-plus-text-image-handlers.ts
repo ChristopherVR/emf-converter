@@ -19,7 +19,9 @@ import { mulMatrix } from './emf-plus-brush-gradient';
 import { drawEmfPlusImageNow } from './emf-plus-draw-image';
 import {
 	compositeBrushCoverage,
+	cssColorToArgb,
 	deviceBounds,
+	solidSampler,
 	deviceBrushSampler,
 	paintBrushThroughMask,
 	tryFillPlusShapeExact,
@@ -222,6 +224,34 @@ export function strokePlusPath(rCtx: EmfPlusReplayCtx, pen: EmfPlusPen | null, p
 }
 
 /**
+ * GDI+'s text gamma for a `TextContrast` (0 to 12, default 4): 1 + contrast
+ * / 10, the 1.0 to 2.2 range MS-EMFPLUS 2.3.6.7 describes. Pure.
+ */
+export function textGamma(contrast: number | undefined): number {
+	const k = contrast === undefined || !Number.isFinite(contrast) ? 4 : Math.min(12, Math.max(0, contrast));
+	return 1 + k / 10;
+}
+
+/**
+ * Applies GDI+'s text contrast to grayscale (antialiased) glyph coverage,
+ * in place: coverage a becomes `1 - (1 - a)^(1 / gamma)`, whatever the text
+ * and background colours, and is then blended linearly. Measured on
+ * AntiAlias text at every TextContrast (black on white, white on black and
+ * colour on colour): each contrast's pixels follow from contrast 0's by
+ * exactly this map (contrast 0 is the plain coverage). Pure but for `data`.
+ */
+export function applyTextContrast(data: Uint8ClampedArray, gamma: number): void {
+	if (gamma === 1) {
+		return;
+	}
+	const e = 1 / gamma;
+	for (let i = 0; i < data.length; i++) {
+		const a = data[i] / 255;
+		data[i] = Math.round((1 - Math.pow(1 - a, e)) * 255);
+	}
+}
+
+/**
  * True when every figure of an EMF+ path is closed (its last point carries
  * the close flag, 0x80), so an Inset pen paints inside it. Pure.
  */
@@ -354,7 +384,13 @@ function drawPlusStringWithEngine(
 	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
 	// A texture/gradient brush takes its glyph coverage from the engine and
 	// its colour from the brush sampler (raster output only).
-	const sampler = color || isSvgContext(rCtx.ctx) ? null : brushSampler;
+	const hintNow = rCtx.textRenderingHint ?? 0;
+	const graySmooth = hintNow === 3 || hintNow === 4 || hintNow === 5;
+	// Antialiased and ClearType text is blended the GDI+ way, with its text
+	// contrast (see applyTextContrast), so a solid colour goes through the
+	// coverage path too.
+	const solidViaCoverage = !!color && graySmooth && !isSvgContext(rCtx.ctx);
+	const sampler = isSvgContext(rCtx.ctx) ? null : solidViaCoverage ? solidSampler(cssColorToArgb(paint as string) ?? 0xff000000) : color ? null : brushSampler;
 	const unit = font.unit ?? 0;
 	if (!fonts || (!color && !sampler) || alignment !== 0 || (unit !== 0 && unit !== 2)) {
 		return false;
@@ -401,7 +437,7 @@ function drawPlusStringWithEngine(
 	// GenericTypographic; measured with MeasureString).
 	const tracking = format?.tracking ?? PLUS_DEFAULT_TRACKING;
 	const dx = unhinted ? codes.map((c) => realized.advance(realized.glyphIndex(c)) * tracking) : null;
-	if (!color && sampler) {
+	if ((!color || solidViaCoverage) && sampler) {
 		// The engine's glyph coverage (mono, grayscale, or ClearType per
 		// channel) filled with the brush's colour per device pixel.
 		const cov = gdiTextCoverage(realized, {
@@ -424,7 +460,19 @@ function drawPlusStringWithEngine(
 		if (!cov) {
 			return true;
 		}
-		return compositeBrushCoverage(rCtx, sampler, { x: cov.x, y: cov.y, w: cov.width, h: cov.height }, cov.data, cov.channels);
+		const gamma = textGamma(rCtx.ext?.textContrast);
+		if (cov.channels === 1) {
+			applyTextContrast(cov.data, gamma);
+		}
+		return compositeBrushCoverage(
+			rCtx,
+			sampler,
+			{ x: cov.x, y: cov.y, w: cov.width, h: cov.height },
+			cov.data,
+			cov.channels,
+			false,
+			cov.channels === 3 ? gamma : 1,
+		);
 	}
 	paintGdiTextRun(rCtx.ctx, realized, {
 		codes,

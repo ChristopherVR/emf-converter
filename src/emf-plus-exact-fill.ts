@@ -737,6 +737,10 @@ function sourceCopyComposite(
  * coverage, drawn at an integer device offset through the live clip. A
  * three-channel mask blends each channel separately against the pixels
  * already there (read back, blended, and drawn opaque where covered).
+ * `gamma` (above 1) blends a three-channel (ClearType) mask the way GDI+
+ * does under its text contrast: each channel mixed as value^gamma and the
+ * result taken back by 1 / gamma (measured on ClearType text at every
+ * TextContrast, dark on light, light on dark and colour on colour).
  * `gdiplusBlend` marks a coverage from GDI+'s own rasteriser (0/255, or
  * `round(k * 255 / 32)` for k of 32 samples): the pixels are then blended
  * with GDI+'s own arithmetic ({@link gdiplusBlendPixels}) wherever the
@@ -749,6 +753,7 @@ export function compositeBrushCoverage(
 	coverage: Uint8ClampedArray,
 	channels: 1 | 3 = 1,
 	gdiplusBlend: boolean = false,
+	gamma: number = 1,
 ): boolean {
 	const { ctx } = rCtx;
 	const out = createTempCanvas(box.w, box.h);
@@ -791,7 +796,15 @@ export function compositeBrushCoverage(
 				if (k > 0) {
 					any = true;
 				}
-				data[o + c] = dst[o + c] + (data[o + c] - dst[o + c]) * k;
+				if (gamma === 1) {
+					data[o + c] = dst[o + c] + (data[o + c] - dst[o + c]) * k;
+				} else {
+					// GDI+'s ClearType blend under its text gamma: the channels
+					// mixed as value^gamma, the result taken back by 1 / gamma.
+					const d = Math.pow(dst[o + c] / 255, gamma);
+					const f = Math.pow(data[o + c] / 255, gamma);
+					data[o + c] = 255 * Math.pow(d + (f - d) * k, 1 / gamma);
+				}
 			}
 			data[o + 3] = any ? 255 : 0;
 		}

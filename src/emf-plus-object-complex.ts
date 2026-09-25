@@ -8,6 +8,7 @@ import { readUtf16LE } from './emf-canvas-helpers';
 import { emfLog, emfWarn } from './emf-logging';
 import { decodeEmfPlusBitmapPixels } from './emf-plus-bitmap-decoder';
 import { looksLikeGraphicsVersion, parseEmfPlusBrushObject } from './emf-plus-brush-parser';
+import { parseCustomLineCap } from './emf-plus-custom-cap';
 import type { EmfPlusObject, EmfPlusPen, EmfPlusTextureCache, TransformMatrix } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -36,7 +37,7 @@ const MAX_PEN_ARRAY = 1024;
  * Parses an EmfPlusPen object (MS-EMFPLUS 2.2.1.7): width, the optional
  * pen data in `PenDataFlags` order (transform, caps, join, miter limit,
  * dash style, dash cap, dash offset, dash pattern, alignment, compound
- * line, custom caps; the order and the alignment's 4 bytes confirmed
+ * line, custom start and end caps (`emf-plus-custom-cap.ts`); the order and the alignment's 4 bytes confirmed
  * against real GDI+ recordings, `src/__fixtures__/gdi/gpx-pen-styles`),
  * then the pen's own brush, kept whole so a texture or gradient pen can
  * paint its stroke (`emf-plus-stroke.ts`). `textureCache`/`cacheKey` let
@@ -128,6 +129,12 @@ export function parseEmfPlusPenObject(
 	for (const flag of [PEN_CUSTOM_START_CAP, PEN_CUSTOM_END_CAP]) {
 		if (penFlags & flag) {
 			const size = u32() ?? 0;
+			const cap = o + size <= end ? parseCustomLineCap(view, o, size) : null;
+			if (flag === PEN_CUSTOM_START_CAP) {
+				pen.customStartCap = cap;
+			} else {
+				pen.customEndCap = cap;
+			}
 			o += size;
 		}
 	}
