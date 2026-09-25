@@ -609,23 +609,19 @@
 				<h2>Limitations</h2>
 				<ul class="lims">
 					<li>
-						<strong>Text needs the right fonts.</strong> Pass the font files
-						a metafile uses (<code class="inline">fonts</code>, or
-						<code class="inline">loadSystemFonts()</code> in Node.js) for
-						GDI-exact text; otherwise the host font engine is used. This
-						demo uses your browser's fonts.
+						<strong>A few unhandled records.</strong> The ANSI, multi-string
+						and small-glyph EMF text records are skipped, and EMF+ image
+						effects (blur, colour matrix, ...) are not applied.
 					</li>
 					<li>
-						<strong>ClearType text</strong> is within a few percent of
-						Windows' pixels; non-antialiased and grayscale text are
-						near-exact.
+						<strong>Rare pixel residuals.</strong> Very wide GDI pens, some
+						EMF+ outlines and a few WMF edge cases differ from Windows by a
+						handful of pixels (0.2% or less on the reference fixtures).
 					</li>
 					<li>
-						<strong>Safety limits.</strong> Output is clamped to 8192×8192
-						and replay stops after 200,000 records (EMF/WMF) or 500,000
-						(EMF+), all overridable via
-						<code class="inline">maxCanvasDimension</code> /
-						<code class="inline">maxRecords</code>.
+						<strong>GM_COMPATIBLE recordings.</strong> EMF files don't record
+						the graphics mode, so a few curved shapes follow Windows'
+						playback rather than what the recording application showed.
 					</li>
 				</ul>
 			</div>

@@ -18,7 +18,7 @@ Windows metafiles are recorded GDI and GDI+ drawing calls, commonly embedded in 
 
 ---
 
-## What's new in 4.0
+## What's new
 
 - **SVG output**: `convertMetafileToSvg`, `convertMetafileToSvgDataUrl`, `convertMetafileToSvgTree` + `svgTreeToReact` / `svgTreeToJsx` for JSX/TSX.
 - **Windows-exact PNG by default**: GDI shapes are drawn by a rasteriser fitted to Windows GDI (28.4 fixed-point geometry, GDI's fill rule, line algorithm, ellipse and Bezier construction, wide pens, dash styles), and EMF+ drawing follows the file's recorded GDI+ `SmoothingMode` with GDI+'s own rasteriser. **Breaking:** default PNG output is no longer Canvas-antialiased; pass `gdiAntialias: true` for the previous smooth edges.
@@ -215,16 +215,10 @@ Everything below is verified against output painted by Windows itself; `src/gdi-
 Everything is measured against output painted by Windows itself; `src/gdi-parity.fixture.test.ts` holds the exact per-fixture bounds.
 
 - **Unhandled records**: `EMR_EXTTEXTOUTA`, `EMR_POLYTEXTOUTA`, `EMR_POLYTEXTOUTW` and `EMR_SMALLTEXTOUT` (ANSI, multi-string and small-glyph text records, rarely written by modern recorders) are skipped with a console warning. `EMR_SETTEXTJUSTIFICATION` and `EMR_SETCOLORADJUSTMENT` are read but not yet applied (Windows' own recorder bakes justification into `EMR_EXTTEXTOUTW` spacing arrays, so only other writers emit the former), and the `HALFTONE` stretch mode is not bit-exact. EMF+ image effects (`SerializableObject`: blur, sharpen, colour matrix and the like) are not applied, so the image is drawn without the effect, and an EMF+ pen's own transform is ignored.
-- **Text without fonts**: without the `fonts` option, glyphs come from the host font engine, so text differs from Windows on a few percent of pixels (and depends on which fonts the host has). SVG text is `<text>`, rendered with the viewer's fonts.
-- **Text with fonts**: non-antialiased text is within 0.03% of Windows' pixels (about 93% of glyphs bit-exact; the rest differ by a pixel on some diagonal stems, where GDI's hinting arithmetic is undocumented) and grayscale text within 0.13%. ClearType text, which is what `DEFAULT_QUALITY` fonts get on a default Windows install, is within about 4-5% (compatible-width glyph placement is not fully reproduced). Non-grid-fitted GDI+ AntiAlias and ClearType text differ by 11-13% of text pixels (GDI+'s own glyph placement and blend), rotated right/centre-aligned text can start a pixel off, and a few unusual raster-font sizes pick a different bitmap size than Windows.
 - **Wide pens and paths**: flat-capped GDI pens 7 px and wider can differ by a few pixels at round joins, and dashed wide Bezier curves follow `WidenPath` (which Windows' direct drawing does not quite match); at most 0.2% of pixels on the fixtures. `EMR_WIDENPATH` does not reproduce the extra inner join triangles GDI's own `WidenPath` emits (visible only when the widened outline is itself stroked). EMF+ 1-pixel antialiased lines can differ by one antialiasing sample at their ends, some closed widened outlines by one sample along an edge, and Inset or compound pens on closed figures are approximate.
 - **GM_COMPATIBLE recordings**: EMF files do not record the graphics mode, and Windows plays RoundRect, Arc, Chord, Pie and null-pen Ellipse records back differently from how a GM_COMPATIBLE application drew them on screen; the converter follows Windows' playback.
 - **Small EMF+ residuals**: rotated `HighQualityBicubic` `DrawImage` edge pixels (0.14%), one-level differences at exact half-level `Blend` knots, and a few pixels of a metafile nested in `DrawImage` under a scale.
 - **WMF**: `PS_INSIDEFRAME` boxes can come out a pixel short at non-integer scales, right-to-left (`LAYOUT_RTL`) layouts differ by single pixels on mirrored diagonals, and metric map modes assume a 96 dpi reference device (Windows derives them from the physical display, so its own output varies per machine).
-- **Smooth mode** (`gdiAntialias: true`, and SVG's default vector edges): only shape edges differ from Windows, by design; a flood fill reads the antialiased pixels it is given.
-- **SVG renderers**: output is renderer-dependent in the usual ways: angled hard-stop gradient seams fall within each renderer's own precision, and a raster operation that reads pixels under text is exact wherever its result does not depend on the glyphs, otherwise expressed as a blend layer the SVG renderer applies to its own text.
-- **PNG in plain Node.js** without `@napi-rs/canvas` and without `fonts` returns `null` for drawings that contain text, rather than an image missing its text.
-- **Safety limits**: output is clamped to 8192×8192 and replay stops after 200,000 records (EMF/WMF) or 500,000 (EMF+); both are overridable via `maxCanvasDimension` / `maxRecords`.
 
 ## License
 
