@@ -6,6 +6,7 @@ import {
 	isHalfPixelOffset,
 	mirroredOrigin,
 	resampleImage,
+	resampleNearest,
 	resampleKernelFor,
 } from './emf-plus-image-resample';
 import type { DeferredImageResample } from './emf-types';
@@ -205,5 +206,50 @@ describe('ImageAttributes WrapMode', () => {
 	it('reads the clamp colour beyond the bitmap under Clamp', () => {
 		const [r, a] = lastPixel({ wrap: 'clamp', clampArgb: 0xff000000 });
 		expect([r, a]).toEqual([128, 255]);
+	});
+});
+
+describe('resampleNearest (GDI+ NearestNeighbor)', () => {
+	// A 4x1 bitmap whose red channel is 10 x (texel index + 1).
+	const STRIP = new Uint8ClampedArray([10, 0, 0, 255, 20, 0, 0, 255, 30, 0, 0, 255, 40, 0, 0, 255]);
+
+	/** Texel index ('.' transparent) of device pixels x = 0..59 on row 1. */
+	function row(s: Partial<DeferredImageResample>): string {
+		const full = spec({ kernel: 'nearest', srcW: 4, srcH: 1, ...s });
+		const block = resampleNearest(STRIP, 4, 1, full, { w: 80, h: 4 })!;
+		let out = '';
+		for (let x = 0; x < 60; x++) {
+			const i = x - block.x;
+			const o = ((1 - block.y) * block.w + i) * 4;
+			out += i < 0 || i >= block.w || block.rgba[o + 3] === 0 ? '.' : String(block.rgba[o] / 10 - 1);
+		}
+		return out;
+	}
+	const run = (c: string, n: number): string => c.repeat(n);
+
+	it('rounds texel boundaries half up and leaves the last half texel transparent (GDI+ output)', () => {
+		// DrawImagePoints((10,0),(50,0),(10,4)) of the whole strip, PixelOffsetMode None.
+		expect(row({ toDevice: [10, 0, 0, 4, 10, 0] })).toBe(run('.', 10) + run('0', 5) + run('1', 10) + run('2', 10) + run('3', 10) + run('.', 15));
+	});
+
+	it("reads the bitmap's own column beyond a source sub-rectangle's right edge", () => {
+		// Source (1, 0, 2, 1) onto 40 pixels: GDI+ paints texel 3 for the last quarter.
+		expect(row({ srcX: 1, srcW: 2, toDevice: [20, 0, 0, 4, -10, 0] })).toBe(run('.', 10) + run('1', 10) + run('2', 20) + run('3', 10) + run('.', 10));
+	});
+
+	it('steps a flipped axis in 16.16 fixed point, so its halves round down after the first pixel', () => {
+		// Whole strip flipped: (50,0),(10,0),(50,4).
+		expect(row({ toDevice: [-10, 0, 0, 4, 50, 0] })).toBe(run('.', 15) + run('3', 10) + run('2', 10) + run('1', 10) + run('0', 5) + run('.', 10));
+		// Source (0.5, 0, 2, 1) flipped: the first pixel (exactly on a half) rounds up to texel 3.
+		expect(row({ srcX: 0.5, srcW: 2, toDevice: [-20, 0, 0, 4, 60, 0] })).toBe(run('.', 10) + '3' + run('2', 19) + run('1', 20) + run('.', 10));
+	});
+
+	it('reads only the rows the source rectangle spans', () => {
+		// A 1x4 column, source rows 1..3 onto 40 pixels: the last quarter (row 3) stays transparent.
+		const block = resampleNearest(STRIP, 1, 4, spec({ kernel: 'nearest', srcY: 1, srcW: 1, srcH: 2, toDevice: [4, 0, 0, 20, 0, -10] }), { w: 8, h: 80 })!;
+		const at = (y: number): number => block.rgba[((y - block.y) * block.w + 1 - block.x) * 4 + 3];
+		expect(at(15)).toBe(255);
+		expect(at(39)).toBe(255);
+		expect(at(40)).toBe(0);
 	});
 });
