@@ -542,3 +542,62 @@ function fillPlusShapeAliased(
 		(c, x, y) => c.isPointInPath(x, y, fillRule),
 	);
 }
+
+/**
+ * Composites a brush through a coverage mask the caller already computed
+ * for `box` (`channels` coverage values per pixel: 1, or 3 for ClearType's
+ * per-channel R, G, B coverage), as {@link paintBrushThroughMask} does: the
+ * brush colour of every device pixel from `sampler`, weighted by the
+ * coverage, drawn at an integer device offset through the live clip. A
+ * three-channel mask blends each channel separately against the pixels
+ * already there (read back, blended, and drawn opaque where covered).
+ * Returns `false` without canvas support.
+ */
+export function compositeBrushCoverage(
+	rCtx: EmfPlusReplayCtx,
+	sampler: DeviceBrushSampler,
+	box: { x: number; y: number; w: number; h: number },
+	coverage: Uint8ClampedArray,
+	channels: 1 | 3 = 1,
+): boolean {
+	const { ctx } = rCtx;
+	const out = createTempCanvas(box.w, box.h);
+	if (typeof ctx.drawImage !== 'function' || !out) {
+		return false;
+	}
+	const data = new Uint8ClampedArray(box.w * box.h * 4);
+	sampler(box.x, box.y, box.w, box.h, data);
+	if (channels === 3) {
+		if (typeof ctx.getImageData !== 'function') {
+			return false;
+		}
+		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
+		for (let p = 0; p < box.w * box.h; p++) {
+			const o = p * 4;
+			const a = data[o + 3] / 255;
+			let any = false;
+			for (let c = 0; c < 3; c++) {
+				const k = (coverage[p * 3 + c] / 255) * a;
+				if (k > 0) {
+					any = true;
+				}
+				data[o + c] = dst[o + c] + (data[o + c] - dst[o + c]) * k;
+			}
+			data[o + 3] = any ? 255 : 0;
+		}
+	} else {
+		for (let i = 3; i < data.length; i += 4) {
+			data[i] = (data[i] * coverage[(i - 3) / 4] + 127) / 255;
+		}
+	}
+	canvasPutImageData(out.ctx, createImageDataCompat(data, box.w, box.h), 0, 0);
+	ctx.save();
+	try {
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.imageSmoothingEnabled = false;
+		(ctx.drawImage as unknown as (img: unknown, x: number, y: number) => void).call(ctx, out.canvas, box.x, box.y);
+	} finally {
+		ctx.restore();
+	}
+	return true;
+}

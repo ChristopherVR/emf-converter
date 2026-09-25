@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -2276,8 +2277,16 @@ public static class GdiFixtures
 		}
 	}
 
+	// An explicit TextRenderingHint: SystemDefault follows the machine's
+	// ClearType setting, which made these references change between runs.
 	static void GpxBrushText(Graphics g, Brush brush)
 	{
+		GpxBrushText(g, brush, TextRenderingHint.AntiAliasGridFit);
+	}
+
+	static void GpxBrushText(Graphics g, Brush brush, TextRenderingHint hint)
+	{
+		g.TextRenderingHint = hint;
 		g.FillRectangle(Brushes.White, 0, 0, 160, 100);
 		using (var f = new Font("Arial", 40, FontStyle.Bold, GraphicsUnit.Pixel))
 		{
@@ -2301,6 +2310,14 @@ public static class GdiFixtures
 			GpCase("gpx-text-texture", W, H, delegate (Graphics g)
 			{
 				using (var b = new TextureBrush(tex, WrapMode.TileFlipXY)) { b.ScaleTransform(3f, 3f); GpxBrushText(g, b); }
+			});
+			GpCase("gpx-text-texture-mono", W, H, delegate (Graphics g)
+			{
+				using (var b = new TextureBrush(tex, WrapMode.TileFlipXY)) { b.ScaleTransform(3f, 3f); GpxBrushText(g, b, TextRenderingHint.SingleBitPerPixelGridFit); }
+			});
+			GpCase("gpx-text-texture-cleartype", W, H, delegate (Graphics g)
+			{
+				using (var b = new TextureBrush(tex, WrapMode.TileFlipXY)) { b.ScaleTransform(3f, 3f); GpxBrushText(g, b, TextRenderingHint.ClearTypeGridFit); }
 			});
 		}
 		GpCase("gpx-pen-lingrad", W, H, delegate (Graphics g)

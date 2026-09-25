@@ -17,7 +17,14 @@ import {
 import { emfLog, emfWarn } from './emf-logging';
 import { mulMatrix } from './emf-plus-brush-gradient';
 import { drawEmfPlusImageNow } from './emf-plus-draw-image';
-import { deviceBounds, deviceBrushSampler, paintBrushThroughMask, tryFillPlusShapeExact } from './emf-plus-exact-fill';
+import {
+	compositeBrushCoverage,
+	deviceBounds,
+	deviceBrushSampler,
+	paintBrushThroughMask,
+	tryFillPlusShapeExact,
+	type DeviceBrushSampler,
+} from './emf-plus-exact-fill';
 import { isHalfPixelOffset, resampleKernelFor } from './emf-plus-image-resample';
 import { replayEmfPlusPath } from './emf-plus-path';
 import { strokePlusGeometry } from './emf-plus-stroke';
@@ -33,7 +40,7 @@ import {
 	NONANTIALIASED_QUALITY,
 	type LogFontSpec,
 } from './gdi-font-engine';
-import { paintGdiTextRun } from './gdi-text-render';
+import { gdiTextCoverage, paintGdiTextRun } from './gdi-text-render';
 import type {
 	DeferredImageDraw,
 	DeferredImageResample,
@@ -290,8 +297,11 @@ function rgbaToHex(c: string): string | null {
 
 /**
  * Draws an EmfPlusDrawString with the GDI font engine when fonts were
- * supplied, for a solid brush, near (left) alignment and an unrotated
- * world transform. Returns false, having drawn nothing, otherwise.
+ * supplied, for near (left) alignment and an unrotated world transform.
+ * A solid brush paints the glyphs directly; a texture or gradient brush
+ * (`brushSampler`, raster output) takes the engine's glyph coverage on a
+ * scratch canvas and the colour of every covered pixel from the brush.
+ * Returns false, having drawn nothing, otherwise.
  */
 function drawPlusStringWithEngine(
 	rCtx: EmfPlusReplayCtx,
@@ -302,11 +312,15 @@ function drawPlusStringWithEngine(
 	paint: string | CanvasGradient | CanvasPattern,
 	alignment: number,
 	format?: EmfPlusStringFormat,
+	brushSampler: DeviceBrushSampler | null = null,
 ): boolean {
 	const fonts = rCtx.fonts;
 	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
+	// A texture/gradient brush takes its glyph coverage from the engine and
+	// its colour from the brush sampler (raster output only).
+	const sampler = color || isSvgContext(rCtx.ctx) ? null : brushSampler;
 	const unit = font.unit ?? 0;
-	if (!fonts || !color || alignment !== 0 || (unit !== 0 && unit !== 2)) {
+	if (!fonts || (!color && !sampler) || alignment !== 0 || (unit !== 0 && unit !== 2)) {
 		return false;
 	}
 	const m = plusWorldMatrix(rCtx);
@@ -351,6 +365,31 @@ function drawPlusStringWithEngine(
 	// GenericTypographic; measured with MeasureString).
 	const tracking = format?.tracking ?? PLUS_DEFAULT_TRACKING;
 	const dx = unhinted ? codes.map((c) => realized.advance(realized.glyphIndex(c)) * tracking) : null;
+	if (!color && sampler) {
+		// The engine's glyph coverage (mono, grayscale, or ClearType per
+		// channel) filled with the brush's colour per device pixel.
+		const cov = gdiTextCoverage(realized, {
+			codes,
+			glyphIndices: false,
+			x,
+			y,
+			dx,
+			dy: null,
+			textAlign: 0x18,
+			textColor: '#000000',
+			bkColor: '#ffffff',
+			bkMode: 1,
+			options: 0,
+			rect: null,
+			matrix: null,
+			underline: false,
+			strikeOut: false,
+		});
+		if (!cov) {
+			return true;
+		}
+		return compositeBrushCoverage(rCtx, sampler, { x: cov.x, y: cov.y, w: cov.width, h: cov.height }, cov.data, cov.channels);
+	}
 	paintGdiTextRun(rCtx.ctx, realized, {
 		codes,
 		glyphIndices: false,
@@ -359,7 +398,7 @@ function drawPlusStringWithEngine(
 		dx,
 		dy: null,
 		textAlign: 0x18,
-		textColor: color,
+		textColor: color as string,
 		bkColor: '#ffffff',
 		bkMode: 1,
 		options: 0,
@@ -459,7 +498,19 @@ export function handleEmfPlusTextImageRecord(
 						const paint = resolveBrushPaint(rCtx, recFlags, brushVal);
 						const alignment = sf && sf.kind === 'plus-stringformat' ? sf.alignment : 0;
 						const format = sf && sf.kind === 'plus-stringformat' ? sf : undefined;
-						if (drawPlusStringWithEngine(rCtx, font, text, layoutX, layoutY, paint, alignment, format)) {
+						if (
+							drawPlusStringWithEngine(
+								rCtx,
+								font,
+								text,
+								layoutX,
+								layoutY,
+								paint,
+								alignment,
+								format,
+								rCtx.fonts ? deviceBrushSampler(rCtx, recFlags, brushVal) : null,
+							)
+						) {
 							return true;
 						}
 						const bold = font.flags & 1 ? 'bold ' : '';
