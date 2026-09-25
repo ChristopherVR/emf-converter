@@ -4,11 +4,68 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [3.5.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.5.0) - 2026-09-25
+
+### Features
+
+- **emf-plus:** Curves, regions, containers, hatch brushes, compositing and terminal-server records ([030d3ac](https://github.com/ChristopherVR/emf-converter/commit/030d3ac6ab53ee801b7ea5e6d28d769b7895e5d3))
+- **emf-plus:** Custom line caps and text contrast ([6250f47](https://github.com/ChristopherVR/emf-converter/commit/6250f4753fb3ca60909cccbcdf8f298040f1c12d))
+- **emf-plus:** Relative and compressed DrawImagePoints destination points ([3ae1063](https://github.com/ChristopherVR/emf-converter/commit/3ae106346f24b367e259144a5a04ff576340cda0))
+- **emf-plus:** GDI+'s nominal-width line and Bezier flattener ([46159c9](https://github.com/ChristopherVR/emf-converter/commit/46159c93b4929c872b5a2983bacbcedb9d33eb7f))
+- **emf:** Palettes, AlphaBlend, TransparentBlt, MaskBlt, PlgBlt and SetDIBitsToDevice records ([5aec1b4](https://github.com/ChristopherVR/emf-converter/commit/5aec1b4949e34b5038ba120cc014747b27c42306))
+- **emf:** AngleArc, PolyDraw, PolyPolyline16, path flatten/widen/abort, region records and flood fill ([ab3390c](https://github.com/ChristopherVR/emf-converter/commit/ab3390c3de170d32ede083a6c1febf376e61b2d4))
+- **emf:** Exact GradientFill, emf-records parity cases and unit tests ([cff1e81](https://github.com/ChristopherVR/emf-converter/commit/cff1e817019d860d901e50eb9be9f6d4ecf82e3a))
+
+### Bug Fixes
+
+- **emf-plus:** Exact NearestNeighbor DrawImage on sheared and sub-rectangle draws ([9017d4f](https://github.com/ChristopherVR/emf-converter/commit/9017d4f39850bcc8ea2947691b1bfc37269aba12))
+
+### Documentation
+
+- Document v4 SVG/React output, Windows-exact rendering, fonts, and record coverage ([dc2f095](https://github.com/ChristopherVR/emf-converter/commit/dc2f0952641585b45cd3b59216f8a4549ff1018b))
+
+### Testing
+
+- **parity:** Custom-cap antialiased bound from the committed widener (0.051%) ([9aa4830](https://github.com/ChristopherVR/emf-converter/commit/9aa48302ae5e4d91a6562a47aa6dbd5dcb41d665))
+
 ## [3.4.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.4.0) - 2026-09-25
 
 ### Features
 
 - SVG output (markup, data URL, React/JSX) and exact fixes for documented limitations ([a8d3e63](https://github.com/ChristopherVR/emf-converter/commit/a8d3e63d6d2ed1727e0d9f9935abd5b6b835eec8))
+- Exact SVG raster ops with no canvas, exact GDI text via a TrueType engine ([63c2f13](https://github.com/ChristopherVR/emf-converter/commit/63c2f135b3d7e17b9ca5992edb0a528b00359f01))
+- GDI-exact rasterizer and GDI+ gradient/image/texture fidelity ([713c2dc](https://github.com/ChristopherVR/emf-converter/commit/713c2dc87aca6a45d14eaabd47a1369cae390b8f))
+- GDI ClearType interpreter rules and compatible-width fitting ([709928d](https://github.com/ChristopherVR/emf-converter/commit/709928d5e0148bb84aa31e6f756ac048120c8418))
+- GdiTextCoverage, the GDI engine's per-run glyph coverage mask for brush-filled text ([6c46f93](https://github.com/ChristopherVR/emf-converter/commit/6c46f93adf4350ebc0f920742ecc933b5f3e5289))
+- Raster (.fon) fonts drawn from their bitmaps, MS Shell Dlg size snapping ([26030f3](https://github.com/ChristopherVR/emf-converter/commit/26030f30333e282e341fe409caffea67ee53bf78))
+- LoadSystemFonts() reads installed font files for the fonts option ([8d7db7f](https://github.com/ChristopherVR/emf-converter/commit/8d7db7ff02a1f059b5ddc1f783cc7b078de90c06))
+- Rotated text uses GDI's rounded font matrix and rotated cell metrics ([e4db299](https://github.com/ChristopherVR/emf-converter/commit/e4db299bbe80ba7ed576dcd429e571531493f5a7))
+- GDI+ DrawString spacing, gasp and Clear; text blends over transparent pixels ([541704c](https://github.com/ChristopherVR/emf-converter/commit/541704c439dc64a789aaa38f688ed4a38b36722c))
+- EMF+ DrawString with texture/gradient brushes through the GDI font engine's glyph coverage ([644e380](https://github.com/ChristopherVR/emf-converter/commit/644e3806394b80169bb54fed959e79a4cd0ab03d))
+- EMF+ follows the recorded SmoothingMode with GDI+'s own fill rasteriser and pen widener ([96da7dc](https://github.com/ChristopherVR/emf-converter/commit/96da7dcf3a99224c48cae4d6ed6fc87c9ddbca7b))
+- GDI+'s exact clip-region pixels and antialiasing blend arithmetic ([b00fcec](https://github.com/ChristopherVR/emf-converter/commit/b00fcec9d5e8219130728d98ea06cb10e5b44b91))
+- **gdi-raster:** GDI-exact wide pens, caps, joins and geometric dashes ([acac1ee](https://github.com/ChristopherVR/emf-converter/commit/acac1ee0082f26091a30c9b769d5ae44e6e71d66))
+- PNG output reproduces Windows rasterisation by default ([667fbbd](https://github.com/ChristopherVR/emf-converter/commit/667fbbdd3c07117a91dfca62062349d6584217e2))
+- **wmf:** Play WMF records through the shared GDI machinery ([d1ec6c0](https://github.com/ChristopherVR/emf-converter/commit/d1ec6c0dc237f005b3d288f51fb2656b2b7b1631))
+- **wmf:** Exact mapping modes, clipping, regions and bitmap records ([3cdae11](https://github.com/ChristopherVR/emf-converter/commit/3cdae119fe02e171be670bafe044f3e55f7a7ee8))
+- **wmf:** Palettes, pixels, flood fill, text spacing, layout and embedded EMF ([0a1c6f3](https://github.com/ChristopherVR/emf-converter/commit/0a1c6f38fdde6a407526d81ced09e7eec36f2fa1))
+
+### Bug Fixes
+
+- GDI+ ClearTypeGridFit text uses natural ClearType widths ([2e653b4](https://github.com/ChristopherVR/emf-converter/commit/2e653b4e672faeed7be3398d33c626214b73d4b4))
+- GDI+'s 10-bit linear light for gamma-corrected gradients and translucent knot ties ([15f3a85](https://github.com/ChristopherVR/emf-converter/commit/15f3a85c88487d99db77640fe305e797a15420de))
+- Keep Canvas-drawn EMF+ text and SVG output off the antialiasing half-pixel shift ([9d4f0a4](https://github.com/ChristopherVR/emf-converter/commit/9d4f0a4985ef95cf50a7785620b7b9150ffc30b5))
+- **gdi-raster:** Exact partial arcs, ArcTo current position and rotated-blit ties ([c4cf84e](https://github.com/ChristopherVR/emf-converter/commit/c4cf84e67c84bb02e0be36827625789aa2b6a427))
+- **wmf:** Cosmetic pens by device pixel at any dpiScale; deterministic WMF fixtures ([a299fa3](https://github.com/ChristopherVR/emf-converter/commit/a299fa31167c9fcc163b6c3c1a0d8ba13e0ae967))
+
+### Refactor
+
+- **wmf:** Drop leftover re-exports ([0ff49d7](https://github.com/ChristopherVR/emf-converter/commit/0ff49d7f94b786645c0abe2ff51408f7462d322e))
+
+### Testing
+
+- Tighten EMF+ parity bounds to the GDI+-exact rasterisation and add SmoothingMode cases ([cac6668](https://github.com/ChristopherVR/emf-converter/commit/cac66681ad17d3f6bc4088390ed6b8edb4a4ec59))
+- **wmf:** Parity cases for every WMF record fixture, SVG mirror and unit tests ([cc3431a](https://github.com/ChristopherVR/emf-converter/commit/cc3431a7370094c8dffe10576f0d03c61425a2ec))
 
 ## [3.3.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.3.0) - 2026-09-24
 
