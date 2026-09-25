@@ -24,6 +24,7 @@ import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
 import { gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
+import { paletteEntries } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
 import { HALFTONE, stretchGdi } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
@@ -41,8 +42,12 @@ interface BlitRequest {
 	dy: number;
 	dw: number;
 	dh: number;
-	/** Source bitmap location inside the record, or null for pattern-only blits. */
-	source: { bmi: number; bits: number; cbBits: number } | null;
+	/**
+	 * Source bitmap location inside the record, or null for pattern-only
+	 * blits. `palColors`: the record's usage is DIB_PAL_COLORS (its colour
+	 * table indexes the DC's selected logical palette).
+	 */
+	source: { bmi: number; bits: number; cbBits: number; palColors?: boolean } | null;
 	/** Source rectangle in top-down bitmap pixels (may be negative = mirrored). */
 	sx: number;
 	sy: number;
@@ -61,7 +66,7 @@ interface BlitRequest {
  * pixels that maps back to the recording device's pixel grid (where GDI
  * anchors the brush origin), so a tile scales with `dpiScale`.
  */
-function patternOperand(rCtx: EmfGdiReplayCtx, brush: RealizedBrush): Rop3Pattern {
+export function patternOperand(rCtx: EmfGdiReplayCtx, brush: RealizedBrush): Rop3Pattern {
 	if (brush.kind === 'solid') {
 		return brush.rgb;
 	}
@@ -166,7 +171,13 @@ function decodeSource(
 	if (!req.source) {
 		return null;
 	}
-	const image = decodeDibToImageData(rCtx.view, req.source.bmi, req.source.bits, req.source.cbBits);
+	const image = decodeDibToImageData(
+		rCtx.view,
+		req.source.bmi,
+		req.source.bits,
+		req.source.cbBits,
+		req.source.palColors ? paletteEntries(rCtx.state) : null,
+	);
 	if (!image) {
 		return null;
 	}
@@ -392,31 +403,6 @@ function executeRotatedBlit(
 		return;
 	}
 
-	// The device parallelogram, in FIX.
-	const [ax, ay] = fixPoint(rCtx, logDx, logDy);
-	const [bx, by] = fixPoint(rCtx, logDx + logDw, logDy);
-	const [qx, qy] = fixPoint(rCtx, logDx, logDy + logDh);
-	const exx = bx - ax;
-	const exy = by - ay;
-	const eyx = qx - ax;
-	const eyy = qy - ay;
-	let det = exx * eyy - exy * eyx;
-	if (det === 0) {
-		return;
-	}
-	const sign = det < 0 ? -1 : 1;
-	det *= sign;
-	const xs = [ax, bx, qx, bx + eyx];
-	const ys = [ay, by, qy, by + eyy];
-	const size = { w: rCtx.canvasW, h: rCtx.canvasH };
-	const x0 = Math.max(0, Math.floor(Math.min(...xs) / 16) - 1);
-	const y0 = Math.max(0, Math.floor(Math.min(...ys) / 16) - 1);
-	const x1 = Math.min(size.w, Math.ceil(Math.max(...xs) / 16) + 2);
-	const y1 = Math.min(size.h, Math.ceil(Math.max(...ys) / 16) + 2);
-	if (x1 <= x0 || y1 <= y0) {
-		return;
-	}
-
 	const brush = realizeBrush(rCtx.state);
 	if (operands.usesP && brush.kind === 'none') {
 		return;
@@ -448,8 +434,6 @@ function executeRotatedBlit(
 		srcX = decoded.req.sx;
 		srcY = decoded.req.sy;
 	}
-	const asw = Math.abs(sw) || 1;
-	const ash = Math.abs(sh) || 1;
 	// decodeSource has already turned a bottom-up DIB's source rect into
 	// top-down image rows; a negative source extent mirrors, addressing texels
 	// from the anchor inward.
@@ -464,13 +448,69 @@ function executeRotatedBlit(
 		const i = (ty * src.width + tx) * 4;
 		return (src.data[i] << 16) | (src.data[i + 1] << 8) | src.data[i + 2];
 	};
+	paintParallelogram(
+		rCtx,
+		fixPoint(rCtx, logDx, logDy),
+		fixPoint(rCtx, logDx + logDw, logDy),
+		fixPoint(rCtx, logDx, logDy + logDh),
+		sw,
+		sh,
+		(ix, iy, x, y, d) => {
+			const s = operands.usesS ? texel(ix, iy) : 0;
+			const p = typeof pattern === 'function' ? pattern(x, y) : pattern;
+			return evalRop3(index, p, s, d);
+		},
+	);
+}
 
+/**
+ * Paints the device parallelogram whose corners are the FIX points `a`
+ * (the source's top-left), `b` (top-right, exclusive) and `q` (bottom-left,
+ * exclusive), the way GDI maps a bitmap onto one (rotated/skewed blits,
+ * PlgBlt): a device pixel is painted when its centre lies inside, half-open
+ * on the far edges, and its source texel is (`ix`, `iy`) in `[0, |sw|)` x
+ * `[0, |sh|)`, counted from the `a` corner (see {@link executeRotatedBlit}
+ * for the exact tie rules). `pixel(ix, iy, x, y, d)` returns the colour to
+ * write at device pixel (`x`, `y`) over destination `d`, or -1 to leave it.
+ * The active clip applies (`rewritePixels`).
+ */
+export function paintParallelogram(
+	rCtx: EmfGdiReplayCtx,
+	a: [number, number],
+	b: [number, number],
+	q: [number, number],
+	sw: number,
+	sh: number,
+	pixel: (ix: number, iy: number, x: number, y: number, d: number) => number,
+): void {
+	const [ax, ay] = a;
+	const exx = b[0] - ax;
+	const exy = b[1] - ay;
+	const eyx = q[0] - ax;
+	const eyy = q[1] - ay;
+	let det = exx * eyy - exy * eyx;
+	if (det === 0) {
+		return;
+	}
+	const sign = det < 0 ? -1 : 1;
+	det *= sign;
+	const xs = [ax, b[0], q[0], b[0] + eyx];
+	const ys = [ay, b[1], q[1], b[1] + eyy];
+	const x0 = Math.max(0, Math.floor(Math.min(...xs) / 16) - 1);
+	const y0 = Math.max(0, Math.floor(Math.min(...ys) / 16) - 1);
+	const x1 = Math.min(rCtx.canvasW, Math.ceil(Math.max(...xs) / 16) + 2);
+	const y1 = Math.min(rCtx.canvasH, Math.ceil(Math.max(...ys) / 16) + 2);
+	if (x1 <= x0 || y1 <= y0) {
+		return;
+	}
+	const asw = Math.abs(sw) || 1;
+	const ash = Math.abs(sh) || 1;
 	// Derivatives of the u and v numerators along device x and y.
 	const dux = sign * eyy;
 	const duy = -sign * eyx;
 	const dvx = -sign * exy;
 	const dvy = sign * exx;
-	rewritePixels(ctx, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, (x, y, d) => {
+	rewritePixels(rCtx.ctx, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, (x, y, d) => {
 		const px = x * 16 - ax;
 		const py = y * 16 - ay;
 		const un = sign * (px * eyy - py * eyx);
@@ -483,9 +523,7 @@ function executeRotatedBlit(
 		}
 		const ix = Math.min(asw - 1, nudgedFloor(un * asw, det, dux, duy));
 		const iy = Math.min(ash - 1, nudgedFloor(vn * ash, det, dvx, dvy));
-		const s = operands.usesS ? texel(ix, iy) : 0;
-		const p = typeof pattern === 'function' ? pattern(x, y) : pattern;
-		return evalRop3(index, p, s, d);
+		return pixel(ix, iy, x, y, d);
 	});
 }
 
@@ -542,15 +580,16 @@ function executeBlit(rCtx: EmfGdiReplayCtx, request: BlitRequest): void {
 // Record parsing
 // ---------------------------------------------------------------------------
 
-function sourceOf(
+export function sourceOf(
 	offset: number,
 	offBmi: number,
 	cbBmi: number,
 	offBits: number,
 	cbBits: number,
+	usage = 0,
 ): BlitRequest['source'] {
 	return offBmi > 0 && cbBmi > 0 && offBits > 0 && cbBits > 0
-		? { bmi: offset + offBmi, bits: offset + offBits, cbBits }
+		? { bmi: offset + offBmi, bits: offset + offBits, cbBits, ...(usage === 1 ? { palColors: true } : {}) }
 		: null;
 }
 
@@ -595,6 +634,7 @@ function handleBlt(
 					view.getUint32(dataOff + 80, true),
 					view.getUint32(dataOff + 84, true),
 					view.getUint32(dataOff + 88, true),
+					view.getUint32(dataOff + 72, true),
 				)
 			: null;
 	// An all-zero XformSrc (seen from some writers) means identity.
@@ -659,6 +699,7 @@ function handleStretchDibits(
 		view.getUint32(dataOff + 44, true),
 		view.getUint32(dataOff + 48, true),
 		view.getUint32(dataOff + 52, true),
+		view.getUint32(dataOff + 56, true),
 	);
 	const sx = view.getInt32(dataOff + 24, true);
 	const sy = view.getInt32(dataOff + 28, true);

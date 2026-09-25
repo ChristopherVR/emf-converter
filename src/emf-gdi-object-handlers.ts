@@ -3,8 +3,8 @@
  */
 
 import { readUtf16LE, getStockObject } from './emf-canvas-helpers';
-import { readColorRef } from './emf-color-helpers';
 import { parsePatternBrush } from './emf-gdi-brush-pattern';
+import { isPaletteRelative, paletteEntries, readRawColorRef, resolveColorRef, setColorRefSlot } from './emf-gdi-palette';
 import {
 	EMR_CREATEPEN,
 	EMR_EXTCREATEPEN,
@@ -36,13 +36,15 @@ export function handleEmfObjectRecord(
 				const ihPen = view.getUint32(dataOff, true);
 				const penStyle = view.getUint32(dataOff + 4, true);
 				const widthX = view.getInt32(dataOff + 8, true);
-				const color = readColorRef(view, dataOff + 16);
+				const colorRef = readRawColorRef(view, dataOff + 16);
+				const color = resolveColorRef(state, colorRef);
 				rCtx.objectTable.set(ihPen, {
 					kind: 'pen',
 					style: penStyle & 0xff,
 					widthX,
 					color,
 					flags: penStyle,
+					...(isPaletteRelative(colorRef) ? { colorRef } : {}),
 				});
 			}
 			return true;
@@ -55,7 +57,8 @@ export function handleEmfObjectRecord(
 				const ihPen = view.getUint32(dataOff, true);
 				const penStyle = view.getUint32(dataOff + 20, true);
 				const widthX = view.getInt32(dataOff + 24, true);
-				const color = readColorRef(view, dataOff + 32);
+				const colorRef = readRawColorRef(view, dataOff + 32);
+				const color = resolveColorRef(state, colorRef);
 				const numEntries = view.getUint32(dataOff + 40, true);
 				const userStyle: number[] = [];
 				if ((penStyle & 0x0f) === 7) {
@@ -70,6 +73,7 @@ export function handleEmfObjectRecord(
 					color,
 					flags: penStyle,
 					extended: true,
+					...(isPaletteRelative(colorRef) ? { colorRef } : {}),
 					...(userStyle.length > 0 ? { userStyle } : {}),
 				});
 			}
@@ -79,12 +83,14 @@ export function handleEmfObjectRecord(
 			if (recSize >= 24) {
 				const ihBrush = view.getUint32(dataOff, true);
 				const brushStyle = view.getUint32(dataOff + 4, true);
-				const color = readColorRef(view, dataOff + 8);
+				const colorRef = readRawColorRef(view, dataOff + 8);
+				const color = resolveColorRef(state, colorRef);
 				const hatch = view.getUint32(dataOff + 12, true);
 				rCtx.objectTable.set(ihBrush, {
 					kind: 'brush',
 					style: brushStyle,
 					color,
+					...(isPaletteRelative(colorRef) ? { colorRef } : {}),
 					...(brushStyle === 2 && hatch <= 5 ? { pattern: { kind: 'hatch' as const, hatch } } : {}),
 				});
 			}
@@ -95,7 +101,9 @@ export function handleEmfObjectRecord(
 			if (recSize >= 32) {
 				const ihBrush = view.getUint32(dataOff, true);
 				const mono = recType === EMR_CREATEMONOBRUSH;
-				const pattern = parsePatternBrush(view, dataOff - 8, dataOff, mono);
+				// DIB_PAL_COLORS (iUsage 1): the colour table indexes the selected palette.
+				const usage = view.getUint32(dataOff + 4, true);
+				const pattern = parsePatternBrush(view, dataOff - 8, dataOff, mono, usage === 1 ? paletteEntries(state) : null);
 				rCtx.objectTable.set(ihBrush, {
 					kind: 'brush',
 					style: pattern ? (mono ? 3 : 6) : 0,
@@ -158,14 +166,16 @@ export function handleEmfObjectRecord(
 						case 'pen':
 							state.penStyle = obj.style;
 							state.penWidth = obj.widthX;
-							state.penColor = obj.color;
+							state.penColor = obj.colorRef !== undefined ? resolveColorRef(state, obj.colorRef) : obj.color;
+							setColorRefSlot(state, 'pen', obj.colorRef);
 							state.penFlags = obj.flags ?? obj.style;
 							state.penUserStyle = obj.userStyle;
 							state.penExtended = obj.extended === true;
 							break;
 						case 'brush':
 							state.brushStyle = obj.style;
-							state.brushColor = obj.color;
+							state.brushColor = obj.colorRef !== undefined ? resolveColorRef(state, obj.colorRef) : obj.color;
+							setColorRefSlot(state, 'brush', obj.colorRef);
 							state.brushPattern = obj.pattern ?? null;
 							break;
 						case 'font':

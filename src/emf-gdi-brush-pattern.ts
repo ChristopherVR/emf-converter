@@ -90,6 +90,7 @@ export function parsePatternBrush(
 	offset: number,
 	dataOff: number,
 	mono: boolean,
+	paletteColors: ReadonlyArray<number> | null = null,
 ): GdiBrushPattern | null {
 	if (dataOff + 24 > view.byteLength) {
 		return null;
@@ -107,7 +108,7 @@ export function parsePatternBrush(
 			return { kind: 'mono', ...decoded };
 		}
 	}
-	const image = decodeDibToImageData(view, bmi, bitsAt, cbBits);
+	const image = decodeDibToImageData(view, bmi, bitsAt, cbBits, paletteColors);
 	if (!image) {
 		return null;
 	}

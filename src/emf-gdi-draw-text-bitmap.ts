@@ -12,6 +12,7 @@
  * @module emf-gdi-draw-text-bitmap
  */
 
+import { handleEmfGdiBlendBlitRecord } from './emf-gdi-blend-blits';
 import { handleEmfGdiBitmapRecord } from './emf-gdi-draw-bitmap';
 import { handleEmfGdiDrawTextRecord } from './emf-gdi-draw-text';
 import { handleEmfGdiClipRecord } from './emf-gdi-clip-records';
@@ -27,6 +28,7 @@ export function handleEmfGdiTextBitmapRecord(
 	return (
 		handleEmfGdiDrawTextRecord(rCtx, recType, offset, dataOff, recSize) ||
 		handleEmfGdiBitmapRecord(rCtx, recType, offset, dataOff, recSize) ||
+		handleEmfGdiBlendBlitRecord(rCtx, recType, offset, dataOff, recSize) ||
 		handleEmfGdiClipRecord(rCtx, recType, dataOff, recSize)
 	);
 }

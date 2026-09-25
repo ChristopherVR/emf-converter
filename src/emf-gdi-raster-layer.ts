@@ -120,6 +120,8 @@ const LAYER_SAFE_RECORDS = new Set<number>([
 	37, 38, 39, 40, 82, 93, 94, 95,
 	// state and mapping
 	9, 10, 11, 12, 13, 17, 18, 19, 20, 21, 22, 24, 25, 31, 32, 33, 35, 36, 57, 58,
+	// palettes, and state/informational records that draw nothing
+	16, 23, 48, 49, 50, 51, 52, 99, 100, 101, 102, 103, 104, 105, 106, 109, 110, 111, 112, 113, 119, 120, 121, 122,
 ]);
 
 /** True when record type `recType` can run with the layer still pending. */

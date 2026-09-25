@@ -31,7 +31,7 @@
  */
 
 import { applyPen, applyBrush, rop2Paint } from './emf-canvas-helpers';
-import { readColorRef } from './emf-color-helpers';
+import { readStateColorRef } from './emf-gdi-palette';
 import {
 	EMR_MOVETOEX,
 	EMR_LINETO,
@@ -137,7 +137,7 @@ function handleSetPixelV(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 	if (recSize >= 20) {
 		const x = view.getInt32(dataOff, true);
 		const y = view.getInt32(dataOff + 4, true);
-		const color = readColorRef(view, dataOff + 8);
+		const color = readStateColorRef(rCtx.state, view, dataOff + 8);
 		const p = hasWorldRotation(rCtx) ? gmapPoint(rCtx, x, y) : { x: gmx(rCtx, x), y: gmy(rCtx, y) };
 		ctx.fillStyle = color;
 		ctx.fillRect(p.x, p.y, 1, 1);

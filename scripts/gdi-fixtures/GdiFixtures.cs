@@ -3438,6 +3438,1328 @@ public static class GdiFixtures
 		WmfRegionCases();
 	}
 
+	// -----------------------------------------------------------------------
+	// emf-records: EMF records that had no handler (AngleArc, PolyDraw,
+	// PolyPolyline16, Flatten/Widen/AbortPath, the region records, ExtFloodFill,
+	// AlphaBlend, TransparentBlt, MaskBlt, PlgBlt, SetDIBitsToDevice,
+	// GradientFill, palettes and palette-relative colours), plus the records
+	// Windows' own recorder never writes (EMR_EXTTEXTOUTA, EMR_POLYTEXTOUTA/W,
+	// EMR_SMALLTEXTOUT, EMR_SETTEXTJUSTIFICATION, EMR_SETMAPPERFLAGS): those are
+	// spliced into a real recording and the reference is what PlayEnhMetaFile
+	// itself paints for the edited file (see ErPlayCase).
+	// -----------------------------------------------------------------------
+
+	[StructLayout(LayoutKind.Sequential)]
+	public struct ErVertex { public int X, Y; public ushort R, G, B, A; }
+
+	static class ErApi
+	{
+		[DllImport("gdi32.dll")] public static extern bool AngleArc(IntPtr hdc, int x, int y, uint r, float start, float sweep);
+		[DllImport("gdi32.dll")] public static extern bool PolyDraw(IntPtr hdc, [In] POINT[] pts, [In] byte[] types, int n);
+		[DllImport("gdi32.dll")] public static extern bool PolyPolyline(IntPtr hdc, [In] POINT[] pts, [In] uint[] counts, uint n);
+		[DllImport("gdi32.dll")] public static extern bool ExtFloodFill(IntPtr hdc, int x, int y, int color, uint type);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreateRectRgn(int l, int t, int r, int b);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreateEllipticRgn(int l, int t, int r, int b);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreatePolygonRgn([In] POINT[] pts, int n, int mode);
+		[DllImport("gdi32.dll")] public static extern int CombineRgn(IntPtr dst, IntPtr a, IntPtr b, int mode);
+		[DllImport("gdi32.dll")] public static extern bool FillRgn(IntPtr hdc, IntPtr rgn, IntPtr brush);
+		[DllImport("gdi32.dll")] public static extern bool FrameRgn(IntPtr hdc, IntPtr rgn, IntPtr brush, int w, int h);
+		[DllImport("gdi32.dll")] public static extern bool InvertRgn(IntPtr hdc, IntPtr rgn);
+		[DllImport("gdi32.dll")] public static extern bool PaintRgn(IntPtr hdc, IntPtr rgn);
+		[DllImport("gdi32.dll")] public static extern bool FlattenPath(IntPtr hdc);
+		[DllImport("gdi32.dll")] public static extern bool WidenPath(IntPtr hdc);
+		[DllImport("gdi32.dll")] public static extern bool AbortPath(IntPtr hdc);
+		[DllImport("gdi32.dll")] public static extern bool SelectClipPath(IntPtr hdc, int mode);
+		[DllImport("gdi32.dll")] public static extern int IntersectClipRect(IntPtr hdc, int l, int t, int r, int b);
+		[DllImport("gdi32.dll")] public static extern int SelectClipRgn(IntPtr hdc, IntPtr rgn);
+		[DllImport("gdi32.dll")] public static extern bool SetViewportOrgEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern int SetMapMode(IntPtr hdc, int mode);
+		[DllImport("gdi32.dll")] public static extern bool SetWindowExtEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool SetViewportExtEx(IntPtr hdc, int x, int y, IntPtr prev);
+		[DllImport("gdi32.dll")] public static extern bool PolyBezier(IntPtr hdc, [In] POINT[] pts, int count);
+		[DllImport("gdi32.dll")] public static extern bool Polyline(IntPtr hdc, [In] POINT[] pts, int count);
+		[DllImport("gdi32.dll")] public static extern int SetArcDirection(IntPtr hdc, int dir);
+		[DllImport("msimg32.dll")] public static extern bool GradientFill(IntPtr hdc, [In] ErVertex[] v, uint nv, [In] uint[] mesh, uint nm, uint mode);
+		[DllImport("msimg32.dll")] public static extern bool AlphaBlend(IntPtr d, int x, int y, int w, int h, IntPtr s, int sx, int sy, int sw, int sh, uint blend);
+		[DllImport("msimg32.dll")] public static extern bool TransparentBlt(IntPtr d, int x, int y, int w, int h, IntPtr s, int sx, int sy, int sw, int sh, uint color);
+		[DllImport("gdi32.dll")] public static extern bool MaskBlt(IntPtr d, int x, int y, int w, int h, IntPtr s, int sx, int sy, IntPtr mask, int mx, int my, uint rop);
+		[DllImport("gdi32.dll")] public static extern bool PlgBlt(IntPtr d, [In] POINT[] pts, IntPtr s, int sx, int sy, int w, int h, IntPtr mask, int mx, int my);
+		[DllImport("gdi32.dll")] public static extern int SetDIBitsToDevice(IntPtr hdc, int x, int y, uint w, uint h, int sx, int sy, uint start, uint lines, byte[] bits, byte[] bmi, uint usage);
+		[DllImport("gdi32.dll")] public static extern int StretchDIBits(IntPtr hdc, int x, int y, int w, int h, int sx, int sy, int sw, int sh, byte[] bits, byte[] bmi, uint usage, uint rop);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreatePalette(byte[] logPalette);
+		[DllImport("gdi32.dll")] public static extern IntPtr SelectPalette(IntPtr hdc, IntPtr pal, bool background);
+		[DllImport("gdi32.dll")] public static extern uint RealizePalette(IntPtr hdc);
+		[DllImport("gdi32.dll")] public static extern uint SetPaletteEntries(IntPtr pal, uint start, uint n, byte[] entries);
+		[DllImport("gdi32.dll")] public static extern bool ResizePalette(IntPtr pal, uint n);
+		[DllImport("gdi32.dll")] public static extern IntPtr CreateDIBPatternBrushPt(byte[] packed, uint usage);
+		[DllImport("gdi32.dll")] public static extern bool SetColorAdjustment(IntPtr hdc, byte[] ca);
+		[DllImport("gdi32.dll")] public static extern uint GetEnhMetaFileBits(IntPtr hemf, uint n, byte[] buf);
+		[DllImport("gdi32.dll")] public static extern IntPtr SetEnhMetaFileBits(uint n, byte[] buf);
+		[DllImport("gdi32.dll")] public static extern bool PlayEnhMetaFile(IntPtr hdc, IntPtr hemf, ref RECT rc);
+		[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool ExtTextOutW(IntPtr hdc, int x, int y, uint o, IntPtr rc, string s, int n, int[] dx);
+		[DllImport("gdi32.dll", CharSet = CharSet.Unicode, EntryPoint = "ExtTextOutW")] public static extern bool ExtTextOutRect(IntPtr hdc, int x, int y, uint o, ref RECT rc, string s, int n, int[] dx);
+	}
+
+	const int ErPtClose = 1, ErPtLine = 2, ErPtBezier = 4, ErPtMove = 6;
+
+	/** A GradientFill vertex from 8-bit channels (the 16-bit value is `c * 257`, i.e. 0xFF -> 0xFFFF). */
+	static ErVertex ErV(int x, int y, int r, int g, int b)
+	{
+		var v = new ErVertex();
+		v.X = x; v.Y = y; v.R = (ushort)(r * 257); v.G = (ushort)(g * 257); v.B = (ushort)(b * 257);
+		return v;
+	}
+
+	/** A GradientFill vertex from raw 16-bit channels. */
+	static ErVertex ErV16(int x, int y, int r, int g, int b)
+	{
+		var v = new ErVertex();
+		v.X = x; v.Y = y; v.R = (ushort)r; v.G = (ushort)g; v.B = (ushort)b;
+		return v;
+	}
+
+	/** A 32bpp top-down source DC whose pixel (x, y) is `argb(x, y)` (0xAARRGGBB, stored as given). */
+	static Dib ErArgbSource(IntPtr refDc, int w, int h, Func<int, int, uint> argb)
+	{
+		var src = new Dib(refDc, w, h);
+		var buf = new byte[w * h * 4];
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				uint c = argb(x, y);
+				int o = (y * w + x) * 4;
+				buf[o] = (byte)c; buf[o + 1] = (byte)(c >> 8); buf[o + 2] = (byte)(c >> 16); buf[o + 3] = (byte)(c >> 24);
+			}
+		}
+		Marshal.Copy(buf, 0, src.Bits, buf.Length);
+		return src;
+	}
+
+	/** `rgb` (Rgb()-packed) premultiplied by `a`, as a 0xAARRGGBB DIB pixel. */
+	static uint ErPremul(int a, int rgb)
+	{
+		int r = ((rgb & 0xff) * a + 127) / 255, g = (((rgb >> 8) & 0xff) * a + 127) / 255, b = (((rgb >> 16) & 0xff) * a + 127) / 255;
+		return ((uint)a << 24) | ((uint)r << 16) | ((uint)g << 8) | (uint)b;
+	}
+
+	/** A BLENDFUNCTION packed as the DWORD AlphaBlend takes by value. */
+	static uint ErBlend(int sca, bool srcAlpha) { return ((uint)sca << 16) | (srcAlpha ? 0x01000000u : 0u); }
+
+	/** MAKEROP4(fore, back). */
+	static uint ErRop4(uint fore, uint back) { return ((back << 8) & 0xFF000000u) | fore; }
+
+	/** A monochrome bitmap `w` x `h` whose bit (x, y) is `on(x, y)` (rows word-aligned). */
+	static IntPtr ErMask(int w, int h, Func<int, int, bool> on)
+	{
+		int stride = (w + 15) / 16 * 2;
+		var bits = new byte[stride * h];
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				if (on(x, y)) { bits[y * stride + x / 8] |= (byte)(0x80 >> (x % 8)); }
+			}
+		}
+		return CreateBitmap(w, h, 1, 1, bits);
+	}
+
+	/** A packed LOGPALETTE for `rgbs` (Rgb()-packed, flags 0). */
+	static byte[] ErLogPalette(int[] rgbs)
+	{
+		var lp = new byte[4 + rgbs.Length * 4];
+		lp[0] = 0; lp[1] = 3; lp[2] = (byte)rgbs.Length; lp[3] = (byte)(rgbs.Length >> 8);
+		for (int i = 0; i < rgbs.Length; i++) { lp[4 + i * 4] = (byte)rgbs[i]; lp[5 + i * 4] = (byte)(rgbs[i] >> 8); lp[6 + i * 4] = (byte)(rgbs[i] >> 16); }
+		return lp;
+	}
+
+	/** A BITMAPINFOHEADER (+ `colorTable` bytes) for a `w` x `h` DIB of `bpp` bits (negative `h` = top-down). */
+	static byte[] ErBmi(int w, int h, int bpp, byte[] colorTable)
+	{
+		int n = colorTable == null ? 0 : colorTable.Length;
+		var bmi = new byte[40 + n];
+		BitConverter.GetBytes(40).CopyTo(bmi, 0); BitConverter.GetBytes(w).CopyTo(bmi, 4); BitConverter.GetBytes(h).CopyTo(bmi, 8);
+		BitConverter.GetBytes((short)1).CopyTo(bmi, 12); BitConverter.GetBytes((short)bpp).CopyTo(bmi, 14);
+		if (bpp <= 8 && n > 0) { BitConverter.GetBytes(bpp == 8 ? n / 4 : 0).CopyTo(bmi, 32); }
+		if (n > 0) { Array.Copy(colorTable, 0, bmi, 40, n); }
+		return bmi;
+	}
+
+	/** A 24bpp DIB's bits (rows padded to 4 bytes) of pixel colour `rgb(x, row)`, row 0 first. */
+	static byte[] Er24Bits(int w, int rows, Func<int, int, int> rgb)
+	{
+		int stride = (w * 3 + 3) & ~3;
+		var bits = new byte[stride * rows];
+		for (int y = 0; y < rows; y++)
+		{
+			for (int x = 0; x < w; x++)
+			{
+				int c = rgb(x, y), o = y * stride + x * 3;
+				bits[o] = (byte)(c >> 16); bits[o + 1] = (byte)(c >> 8); bits[o + 2] = (byte)c;
+			}
+		}
+		return bits;
+	}
+
+	/** A deterministic test colour for pixel (x, y) of a source image. */
+	static int ErPix(int x, int y) { return Palette[(x / 2 + y + (x * y) % 3) % Palette.Length] ^ ((x * 37 + y * 11) & 0x3f); }
+
+	// ---- record splicing (for the records Windows' recorder never writes) ----
+
+	/** The records of an EMF, each as its own byte array (type and size included). */
+	static List<byte[]> ErRecords(byte[] emf)
+	{
+		var list = new List<byte[]>();
+		for (int off = 0; off + 8 <= emf.Length;)
+		{
+			int size = BitConverter.ToInt32(emf, off + 4);
+			var r = new byte[size];
+			Array.Copy(emf, off, r, 0, size);
+			list.Add(r);
+			off += size;
+		}
+		return list;
+	}
+
+	/** Reassembles records into an EMF, fixing the header's byte and record counts. */
+	static byte[] ErBuild(List<byte[]> recs)
+	{
+		var ms = new MemoryStream();
+		foreach (var r in recs) { ms.Write(r, 0, r.Length); }
+		byte[] emf = ms.ToArray();
+		BitConverter.GetBytes(emf.Length).CopyTo(emf, 48);
+		BitConverter.GetBytes(recs.Count).CopyTo(emf, 52);
+		return emf;
+	}
+
+	/** One record of type `type` whose payload `body` writes (size filled in, padded to 4 bytes). */
+	static byte[] ErRecord(int type, Action<BinaryWriter> body)
+	{
+		var ms = new MemoryStream();
+		var w = new BinaryWriter(ms);
+		w.Write(type); w.Write(0);
+		body(w);
+		while (ms.Length % 4 != 0) { w.Write((byte)0); }
+		byte[] r = ms.ToArray();
+		BitConverter.GetBytes(r.Length).CopyTo(r, 4);
+		return r;
+	}
+
+	static int ErType(byte[] r) { return BitConverter.ToInt32(r, 0); }
+
+	/** The parts of a recorded EMR_EXTTEXTOUTW. */
+	sealed class ErText
+	{
+		public byte[] Bounds = new byte[16];
+		public int GraphicsMode; public float ExScale, EyScale;
+		public int X, Y; public uint Options; public byte[] Rect = new byte[16];
+		public string Text; public int[] Dx;
+	}
+
+	static ErText ErParseTextW(byte[] r)
+	{
+		var t = new ErText();
+		Array.Copy(r, 8, t.Bounds, 0, 16);
+		t.GraphicsMode = BitConverter.ToInt32(r, 24);
+		t.ExScale = BitConverter.ToSingle(r, 28); t.EyScale = BitConverter.ToSingle(r, 32);
+		t.X = BitConverter.ToInt32(r, 36); t.Y = BitConverter.ToInt32(r, 40);
+		int n = BitConverter.ToInt32(r, 44), offString = BitConverter.ToInt32(r, 48);
+		t.Options = BitConverter.ToUInt32(r, 52);
+		Array.Copy(r, 56, t.Rect, 0, 16);
+		int offDx = BitConverter.ToInt32(r, 72);
+		t.Text = Encoding.Unicode.GetString(r, offString, n * 2);
+		if (offDx != 0)
+		{
+			t.Dx = new int[n];
+			for (int i = 0; i < n; i++) { t.Dx[i] = BitConverter.ToInt32(r, offDx + 4 * i); }
+		}
+		return t;
+	}
+
+	static void ErPad(BinaryWriter w) { while (w.BaseStream.Length % 4 != 0) { w.Write((byte)0); } }
+
+	/** EMR_EXTTEXTOUTA (83, `text` = code-page bytes) or EMR_EXTTEXTOUTW (84, `text` = UTF-16LE) for `t`. */
+	static byte[] ErExtText(ErText t, byte[] text, int nChars, bool ansi, bool withDx)
+	{
+		const int offString = 76;
+		int offDx = withDx && t.Dx != null ? offString + ((text.Length + 3) & ~3) : 0;
+		return ErRecord(ansi ? 83 : 84, delegate (BinaryWriter w)
+		{
+			w.Write(t.Bounds); w.Write(t.GraphicsMode); w.Write(t.ExScale); w.Write(t.EyScale);
+			w.Write(t.X); w.Write(t.Y); w.Write(nChars); w.Write(offString); w.Write(t.Options); w.Write(t.Rect); w.Write(offDx);
+			w.Write(text); ErPad(w);
+			if (offDx != 0) { foreach (int d in t.Dx) { w.Write(d); } }
+		});
+	}
+
+	/** EMR_SMALLTEXTOUT (108) for `t` with `options` (ETO_SMALL_CHARS 0x200: one byte per character; ETO_NO_RECT 0x100: no rectangle). */
+	static byte[] ErSmallText(ErText t, uint options)
+	{
+		return ErRecord(108, delegate (BinaryWriter w)
+		{
+			w.Write(t.X); w.Write(t.Y); w.Write(t.Text.Length); w.Write(options);
+			w.Write(t.GraphicsMode); w.Write(t.ExScale); w.Write(t.EyScale);
+			if ((options & 0x100) == 0) { w.Write(t.Rect); }
+			if ((options & 0x200) != 0) { foreach (char c in t.Text) { w.Write((byte)c); } }
+			else { w.Write(Encoding.Unicode.GetBytes(t.Text)); }
+		});
+	}
+
+	/** EMR_POLYTEXTOUTA (96, strings in `enc`) or EMR_POLYTEXTOUTW (97) drawing every run of `ts`. */
+	static byte[] ErPolyText(List<ErText> ts, Encoding enc)
+	{
+		bool ansi = enc != null;
+		int n = ts.Count;
+		var data = new List<byte[]>();
+		var offS = new int[n];
+		var offD = new int[n];
+		int p = 40 + 40 * n;
+		for (int i = 0; i < n; i++)
+		{
+			byte[] s = ansi ? enc.GetBytes(ts[i].Text) : Encoding.Unicode.GetBytes(ts[i].Text);
+			offS[i] = p; p += (s.Length + 3) & ~3;
+			data.Add(s);
+			offD[i] = ts[i].Dx != null ? p : 0;
+			if (ts[i].Dx != null) { p += 4 * ts[i].Dx.Length; }
+		}
+		int l = int.MaxValue, t0 = int.MaxValue, r = int.MinValue, b = int.MinValue;
+		foreach (var t in ts)
+		{
+			l = Math.Min(l, BitConverter.ToInt32(t.Bounds, 0)); t0 = Math.Min(t0, BitConverter.ToInt32(t.Bounds, 4));
+			r = Math.Max(r, BitConverter.ToInt32(t.Bounds, 8)); b = Math.Max(b, BitConverter.ToInt32(t.Bounds, 12));
+		}
+		return ErRecord(ansi ? 96 : 97, delegate (BinaryWriter w)
+		{
+			w.Write(l); w.Write(t0); w.Write(r); w.Write(b);
+			w.Write(ts[0].GraphicsMode); w.Write(ts[0].ExScale); w.Write(ts[0].EyScale); w.Write(n);
+			for (int i = 0; i < n; i++)
+			{
+				var t = ts[i];
+				w.Write(t.X); w.Write(t.Y); w.Write(t.Text.Length); w.Write(offS[i]); w.Write(t.Options); w.Write(t.Rect); w.Write(offD[i]);
+			}
+			for (int i = 0; i < n; i++)
+			{
+				w.Write(data[i]); ErPad(w);
+				if (ts[i].Dx != null) { foreach (int d in ts[i].Dx) { w.Write(d); } }
+			}
+		});
+	}
+
+	/** EMR_SETTEXTJUSTIFICATION (120). */
+	static byte[] ErJustify(int extra, int count) { return ErRecord(120, delegate (BinaryWriter w) { w.Write(extra); w.Write(count); }); }
+
+	/**
+	 * Records `draw` into memory, lets `rewrite` edit the record list, writes the
+	 * result to `<name>.emf`, and paints `<name>.png` by playing that very file
+	 * back with PlayEnhMetaFile onto the 32bpp bitmap (the playback of an
+	 * unedited recording of this frame equals drawing directly, pixel for pixel,
+	 * so the reference is exactly Windows' own meaning of the edited records).
+	 */
+	static void ErPlayCase(string name, int w, int h, GdiDraw draw, Func<List<byte[]>, List<byte[]>> rewrite)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmPerPxX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8);
+		double mmPerPxY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT();
+		frame.Right = (int)Math.Round(w * mmPerPxX); frame.Bottom = (int)Math.Round(h * mmPerPxY);
+		IntPtr mdc = CreateEnhMetaFileW(screen, null, ref frame, null);
+		draw(mdc);
+		IntPtr hemf = CloseEnhMetaFile(mdc);
+		uint n = ErApi.GetEnhMetaFileBits(hemf, 0, null);
+		var bytes = new byte[n];
+		ErApi.GetEnhMetaFileBits(hemf, n, bytes);
+		DeleteEnhMetaFile(hemf);
+		byte[] edited = ErBuild(rewrite(ErRecords(bytes)));
+		File.WriteAllBytes(Path.Combine(outDir, name + ".emf"), edited);
+		IntPtr played = ErApi.SetEnhMetaFileBits((uint)edited.Length, edited);
+		using (var dib = new Dib(screen, w, h))
+		{
+			var rc = new RECT(); rc.Right = w; rc.Bottom = h;
+			ErApi.PlayEnhMetaFile(dib.Dc, played, ref rc);
+			dib.SavePng(Path.Combine(outDir, name + ".png"));
+		}
+		DeleteEnhMetaFile(played);
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	/** Replaces the i-th EMR_EXTTEXTOUTW record (0-based, in order) with `map(i, parsed)` (null keeps it). */
+	static Func<List<byte[]>, List<byte[]>> ErMapTexts(Func<int, ErText, byte[][]> map)
+	{
+		return delegate (List<byte[]> recs)
+		{
+			var outList = new List<byte[]>();
+			int k = 0;
+			foreach (var r in recs)
+			{
+				if (ErType(r) != 84) { outList.Add(r); continue; }
+				byte[][] repl = map(k++, ErParseTextW(r));
+				if (repl == null) { outList.Add(r); } else { outList.AddRange(repl); }
+			}
+			return outList;
+		};
+	}
+
+	static LOGFONT ErFont(string face, int height, byte charSet)
+	{
+		var lf = new LOGFONT();
+		lf.lfHeight = height; lf.lfWeight = 400; lf.lfCharSet = charSet; lf.lfFaceName = face; lf.lfQuality = 3; // NONANTIALIASED_QUALITY
+		return lf;
+	}
+
+	// ---- geometry records ----
+
+	static void ErGeometryCases()
+	{
+		GdiCase("emfrec-anglearc", 220, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 220, 200);
+			IntPtr pen = CreatePen(0, 0, Rgb(0x10, 0x10, 0x30));
+			WithObjects(hdc, pen, GetStockObject(5), delegate
+			{
+				MoveToEx(hdc, 8, 8, IntPtr.Zero); ErApi.AngleArc(hdc, 50, 50, 30, 0f, 90f);
+				MoveToEx(hdc, 100, 8, IntPtr.Zero); ErApi.AngleArc(hdc, 140, 50, 31, 45f, -135f);
+				ErApi.AngleArc(hdc, 50, 128, 25, 200f, 400f);
+				MoveToEx(hdc, 100, 110, IntPtr.Zero); ErApi.AngleArc(hdc, 150, 130, 0, 30f, 60f);
+				ErApi.SetArcDirection(hdc, 2);
+				MoveToEx(hdc, 205, 12, IntPtr.Zero); ErApi.AngleArc(hdc, 190, 60, 20, -30f, 250f);
+				ErApi.SetArcDirection(hdc, 1);
+				MoveToEx(hdc, 110, 60, IntPtr.Zero); ErApi.AngleArc(hdc, 128, 85, 17, 12.5f, 181.25f);
+				MoveToEx(hdc, 60, 95, IntPtr.Zero); ErApi.AngleArc(hdc, 30, 95, 12, 90f, -360f);
+			});
+			WithObjects(hdc, CreatePen(0, 5, Rgb(0xC0, 0x20, 0x40)), GetStockObject(5), delegate
+			{
+				MoveToEx(hdc, 15, 190, IntPtr.Zero); ErApi.AngleArc(hdc, 50, 170, 15, 180f, -270f);
+			});
+			WithObjects(hdc, ExtPen(PS_GEOMETRIC | PS_ENDCAP_FLAT | PS_JOIN_MITER, 7, Rgb(0x20, 0x70, 0x20), null), GetStockObject(5), delegate
+			{
+				MoveToEx(hdc, 85, 195, IntPtr.Zero); ErApi.AngleArc(hdc, 100, 165, 20, 300f, 150f);
+			});
+			WithObjects(hdc, CreatePen(0, 0, Rgb(0, 0, 0)), CreateSolidBrush(Rgb(0xF0, 0xC0, 0x40)), delegate
+			{
+				BeginPath(hdc);
+				MoveToEx(hdc, 140, 195, IntPtr.Zero); ErApi.AngleArc(hdc, 170, 170, 22, 10f, 300f);
+				CloseFigure(hdc);
+				EndPath(hdc);
+				StrokeAndFillPath(hdc);
+			});
+			SetGraphicsMode(hdc, 2);
+			var xf = new XFORM { eM11 = 1.3f, eM22 = 0.7f, eDx = 150, eDy = 110 };
+			SetWorldTransform(hdc, ref xf);
+			WithObjects(hdc, CreatePen(0, 0, Rgb(0x60, 0x00, 0x90)), GetStockObject(5), delegate
+			{
+				MoveToEx(hdc, -20, 0, IntPtr.Zero); ErApi.AngleArc(hdc, 0, 0, 20, 60f, 200f);
+			});
+			var id = new XFORM { eM11 = 1, eM22 = 1 };
+			SetWorldTransform(hdc, ref id);
+			SetGraphicsMode(hdc, 1);
+		});
+
+		GdiDraw polyDraw = delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 160);
+			POINT[] pts = { P(10, 10), P(60, 15), P(40, 50), P(70, 20), P(90, 70), P(110, 30), P(120, 10), P(150, 40), P(160, 10), P(190, 60), P(170, 70), P(130, 72) };
+			byte[] types = { ErPtMove, ErPtLine, ErPtLine | ErPtClose, ErPtBezier, ErPtBezier, ErPtBezier, ErPtMove, ErPtLine, ErPtBezier, ErPtBezier, ErPtBezier | ErPtClose, ErPtLine };
+			WithObjects(hdc, CreatePen(0, 0, Rgb(0x10, 0x10, 0x10)), GetStockObject(5), delegate
+			{
+				ErApi.PolyDraw(hdc, pts, types, pts.Length);
+				MoveToEx(hdc, 12, 150, IntPtr.Zero);
+				ErApi.PolyDraw(hdc, new[] { P(40, 110), P(60, 150), P(70, 150), P(90, 110) }, new byte[] { ErPtLine, ErPtBezier, ErPtBezier, ErPtBezier }, 4);
+			});
+			WithObjects(hdc, CreatePen(0, 6, Rgb(0x20, 0x60, 0xC0)), GetStockObject(5), delegate
+			{
+				ErApi.PolyDraw(hdc, new[] { P(15, 80), P(50, 85), P(30, 100), P(60, 95), P(70, 120), P(40, 128) }, new byte[] { ErPtMove, ErPtLine, ErPtLine | ErPtClose, ErPtMove, ErPtLine, ErPtLine | ErPtClose }, 6);
+			});
+			WithObjects(hdc, CreatePen(0, 0, Rgb(0x40, 0, 0)), CreateSolidBrush(Rgb(0x90, 0xE0, 0x90)), delegate
+			{
+				BeginPath(hdc);
+				ErApi.PolyDraw(hdc, new[] { P(110, 90), P(190, 100), P(120, 150), P(150, 80), P(185, 150), P(130, 110), P(130, 125), P(160, 125) }, new byte[] { ErPtMove, ErPtLine, ErPtLine, ErPtLine, ErPtLine | ErPtClose, ErPtMove, ErPtBezier, ErPtBezier | ErPtClose }, 8);
+				EndPath(hdc);
+				StrokeAndFillPath(hdc);
+			});
+		};
+		GdiCase("emfrec-polydraw16", 200, 160, polyDraw);
+
+		// Coordinates beyond 16 bits (scaled down by the world transform) make
+		// the recorder write EMR_POLYDRAW instead of EMR_POLYDRAW16.
+		GdiCase("emfrec-polydraw32", 200, 100, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 100);
+			SetGraphicsMode(hdc, 2);
+			var xf = new XFORM { eM11 = 0.005f, eM22 = 0.005f };
+			SetWorldTransform(hdc, ref xf);
+			WithObjects(hdc, CreatePen(0, 0, Rgb(0x10, 0x10, 0x10)), CreateSolidBrush(Rgb(0xE0, 0x90, 0x30)), delegate
+			{
+				ErApi.PolyDraw(hdc, new[] { P(2000, 2000), P(36000, 3000), P(20000, 18000), P(4000, 17000), P(38000, 1000), P(39000, 19000), P(24000, 19000) }, new byte[] { ErPtMove, ErPtLine, ErPtLine | ErPtClose, ErPtMove, ErPtBezier, ErPtBezier, ErPtBezier }, 7);
+				BeginPath(hdc);
+				ErApi.PolyDraw(hdc, new[] { P(5000, 8000), P(15000, 4000), P(30000, 15000), P(12000, 14000) }, new byte[] { ErPtMove, ErPtBezier, ErPtBezier, ErPtBezier | ErPtClose }, 4);
+				EndPath(hdc);
+				FillPath(hdc);
+			});
+			var id = new XFORM { eM11 = 1, eM22 = 1 };
+			SetWorldTransform(hdc, ref id);
+			SetGraphicsMode(hdc, 1);
+		});
+
+		GdiCase("emfrec-polypolyline16", 200, 100, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 100);
+			POINT[] pts = { P(5, 5), P(60, 40), P(10, 45), P(70, 8), P(90, 45), P(120, 5), P(110, 45), P(150, 20), P(195, 45), P(160, 5) };
+			uint[] counts = { 3, 2, 5 };
+			WithObjects(hdc, CreatePen(1, 0, Rgb(0x10, 0x10, 0x60)), GetStockObject(5), delegate { ErApi.PolyPolyline(hdc, pts, counts, 3); });
+			var pts2 = new POINT[pts.Length];
+			for (int i = 0; i < pts.Length; i++) { pts2[i] = P(pts[i].X, pts[i].Y + 50); }
+			WithObjects(hdc, CreatePen(0, 5, Rgb(0xB0, 0x30, 0x30)), GetStockObject(5), delegate { ErApi.PolyPolyline(hdc, pts2, counts, 3); });
+		});
+	}
+
+	static void ErPathCases()
+	{
+		GdiCase("emfrec-path-flatten", 220, 170, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 220, 170);
+			WithObjects(hdc, CreatePen(2, 0, Rgb(0x10, 0x10, 0x10)), GetStockObject(5), delegate
+			{
+				BeginPath(hdc);
+				Ellipse(hdc, 8, 8, 92, 70);
+				ErApi.PolyBezier(hdc, new[] { P(100, 10), P(120, 80), P(150, -10), P(210, 60) }, 4);
+				EndPath(hdc);
+				ErApi.FlattenPath(hdc);
+				StrokePath(hdc);
+			});
+			WithObjects(hdc, CreatePen(0, 0, Rgb(0x20, 0x20, 0x60)), CreateSolidBrush(Rgb(0xF0, 0xB0, 0x30)), delegate
+			{
+				SetPolyFillMode(hdc, 2);
+				BeginPath(hdc);
+				RoundRect(hdc, 110, 70, 212, 120, 40, 30);
+				Ellipse(hdc, 140, 60, 190, 130);
+				EndPath(hdc);
+				ErApi.FlattenPath(hdc);
+				StrokeAndFillPath(hdc);
+				SetPolyFillMode(hdc, 1);
+			});
+			WithObjects(hdc, ExtPen(PS_GEOMETRIC | PS_ENDCAP_SQUARE | PS_JOIN_BEVEL, 7, Rgb(0x30, 0x90, 0x30), null), GetStockObject(5), delegate
+			{
+				BeginPath(hdc);
+				ErApi.PolyBezier(hdc, new[] { P(10, 90), P(20, 160), P(70, 70), P(100, 150) }, 4);
+				EndPath(hdc);
+				ErApi.FlattenPath(hdc);
+				StrokePath(hdc);
+			});
+			BeginPath(hdc);
+			Ellipse(hdc, 120, 125, 210, 168);
+			EndPath(hdc);
+			ErApi.FlattenPath(hdc);
+			ErApi.SelectClipPath(hdc, 5);
+			WithObjects(hdc, GetStockObject(8), CreateHatchBrush(5, Rgb(0x80, 0, 0x80)), delegate { Rectangle(hdc, 100, 100, 220, 170); });
+			ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+		});
+
+		GdiCase("emfrec-path-widen", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			WithObjects(hdc, ExtPen(PS_GEOMETRIC | PS_ENDCAP_FLAT | PS_JOIN_MITER, 9, Rgb(0, 0, 0), null), CreateSolidBrush(Rgb(0xE0, 0x40, 0x40)), delegate
+			{
+				BeginPath(hdc);
+				ErApi.Polyline(hdc, new[] { P(10, 10), P(40, 50), P(60, 12), P(90, 45), P(100, 20) }, 5);
+				EndPath(hdc);
+				ErApi.WidenPath(hdc);
+				SetPolyFillMode(hdc, 1);
+				FillPath(hdc);
+			});
+			WithObjects(hdc, CreatePen(0, 12, Rgb(0, 0, 0)), CreateSolidBrush(Rgb(0x30, 0x60, 0xD0)), delegate
+			{
+				BeginPath(hdc);
+				Ellipse(hdc, 120, 10, 220, 70);
+				EndPath(hdc);
+				ErApi.WidenPath(hdc);
+				SetPolyFillMode(hdc, 2);
+				FillPath(hdc);
+				SetPolyFillMode(hdc, 1);
+			});
+			WithObjects(hdc, ExtPen(PS_GEOMETRIC | PS_ENDCAP_SQUARE | PS_JOIN_BEVEL, 8, Rgb(0, 0, 0), null), CreateSolidBrush(Rgb(0x20, 0xA0, 0x60)), delegate
+			{
+				BeginPath(hdc);
+				ErApi.PolyBezier(hdc, new[] { P(10, 80), P(30, 150), P(80, 60), P(110, 130) }, 4);
+				EndPath(hdc);
+				ErApi.WidenPath(hdc);
+				SetPolyFillMode(hdc, 2);
+				FillPath(hdc);
+				SetPolyFillMode(hdc, 1);
+			});
+			WithObjects(hdc, ExtPen(PS_GEOMETRIC | 1 | PS_ENDCAP_FLAT, 6, Rgb(0, 0, 0), null), CreateSolidBrush(Rgb(0x90, 0x30, 0xA0)), delegate
+			{
+				BeginPath(hdc);
+				MoveToEx(hdc, 125, 90, IntPtr.Zero); LineTo(hdc, 230, 100); LineTo(hdc, 150, 130);
+				EndPath(hdc);
+				ErApi.WidenPath(hdc);
+				SetPolyFillMode(hdc, 2);
+				FillPath(hdc);
+				SetPolyFillMode(hdc, 1);
+			});
+			WithObjects(hdc, CreatePen(0, 7, Rgb(0, 0, 0)), GetStockObject(5), delegate
+			{
+				BeginPath(hdc);
+				Polygon(hdc, new[] { P(40, 140), P(62, 198), P(10, 160), P(72, 160), P(20, 198) }, 5);
+				EndPath(hdc);
+				ErApi.WidenPath(hdc);
+				ErApi.SelectClipPath(hdc, 5);
+				WithObjects(hdc, GetStockObject(8), CreateHatchBrush(3, Rgb(0x10, 0x10, 0x80)), delegate { Rectangle(hdc, 0, 130, 90, 200); });
+				ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+			});
+			// A cosmetic pen cannot widen: WidenPath fails and the path is kept.
+			WithObjects(hdc, CreatePen(0, 1, Rgb(0, 0, 0)), CreateSolidBrush(Rgb(0xF0, 0xE0, 0x20)), delegate
+			{
+				BeginPath(hdc);
+				Rectangle(hdc, 110, 150, 150, 190);
+				EndPath(hdc);
+				ErApi.WidenPath(hdc);
+				FillPath(hdc);
+			});
+			WithObjects(hdc, CreatePen(0, 5, Rgb(0x40, 0x20, 0x00)), CreateSolidBrush(Rgb(0xA0, 0xF0, 0xF0)), delegate
+			{
+				BeginPath(hdc);
+				RoundRect(hdc, 165, 145, 230, 192, 20, 20);
+				EndPath(hdc);
+				ErApi.WidenPath(hdc);
+				SetPolyFillMode(hdc, 1);
+				FillPath(hdc);
+			});
+		});
+
+		// The widened path's own geometry, stroked with a one-pixel pen.
+		GdiCase("emfrec-path-widen-outline", 200, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 120);
+			IntPtr wide = ExtPen(PS_GEOMETRIC | PS_ENDCAP_FLAT | PS_JOIN_MITER, 10, Rgb(0, 0, 0), null);
+			IntPtr thin = CreatePen(0, 0, Rgb(0x10, 0x10, 0x10));
+			IntPtr brush = CreateSolidBrush(Rgb(0xF0, 0xD0, 0x80));
+			IntPtr ob = SelectObject(hdc, brush);
+			IntPtr op = SelectObject(hdc, wide);
+			BeginPath(hdc);
+			ErApi.Polyline(hdc, new[] { P(15, 20), P(60, 90), P(90, 25) }, 3);
+			EndPath(hdc);
+			ErApi.WidenPath(hdc);
+			SelectObject(hdc, thin);
+			StrokeAndFillPath(hdc);
+			SelectObject(hdc, wide);
+			BeginPath(hdc);
+			Ellipse(hdc, 110, 15, 185, 100);
+			EndPath(hdc);
+			ErApi.WidenPath(hdc);
+			SelectObject(hdc, thin);
+			StrokePath(hdc);
+			SelectObject(hdc, op);
+			SelectObject(hdc, ob);
+			DeleteObject(wide); DeleteObject(thin); DeleteObject(brush);
+		});
+
+		GdiCase("emfrec-path-abort", 200, 80, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 80);
+			WithObjects(hdc, CreatePen(0, 0, Rgb(0, 0, 0)), CreateSolidBrush(Rgb(0xE0, 0x20, 0x20)), delegate
+			{
+				// Ended, then aborted: the fill has no path.
+				BeginPath(hdc); Rectangle(hdc, 5, 5, 45, 45); EndPath(hdc);
+				ErApi.AbortPath(hdc);
+				FillPath(hdc);
+				// Aborted while open: later drawing is immediate again.
+				BeginPath(hdc); Ellipse(hdc, 50, 5, 90, 45);
+				ErApi.AbortPath(hdc);
+				Rectangle(hdc, 55, 50, 95, 75);
+				// Filling discards the path: the second fill paints nothing.
+				BeginPath(hdc); Ellipse(hdc, 100, 5, 140, 45); EndPath(hdc);
+				FillPath(hdc);
+				WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0x20, 0x20, 0xE0)), delegate { FillPath(hdc); });
+				// So does stroking; a clip path from an aborted path fails.
+				BeginPath(hdc); Rectangle(hdc, 145, 5, 195, 45); EndPath(hdc);
+				StrokePath(hdc);
+				StrokePath(hdc);
+				BeginPath(hdc); Rectangle(hdc, 150, 50, 170, 70); EndPath(hdc);
+				ErApi.AbortPath(hdc);
+				ErApi.SelectClipPath(hdc, 5);
+				Rectangle(hdc, 140, 48, 198, 78);
+			});
+		});
+	}
+
+	/** A region of rectangles, an ellipse, a hole and a triangle (XOR) at `ox`, `oy`. */
+	static IntPtr ErComplexRegion(int ox, int oy)
+	{
+		IntPtr r = ErApi.CreateRectRgn(ox, oy, ox + 50, oy + 34);
+		IntPtr e = ErApi.CreateEllipticRgn(ox + 24, oy + 16, ox + 76, oy + 60);
+		ErApi.CombineRgn(r, r, e, 2);
+		IntPtr hole = ErApi.CreateRectRgn(ox + 8, oy + 8, ox + 20, oy + 22);
+		ErApi.CombineRgn(r, r, hole, 4);
+		IntPtr tri = ErApi.CreatePolygonRgn(new[] { P(ox + 40, oy - 4), P(ox + 80, oy + 10), P(ox + 44, oy + 30) }, 3, 1);
+		ErApi.CombineRgn(r, r, tri, 3);
+		DeleteObject(e); DeleteObject(hole); DeleteObject(tri);
+		return r;
+	}
+
+	static void ErRegionCases()
+	{
+		GdiCase("emfrec-fillrgn", 260, 170, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 260, 170);
+			IntPtr solid = CreateSolidBrush(Rgb(0xE0, 0x50, 0x20));
+			IntPtr hatch = CreateHatchBrush(4, Rgb(0x10, 0x30, 0x90));
+			IntPtr r1 = ErComplexRegion(4, 6);
+			ErApi.FillRgn(hdc, r1, solid);
+			SetBkColor(hdc, Rgb(0xFF, 0xF0, 0xC0));
+			IntPtr r2 = ErComplexRegion(90, 6);
+			ErApi.FillRgn(hdc, r2, hatch);
+			SetBkMode(hdc, 1);
+			IntPtr r3 = ErComplexRegion(175, 6);
+			SetBrushOrgEx(hdc, 3, 1, IntPtr.Zero);
+			ErApi.FillRgn(hdc, r3, hatch);
+			SetBkMode(hdc, 2);
+			SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+			// Stock brush, a ROP2 mode, a viewport offset, a scaling mapping mode and a clip.
+			IntPtr r4 = ErComplexRegion(4, 90);
+			SetROP2(hdc, 7);
+			ErApi.FillRgn(hdc, r4, GetStockObject(2));
+			SetROP2(hdc, 13);
+			ErApi.SetViewportOrgEx(hdc, 90, 84, IntPtr.Zero);
+			IntPtr r5 = ErComplexRegion(0, 6);
+			ErApi.FillRgn(hdc, r5, solid);
+			ErApi.SetViewportOrgEx(hdc, 0, 0, IntPtr.Zero);
+			ErApi.IntersectClipRect(hdc, 185, 100, 240, 150);
+			IntPtr r6 = ErComplexRegion(175, 90);
+			ErApi.FillRgn(hdc, r6, hatch);
+			ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+			foreach (var r in new[] { r1, r2, r3, r4, r5, r6 }) { DeleteObject(r); }
+			DeleteObject(solid); DeleteObject(hatch);
+		});
+
+		GdiCase("emfrec-fillrgn-scaled", 200, 150, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 150);
+			ErApi.SetMapMode(hdc, 8); // MM_ANISOTROPIC
+			ErApi.SetWindowExtEx(hdc, 2, 2, IntPtr.Zero);
+			ErApi.SetViewportExtEx(hdc, 3, 5, IntPtr.Zero);
+			IntPtr brush = CreateSolidBrush(Rgb(0x30, 0x90, 0xB0));
+			IntPtr r = ErComplexRegion(4, 6);
+			ErApi.FillRgn(hdc, r, brush);
+			ErApi.SetMapMode(hdc, 1);
+			DeleteObject(r); DeleteObject(brush);
+		});
+
+		GdiCase("emfrec-framergn", 260, 170, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 260, 170);
+			IntPtr solid = CreateSolidBrush(Rgb(0x10, 0x10, 0x10));
+			IntPtr hatch = CreateHatchBrush(5, Rgb(0xC0, 0x10, 0x10));
+			SetBkColor(hdc, Rgb(0xFF, 0xFF, 0xA0));
+			int[][] sizes = { new[] { 1, 1 }, new[] { 2, 1 }, new[] { 1, 3 }, new[] { 4, 4 }, new[] { 3, 2 }, new[] { 6, 5 } };
+			for (int k = 0; k < sizes.Length; k++)
+			{
+				IntPtr r = ErComplexRegion(4 + (k % 3) * 85, 6 + (k / 3) * 82);
+				ErApi.FrameRgn(hdc, r, k == 4 ? hatch : solid, sizes[k][0], sizes[k][1]);
+				DeleteObject(r);
+			}
+			DeleteObject(solid); DeleteObject(hatch);
+		});
+
+		GdiCase("emfrec-invertrgn", 180, 90, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 180, 90);
+			IntPtr r1 = ErComplexRegion(4, 6);
+			ErApi.InvertRgn(hdc, r1);
+			IntPtr r2 = ErComplexRegion(40, 20);
+			ErApi.InvertRgn(hdc, r2);
+			IntPtr r3 = ErComplexRegion(95, 10);
+			ErApi.IntersectClipRect(hdc, 100, 20, 160, 70);
+			ErApi.InvertRgn(hdc, r3);
+			ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+			DeleteObject(r1); DeleteObject(r2); DeleteObject(r3);
+		});
+
+		GdiCase("emfrec-paintrgn", 260, 90, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 260, 90);
+			IntPtr r1 = ErComplexRegion(4, 6);
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0x50, 0xB0, 0x50)), delegate { ErApi.PaintRgn(hdc, r1); });
+			SetBkColor(hdc, Rgb(0xFF, 0xEE, 0xDD));
+			SetTextColor(hdc, Rgb(0x11, 0x22, 0x33));
+			IntPtr r2 = ErComplexRegion(90, 6);
+			SetBrushOrgEx(hdc, 2, 5, IntPtr.Zero);
+			WithObjects(hdc, IntPtr.Zero, MakePatternBrush(), delegate { ErApi.PaintRgn(hdc, r2); });
+			SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+			IntPtr r3 = ErComplexRegion(175, 6);
+			SetROP2(hdc, 7);
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0x70, 0x30, 0xF0)), delegate { ErApi.PaintRgn(hdc, r3); });
+			SetROP2(hdc, 13);
+			DeleteObject(r1); DeleteObject(r2); DeleteObject(r3);
+		});
+
+		GdiCase("emfrec-floodfill", 220, 150, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 220, 150, Rgb(0xFF, 0xFF, 0xFF));
+			int black = Rgb(0, 0, 0);
+			WithObjects(hdc, CreatePen(0, 0, black), GetStockObject(5), delegate
+			{
+				Ellipse(hdc, 6, 6, 90, 70);
+				Rectangle(hdc, 100, 6, 210, 70);
+				MoveToEx(hdc, 100, 6, IntPtr.Zero); LineTo(hdc, 210, 70);
+				Polygon(hdc, new[] { P(40, 80), P(80, 110), P(40, 145), P(6, 110) }, 4);
+				Rectangle(hdc, 150, 80, 215, 145);
+			});
+			Fill(hdc, 100, 80, 140, 145, Rgb(0x20, 0x40, 0xC0));
+			Fill(hdc, 110, 90, 130, 100, Rgb(0xFF, 0xFF, 0xFF));
+			Fill(hdc, 115, 110, 125, 140, Rgb(0x20, 0x40, 0xC1));
+			WithObjects(hdc, CreatePen(0, 0, black), CreateSolidBrush(Rgb(0xE0, 0x40, 0x40)), delegate
+			{
+				ErApi.ExtFloodFill(hdc, 48, 38, black, 0);
+				ErApi.ExtFloodFill(hdc, 40, 110, black, 0);
+				ErApi.ExtFloodFill(hdc, 100, 6, black, 0);
+			});
+			SetBkColor(hdc, Rgb(0xFF, 0xF0, 0xA0));
+			WithObjects(hdc, IntPtr.Zero, CreateHatchBrush(2, Rgb(0x10, 0x80, 0x10)), delegate
+			{
+				ErApi.ExtFloodFill(hdc, 190, 20, black, 0);
+				ErApi.ExtFloodFill(hdc, 105, 85, Rgb(0x20, 0x40, 0xC0), 1);
+			});
+			ErApi.IntersectClipRect(hdc, 120, 20, 180, 60);
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0xA0, 0x60, 0xF0)), delegate
+			{
+				ErApi.ExtFloodFill(hdc, 125, 50, black, 0);
+			});
+			ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+			ErApi.IntersectClipRect(hdc, 160, 90, 205, 140);
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0x40, 0xC0, 0xC0)), delegate
+			{
+				ErApi.ExtFloodFill(hdc, 155, 85, black, 0);
+			});
+			ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(Rgb(0x30, 0x30, 0x30)), delegate
+			{
+				ErApi.ExtFloodFill(hdc, 6, 38, black, 0);
+				ErApi.ExtFloodFill(hdc, 60, 140, Rgb(0x11, 0x22, 0x33), 1);
+			});
+		});
+	}
+
+	// ---- blits ----
+
+	static void ErBlitCases()
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		Func<int, int, uint> alphaPix = delegate (int x, int y)
+		{
+			int a = (x * 37 + y * 23) % 256;
+			if (x < 3) { a = 0; } else if (x > 20) { a = 255; }
+			return ErPremul(a, ErPix(x, y));
+		};
+		GdiCase("emfrec-alphablend", 240, 150, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 150);
+			using (var src = ErArgbSource(screen, 24, 16, alphaPix))
+			using (var bad = ErArgbSource(screen, 24, 16, delegate (int x, int y) { return ((uint)(x * 10) << 24) | (uint)(ErPix(x, y) | 0x404040); }))
+			{
+				ErApi.AlphaBlend(hdc, 5, 5, 24, 16, src.Dc, 0, 0, 24, 16, ErBlend(128, false));
+				ErApi.AlphaBlend(hdc, 35, 5, 24, 16, src.Dc, 0, 0, 24, 16, ErBlend(255, true));
+				ErApi.AlphaBlend(hdc, 65, 5, 24, 16, src.Dc, 0, 0, 24, 16, ErBlend(90, true));
+				ErApi.AlphaBlend(hdc, 95, 5, 24, 16, bad.Dc, 0, 0, 24, 16, ErBlend(255, true));
+				ErApi.AlphaBlend(hdc, 125, 5, 24, 16, bad.Dc, 0, 0, 24, 16, ErBlend(200, true));
+				ErApi.AlphaBlend(hdc, 5, 30, 60, 40, src.Dc, 0, 0, 24, 16, ErBlend(200, true));
+				ErApi.AlphaBlend(hdc, 70, 30, 11, 7, src.Dc, 0, 0, 24, 16, ErBlend(255, true));
+				ErApi.AlphaBlend(hdc, 90, 30, 23, 13, src.Dc, 4, 3, 10, 8, ErBlend(255, true));
+				ErApi.AlphaBlend(hdc, 120, 30, 17, 40, src.Dc, 2, 1, 21, 9, ErBlend(160, false));
+				SetStretchBltMode(hdc, 4);
+				ErApi.AlphaBlend(hdc, 150, 30, 50, 29, src.Dc, 0, 0, 24, 16, ErBlend(255, true));
+				SetStretchBltMode(hdc, 1);
+				// Mirrored by the world transform.
+				SetGraphicsMode(hdc, 2);
+				var xf = new XFORM { eM11 = -1, eM22 = 1, eDx = 240, eDy = 0 };
+				SetWorldTransform(hdc, ref xf);
+				ErApi.AlphaBlend(hdc, 10, 80, 24, 16, src.Dc, 0, 0, 24, 16, ErBlend(255, true));
+				ErApi.AlphaBlend(hdc, 50, 80, 48, 32, src.Dc, 0, 0, 24, 16, ErBlend(220, true));
+				var xf2 = new XFORM { eM11 = 1, eM22 = -1, eDx = 0, eDy = 150 };
+				SetWorldTransform(hdc, ref xf2);
+				ErApi.AlphaBlend(hdc, 120, 10, 30, 20, src.Dc, 0, 0, 24, 16, ErBlend(255, true));
+				var id = new XFORM { eM11 = 1, eM22 = 1 };
+				SetWorldTransform(hdc, ref id);
+				SetGraphicsMode(hdc, 1);
+			}
+		});
+
+		// Every constant and per-pixel alpha against distinct destinations.
+		GdiCase("emfrec-alphablend-sweep", 256, 112, delegate (IntPtr hdc)
+		{
+			int[] dest = new int[28];
+			for (int i = 0; i < dest.Length; i++) { dest[i] = Palette[i % 8] ^ (i * 0x0B1D27 & 0x7F7F7F); }
+			for (int band = 0; band < 4; band++)
+			{
+				for (int i = 0; i < 28; i++) { Fill(hdc, 0, band * 28 + i, 256, band * 28 + i + 1, dest[(i + band * 5) % 28]); }
+			}
+			Func<int, int, int> baseCol = delegate (int x, int y) { return Palette[y % 8] ^ (y * 0x1F3D5B & 0xFFFFFF); };
+			using (var pre = ErArgbSource(screen, 256, 28, delegate (int x, int y) { return ErPremul(x, baseCol(x, y)); }))
+			using (var raw = ErArgbSource(screen, 256, 28, delegate (int x, int y) { return ((uint)x << 24) | (uint)(baseCol(x, y) & 0xFFFFFF); }))
+			using (var opaque = ErArgbSource(screen, 1, 28, delegate (int x, int y) { return 0xFF000000u | (uint)(baseCol(x, y) & 0xFFFFFF); }))
+			{
+				ErApi.AlphaBlend(hdc, 0, 0, 256, 28, pre.Dc, 0, 0, 256, 28, ErBlend(255, true));
+				for (int i = 0; i < 256; i++) { ErApi.AlphaBlend(hdc, i, 28, 1, 28, opaque.Dc, 0, 0, 1, 28, ErBlend(i, false)); }
+				ErApi.AlphaBlend(hdc, 0, 56, 256, 28, pre.Dc, 0, 0, 256, 28, ErBlend(150, true));
+				ErApi.AlphaBlend(hdc, 0, 84, 256, 28, raw.Dc, 0, 0, 256, 28, ErBlend(255, true));
+			}
+		});
+
+		GdiCase("emfrec-transparentblt", 220, 110, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 220, 110);
+			int key = Rgb(0xFF, 0x00, 0xFF);
+			using (var src = ErArgbSource(screen, 20, 14, delegate (int x, int y)
+			{
+				int c = ErPix(x, y);
+				if ((x - 10) * (x - 10) + (y - 7) * (y - 7) < 20 || x == y) { c = key; }
+				if (x == 3 && y > 5) { c = Rgb(0xFE, 0x00, 0xFF); }
+				return 0xFF000000u | (uint)(((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff));
+			}))
+			{
+				ErApi.TransparentBlt(hdc, 5, 5, 20, 14, src.Dc, 0, 0, 20, 14, (uint)key);
+				ErApi.TransparentBlt(hdc, 30, 5, 50, 35, src.Dc, 0, 0, 20, 14, (uint)key);
+				ErApi.TransparentBlt(hdc, 85, 5, 34, 24, src.Dc, 0, 0, 20, 14, (uint)key);
+				ErApi.TransparentBlt(hdc, 125, 5, 11, 8, src.Dc, 0, 0, 20, 14, (uint)key);
+				ErApi.TransparentBlt(hdc, 140, 5, 30, 30, src.Dc, 5, 3, 10, 9, (uint)key);
+				ErApi.TransparentBlt(hdc, 175, 5, 20, 14, src.Dc, 0, 0, 20, 14, (uint)Rgb(0xE0, 0x30, 0x20));
+				SetStretchBltMode(hdc, 4);
+				ErApi.TransparentBlt(hdc, 5, 50, 47, 41, src.Dc, 0, 0, 20, 14, (uint)key);
+				SetStretchBltMode(hdc, 3);
+				ErApi.TransparentBlt(hdc, 60, 50, 9, 6, src.Dc, 0, 0, 20, 14, (uint)key);
+				SetStretchBltMode(hdc, 1);
+			}
+		});
+
+		GdiCase("emfrec-maskblt", 230, 90, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 230, 90);
+			SetBkColor(hdc, Rgb(0xFF, 0xEE, 0xDD));
+			SetTextColor(hdc, Rgb(0x11, 0x22, 0x33));
+			IntPtr mask = ErMask(24, 16, delegate (int x, int y) { return (x - 12) * (x - 12) + (y - 8) * (y - 8) < 40 || (x + y) % 7 == 0; });
+			using (var src = SourceBitmap(screen, 24, 16))
+			{
+				IntPtr hb = CreateHatchBrush(3, Rgb(0x20, 0x20, 0xC0));
+				IntPtr ob = SelectObject(hdc, hb);
+				ErApi.MaskBlt(hdc, 5, 5, 24, 16, src.Dc, 0, 0, mask, 0, 0, ErRop4(0x00CC0020, 0x00AA0029));
+				ErApi.MaskBlt(hdc, 35, 5, 24, 16, src.Dc, 0, 0, mask, 0, 0, ErRop4(0x00660046, 0x00F00021));
+				ErApi.MaskBlt(hdc, 65, 5, 24, 16, src.Dc, 0, 0, mask, 0, 0, ErRop4(0x005A0049, 0x008800C6));
+				ErApi.MaskBlt(hdc, 95, 5, 18, 11, src.Dc, 2, 1, mask, 3, 4, ErRop4(0x00CC0020, 0x00550009));
+				ErApi.MaskBlt(hdc, 120, 5, 24, 16, src.Dc, 0, 0, mask, 0, 0, ErRop4(0x00330008, 0x00CC0020));
+				ErApi.MaskBlt(hdc, 150, 5, 24, 16, src.Dc, 0, 0, mask, 0, 0, ErRop4(0x00E20746, 0x00B8074A));
+				ErApi.MaskBlt(hdc, 5, 40, 24, 16, src.Dc, 0, 0, IntPtr.Zero, 0, 0, ErRop4(0x00660046, 0x00AA0029));
+				SelectObject(hdc, ob);
+				DeleteObject(hb);
+			}
+			DeleteObject(mask);
+		});
+
+		GdiCase("emfrec-plgblt", 240, 160, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 160);
+			IntPtr mask = ErMask(20, 16, delegate (int x, int y) { return (x - 10) * (x - 10) + (y - 8) * (y - 8) < 50; });
+			using (var src = SourceBitmap(screen, 20, 16))
+			{
+				Func<double, double, double, double, double, POINT[]> para = delegate (double cx, double cy, double deg, double sx, double sy)
+				{
+					double c = Math.Cos(deg * Math.PI / 180), s = Math.Sin(deg * Math.PI / 180);
+					return new[]
+					{
+						P((int)Math.Round(cx), (int)Math.Round(cy)),
+						P((int)Math.Round(cx + c * sx), (int)Math.Round(cy + s * sx)),
+						P((int)Math.Round(cx - s * sy), (int)Math.Round(cy + c * sy)),
+					};
+				};
+				ErApi.PlgBlt(hdc, para(20, 8, 30, 20, 16), src.Dc, 0, 0, 20, 16, IntPtr.Zero, 0, 0);
+				ErApi.PlgBlt(hdc, new[] { P(60, 10), P(95, 18), P(70, 40) }, src.Dc, 0, 0, 20, 16, IntPtr.Zero, 0, 0);
+				ErApi.PlgBlt(hdc, new[] { P(140, 10), P(110, 10), P(140, 30) }, src.Dc, 0, 0, 20, 16, IntPtr.Zero, 0, 0);
+				ErApi.PlgBlt(hdc, para(170, 5, 60, 30, 24), src.Dc, 2, 1, 16, 13, IntPtr.Zero, 0, 0);
+				ErApi.PlgBlt(hdc, para(20, 60, -20, 40, 32), src.Dc, 0, 0, 20, 16, mask, 0, 0);
+				ErApi.PlgBlt(hdc, new[] { P(80, 60), P(120, 70), P(75, 100) }, src.Dc, 0, 0, 20, 16, mask, 0, 0);
+				SetStretchBltMode(hdc, 3);
+				ErApi.PlgBlt(hdc, para(140, 70, 15, 11, 9), src.Dc, 0, 0, 20, 16, IntPtr.Zero, 0, 0);
+				SetStretchBltMode(hdc, 1);
+				ErApi.PlgBlt(hdc, para(170, 70, 15, 11, 9), src.Dc, 0, 0, 20, 16, IntPtr.Zero, 0, 0);
+				ErApi.PlgBlt(hdc, new[] { P(30, 150), P(60, 150), P(30, 120) }, src.Dc, 0, 0, 20, 16, mask, 0, 0);
+			}
+			DeleteObject(mask);
+		});
+
+		GdiCase("emfrec-setdibits", 220, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 220, 120);
+			const int W = 16, H = 12;
+			// Bottom-up 24bpp: row 0 of the bits is the image bottom.
+			byte[] bu = Er24Bits(W, H, delegate (int x, int r) { return ErPix(x, H - 1 - r); });
+			byte[] bmiBu = ErBmi(W, H, 24, null);
+			ErApi.SetDIBitsToDevice(hdc, 5, 5, W, H, 0, 0, 0, H, bu, bmiBu, 0);
+			ErApi.SetDIBitsToDevice(hdc, 30, 5, 10, 7, 3, 2, 0, H, bu, bmiBu, 0);
+			// Top-down 24bpp.
+			byte[] td = Er24Bits(W, H, delegate (int x, int r) { return ErPix(x, r); });
+			byte[] bmiTd = ErBmi(W, -H, 24, null);
+			ErApi.SetDIBitsToDevice(hdc, 50, 5, W, H, 0, 0, 0, H, td, bmiTd, 0);
+			ErApi.SetDIBitsToDevice(hdc, 75, 5, 10, 7, 3, 2, 0, H, td, bmiTd, 0);
+			// Bottom-up in three bands of four scan lines.
+			for (int band = 0; band < 3; band++)
+			{
+				var part = new byte[bu.Length / 3];
+				Array.Copy(bu, band * part.Length, part, 0, part.Length);
+				ErApi.SetDIBitsToDevice(hdc, 100, 5, W, H, 0, 0, (uint)(band * 4), 4, part, bmiBu, 0);
+			}
+			// A band delivered with a source origin inside it.
+			{
+				var part = new byte[bu.Length / 3];
+				Array.Copy(bu, 4 * ((W * 3 + 3) & ~3), part, 0, part.Length);
+				ErApi.SetDIBitsToDevice(hdc, 125, 5, 12, 10, 2, 3, 4, 4, part, bmiBu, 0);
+			}
+			// 8bpp with a colour table, bottom-up and top-down.
+			var table = new byte[16 * 4];
+			for (int i = 0; i < 16; i++) { int c = ErPix(i, i * 3); table[i * 4] = (byte)(c >> 16); table[i * 4 + 1] = (byte)(c >> 8); table[i * 4 + 2] = (byte)c; }
+			int stride8 = (W + 3) & ~3;
+			var bits8 = new byte[stride8 * H];
+			for (int y = 0; y < H; y++) { for (int x = 0; x < W; x++) { bits8[y * stride8 + x] = (byte)((x + y * 3) % 16); } }
+			ErApi.SetDIBitsToDevice(hdc, 5, 30, W, H, 0, 0, 0, H, bits8, ErBmi(W, H, 8, table), 0);
+			ErApi.SetDIBitsToDevice(hdc, 30, 30, W, H, 0, 0, 0, H, bits8, ErBmi(W, -H, 8, table), 0);
+			// 4bpp.
+			int stride4 = ((W + 1) / 2 + 3) & ~3;
+			var bits4 = new byte[stride4 * H];
+			for (int y = 0; y < H; y++) { for (int x = 0; x < W; x += 2) { bits4[y * stride4 + x / 2] = (byte)((((x + y) % 16) << 4) | ((x + 1 + y * 2) % 16)); } }
+			var bmi4 = ErBmi(W, H, 4, table);
+			BitConverter.GetBytes(16).CopyTo(bmi4, 32);
+			ErApi.SetDIBitsToDevice(hdc, 55, 30, W, H, 0, 0, 0, H, bits4, bmi4, 0);
+			// Destination partly off the top-left of the surface.
+			ErApi.SetDIBitsToDevice(hdc, -4, 100, W, H, 0, 0, 0, H, bu, bmiBu, 0);
+			// Mapped by a viewport offset.
+			ErApi.SetViewportOrgEx(hdc, 60, 60, IntPtr.Zero);
+			ErApi.SetDIBitsToDevice(hdc, 20, 0, W, H, 0, 0, 0, H, bu, bmiBu, 0);
+			ErApi.SetViewportOrgEx(hdc, 0, 0, IntPtr.Zero);
+		});
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	static void ErGradientCases()
+	{
+		GdiCase("emfrec-gradient-rect", 240, 170, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 170);
+			ErApi.GradientFill(hdc, new[] { ErV(5, 5, 0xE0, 0x10, 0x10), ErV(120, 40, 0x10, 0x20, 0xF0) }, 2, new uint[] { 0, 1 }, 1, 0);
+			ErApi.GradientFill(hdc, new[] { ErV(125, 5, 0x10, 0xC0, 0x30), ErV(235, 60, 0xF0, 0xF0, 0x00) }, 2, new uint[] { 0, 1 }, 1, 1);
+			ErApi.GradientFill(hdc, new[] { ErV16(5, 45, 0, 0, 0), ErV16(235, 58, 0xFFFF, 0xFFFF, 0xFFFF) }, 2, new uint[] { 0, 1 }, 1, 0);
+			ErApi.GradientFill(hdc, new[] { ErV16(5, 62, 0x1234, 0x80FF, 0xFF00), ErV16(111, 90, 0xFEDC, 0x7F01, 0x00FF) }, 2, new uint[] { 0, 1 }, 1, 0);
+			ErApi.GradientFill(hdc, new[] { ErV16(115, 62, 0x1234, 0x80FF, 0xFF00), ErV16(160, 110, 0xFEDC, 0x7F01, 0x00FF) }, 2, new uint[] { 0, 1 }, 1, 1);
+			// Corners given bottom-right first, and several rectangles sharing vertices.
+			ErApi.GradientFill(hdc, new[] { ErV(230, 110, 0xFF, 0x80, 0x00), ErV(165, 64, 0x00, 0x40, 0x80) }, 2, new uint[] { 0, 1 }, 1, 0);
+			ErApi.GradientFill(hdc, new[] { ErV(5, 95, 0xFF, 0, 0), ErV(40, 120, 0, 0xFF, 0), ErV(75, 95, 0, 0, 0xFF), ErV(110, 120, 0xFF, 0xFF, 0xFF) }, 4, new uint[] { 0, 1, 1, 2, 2, 3 }, 3, 1);
+			// Tiny rectangles.
+			ErApi.GradientFill(hdc, new[] { ErV(5, 125, 0x80, 0x10, 0x10), ErV(6, 126, 0x10, 0x90, 0x10) }, 2, new uint[] { 0, 1 }, 1, 0);
+			ErApi.GradientFill(hdc, new[] { ErV(10, 125, 0x80, 0x10, 0x10), ErV(12, 140, 0x10, 0x90, 0x10) }, 2, new uint[] { 0, 1 }, 1, 0);
+			ErApi.GradientFill(hdc, new[] { ErV(15, 125, 0x80, 0x10, 0x10), ErV(60, 127, 0x10, 0x90, 0xF0) }, 2, new uint[] { 0, 1 }, 1, 1);
+			// Clipped, and under a viewport offset.
+			ErApi.IntersectClipRect(hdc, 70, 130, 140, 160);
+			ErApi.GradientFill(hdc, new[] { ErV(60, 125, 0xF0, 0xF0, 0x20), ErV(200, 168, 0x20, 0x20, 0x20) }, 2, new uint[] { 0, 1 }, 1, 0);
+			ErApi.SelectClipRgn(hdc, IntPtr.Zero);
+			ErApi.SetViewportOrgEx(hdc, 150, 120, IntPtr.Zero);
+			ErApi.GradientFill(hdc, new[] { ErV(0, 0, 0x30, 0x30, 0xF0), ErV(85, 45, 0xF0, 0x30, 0x30) }, 2, new uint[] { 0, 1 }, 1, 1);
+			ErApi.SetViewportOrgEx(hdc, 0, 0, IntPtr.Zero);
+		});
+
+		GdiCase("emfrec-gradient-tri", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			ErApi.GradientFill(hdc, new[] { ErV(10, 10, 0xFF, 0, 0), ErV(110, 30, 0, 0xFF, 0), ErV(40, 95, 0, 0, 0xFF) }, 3, new uint[] { 0, 1, 2 }, 1, 2);
+			ErApi.GradientFill(hdc, new[] { ErV16(120, 5, 0x1234, 0xFFFF, 0x0101), ErV16(235, 90, 0xFEDC, 0x0000, 0x8080), ErV16(125, 80, 0x7F7F, 0x3C3C, 0xFFFF) }, 3, new uint[] { 0, 1, 2 }, 1, 2);
+			// A 3 x 2 mesh of quads (shared edges), vertices on a skewed grid.
+			var v = new ErVertex[12];
+			for (int j = 0; j < 3; j++)
+			{
+				for (int i = 0; i < 4; i++)
+				{
+					v[j * 4 + i] = ErV(8 + i * 35 + j * 7, 105 + j * 45 - i * 4, (i * 80) & 0xFF, (j * 120) & 0xFF, ((i + j) * 60) & 0xFF);
+				}
+			}
+			var mesh = new List<uint>();
+			for (int j = 0; j < 2; j++)
+			{
+				for (int i = 0; i < 3; i++)
+				{
+					uint a = (uint)(j * 4 + i), b = a + 1, c = a + 4, d = a + 5;
+					mesh.AddRange(new[] { a, b, d, a, d, c });
+				}
+			}
+			ErApi.GradientFill(hdc, v, 12, mesh.ToArray(), (uint)(mesh.Count / 3), 2);
+			// Slivers, a flat-top and a flat-bottom triangle, a clockwise one.
+			ErApi.GradientFill(hdc, new[] { ErV(160, 100, 0xFF, 0xFF, 0), ErV(235, 104, 0, 0xFF, 0xFF), ErV(162, 110, 0xFF, 0, 0xFF) }, 3, new uint[] { 0, 1, 2 }, 1, 2);
+			ErApi.GradientFill(hdc, new[] { ErV(160, 120, 0x20, 0x20, 0x20), ErV(230, 120, 0xE0, 0xE0, 0xE0), ErV(200, 160, 0xE0, 0x20, 0x20) }, 3, new uint[] { 0, 1, 2 }, 1, 2);
+			ErApi.GradientFill(hdc, new[] { ErV(200, 162, 0x20, 0x20, 0xE0), ErV(165, 196, 0xE0, 0xE0, 0x20), ErV(235, 196, 0x20, 0xE0, 0x20) }, 3, new uint[] { 0, 2, 1 }, 1, 2);
+			ErApi.GradientFill(hdc, new[] { ErV(5, 150, 0xFF, 0x80, 0), ErV(6, 198, 0, 0x80, 0xFF), ErV(7, 170, 0x80, 0xFF, 0x80) }, 3, new uint[] { 0, 1, 2 }, 1, 2);
+		});
+	}
+
+	static void ErPaletteCases()
+	{
+		int[] pal8 = { Rgb(0xC0, 0x20, 0x20), Rgb(0x20, 0xB0, 0x40), Rgb(0x30, 0x40, 0xD0), Rgb(0xF0, 0xD0, 0x10), Rgb(0x90, 0x20, 0xB0), Rgb(0x10, 0xC0, 0xC0), Rgb(0xFF, 0x80, 0x40), Rgb(0x40, 0x40, 0x40) };
+		GdiCase("emfrec-palette-index", 220, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 220, 120);
+			IntPtr np = GetStockObject(8);
+			IntPtr opn = SelectObject(hdc, np);
+			// The default palette (no palette selected yet).
+			for (int i = 0; i < 11; i++)
+			{
+				int idx = i < 10 ? i : 19;
+				WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(0x01000000 | idx), delegate { Rectangle(hdc, 4 + i * 19, 4, 20 + i * 19, 20); });
+			}
+			IntPtr pal = ErApi.CreatePalette(ErLogPalette(pal8));
+			IntPtr old = ErApi.SelectPalette(hdc, pal, false);
+			ErApi.RealizePalette(hdc);
+			for (int i = 0; i < 10; i++)
+			{
+				WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(0x01000000 | i), delegate { Rectangle(hdc, 4 + i * 19, 24, 20 + i * 19, 40); });
+			}
+			for (int i = 0; i < 8; i++)
+			{
+				WithObjects(hdc, CreatePen(0, 3, 0x01000000 | i), GetStockObject(5), delegate { MoveToEx(hdc, 6 + i * 25, 46, IntPtr.Zero); LineTo(hdc, 26 + i * 25, 58); });
+			}
+			SetBkColor(hdc, 0x01000005);
+			WithObjects(hdc, IntPtr.Zero, CreateHatchBrush(4, 0x01000002), delegate { Rectangle(hdc, 4, 62, 60, 80); });
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(0x10FF0003), delegate { Rectangle(hdc, 64, 62, 90, 80); });
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(0x02336699), delegate { Rectangle(hdc, 94, 62, 120, 80); });
+			ErApi.SetPaletteEntries(pal, 2, 2, new byte[] { 0x11, 0x99, 0x55, 0, 0xEE, 0x44, 0x88, 0 });
+			for (int i = 0; i < 5; i++)
+			{
+				WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(0x01000000 | i), delegate { Rectangle(hdc, 4 + i * 19, 84, 20 + i * 19, 100); });
+			}
+			ErApi.ResizePalette(pal, 12);
+			for (int i = 7; i < 13; i++)
+			{
+				WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(0x01000000 | i), delegate { Rectangle(hdc, 100 + (i - 7) * 19, 84, 116 + (i - 7) * 19, 100); });
+			}
+			ErApi.SelectPalette(hdc, old, false);
+			WithObjects(hdc, IntPtr.Zero, CreateSolidBrush(0x01000002), delegate { Rectangle(hdc, 4, 102, 60, 118); });
+			SelectObject(hdc, opn);
+			DeleteObject(pal);
+		});
+
+		GdiCase("emfrec-palette-dib", 200, 90, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 90);
+			IntPtr pal = ErApi.CreatePalette(ErLogPalette(pal8));
+			IntPtr old = ErApi.SelectPalette(hdc, pal, false);
+			ErApi.RealizePalette(hdc);
+			const int W = 8, H = 8;
+			var idx = new byte[8 * 2];
+			for (int i = 0; i < 8; i++) { idx[i * 2] = (byte)((i * 3) % 8); }
+			var bits = new byte[W * H];
+			for (int y = 0; y < H; y++) { for (int x = 0; x < W; x++) { bits[y * W + x] = (byte)((x + y * 2) % 8); } }
+			byte[] bmi = ErBmi(W, H, 8, idx);
+			BitConverter.GetBytes(8).CopyTo(bmi, 32);
+			ErApi.StretchDIBits(hdc, 5, 5, 24, 24, 0, 0, W, H, bits, bmi, 1, 0x00CC0020);
+			ErApi.SetDIBitsToDevice(hdc, 35, 5, W, H, 0, 0, 0, H, bits, bmi, 1);
+			var packed = new byte[bmi.Length + bits.Length];
+			bmi.CopyTo(packed, 0); bits.CopyTo(packed, bmi.Length);
+			WithObjects(hdc, GetStockObject(8), ErApi.CreateDIBPatternBrushPt(packed, 1), delegate { Rectangle(hdc, 50, 5, 110, 45); });
+			// A 1bpp DIB with palette indices.
+			var mono = new byte[4 * 8];
+			for (int y = 0; y < 8; y++) { mono[y * 4] = (byte)(0xF0 >> (y % 4)); }
+			byte[] bmi1 = ErBmi(8, 8, 1, new byte[] { 4, 0, 6, 0 });
+			ErApi.StretchDIBits(hdc, 120, 5, 32, 32, 0, 0, 8, 8, mono, bmi1, 1, 0x00CC0020);
+			ErApi.SelectPalette(hdc, old, false);
+			DeleteObject(pal);
+		});
+	}
+
+	// ---- records the recorder never writes ----
+
+	static void ErTextCases()
+	{
+		// EMR_EXTTEXTOUTA: each line's text in its font's charset code page.
+		string[] faces = { "Arial", "Arial", "Arial", "Courier New", "Times New Roman", "Arial", "Arial", "Courier New" };
+		byte[] charsets = { 0, 161, 204, 238, 162, 186, 1, 0 };
+		int[] codePages = { 1252, 1253, 1251, 1250, 1254, 1257, 1252, 1252 };
+		string[] lines = { "Café crème – “quotes” € ™ ½", "Καλημέρα κόσμε", "Привет, мир", "Żółć gęślą", "Iğdır şişli", "Ąžuolas ėjo", "Défault ça", "Opaque rect ÅØ" };
+		ErPlayCase("emfrec-text-exttextouta", 300, 200, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 300, 200, Rgb(0xFF, 0xFF, 0xFF));
+			SetBkMode(hdc, 1); SetTextColor(hdc, Rgb(0x10, 0x10, 0x50)); SetBkColor(hdc, Rgb(0xFF, 0xE0, 0x80)); SetTextAlign(hdc, 24);
+			for (int i = 0; i < lines.Length; i++)
+			{
+				int k = i;
+				TxWithFont(hdc, ErFont(faces[k], -15, charsets[k]), delegate
+				{
+					if (k == lines.Length - 1)
+					{
+						var rc = new RECT(); rc.Left = 4; rc.Top = 22 * k + 6; rc.Right = 200; rc.Bottom = 22 * k + 26;
+						ErApi.ExtTextOutRect(hdc, 8, 22 * k + 22, 2, ref rc, lines[k], lines[k].Length, null);
+					}
+					else
+					{
+						ErApi.ExtTextOutW(hdc, 8, 22 * k + 22, 0, IntPtr.Zero, lines[k], lines[k].Length, null);
+					}
+				});
+			}
+		}, ErMapTexts(delegate (int i, ErText t)
+		{
+			byte[] bytes = Encoding.GetEncoding(codePages[i]).GetBytes(t.Text);
+			return new[] { ErExtText(t, bytes, bytes.Length, true, i % 2 == 0) };
+		}));
+
+		// EMR_SMALLTEXTOUT: 8-bit (ETO_SMALL_CHARS) and 16-bit characters, with and without the rectangle.
+		uint[] smallOptions = { 0x300, 0x100, 0x300, 0x202, 0x204, 0x206, 0x200, 0x000 };
+		string[] smallLines = { "Small chars, no rect", "Wide chars ŁĄ€", "Bytes café \u0093x\u0094", "Opaque rect", "Clipped against its rectangle", "Opaque + clipped small", "Small chars + rect", "Wide chars + rect" };
+		ErPlayCase("emfrec-text-smalltextout", 300, 200, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 300, 200, Rgb(0xFF, 0xFF, 0xFF));
+			SetBkMode(hdc, 1); SetTextColor(hdc, Rgb(0x50, 0x10, 0x10)); SetBkColor(hdc, Rgb(0xC0, 0xE0, 0xFF)); SetTextAlign(hdc, 24);
+			TxWithFont(hdc, ErFont("Arial", -15, 1), delegate
+			{
+				for (int k = 0; k < smallLines.Length; k++)
+				{
+					var rc = new RECT(); rc.Left = 20; rc.Top = 22 * k + 8; rc.Right = 150; rc.Bottom = 22 * k + 24;
+					ErApi.ExtTextOutRect(hdc, 8, 22 * k + 22, smallOptions[k] & 0x6, ref rc, smallLines[k], smallLines[k].Length, null);
+				}
+			});
+		}, ErMapTexts(delegate (int i, ErText t) { return new[] { ErSmallText(t, smallOptions[i]) }; }));
+
+		// EMR_POLYTEXTOUTW / EMR_POLYTEXTOUTA: runs of the same font merged into one record.
+		ErPlayCase("emfrec-text-polytextout", 300, 160, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 300, 160, Rgb(0xFF, 0xFF, 0xFF));
+			SetBkMode(hdc, 1); SetTextColor(hdc, Rgb(0x10, 0x40, 0x10)); SetBkColor(hdc, Rgb(0xFF, 0xD0, 0xD0)); SetTextAlign(hdc, 24);
+			TxWithFont(hdc, ErFont("Arial", -16, 1), delegate
+			{
+				ErApi.ExtTextOutW(hdc, 8, 20, 0, IntPtr.Zero, "PolyTextOutW run one", 20, null);
+				var rc = new RECT(); rc.Left = 6; rc.Top = 26; rc.Right = 180; rc.Bottom = 46;
+				ErApi.ExtTextOutRect(hdc, 10, 42, 2, ref rc, "Second run Łódź", 16, null);
+				ErApi.ExtTextOutW(hdc, 40, 64, 0, IntPtr.Zero, "Third Ω run", 11, null);
+			});
+			TxWithFont(hdc, ErFont("Courier New", -15, 0), delegate
+			{
+				ErApi.ExtTextOutW(hdc, 8, 96, 0, IntPtr.Zero, "PolyTextOutA café", 17, null);
+				var rc = new RECT(); rc.Left = 20; rc.Top = 104; rc.Right = 120; rc.Bottom = 122;
+				ErApi.ExtTextOutRect(hdc, 12, 118, 4, ref rc, "Clipped ANSI run", 16, null);
+				ErApi.ExtTextOutW(hdc, 150, 140, 0, IntPtr.Zero, "€ 5", 3, null);
+			});
+		}, delegate (List<byte[]> recs)
+		{
+			var outList = new List<byte[]>();
+			var group = new List<ErText>();
+			int groupIndex = 0;
+			Action flush = delegate
+			{
+				if (group.Count == 0) { return; }
+				outList.Add(ErPolyText(new List<ErText>(group), groupIndex == 0 ? null : Encoding.GetEncoding(1252)));
+				group.Clear();
+				groupIndex++;
+			};
+			foreach (var r in recs)
+			{
+				if (ErType(r) == 84) { group.Add(ErParseTextW(r)); continue; }
+				flush();
+				outList.Add(r);
+			}
+			flush();
+			return outList;
+		});
+
+		// EMR_SETTEXTJUSTIFICATION before text with and without a Dx array.
+		string[] jLines = { "The quick brown fox jumps", "over the lazy dog again", "Justified with Dx kept", "Negative extra squeezes", "More breaks than spaces", "Carried over no call", "Small text justified too", "Reset to zero here" };
+		int[][] just = { new[] { 40, 4 }, new[] { 17, 4 }, new[] { 30, 3 }, new[] { -8, 3 }, new[] { 21, 7 }, null, new[] { 33, 3 }, new[] { 0, 0 } };
+		ErPlayCase("emfrec-text-justification", 320, 200, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 320, 200, Rgb(0xFF, 0xFF, 0xFF));
+			SetBkMode(hdc, 1); SetTextColor(hdc, Rgb(0, 0, 0)); SetTextAlign(hdc, 24);
+			TxWithFont(hdc, ErFont("Arial", -15, 1), delegate
+			{
+				for (int k = 0; k < jLines.Length; k++) { ErApi.ExtTextOutW(hdc, 8, 22 * k + 22, 0, IntPtr.Zero, jLines[k], jLines[k].Length, null); }
+			});
+		}, ErMapTexts(delegate (int i, ErText t)
+		{
+			var list = new List<byte[]>();
+			if (just[i] != null) { list.Add(ErJustify(just[i][0], just[i][1])); }
+			if (i == 6) { list.Add(ErSmallText(t, 0x100)); }
+			else { list.Add(ErExtText(t, Encoding.Unicode.GetBytes(t.Text), t.Text.Length, false, i == 2)); }
+			return list.ToArray();
+		}));
+
+		// EMR_SETMAPPERFLAGS (ASPECT_FILTERING) before raster and TrueType text,
+		// and the same file without it: Windows paints both identically.
+		GdiDraw mapperText = delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 300, 150, Rgb(0xFF, 0xFF, 0xFF));
+			SetBkMode(hdc, 1); SetTextColor(hdc, Rgb(0, 0, 0)); SetTextAlign(hdc, 24);
+			string[] mf = { "Small Fonts", "Terminal", "System", "MS Sans Serif", "Arial", "Courier" };
+			int[] mh = { -7, -12, -16, -13, -14, -13 };
+			int[] mw = { 0, 8, 0, 3, 5, 0 };
+			for (int k = 0; k < mf.Length; k++)
+			{
+				var lf = ErFont(mf[k], mh[k], (byte)(mf[k] == "Terminal" ? 255 : 1));
+				lf.lfWidth = mw[k];
+				int kk = k;
+				TxWithFont(hdc, lf, delegate { ErApi.ExtTextOutW(hdc, 8, 22 * kk + 20, 0, IntPtr.Zero, "Mapper flags " + mf[kk], 13 + mf[kk].Length, null); });
+			}
+		};
+		foreach (bool on in new[] { true, false })
+		{
+			bool flag = on;
+			ErPlayCase(flag ? "emfrec-text-mapperflags" : "emfrec-text-mapperflags-off", 300, 150, mapperText, delegate (List<byte[]> recs)
+			{
+				var outList = new List<byte[]>(recs);
+				if (flag) { outList.Insert(1, ErRecord(16, delegate (BinaryWriter w) { w.Write(1); })); }
+				return outList;
+			});
+		}
+	}
+
+	/** HALFTONE StretchBlt with and without SetColorAdjustment (gamma, contrast, brightness, negative). */
+	static void ErColorAdjustmentCases()
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		foreach (bool on in new[] { true, false })
+		{
+			bool adjust = on;
+			GdiCase(adjust ? "emfrec-coloradjustment" : "emfrec-coloradjustment-off", 160, 80, delegate (IntPtr hdc)
+			{
+				Stripes(hdc, 160, 80);
+				if (adjust)
+				{
+					var ca = new byte[24];
+					BitConverter.GetBytes((ushort)24).CopyTo(ca, 0);
+					BitConverter.GetBytes((ushort)1).CopyTo(ca, 2); // CA_NEGATIVE
+					BitConverter.GetBytes((ushort)0).CopyTo(ca, 4); // ILLUMINANT_DEVICE_DEFAULT
+					BitConverter.GetBytes((ushort)20000).CopyTo(ca, 6);
+					BitConverter.GetBytes((ushort)15000).CopyTo(ca, 8);
+					BitConverter.GetBytes((ushort)25000).CopyTo(ca, 10);
+					BitConverter.GetBytes((ushort)0).CopyTo(ca, 12);
+					BitConverter.GetBytes((ushort)10000).CopyTo(ca, 14);
+					BitConverter.GetBytes((short)40).CopyTo(ca, 16);
+					BitConverter.GetBytes((short)-30).CopyTo(ca, 18);
+					BitConverter.GetBytes((short)50).CopyTo(ca, 20);
+					BitConverter.GetBytes((short)20).CopyTo(ca, 22);
+					ErApi.SetColorAdjustment(hdc, ca);
+				}
+				SetStretchBltMode(hdc, 4);
+				using (var src = SourceBitmap(screen, 20, 16))
+				{
+					StretchBlt(hdc, 5, 5, 60, 48, src.Dc, 0, 0, 20, 16, 0x00CC0020);
+					StretchBlt(hdc, 80, 5, 13, 11, src.Dc, 0, 0, 20, 16, 0x00CC0020);
+				}
+				SetStretchBltMode(hdc, 1);
+			});
+		}
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	static void EmfRecordCases()
+	{
+		ErGeometryCases();
+		ErPathCases();
+		ErRegionCases();
+		ErBlitCases();
+		ErGradientCases();
+		ErPaletteCases();
+		ErTextCases();
+		ErColorAdjustmentCases();
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
@@ -3455,5 +4777,6 @@ public static class GdiFixtures
 		if (which == "all" || which == "gdi-raster") { RasterWideExtraCases(); }
 		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxSmoothingCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
 		if (which == "all" || which == "wmf-records") { WmfRecordCases(); }
+		if (which == "all" || which == "emf-records") { EmfRecordCases(); }
 	}
 }
