@@ -28,6 +28,7 @@ export {
 	type SvgConvertOptions,
 } from './emf-converter';
 export { DEFAULT_DPI_SCALE } from './emf-canvas-helpers';
+export { loadSystemFonts, type LoadSystemFontsOptions } from './load-system-fonts';
 export {
 	svgTreeToString,
 	svgTreeToDataUrl,

@@ -96,14 +96,17 @@ export interface EmfConvertOptions {
 	 */
 	gdiAntialias?: boolean;
 	/**
-	 * TrueType font files (`.ttf` / `.ttc` bytes) to render GDI and WMF text
-	 * with, exactly as Windows GDI does: the LOGFONT is realised against
-	 * these files (face, weight, slant, `lfHeight`/`lfWidth`, charset
-	 * fallback), each glyph is grid-fitted by the font's own TrueType
+	 * Font files to render GDI and WMF text with, exactly as Windows GDI
+	 * does: TrueType `.ttf` / `.ttc` and raster `.fon` / `.fnt` bytes
+	 * (`loadSystemFonts()` reads the installed ones in Node.js). The
+	 * LOGFONT is realised against these files (face, weight, slant,
+	 * `lfHeight`/`lfWidth`, charset fallback), each TrueType glyph is grid-fitted by the font's own TrueType
 	 * instructions and scan-converted with TrueType dropout control
 	 * (non-antialiased, 4x4 grayscale or ClearType per the LOGFONT's
 	 * `lfQuality`), and glyphs are placed on GDI's integer device grid with
 	 * GDI's own advance widths, cell metrics, underline and strike-out.
+	 * Raster faces (MS Sans Serif, Helv, System, Terminal, ...) are drawn
+	 * from their bitmaps at the size and whole-number stretch GDI picks.
 	 * Supply the fonts the metafile names (for Windows-authored files, the
 	 * matching files from `C:\Windows\Fonts`); a face that is missing is
 	 * substituted the way GDI's font mapper would (by pitch and family),
