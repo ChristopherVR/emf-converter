@@ -263,8 +263,21 @@ export interface HintEnvironment {
 	 * their grid-fitting off for rotated text.
 	 */
 	rotated?: boolean;
-	/** ClearType rendering (GETINFO selector bit 6 → result bit 13). */
+	/**
+	 * ClearType rendering, with the Microsoft rasterizer's ClearType
+	 * interpreter behaviour in the x ("ClearType") direction: rounding on a
+	 * 1/16-pixel virtual grid, CVT cut-in at 1/16 and minimum distance at
+	 * 1/2, and, unless the font opts out with INSTCTRL selector 3, the
+	 * backward-compatibility rules (x-direction DELTAP/SHPIX skipped,
+	 * CVT cut-in on unrounded MIRP and MSIRP, physical rounding in prep and
+	 * for RDTG after SPVTL, legacy TypeMan Talk functions bypassed). GETINFO
+	 * reports ClearType (bit 13) and compatible widths (bit 14).
+	 */
 	clearType?: boolean;
+	/** ClearType with compatible (bi-level) advance widths: GETINFO bit 14. Default true under ClearType. */
+	compatibleWidths?: boolean;
+	/** Symmetric (vertically smoothed) ClearType: GETINFO bit 15. */
+	symmetricSmoothing?: boolean;
 }
 
 /** One grid-fitted glyph, ready for scan conversion. */
@@ -329,6 +342,12 @@ export class HintedSize {
 	private zp2!: Zone;
 	private fDotP = 0x4000;
 	private inPrep = false;
+	/** The projection vector was set by SPVTL (for the ClearType RDTG exception). */
+	private pvFromSpvtl = false;
+	/** Active function-call frames (for the ClearType legacy-function signatures). */
+	private callFrames: Array<{ def: FuncDef }> = [];
+	/** The glyph program being run belongs to a composite glyph. */
+	private inComposite = false;
 	private count = 0;
 
 	constructor(font: TtfFont, ppemX: number, ppemY: number, env: HintEnvironment, hinting = true) {
@@ -613,7 +632,9 @@ export class HintedSize {
 			// "original" outline (FreeType: TT_Process_Composite_Glyph).
 			zone.orgX.set(zone.curX);
 			zone.orgY.set(zone.curY);
+			this.inComposite = true;
 			const hinted = this.hintZone(zone, glyph.instructions, !metricsFrom);
+			this.inComposite = false;
 			return hinted;
 		}
 		if (this.hinting && !metricsFrom) {
@@ -633,8 +654,10 @@ export class HintedSize {
 	): { zone: Zone; scanControl: boolean; scanType: number } {
 		const n = zone.n;
 		if (this.hinting && roundPhantoms) {
-			zone.curX[n - 4] = round64(zone.curX[n - 4]);
-			zone.curX[n - 3] = round64(zone.curX[n - 3]);
+			// ClearType rounds the horizontal phantoms on its 1/16-pixel grid.
+			const rx = this.env.clearType ? (v: number): number => Math.floor((v + 2) / 4) * 4 : round64;
+			zone.curX[n - 4] = rx(zone.curX[n - 4]);
+			zone.curX[n - 3] = rx(zone.curX[n - 3]);
 			zone.curY[n - 2] = round64(zone.curY[n - 2]);
 			zone.curY[n - 1] = round64(zone.curY[n - 1]);
 		}
@@ -767,7 +790,66 @@ export class HintedSize {
 		}
 	}
 
+	/**
+	 * Backward-compatible ClearType reads storage 22 (TypeMan Talk
+	 * DStroke/IStroke), 24 (spacing functions) and 8 (VacuFormRound) as 0
+	 * inside the functions whose signatures Microsoft documents, which
+	 * bypasses them.
+	 */
+	private ctBypassStorage(i: number): boolean {
+		if (!this.ctCompat() || (i !== 22 && i !== 24 && i !== 8)) {
+			return false;
+		}
+		const frame = this.callFrames[this.callFrames.length - 1];
+		if (!frame) {
+			return false;
+		}
+		const c = frame.def.code;
+		const s = frame.def.start;
+		const at = (bytes: number[]): boolean => bytes.every((b, k) => c[s + k] === b);
+		if (i === 22) {
+			return at([0xb0, 22, 0x43, 0x58]);
+		}
+		if (i === 24) {
+			return at([0x01, 0xb0, 24, 0x43, 0x58]) || at([0x01, 0x18, 0xb0, 24, 0x43, 0x58]);
+		}
+		return at([0x45, 0x23, 0x46, 0x60, 0x20, 0xb0, 38]);
+	}
+
+	/** True when the projection vector points (mostly) along x, ClearType's direction. */
+	private ctDirection(): boolean {
+		const gs = this.gs;
+		return !!this.env.clearType && Math.abs(gs.pvx) > Math.abs(gs.pvy);
+	}
+
+	/** Backward-compatible ClearType: ClearType on and the font has not set INSTCTRL selector 3. */
+	private ctCompat(): boolean {
+		return !!this.env.clearType && (this.gs0.instructControl & 4) === 0 && (this.gs.instructControl & 4) === 0;
+	}
+
+	/** CVT cut-in along the current projection (1/16 of it in the ClearType direction). */
+	private cutIn(): number {
+		return this.ctDirection() ? this.gs.cvtCutIn / 16 : this.gs.cvtCutIn;
+	}
+
+	/** Minimum distance along the current projection (halved in the ClearType direction). */
+	private minDistance(): number {
+		return this.ctDirection() ? Math.floor(this.gs.minDist / 2) : this.gs.minDist;
+	}
+
+	/**
+	 * Rounds `d` per the round state. In the ClearType direction the grid
+	 * is the 1/16-pixel virtual grid, except in prep and for RDTG after
+	 * SPVTL, which round on the physical grid.
+	 */
 	private round(d: number, mode = this.gs.roundState): number {
+		if (mode <= 5 && this.ctDirection() && !this.inPrep && !(mode === 3 && this.pvFromSpvtl)) {
+			return this.roundPhysical(d * 16, mode) / 16;
+		}
+		return this.roundPhysical(d, mode);
+	}
+
+	private roundPhysical(d: number, mode = this.gs.roundState): number {
 		const gs = this.gs;
 		let v: number;
 		switch (mode) {
@@ -939,6 +1021,7 @@ export class HintedSize {
 			count: number;
 		}
 		const calls: Frame[] = [];
+		this.callFrames = calls;
 		let ip = 0;
 		let cur = code;
 		while (true) {
@@ -1169,6 +1252,7 @@ export class HintedSize {
 				if (op < 4) {
 					gs.pvx = gs.dvx = ax;
 					gs.pvy = gs.dvy = ay;
+					this.pvFromSpvtl = false;
 				}
 				if (op < 2 || op >= 4) {
 					gs.fvx = ax;
@@ -1203,6 +1287,7 @@ export class HintedSize {
 				if (op < 8) {
 					gs.pvx = gs.dvx = vx;
 					gs.pvy = gs.dvy = vy;
+					this.pvFromSpvtl = true;
 				} else {
 					gs.fvx = vx;
 					gs.fvy = vy;
@@ -1219,6 +1304,7 @@ export class HintedSize {
 				if (op === 0x0a) {
 					gs.pvx = gs.dvx = vx;
 					gs.pvy = gs.dvy = vy;
+					this.pvFromSpvtl = false;
 				} else {
 					gs.fvx = vx;
 					gs.fvy = vy;
@@ -1404,7 +1490,15 @@ export class HintedSize {
 				while (gs.loop > 0) {
 					const p = this.pop();
 					if (p >= 0 && p < this.zp2.n) {
-						this.moveZp2(p, dx, dy, true);
+						// Backward-compatible ClearType keeps SHPIX only on touched
+						// points in the non-ClearType direction (and in composites).
+						const keep =
+							!this.ctCompat() ||
+							this.inComposite ||
+							(gs.fvx === 0 && (this.zp2.tags[p] & TOUCH_Y) !== 0);
+						if (keep) {
+							this.moveZp2(p, dx, dy, true);
+						}
 					}
 					gs.loop--;
 				}
@@ -1433,7 +1527,19 @@ export class HintedSize {
 					this.zp1.curX[p] - this.zp0.curX[gs.rp0],
 					this.zp1.curY[p] - this.zp0.curY[gs.rp0],
 				);
-				this.move(this.zp1, p, d - dist);
+				let target = d;
+				if (this.ctCompat() && gs.gep0 !== 0 && gs.gep1 !== 0) {
+					// ClearType: a stroke-weight MSIRP (non-trivial outline
+					// distance) honours the CVT cut-in.
+					const org = this.dualProjectOrus(
+						this.zp1.orusX[p] - this.zp0.orusX[gs.rp0],
+						this.zp1.orusY[p] - this.zp0.orusY[gs.rp0],
+					);
+					if (org !== 0 && Math.abs(d - org) > this.cutIn()) {
+						target = org;
+					}
+				}
+				this.move(this.zp1, p, target - dist);
 				gs.rp1 = gs.rp0;
 				gs.rp2 = p;
 				if (op & 1) {
@@ -1490,7 +1596,7 @@ export class HintedSize {
 			case 0x43: {
 				// RS
 				const i = this.pop();
-				this.push(i >= 0 && i < this.storage.length ? this.storage[i] : 0);
+				this.push(i >= 0 && i < this.storage.length && !this.ctBypassStorage(i) ? this.storage[i] : 0);
 				return true;
 			}
 			case 0x44: {
@@ -1763,6 +1869,8 @@ export class HintedSize {
 				if (sel & 4 && this.stretched) k |= 1 << 9;
 				if (sel & 32 && this.env.grayscale) k |= 1 << 12;
 				if (sel & 64 && this.env.clearType) k |= 1 << 13;
+				if (sel & 128 && this.env.clearType && this.env.compatibleWidths !== false) k |= 1 << 14;
+				if (sel & 256 && this.env.symmetricSmoothing) k |= 1 << 15;
 				this.push(k);
 				return true;
 			}
@@ -1922,7 +2030,7 @@ export class HintedSize {
 		}
 		const orgDist = this.project(this.zp0.curX[p], this.zp0.curY[p]);
 		if (op & 1) {
-			if (Math.abs(distance - orgDist) > gs.cvtCutIn) {
+			if (Math.abs(distance - orgDist) > this.cutIn()) {
 				distance = orgDist;
 			}
 			distance = this.round(distance);
@@ -1955,9 +2063,9 @@ export class HintedSize {
 		let distance = op & 4 ? this.round(orgDist) : orgDist;
 		if (op & 8) {
 			if (orgDist >= 0) {
-				if (distance < gs.minDist) distance = gs.minDist;
-			} else if (distance > -gs.minDist) {
-				distance = -gs.minDist;
+				if (distance < this.minDistance()) distance = this.minDistance();
+			} else if (distance > -this.minDistance()) {
+				distance = -this.minDistance();
 			}
 		}
 		const cur = this.project(this.zp1.curX[p] - this.zp0.curX[gs.rp0], this.zp1.curY[p] - this.zp0.curY[gs.rp0]);
@@ -1995,19 +2103,23 @@ export class HintedSize {
 		let distance: number;
 		if (op & 4) {
 			if (gs.gep0 === gs.gep1) {
-				if (Math.abs(cvtDist - orgDist) > gs.cvtCutIn) {
+				if (Math.abs(cvtDist - orgDist) > this.cutIn()) {
 					cvtDist = orgDist;
 				}
 			}
 			distance = this.round(cvtDist);
 		} else {
+			// ClearType: unrounded MIRP honours the CVT cut-in too.
+			if (this.env.clearType && this.ctCompat() && gs.gep0 === gs.gep1 && Math.abs(cvtDist - orgDist) > this.cutIn()) {
+				cvtDist = orgDist;
+			}
 			distance = cvtDist;
 		}
 		if (op & 8) {
 			if (orgDist >= 0) {
-				if (distance < gs.minDist) distance = gs.minDist;
-			} else if (distance > -gs.minDist) {
-				distance = -gs.minDist;
+				if (distance < this.minDistance()) distance = this.minDistance();
+			} else if (distance > -this.minDistance()) {
+				distance = -this.minDistance();
 			}
 		}
 		this.move(this.zp1, p, distance - curDist);
@@ -2183,6 +2295,7 @@ export class HintedSize {
 			A = -C;
 		}
 		[gs.pvx, gs.pvy] = this.normalize(A, B);
+		this.pvFromSpvtl = false;
 		this.computeFuncs();
 	}
 
@@ -2207,6 +2320,11 @@ export class HintedSize {
 				let s = (b & 0xf) - 8;
 				if (s >= 0) s++;
 				s *= 1 << (6 - this.gs.deltaShift);
+				// Backward-compatible ClearType skips DELTAPs except on points
+				// already touched in the non-ClearType (y) direction.
+				if (this.ctCompat() && !(this.gs.fvx === 0 && (this.zp0.tags[a] & TOUCH_Y) !== 0)) {
+					continue;
+				}
 				this.move(this.zp0, a, s);
 			}
 		}

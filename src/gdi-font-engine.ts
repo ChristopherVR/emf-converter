@@ -247,21 +247,25 @@ export class RealizedFont {
 	private readonly ctOutlines = new Map<number, Outline>();
 
 	/**
-	 * The outline ClearType rasterises: grid-fitted at CLEARTYPE_OVERSAMPLE
-	 * times the horizontal ppem (so x instructions round to a sixth of a
-	 * pixel, as GDI's ClearType stems do), then scaled back so its hinted
-	 * advance fills the black-and-white advance width GDI keeps for
-	 * ClearType text ("compatible widths").
+	 * The outline ClearType rasterises. It is grid-fitted at the real ppem
+	 * with the Microsoft rasterizer's ClearType interpreter rules (see
+	 * `HintEnvironment.clearType`: x rounds on a 1/16-pixel virtual grid,
+	 * legacy x-direction deltas are skipped, ...), then, for GDI's default
+	 * "compatible widths" ClearType, scaled horizontally so the glyph's
+	 * natural (unhinted) advance fills the black-and-white advance width
+	 * GDI keeps for ClearType text. CLEARTYPE_NATURAL_QUALITY keeps the
+	 * natural widths unscaled.
 	 */
 	private ctOutline(index: number): Outline {
 		let o = this.ctOutlines.get(index);
 		if (o) {
 			return o;
 		}
-		this.ctSize ??= new HintedSize(this.ttf, this.ppemX * CLEARTYPE_OVERSAMPLE, this.ppem, { version: 35, grayscale: false });
-		const u = this.ctSize.hintGlyph(index < this.ttf.numGlyphs ? index : NOTDEF);
-		const k =
-			u.advance > 0 && !this.naturalWidths ? (this.advance(index) * 64) / u.advance : 1 / CLEARTYPE_OVERSAMPLE;
+		const gi = index < this.ttf.numGlyphs ? index : NOTDEF;
+		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true });
+		const u = this.ctSize.hintGlyph(gi);
+		const natural = (this.ttf.hMetrics(gi).advance * this.ppemX) / this.ttf.unitsPerEm;
+		const k = !this.naturalWidths && natural > 0 ? this.advance(index) / natural : 1;
 		o = { xs: Array.from(u.xs, (v) => v * k), ys: u.ys, onCurve: u.onCurve, endPts: u.endPts };
 		this.ctOutlines.set(index, o);
 		return o;
