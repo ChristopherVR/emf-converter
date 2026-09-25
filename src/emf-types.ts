@@ -74,6 +74,12 @@ export interface GdiPen {
 	userStyle?: number[];
 	/** True for a pen created by EMR_EXTCREATEPEN (its cosmetic/geometric type is explicit). */
 	extended?: boolean;
+	/**
+	 * The raw COLORREF when it is palette-relative (`PALETTEINDEX`,
+	 * `DIBPALETTEINDEX`, `PALETTERGB`): resolved against the DC's selected
+	 * logical palette whenever the pen is selected (see `emf-gdi-palette.ts`).
+	 */
+	colorRef?: number;
 }
 
 /**
@@ -88,6 +94,17 @@ export interface GdiBrush {
 	color: string;
 	/** Repeating pattern for hatched / pattern brushes; absent for solid and null brushes. */
 	pattern?: GdiBrushPattern;
+	/** The raw palette-relative COLORREF, as for {@link GdiPen.colorRef}. */
+	colorRef?: number;
+}
+
+/**
+ * A GDI logical palette (EMR_CREATEPALETTE), edited in place by
+ * EMR_SETPALETTEENTRIES / EMR_RESIZEPALETTE. `entries` are `0xRRGGBB`.
+ */
+export interface GdiPalette {
+	kind: 'palette';
+	entries: number[];
 }
 
 /**
@@ -155,7 +172,7 @@ export interface GdiFontDetails {
  * Discriminated union of all GDI object types that can appear in the
  * metafile's object table. The `kind` field acts as the discriminator.
  */
-export type GdiObject = GdiPen | GdiBrush | GdiFont;
+export type GdiObject = GdiPen | GdiBrush | GdiFont | GdiPalette;
 
 // ---------------------------------------------------------------------------
 // Drawing state
@@ -242,6 +259,41 @@ export interface DrawState {
 	textAlign: number;
 	/** The current GDI world transform matrix. */
 	worldTransform: TransformMatrix;
+	/**
+	 * The selected logical palette (EMR_SELECTPALETTE); absent or `null`
+	 * means the stock `DEFAULT_PALETTE`.
+	 */
+	palette?: GdiPalette | null;
+	/**
+	 * The raw palette-relative COLORREFs behind the current pen, brush, text
+	 * and background colours, re-resolved whenever the palette changes
+	 * (see `emf-gdi-palette.ts`). Replaced, never mutated, so a
+	 * {@link cloneState} copy stays independent.
+	 */
+	colorRefs?: { pen?: number; brush?: number; text?: number; bk?: number };
+	/** EMR_SETTEXTJUSTIFICATION: extra space (logical units) spread over `count` break characters. */
+	textJustification?: { extra: number; count: number };
+	/** EMR_SETCOLORADJUSTMENT: the COLORADJUSTMENT the HALFTONE stretch mode applies. */
+	colorAdjustment?: GdiColorAdjustment;
+}
+
+/** A COLORADJUSTMENT structure (EMR_SETCOLORADJUSTMENT). */
+export interface GdiColorAdjustment {
+	/** `CA_NEGATIVE` (1) and `CA_LOG_FILTER` (2). */
+	flags: number;
+	illuminant: number;
+	/** Gammas in 1/10000 (2500..65000; 10000 = 1.0). */
+	redGamma: number;
+	greenGamma: number;
+	blueGamma: number;
+	/** 0..4000 and 6000..10000. */
+	referenceBlack: number;
+	referenceWhite: number;
+	/** -100..100 each. */
+	contrast: number;
+	brightness: number;
+	colorfulness: number;
+	redGreenTint: number;
 }
 
 /**

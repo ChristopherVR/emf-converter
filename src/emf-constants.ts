@@ -141,6 +141,57 @@ export const EMR_EXTCREATEPEN = 95;
 export const EMR_SETICMMODE = 98;
 export const EMR_SETLAYOUT = 115;
 
+// Records handled since the GDI record-coverage work (see `emf-gdi-*` modules).
+export const EMR_SETMAPPERFLAGS = 16;
+export const EMR_SETCOLORADJUSTMENT = 23;
+export const EMR_ANGLEARC = 41;
+export const EMR_SELECTPALETTE = 48;
+export const EMR_CREATEPALETTE = 49;
+export const EMR_SETPALETTEENTRIES = 50;
+export const EMR_RESIZEPALETTE = 51;
+export const EMR_REALIZEPALETTE = 52;
+export const EMR_EXTFLOODFILL = 53;
+export const EMR_POLYDRAW = 56;
+export const EMR_FLATTENPATH = 65;
+export const EMR_WIDENPATH = 66;
+export const EMR_ABORTPATH = 68;
+export const EMR_FILLRGN = 71;
+export const EMR_FRAMERGN = 72;
+export const EMR_INVERTRGN = 73;
+export const EMR_PAINTRGN = 74;
+export const EMR_MASKBLT = 78;
+export const EMR_PLGBLT = 79;
+export const EMR_SETDIBITSTODEVICE = 80;
+export const EMR_EXTTEXTOUTA = 83;
+export const EMR_POLYPOLYLINE16 = 90;
+export const EMR_POLYDRAW16 = 92;
+export const EMR_POLYTEXTOUTA = 96;
+export const EMR_POLYTEXTOUTW = 97;
+export const EMR_CREATECOLORSPACE = 99;
+export const EMR_SETCOLORSPACE = 100;
+export const EMR_DELETECOLORSPACE = 101;
+export const EMR_GLSRECORD = 102;
+export const EMR_GLSBOUNDEDRECORD = 103;
+export const EMR_PIXELFORMAT = 104;
+export const EMR_DRAWESCAPE = 105;
+export const EMR_EXTESCAPE = 106;
+export const EMR_SMALLTEXTOUT = 108;
+export const EMR_FORCEUFIMAPPING = 109;
+export const EMR_NAMEDESCAPE = 110;
+export const EMR_COLORCORRECTPALETTE = 111;
+export const EMR_SETICMPROFILEA = 112;
+export const EMR_SETICMPROFILEW = 113;
+export const EMR_ALPHABLEND = 114;
+export const EMR_TRANSPARENTBLT = 116;
+export const EMR_GRADIENTFILL = 118;
+export const EMR_SETLINKEDUFIS = 119;
+export const EMR_SETTEXTJUSTIFICATION = 120;
+export const EMR_COLORMATCHTOTARGETW = 121;
+export const EMR_CREATECOLORSPACEW = 122;
+
+/** Stock object index of `DEFAULT_PALETTE` (selected as `STOCK_OBJECT_BASE | 15`). */
+export const DEFAULT_PALETTE_STOCK_INDEX = 15;
+
 /**
  * Base index for GDI stock objects. Object handles >= this value refer to
  * built-in stock objects (WHITE_BRUSH, BLACK_PEN, etc.) rather than

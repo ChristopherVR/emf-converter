@@ -134,6 +134,11 @@ export function handlePolyPolyline32(rCtx: EmfGdiReplayCtx, offset: number, data
 	handlePolyPoly(rCtx, offset, dataOff, recSize, 8, false);
 }
 
+/** EMR_POLYPOLYLINE16 (90): the 16-bit-point form of EMR_POLYPOLYLINE. */
+export function handlePolyPolyline16(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, recSize: number): void {
+	handlePolyPoly(rCtx, offset, dataOff, recSize, 4, false);
+}
+
 export function handlePolyPolygon16(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, recSize: number): void {
 	handlePolyPoly(rCtx, offset, dataOff, recSize, 4, true);
 }

@@ -6,7 +6,6 @@
  */
 
 import { reapplyClipRegion } from './emf-clip-region';
-import { readColorRef } from './emf-color-helpers';
 import {
 	EMR_SAVEDC,
 	EMR_RESTOREDC,
@@ -21,7 +20,9 @@ import {
 	EMR_SETARCDIRECTION,
 	EMR_SETTEXTALIGN,
 } from './emf-constants';
+import { handleEmfGdiMiscRecord } from './emf-gdi-misc-records';
 import { handleEmfObjectRecord } from './emf-gdi-object-handlers';
+import { handleEmfPaletteRecord, readRawColorRef, resolveColorRef, setColorRefSlot } from './emf-gdi-palette';
 import { handleEmfTransformRecord } from './emf-gdi-transform-handlers';
 import type { EmfGdiReplayCtx } from './emf-types';
 import { cloneState } from './emf-types';
@@ -44,6 +45,11 @@ export function handleEmfGdiStateRecord(
 
 	// Delegate to object creation / selection / deletion handler
 	if (handleEmfObjectRecord(rCtx, recType, dataOff, recSize)) {
+		return true;
+	}
+
+	// Palettes, and the state/informational records with no drawing of their own
+	if (handleEmfPaletteRecord(rCtx, recType, dataOff, recSize) || handleEmfGdiMiscRecord(rCtx, recType, dataOff, recSize)) {
 		return true;
 	}
 
@@ -104,13 +110,17 @@ export function handleEmfGdiStateRecord(
 		// ---- drawing mode / color settings ----
 		case EMR_SETTEXTCOLOR: {
 			if (recSize >= 12) {
-				state.textColor = readColorRef(view, dataOff);
+				const raw = readRawColorRef(view, dataOff);
+				state.textColor = resolveColorRef(state, raw);
+				setColorRefSlot(state, 'text', raw);
 			}
 			return true;
 		}
 		case EMR_SETBKCOLOR: {
 			if (recSize >= 12) {
-				state.bkColor = readColorRef(view, dataOff);
+				const raw = readRawColorRef(view, dataOff);
+				state.bkColor = resolveColorRef(state, raw);
+				setColorRefSlot(state, 'bk', raw);
 			}
 			return true;
 		}

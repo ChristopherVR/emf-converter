@@ -9,11 +9,27 @@ import { decodeRleBitmap } from './emf-dib-rle-decoder';
 import { decodeUncompressedRows, parseBitfieldMasks } from './emf-dib-uncompressed';
 import { createImageDataCompat } from './emf-canvas-helpers';
 
+/**
+ * Decodes a DIB (BITMAPINFO at `bmiOffset`, pixel bits at `bitsOffset`) into
+ * top-down RGBA pixels (alpha 255 except for 32bpp, which keeps the
+ * reserved byte as read by `decodeUncompressedRows`).
+ *
+ * `paletteColors` is for a `DIB_PAL_COLORS` bitmap: its colour table is
+ * then an array of 16-bit indices into the DC's selected logical palette
+ * (`0xRRGGBB` entries), which is how GDI resolves it; an index beyond the
+ * palette takes entry 0, as GDI does for `PALETTEINDEX`.
+ *
+ * `rawAlpha` keeps a 32bpp pixel's fourth byte exactly as stored (the
+ * per-pixel alpha AlphaBlend reads); by default a zero byte reads as
+ * opaque, since most 32bpp DIBs leave it unused.
+ */
 export function decodeDibToImageData(
 	view: DataView,
 	bmiOffset: number,
 	bitsOffset: number,
 	bitsSize: number,
+	paletteColors?: ReadonlyArray<number> | null,
+	rawAlpha = false,
 ): ImageData | null {
 	if (
 		bmiOffset < 0 ||
@@ -85,10 +101,17 @@ export function decodeDibToImageData(
 		const colorsUsed = view.getUint32(bmiOffset + 32, true) || maxColors;
 		const numColors = Math.min(colorsUsed, maxColors);
 		const ctOffset = bmiOffset + headerSize;
-		if (ctOffset + numColors * 4 > view.byteLength) {
+		const indexed = !!paletteColors && paletteColors.length > 0;
+		if (ctOffset + numColors * (indexed ? 2 : 4) > view.byteLength) {
 			return null;
 		}
 		for (let i = 0; i < numColors; i++) {
+			if (indexed) {
+				const index = view.getUint16(ctOffset + i * 2, true);
+				const rgb = paletteColors[index < paletteColors.length ? index : 0];
+				colorTable.push([(rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff]);
+				continue;
+			}
 			const b = view.getUint8(ctOffset + i * 4);
 			const g = view.getUint8(ctOffset + i * 4 + 1);
 			const r = view.getUint8(ctOffset + i * 4 + 2);
@@ -139,6 +162,7 @@ export function decodeDibToImageData(
 		colorTable,
 		masks,
 		out,
+		rawAlpha,
 	);
 
 	return createImageDataCompat(out, width, height);

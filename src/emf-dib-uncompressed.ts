@@ -93,6 +93,7 @@ export function decodeUncompressedRows(
 	colorTable: Array<[number, number, number]>,
 	masks: BitfieldMasks,
 	out: Uint8ClampedArray,
+	rawAlpha = false,
 ): void {
 	const rowStride = Math.floor((bitCount * width + 31) / 32) * 4;
 	const { rMask, gMask, bMask, rShift, gShift, bShift, rMax, gMax, bMax } = masks;
@@ -154,7 +155,7 @@ export function decodeUncompressedRows(
 				out[dstPx] = rr;
 				out[dstPx + 1] = gg;
 				out[dstPx + 2] = bb;
-				out[dstPx + 3] = aa === 0 ? 255 : aa;
+				out[dstPx + 3] = aa === 0 && !rawAlpha ? 255 : aa;
 			}
 		}
 	}
