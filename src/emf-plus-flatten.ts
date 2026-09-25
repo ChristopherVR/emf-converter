@@ -43,8 +43,10 @@ function apply(m: TransformMatrix, p: Pt): Pt {
 /**
  * Cubic Bezier segments (world space) GDI+ builds for an elliptical arc:
  * centre (`cx`, `cy`), radii `rx`/`ry`, parametric angles from `start`
- * sweeping `sweep` radians (positive: increasing angle), in at most
- * quarter-turn pieces. Pure.
+ * sweeping `sweep` radians (positive: increasing angle). As
+ * `GraphicsPath.AddArc` returns them: whole quarter turns (in the
+ * parametric angle) from the start, then whatever remains, each with the
+ * usual `4/3 tan(step / 4)` control length. Pure.
  */
 export function arcBeziers(
 	cx: number,
@@ -54,14 +56,15 @@ export function arcBeziers(
 	start: number,
 	sweep: number,
 ): Array<[Pt, Pt, Pt, Pt]> {
-	const n = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
-	const step = sweep / n;
-	const k = (4 / 3) * Math.tan(step / 4);
+	const quarter = Math.PI / 2;
+	const n = Math.max(1, Math.ceil(Math.abs(sweep) / quarter - 1e-9));
 	const at = (a: number): Pt => ({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) });
 	const tangent = (a: number): Pt => ({ x: -rx * Math.sin(a), y: ry * Math.cos(a) });
 	const out: Array<[Pt, Pt, Pt, Pt]> = [];
 	for (let i = 0; i < n; i++) {
-		const a0 = start + i * step;
+		const a0 = start + i * Math.sign(sweep) * quarter;
+		const step = i === n - 1 ? start + sweep - a0 : Math.sign(sweep) * quarter;
+		const k = (4 / 3) * Math.tan(step / 4);
 		const a1 = a0 + step;
 		const p0 = at(a0);
 		const p3 = at(a1);

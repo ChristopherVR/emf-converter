@@ -780,6 +780,47 @@ const WMF_RECORD_CASES: ParityCase[] = [
  */
 const WMF_TEXT_SPACING_CASES: ParityCase[] = [wmf('wmf-text-spacing', 0.0002)]; // measured 0.006%
 
+/**
+ * EMF+ records and objects the converter used to skip, against real GDI+
+ * (`emfplus-records` fixtures; the hand-built record encodings no recorder
+ * writes are checked against GDI+'s own playback of them). Measured before
+ * these records were handled (tolerance 8): beziers 4.45%, curve 9.46%,
+ * closed curve 30.39%, region fill 34.16%, relative points 21.18%,
+ * containers 36.57% / 22.29%, save/restore 21.34%, compositing 15.96%,
+ * hatch 54.20%, MultiFormat 23.25%, StrokeFillPath 30.16%, terminal-server
+ * clip 45.75% / 63.25%, terminal-server graphics 31.27%, compressed shapes
+ * 0.26% (the arcs). Aliased and antialiased (`-aa`) variants.
+ */
+const recordCase = (name: string, maxMismatch: number): ParityCase => ({ ...close(name, maxMismatch) });
+
+const EMF_PLUS_RECORD_CASES: ParityCase[] = [
+	recordCase('gpx-rec-beziers', 0.002), // measured 0.127%
+	recordCase('gpx-rec-beziers-aa', 0.008), // measured 0.699%
+	recordCase('gpx-rec-curve', 0.001), // measured 0.077%
+	recordCase('gpx-rec-curve-aa', 0.006), // measured 0.486%
+	recordCase('gpx-rec-closedcurve', 0.002), // measured 0.141%
+	recordCase('gpx-rec-closedcurve-aa', 0.011), // measured 0.965%
+	recordCase('gpx-rec-compressed', 0.001), // measured 0.045%
+	recordCase('gpx-rec-compressed-aa', 0.006), // measured 0.531%
+	recordCase('gpx-rec-relative', 0.006), // measured 0.478%
+	recordCase('gpx-rec-fillregion', 0),
+	recordCase('gpx-rec-fillregion-aa', 0),
+	recordCase('gpx-rec-container', 0),
+	recordCase('gpx-rec-container-page', 0),
+	recordCase('gpx-rec-save-restore', 0),
+	recordCase('gpx-rec-compositing', 0),
+	recordCase('gpx-rec-compositing-aa', 0),
+	recordCase('gpx-rec-hatch', 0),
+	recordCase('gpx-rec-hatch-origin', 0),
+	recordCase('gpx-rec-hatch-rotated', 0),
+	recordCase('gpx-rec-multiformat-start', 0),
+	recordCase('gpx-rec-multiformat-ignored', 0),
+	recordCase('gpx-rec-strokefillpath', 0),
+	recordCase('gpx-rec-tsclip', 0),
+	recordCase('gpx-rec-tsclip-state', 0),
+	recordCase('gpx-rec-tsgraphics', 0),
+];
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -929,6 +970,7 @@ describe('GDI ground-truth parity', () => {
 		['EMF+ path FillMode for fills and clips', PATH_FILL_MODE_CASES],
 		['EMF+ with gdiAntialias: false', PLUS_ALIASED_CASES],
 		['EMF+ drawing under each SmoothingMode', SMOOTHING_CASES],
+		['EMF+ records and objects (curves, regions, containers, hatches, compositing, terminal-server, MultiFormat)', EMF_PLUS_RECORD_CASES],
 	];
 	for (const [title, cases] of groups) {
 		describe(title, () => {
@@ -970,6 +1012,7 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 		...IMAGE_DRAW_CASES,
 		...TEXTURE_FILL_CASES,
 		...WMF_RECORD_CASES,
+		...EMF_PLUS_RECORD_CASES,
 	];
 	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
 		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);

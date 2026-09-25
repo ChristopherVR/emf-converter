@@ -32,10 +32,11 @@
 
 import { canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mulMatrix, pathGradientColorAt } from './emf-plus-brush-gradient';
+import { hatchSampler } from './emf-plus-brush-hatch';
 import { writeTextureColor } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { linearRampSampler } from './emf-plus-linear-ramp';
-import { applyPlusWorldTransform, plusCanvasShift, plusWorldMatrix } from './emf-plus-state-handlers';
+import { applyPlusWorldTransform, deviceToCanvasMatrix, plusCanvasShift, plusWorldMatrix } from './emf-plus-state-handlers';
 import { flatteningContext } from './emf-plus-flatten';
 import { figuresBox, rasterizePlusFill, recordPlusFigures, type FixFigure } from './emf-plus-raster';
 import { isSvgContext } from './svg-context';
@@ -236,6 +237,13 @@ export function deviceBrushSampler(
  */
 export function brushSampler(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): DeviceBrushSampler | null {
 	const device = plusWorldMatrix(rCtx);
+	// SVG keeps a hatch brush a vector <pattern> (brushPaint).
+	if (obj.hatch && !isSvgContext(rCtx.ctx)) {
+		const inv = invertAffine(deviceToCanvasMatrix(rCtx));
+		if (inv) {
+			return hatchSampler(obj.hatch, rCtx.ext?.renderingOrigin ?? { x: 0, y: 0 }, inv);
+		}
+	}
 	if (obj.texture) {
 		return textureSampler(obj.texture, device, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0));
 	}
@@ -546,7 +554,7 @@ export function cssColorToArgb(color: string): number | null {
  * ARGB colour or a solid/hatch brush's colour), for the aliased path which
  * must paint every brush through a mask.
  */
-function anyBrushSampler(rCtx: EmfPlusReplayCtx, flags: number, brushIdOrColor: number): DeviceBrushSampler | null {
+export function anyBrushSampler(rCtx: EmfPlusReplayCtx, flags: number, brushIdOrColor: number): DeviceBrushSampler | null {
 	if (flags & 0x8000) {
 		return solidSampler(brushIdOrColor >>> 0);
 	}
@@ -651,6 +659,77 @@ export function gdiplusBlendPixels(data: Uint8ClampedArray, dst: Uint8ClampedArr
 }
 
 /**
+ * GDI+'s `CompositingMode` SourceCopy, in place: `data` holds the brush's
+ * straight RGBA per pixel on entry and, on return, the pixel that replaces
+ * the destination wherever `coverage` is non-zero. A fully covered pixel
+ * takes the brush colour exactly, alpha included (nothing of the
+ * destination survives, even under a translucent or fully transparent
+ * brush). A partly covered antialiased edge pixel does NOT mix with the
+ * destination either: GDI+ writes the brush colour with its alpha scaled
+ * by the coverage, so an edge over an opaque background comes out
+ * translucent (measured on `gpx-rec-compositing-aa`: a half-covered edge
+ * of a 128-alpha brush holds alpha 64 whatever was beneath). `dst` is
+ * unused, kept for symmetry with {@link gdiplusBlendPixels}. Returns
+ * `data`. Pure.
+ */
+export function sourceCopyPixels(data: Uint8ClampedArray, dst: Uint8ClampedArray, coverage: Uint8ClampedArray): Uint8ClampedArray {
+	void dst;
+	for (let p = 0; p < coverage.length; p++) {
+		const o = p * 4;
+		const cv = coverage[p];
+		if (cv === 0) {
+			data[o + 3] = 0;
+		} else if (cv !== 255) {
+			// Samples inside (coverage = round(k * 255 / 32) is one-to-one).
+			const k = Math.round((cv * 32) / 255);
+			data[o + 3] = Math.round((data[o + 3] * k) / 32);
+		}
+	}
+	return data;
+}
+
+/**
+ * Writes `rgba` (straight alpha, `box` sized) over the pixels `coverage`
+ * marks, REPLACING them (their alpha included), through the live clip:
+ * those pixels are first cleared with `destination-out`, then `rgba` is
+ * drawn with `source-over` onto the cleared pixels. This is how SourceCopy
+ * reaches a Canvas, which has no clipped replace operator of its own.
+ * Returns `false` without canvas support.
+ */
+function sourceCopyComposite(
+	rCtx: EmfPlusReplayCtx,
+	box: { x: number; y: number; w: number; h: number },
+	rgba: Uint8ClampedArray,
+	coverage: Uint8ClampedArray,
+): boolean {
+	const { ctx } = rCtx;
+	const mask = createTempCanvas(box.w, box.h);
+	const out = createTempCanvas(box.w, box.h);
+	if (!mask || !out) {
+		return false;
+	}
+	const m = new Uint8ClampedArray(box.w * box.h * 4);
+	for (let p = 0; p < coverage.length; p++) {
+		m[p * 4 + 3] = coverage[p] ? 255 : 0;
+	}
+	canvasPutImageData(mask.ctx, createImageDataCompat(m, box.w, box.h), 0, 0);
+	canvasPutImageData(out.ctx, createImageDataCompat(rgba, box.w, box.h), 0, 0);
+	ctx.save();
+	try {
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.imageSmoothingEnabled = false;
+		const draw = ctx.drawImage as unknown as (img: unknown, x: number, y: number) => void;
+		ctx.globalCompositeOperation = 'destination-out';
+		draw.call(ctx, mask.canvas, box.x, box.y);
+		ctx.globalCompositeOperation = 'source-over';
+		draw.call(ctx, out.canvas, box.x, box.y);
+	} finally {
+		ctx.restore();
+	}
+	return true;
+}
+
+/**
  * Composites a brush through a coverage mask the caller already computed
  * for `box` (`channels` coverage values per pixel: 1, or 3 for ClearType's
  * per-channel R, G, B coverage), as {@link paintBrushThroughMask} does: the
@@ -678,6 +757,10 @@ export function compositeBrushCoverage(
 	}
 	const data = new Uint8ClampedArray(box.w * box.h * 4);
 	sampler(box.x, box.y, box.w, box.h, data);
+	if (channels === 1 && rCtx.ext?.compositingMode === 1 && typeof ctx.getImageData === 'function') {
+		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
+		return sourceCopyComposite(rCtx, box, sourceCopyPixels(data, dst, coverage), coverage);
+	}
 	if (channels === 1 && gdiplusBlend && typeof ctx.getImageData === 'function') {
 		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
 		if (gdiplusBlendPixels(data, dst, coverage)) {

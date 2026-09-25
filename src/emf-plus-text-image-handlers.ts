@@ -46,6 +46,8 @@ import type {
 	DeferredImageResample,
 	EmfPlusFont,
 	EmfPlusImage,
+	EmfPlusPath,
+	EmfPlusPen,
 	EmfPlusReplayCtx,
 	EmfPlusStringFormat,
 	TransformMatrix,
@@ -191,6 +193,32 @@ function drawOrDeferImage(
 	}
 	rCtx.deferredImages.push(draw);
 	emfLog(`DrawImage: queued deferred image (total=${rCtx.deferredImages.length})`);
+}
+
+/**
+ * Fills an EMF+ path object with a brush (`flags` bit 0x8000: `brush` is
+ * an inline ARGB colour, else an object id), in the path's own FillMode:
+ * Alternate (even-odd, GDI+'s default) or Winding (nonzero). Shared by
+ * FillPath and StrokeFillPath.
+ */
+export function fillPlusPath(rCtx: EmfPlusReplayCtx, flags: number, brush: number, pathObj: EmfPlusPath): void {
+	const { ctx } = rCtx;
+	const rule = pathObj.fillRule ?? 'nonzero';
+	// replayEmfPlusPath issues its own beginPath(), harmlessly repeating the
+	// one tryFillPlusShapeExact has already issued.
+	const exact = tryFillPlusShapeExact(rCtx, flags, brush, (c) => replayEmfPlusPath(c, pathObj), pathObj.points, rule);
+	if (!exact) {
+		ctx.fillStyle = resolveBrushPaint(rCtx, flags, brush);
+		applyPlusWorldTransform(rCtx);
+		replayEmfPlusPath(ctx, pathObj);
+		ctx.fill(rule);
+	}
+}
+
+/** Strokes an EMF+ path object with a pen (DrawPath, StrokeFillPath). */
+export function strokePlusPath(rCtx: EmfPlusReplayCtx, pen: EmfPlusPen | null, pathObj: EmfPlusPath): void {
+	// replayEmfPlusPath issues its own beginPath().
+	strokePlusGeometry(rCtx, pen, (c) => replayEmfPlusPath(c, pathObj), pathObj.points, isClosedPath(pathObj.types));
 }
 
 /**
@@ -435,29 +463,9 @@ export function handleEmfPlusTextImageRecord(
 		// ---- path-based drawing ----
 		case EMFPLUS_FILLPATH: {
 			if (recDataSize >= 4) {
-				const brushVal = view.getUint32(dataOff, true);
-				const pathId = recFlags & 0xff;
-				const pathObj = objectTable.get(pathId);
+				const pathObj = objectTable.get(recFlags & 0xff);
 				if (pathObj && pathObj.kind === 'plus-path') {
-					// replayEmfPlusPath issues its own beginPath(), harmlessly
-					// repeating the one tryFillPlusShapeExact has already issued.
-					// The path's own FillMode: Alternate (even-odd, GDI+'s default)
-					// or Winding (nonzero).
-					const rule = pathObj.fillRule ?? 'nonzero';
-					const exact = tryFillPlusShapeExact(
-						rCtx,
-						recFlags,
-						brushVal,
-						(c) => replayEmfPlusPath(c, pathObj),
-						pathObj.points,
-						rule,
-					);
-					if (!exact) {
-						ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
-						applyPlusWorldTransform(rCtx);
-						replayEmfPlusPath(ctx, pathObj);
-						ctx.fill(rule);
-					}
+					fillPlusPath(rCtx, recFlags, view.getUint32(dataOff, true), pathObj);
 				}
 			}
 			return true;
@@ -465,19 +473,10 @@ export function handleEmfPlusTextImageRecord(
 
 		case EMFPLUS_DRAWPATH: {
 			if (recDataSize >= 4) {
-				const penIndex = view.getUint32(dataOff, true);
-				const pathId = recFlags & 0xff;
-				const pathObj = objectTable.get(pathId);
-				const pen = objectTable.get(penIndex & 0xff);
+				const pathObj = objectTable.get(recFlags & 0xff);
+				const pen = objectTable.get(view.getUint32(dataOff, true) & 0xff);
 				if (pathObj && pathObj.kind === 'plus-path') {
-					// replayEmfPlusPath issues its own beginPath().
-					strokePlusGeometry(
-						rCtx,
-						pen && pen.kind === 'plus-pen' ? pen : null,
-						(c) => replayEmfPlusPath(c, pathObj),
-						pathObj.points,
-						isClosedPath(pathObj.types),
-					);
+					strokePlusPath(rCtx, pen && pen.kind === 'plus-pen' ? pen : null, pathObj);
 				}
 			}
 			return true;

@@ -11,11 +11,15 @@ import {
 	EMFPLUS_CLEAR,
 	EMFPLUS_GETDC,
 	EMFPLUS_OBJECT,
+	EMFPLUS_MULTIFORMATSTART,
+	EMFPLUS_MULTIFORMATSECTION,
+	EMFPLUS_MULTIFORMATEND,
 	MAX_RECORDS_EMFPLUS_DEFAULT,
 } from './emf-constants';
 import { argbToRgba } from './emf-color-helpers';
 import { emfLog } from './emf-logging';
 import { createContinuationAccumulator, feedEmfPlusObjectRecord } from './emf-plus-continuation';
+import { handleEmfPlusCurveRecord } from './emf-plus-curve-handlers';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
 import { handleEmfPlusStateRecord } from './emf-plus-state-handlers';
@@ -35,6 +39,9 @@ import { createEmfPlusState } from './emf-types';
 
 const EMFPLUS_REC_NAMES: Record<number, string> = {
 	0x4001: 'Header',
+	0x4005: 'MultiFormatStart',
+	0x4006: 'MultiFormatSection',
+	0x4007: 'MultiFormatEnd',
 	0x4002: 'EndOfFile',
 	0x4004: 'GetDC',
 	0x4008: 'Object',
@@ -45,13 +52,36 @@ const EMFPLUS_REC_NAMES: Record<number, string> = {
 	0x400d: 'DrawLines',
 	0x400e: 'FillEllipse',
 	0x400f: 'DrawEllipse',
+	0x4010: 'FillPie',
+	0x4011: 'DrawPie',
+	0x4012: 'DrawArc',
+	0x4013: 'FillRegion',
+	0x4016: 'FillClosedCurve',
+	0x4017: 'DrawClosedCurve',
+	0x4018: 'DrawCurve',
+	0x4019: 'DrawBeziers',
 	0x4014: 'FillPath',
 	0x4015: 'DrawPath',
 	0x401a: 'DrawImage',
 	0x401b: 'DrawImagePoints',
 	0x401c: 'DrawString',
 	0x4036: 'DrawDriverString',
+	0x401d: 'SetRenderingOrigin',
 	0x401e: 'SetAntiAliasMode',
+	0x401f: 'SetTextRenderingHint',
+	0x4020: 'SetTextContrast',
+	0x4021: 'SetInterpolationMode',
+	0x4022: 'SetPixelOffsetMode',
+	0x4023: 'SetCompositingMode',
+	0x4024: 'SetCompositingQuality',
+	0x4027: 'BeginContainer',
+	0x402d: 'TranslateWorldTransform',
+	0x402e: 'ScaleWorldTransform',
+	0x402f: 'RotateWorldTransform',
+	0x4037: 'StrokeFillPath',
+	0x4038: 'SerializableObject',
+	0x4039: 'SetTSGraphics',
+	0x403a: 'SetTSClip',
 	0x402a: 'SetWorldTransform',
 	0x402b: 'ResetWorldTransform',
 	0x402c: 'MultiplyWorldTransform',
@@ -66,6 +96,33 @@ const EMFPLUS_REC_NAMES: Record<number, string> = {
 	0x4028: 'BeginContainerNoParams',
 	0x4029: 'EndContainer',
 };
+
+// ---------------------------------------------------------------------------
+// MultiFormat
+// ---------------------------------------------------------------------------
+
+/**
+ * EmfPlusMultiFormatStart, as GDI+ plays it (MS-EMFPLUS only says the
+ * MultiFormat records are reserved; read from gdiplus.dll and confirmed on
+ * `gpx-rec-multiformat-*`): the data is a count followed by that many
+ * 32-bit format ids, and a record with fewer than 8 bytes, or fewer than
+ * 4 + 4 * count, is ignored. A well-formed one makes GDI+ pick the section
+ * to play and stop playing until MultiFormatSection reaches it, but the
+ * Section and End records are themselves dispatched only while playing,
+ * so in practice nothing after the Start is ever played again, in this
+ * EMR_COMMENT or any later one.
+ */
+function handleMultiFormatStart(rCtx: EmfPlusReplayCtx, dataOff: number, dataSize: number): void {
+	if (dataSize < 8) {
+		return;
+	}
+	const count = rCtx.view.getUint32(dataOff, true);
+	if (dataSize < 4 + 4 * count) {
+		return;
+	}
+	(rCtx.ext ?? (rCtx.ext = {})).multiFormatSkip = true;
+	emfLog('MultiFormatStart: GDI+ plays no further EMF+ record');
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -115,6 +172,7 @@ export function replayEmfPlusRecords(
 		nestingDepth: s.nestingDepth,
 		gdiAntialias: s.gdiAntialias,
 		antiAlias: s.antiAlias,
+		ext: s.ext ?? (s.ext = {}),
 	};
 
 	const end = offset + length;
@@ -137,6 +195,15 @@ export function replayEmfPlusRecords(
 
 		const dataOff = offset + 12;
 
+		// After a well-formed MultiFormatStart GDI+ plays no further EMF+
+		// record, MultiFormatSection and MultiFormatEnd included (their
+		// dispatch sits behind the same switch), so the rest of the file is
+		// skipped (see handleMultiFormatStart).
+		if (rCtx.ext?.multiFormatSkip && recType !== EMFPLUS_ENDOFFILE) {
+			offset += recSize;
+			continue;
+		}
+
 		switch (recType) {
 			case EMFPLUS_HEADER: {
 				if (recDataSize >= 16) {
@@ -153,6 +220,15 @@ export function replayEmfPlusRecords(
 				continue;
 
 			case EMFPLUS_GETDC:
+				break;
+
+			case EMFPLUS_MULTIFORMATSTART:
+				handleMultiFormatStart(rCtx, dataOff, recDataSize);
+				break;
+
+			// Without a preceding MultiFormatStart these do nothing in GDI+.
+			case EMFPLUS_MULTIFORMATSECTION:
+			case EMFPLUS_MULTIFORMATEND:
 				break;
 
 			case EMFPLUS_CLEAR: {
@@ -194,6 +270,7 @@ export function replayEmfPlusRecords(
 			default: {
 				const handled =
 					handleEmfPlusDrawRecord(rCtx, recType, recFlags, dataOff, recDataSize) ||
+					handleEmfPlusCurveRecord(rCtx, recType, recFlags, dataOff, recDataSize) ||
 					handleEmfPlusTextImageRecord(rCtx, recType, recFlags, dataOff, recDataSize) ||
 					handleEmfPlusStateRecord(rCtx, recType, recFlags, dataOff, recDataSize);
 				if (!handled) {

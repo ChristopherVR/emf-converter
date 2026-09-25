@@ -714,7 +714,15 @@ export function parseEmfPlusBrushObject(
 			return { kind: 'plus-brush', color: argbToRgba(view.getUint32(b, true)) };
 
 		case EMFPLUS_BRUSHTYPE_HATCHFILL:
-			// HatchStyle at b, foreground colour at b+4 (background at b+8 unused).
+			// HatchStyle, foreground colour, background colour (see emf-plus-brush-hatch.ts).
+			if (b + 12 <= end) {
+				const fore = view.getUint32(b + 4, true);
+				return {
+					kind: 'plus-brush',
+					color: argbToRgba(fore),
+					hatch: { style: view.getUint32(b, true), fore, back: view.getUint32(b + 8, true) },
+				};
+			}
 			if (b + 8 <= end) {
 				return { kind: 'plus-brush', color: argbToRgba(view.getUint32(b + 4, true)) };
 			}

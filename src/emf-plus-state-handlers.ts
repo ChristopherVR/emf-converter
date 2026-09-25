@@ -42,15 +42,28 @@ import {
 	EMFPLUS_SETCLIPREGION,
 	EMFPLUS_SETCLIPPATH,
 	EMFPLUS_OFFSETCLIP,
+	EMFPLUS_BEGINCONTAINER,
+	EMFPLUS_SETCOMPOSITINGMODE,
+	EMFPLUS_SETRENDERINGORIGIN,
+	EMFPLUS_SETTEXTCONTRAST,
+	EMFPLUS_SETTSGRAPHICS,
+	EMFPLUS_SETTSCLIP,
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { createBrushGradient } from './emf-plus-brush-gradient';
+import { createHatchPattern } from './emf-plus-brush-hatch';
 import { createBrushTexture } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { emfPlusPathClipShape } from './emf-plus-path';
 import { clipPixelRects } from './emf-plus-raster';
 import { isSvgContext } from './svg-context';
-import type { EmfPlusBrush, EmfPlusRegionNode, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
+import type {
+	EmfPlusBrush,
+	EmfPlusGraphicsExt,
+	EmfPlusRegionNode,
+	EmfPlusReplayCtx,
+	TransformMatrix,
+} from './emf-types';
 
 // ---------------------------------------------------------------------------
 // Shared utilities
@@ -125,6 +138,18 @@ export function brushPaint(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): string | 
 			return p;
 		}
 	}
+	if (obj.hatch) {
+		const p = createHatchPattern(
+			rCtx.ctx,
+			obj.hatch,
+			rCtx.ext?.renderingOrigin ?? { x: 0, y: 0 },
+			plusWorldMatrix(rCtx),
+			deviceToCanvasMatrix(rCtx),
+		);
+		if (p) {
+			return p;
+		}
+	}
 	return obj.color;
 }
 
@@ -161,9 +186,9 @@ export function getPageUnitMultiplier(pageUnit: number, pageScale: number): numb
  * nested-metafile) transform, {@link EmfPlusReplayCtx.baseTransform}.
  */
 export function plusWorldMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
-	const wt = rCtx.worldTransform;
-	const k = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale) * rCtx.dpiScale;
-	const m: TransformMatrix = [wt[0] * k, wt[1] * k, wt[2] * k, wt[3] * k, wt[4] * k, wt[5] * k];
+	const pre = plusPageToDeviceMatrix(rCtx);
+	const s = rCtx.dpiScale;
+	const m: TransformMatrix = [pre[0] * s, pre[1] * s, pre[2] * s, pre[3] * s, pre[4] * s, pre[5] * s];
 	const b = rCtx.baseTransform;
 	if (!b) {
 		return m;
@@ -176,6 +201,42 @@ export function plusWorldMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
 		b[0] * m[4] + b[2] * m[5] + b[4],
 		b[1] * m[4] + b[3] * m[5] + b[5],
 	];
+}
+
+/** The extra GDI+ graphics state of a replay (see {@link EmfPlusReplayCtx.ext}), created on first use. */
+export function plusExt(rCtx: EmfPlusReplayCtx): EmfPlusGraphicsExt {
+	if (!rCtx.ext) {
+		rCtx.ext = {};
+	}
+	return rCtx.ext;
+}
+
+/**
+ * The world-to-device matrix before the DPI scale and base transform, as
+ * GDI+ composes it: world transform, then the page transform (unit and
+ * scale), then the transform of the enclosing containers, or, while one is
+ * in force, the device matrix an `EmfPlusSetTSGraphics` record set.
+ */
+export function plusPageToDeviceMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
+	const ext = rCtx.ext;
+	if (ext?.tsDevice) {
+		return ext.tsDevice;
+	}
+	const wt = rCtx.worldTransform;
+	const k = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale);
+	const m: TransformMatrix = [wt[0] * k, wt[1] * k, wt[2] * k, wt[3] * k, wt[4] * k, wt[5] * k];
+	return ext?.containerTransform ? multiplyMatrix(m, ext.containerTransform) : m;
+}
+
+/**
+ * Canvas pixels of a pre-DPI device point: the DPI scale, then the base
+ * transform (see {@link plusWorldMatrix}); where terminal-server records,
+ * which carry absolute device coordinates, land.
+ */
+export function deviceToCanvasMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
+	const s = rCtx.dpiScale;
+	const m: TransformMatrix = [s, 0, 0, s, 0, 0];
+	return rCtx.baseTransform ? multiplyMatrix(m, rCtx.baseTransform) : m;
 }
 
 /** Apply the current EMF+ world transform to the canvas, incorporating page units and DPI scale. */
@@ -212,17 +273,55 @@ export function plusCanvasShift(rCtx: EmfPlusReplayCtx): number {
 // Internal helper: save/restore logic shared between Save/Container ops
 // ---------------------------------------------------------------------------
 
+/**
+ * Pushes the complete graphics state (world and page transform, clip,
+ * rendering hints and {@link EmfPlusReplayCtx.ext}) under `stackId`, as
+ * `EmfPlusSave` and the container records do.
+ */
 function pushState(rCtx: EmfPlusReplayCtx, stackId: number): void {
+	const ext = plusExt(rCtx);
 	rCtx.saveStack.push({
 		transform: [...rCtx.worldTransform] as TransformMatrix,
+		snapshot: {
+			clipRegion: rCtx.clipRegion ?? null,
+			antiAlias: rCtx.antiAlias,
+			interpolationMode: rCtx.interpolationMode,
+			pixelOffsetMode: rCtx.pixelOffsetMode,
+			textRenderingHint: rCtx.textRenderingHint,
+			pageUnit: rCtx.pageUnit,
+			pageScale: rCtx.pageScale,
+			ext: { ...ext, multiFormatSkip: undefined, pendingEffect: undefined },
+		},
 	});
 	rCtx.saveIdMap.set(stackId, rCtx.saveStack.length - 1);
 }
 
+/**
+ * Restores the state pushed under `stackId` (`EmfPlusRestore`,
+ * `EmfPlusEndContainer`), discarding it and every state pushed after it.
+ * An unknown id is ignored, as GDI+ ignores it.
+ */
 function popState(rCtx: EmfPlusReplayCtx, stackId: number): void {
 	const idx = rCtx.saveIdMap.get(stackId);
 	if (idx !== undefined && idx < rCtx.saveStack.length) {
-		rCtx.worldTransform = [...rCtx.saveStack[idx].transform] as TransformMatrix;
+		const saved = rCtx.saveStack[idx];
+		rCtx.worldTransform = [...saved.transform] as TransformMatrix;
+		const snap = saved.snapshot;
+		if (snap) {
+			rCtx.clipRegion = snap.clipRegion;
+			rCtx.antiAlias = snap.antiAlias;
+			rCtx.interpolationMode = snap.interpolationMode;
+			rCtx.pixelOffsetMode = snap.pixelOffsetMode;
+			rCtx.textRenderingHint = snap.textRenderingHint;
+			rCtx.pageUnit = snap.pageUnit;
+			rCtx.pageScale = snap.pageScale;
+			const ext = plusExt(rCtx);
+			const { multiFormatSkip, pendingEffect } = ext;
+			for (const key of Object.keys(ext) as Array<keyof EmfPlusGraphicsExt>) {
+				delete ext[key];
+			}
+			Object.assign(ext, snap.ext, { multiFormatSkip, pendingEffect });
+		}
 		rCtx.saveStack.length = idx;
 		const newMap = new Map<number, number>();
 		for (const [k, v] of rCtx.saveIdMap) {
@@ -231,7 +330,71 @@ function popState(rCtx: EmfPlusReplayCtx, stackId: number): void {
 			}
 		}
 		rCtx.saveIdMap = newMap;
+		if (snap) {
+			reapplyPlusClip(rCtx);
+		}
 	}
+}
+
+/**
+ * Opens a graphics container (`EmfPlusBeginContainer` with `rectTransform`,
+ * the map from the container's page space onto the enclosing world space,
+ * or `EmfPlusBeginContainerNoParams` with `null`). Measured against GDI+
+ * (`gpx-rec-container*`): the whole state is saved; inside, the world
+ * transform is the identity, the page unit Pixel at scale 1, and the
+ * drawing lands where the enclosing world, page and container transforms
+ * put it; the clip starts infinite, though the enclosing clip still
+ * bounds every drawing; the rendering hints (SmoothingMode,
+ * TextRenderingHint, InterpolationMode, PixelOffsetMode, CompositingMode,
+ * CompositingQuality, TextContrast) are back at their defaults.
+ */
+function beginContainer(rCtx: EmfPlusReplayCtx, stackId: number, rectTransform: TransformMatrix | null): void {
+	const outer = plusPageToDeviceMatrix(rCtx);
+	const outerClip = concatClip(rCtx.ext?.containerClip, rCtx.clipRegion);
+	pushState(rCtx, stackId);
+	const ext = plusExt(rCtx);
+	ext.containerTransform = rectTransform ? multiplyMatrix(rectTransform, outer) : outer;
+	ext.tsDevice = null;
+	ext.containerClip = outerClip;
+	ext.compositingMode = undefined;
+	ext.compositingQuality = undefined;
+	ext.textContrast = undefined;
+	rCtx.clipRegion = null;
+	rCtx.worldTransform = [1, 0, 0, 1, 0, 0];
+	rCtx.pageUnit = 2;
+	rCtx.pageScale = 1;
+	rCtx.antiAlias = false;
+	rCtx.interpolationMode = undefined;
+	rCtx.pixelOffsetMode = undefined;
+	rCtx.textRenderingHint = undefined;
+	reapplyPlusClip(rCtx);
+}
+
+/**
+ * The transform an `EmfPlusBeginContainer` record's rectangles define:
+ * the source rectangle, in `unit` (converted to pixels at 96 DPI), maps
+ * onto the destination rectangle in the enclosing world space. Pure.
+ */
+export function containerRectTransform(
+	dst: { x: number; y: number; w: number; h: number },
+	src: { x: number; y: number; w: number; h: number },
+	unit: number,
+): TransformMatrix | null {
+	const u = getPageUnitMultiplier(unit, 1);
+	const sw = src.w * u;
+	const sh = src.h * u;
+	if (!(Math.abs(sw) > 0 && Math.abs(sh) > 0) || ![dst.x, dst.y, dst.w, dst.h, sw, sh].every(Number.isFinite)) {
+		return null;
+	}
+	const a = dst.w / sw;
+	const d = dst.h / sh;
+	return [a, 0, 0, d, dst.x - src.x * u * a, dst.y - src.y * u * d];
+}
+
+/** The intersection of two tracked clips (`null`/absent = infinite). */
+function concatClip(a: ClipRegion | undefined, b: ClipRegion | undefined): ClipRegion {
+	const parts = [...(a ?? []), ...(b ?? [])];
+	return a || b ? parts : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,9 +509,18 @@ function plusClipDomain(rCtx: EmfPlusReplayCtx): ClipDomain | undefined {
 	return { x: 0, y: 0, w: rCtx.canvasW, h: rCtx.canvasH };
 }
 
+/**
+ * The clip in force: the enclosing containers' clip, the current clip and
+ * the terminal-server clip, intersected (`null` = none).
+ */
+export function effectivePlusClip(rCtx: EmfPlusReplayCtx): ClipRegion {
+	const ext = rCtx.ext;
+	return concatClip(concatClip(ext?.containerClip, rCtx.clipRegion ?? undefined) ?? undefined, ext?.tsClip ?? undefined);
+}
+
 /** Rebuild the canvas clip from the tracked EMF+ clip region. */
 function reapplyPlusClip(rCtx: EmfPlusReplayCtx): void {
-	reapplyClipRegion(rCtx, rCtx.clipRegion ?? null, true);
+	reapplyClipRegion(rCtx, effectivePlusClip(rCtx), true);
 }
 
 /**
@@ -416,6 +588,159 @@ function applyPlusClipShape(
 }
 
 // ---------------------------------------------------------------------------
+// Terminal-server records
+// ---------------------------------------------------------------------------
+
+/** Ends an `EmfPlusSetTSGraphics` device matrix: GDI+ recomputes the device matrix on any transform record. */
+function dropTsDevice(rCtx: EmfPlusReplayCtx): void {
+	if (rCtx.ext?.tsDevice) {
+		rCtx.ext.tsDevice = null;
+	}
+}
+
+/**
+ * EmfPlusSetTSGraphics, as GDI+ plays it (read from gdiplus.dll and
+ * confirmed on `gpx-rec-tsgraphics`): the record data starts with a 32-bit
+ * field (bit 0: a 256-byte palette translation table follows the state,
+ * bit 1: VGA palette) that MS-EMFPLUS 2.3.8.2 omits, then SmoothingMode,
+ * TextRenderingHint, CompositingMode and CompositingQuality bytes, the
+ * rendering origin (two int16), TextContrast (uint16), FilterType and
+ * PixelOffsetMode bytes and the world-to-device matrix (six floats, in
+ * absolute device pixels). A record shorter than 40 bytes (296 with the
+ * palette table) is ignored. The values replace the graphics state; the
+ * device matrix holds until the next world or page transform record.
+ * Measured on DrawImage and fill probes: the byte MS-EMFPLUS calls
+ * FilterType holds an `InterpolationMode` (each value renders exactly like
+ * the same EmfPlusSetInterpolationMode), and the PixelOffsetMode byte
+ * changes nothing (every value renders like PixelOffsetMode None).
+ */
+function setTsGraphics(rCtx: EmfPlusReplayCtx, dataOff: number, dataSize: number): void {
+	const { view } = rCtx;
+	if (dataSize < 40) {
+		return;
+	}
+	const flags = view.getUint32(dataOff, true);
+	if (flags & 1 && dataSize < 0x128) {
+		return;
+	}
+	const smoothing = view.getUint8(dataOff + 4);
+	rCtx.antiAlias = smoothing === 2 || smoothing === 4 || smoothing === 5;
+	rCtx.textRenderingHint = view.getUint8(dataOff + 5);
+	const ext = plusExt(rCtx);
+	ext.compositingMode = view.getUint8(dataOff + 6);
+	ext.compositingQuality = view.getUint8(dataOff + 7);
+	ext.renderingOrigin = { x: view.getInt16(dataOff + 8, true), y: view.getInt16(dataOff + 10, true) };
+	ext.textContrast = view.getUint16(dataOff + 12, true);
+	rCtx.interpolationMode = view.getUint8(dataOff + 14);
+	const m = [0, 4, 8, 12, 16, 20].map((k) => view.getFloat32(dataOff + 16 + k, true)) as TransformMatrix;
+	if (m.every(Number.isFinite)) {
+		ext.tsDevice = m;
+	}
+}
+
+/**
+ * Decodes an `EmfPlusSetTSClip` record's rectangles (left, top, right,
+ * bottom; right and bottom exclusive) in device pixels, or `null` when the
+ * data runs out. Measured against GDI+ (`gpx-rec-tsclip*`): with flag C
+ * (0x8000) each value is ONE byte when its top bit is set (a 7-bit signed
+ * value) or TWO bytes big-endian (15-bit signed), and it is a delta: left
+ * from the previous rectangle's left, top from the previous rectangle's
+ * BOTTOM, right from the previous right, bottom from this rectangle's own
+ * top (the first rectangle's predecessor is all zeros); without flag C a
+ * rectangle is an absolute 16-byte RECTL (MS-EMFPLUS 2.3.8.1 says 8
+ * bytes). Pure.
+ */
+export function decodeTsClipRects(
+	view: DataView,
+	dataOff: number,
+	dataSize: number,
+	flags: number,
+): Array<{ l: number; t: number; r: number; b: number }> | null {
+	const count = flags & 0x7fff;
+	const end = dataOff + dataSize;
+	const rects: Array<{ l: number; t: number; r: number; b: number }> = [];
+	if (!(flags & 0x8000)) {
+		if (dataOff + count * 16 > end) {
+			return null;
+		}
+		for (let i = 0; i < count; i++) {
+			const o = dataOff + i * 16;
+			rects.push({ l: view.getInt32(o, true), t: view.getInt32(o + 4, true), r: view.getInt32(o + 8, true), b: view.getInt32(o + 12, true) });
+		}
+		return rects;
+	}
+	let o = dataOff;
+	const next = (): number | null => {
+		if (o >= end) {
+			return null;
+		}
+		const b0 = view.getUint8(o);
+		if (b0 & 0x80) {
+			o += 1;
+			const v = b0 & 0x7f;
+			return v & 0x40 ? v - 0x80 : v;
+		}
+		if (o + 2 > end) {
+			return null;
+		}
+		const v = (b0 << 8) | view.getUint8(o + 1);
+		o += 2;
+		return v & 0x4000 ? v - 0x8000 : v;
+	};
+	let prev = { l: 0, t: 0, r: 0, b: 0 };
+	for (let i = 0; i < count; i++) {
+		const dl = next();
+		const dt = next();
+		const dr = next();
+		const dh = next();
+		if (dl === null || dt === null || dr === null || dh === null) {
+			return null;
+		}
+		const t = prev.b + dt;
+		const rect = { l: prev.l + dl, t, r: prev.r + dr, b: t + dh };
+		rects.push(rect);
+		prev = rect;
+	}
+	return rects;
+}
+
+/**
+ * EmfPlusSetTSClip, as GDI+ plays it (read from gdiplus.dll and confirmed
+ * on `gpx-rec-tsclip*`): the rectangles, absolute device pixels whatever
+ * the world transform, form a region that is intersected with the clip in
+ * force and kept as a device-level clip below every later clip record
+ * (SetClipRect Replace and ResetClip only change the clip inside it; a
+ * second SetTSClip intersects again); Save/Restore and containers save
+ * and restore it.
+ */
+function setTsClip(rCtx: EmfPlusReplayCtx, flags: number, dataOff: number, dataSize: number): void {
+	const rects = decodeTsClipRects(rCtx.view, dataOff, dataSize, flags);
+	if (!rects) {
+		return;
+	}
+	const m = deviceToCanvasMatrix(rCtx);
+	const tx = (x: number, y: number): number => m[0] * x + m[2] * y + m[4];
+	const ty = (x: number, y: number): number => m[1] * x + m[3] * y + m[5];
+	const cmds: ClipPathCmd[] = [];
+	for (const r of rects) {
+		if (r.r <= r.l || r.b <= r.t) {
+			continue;
+		}
+		cmds.push(
+			{ op: 'moveTo', x: tx(r.l, r.t), y: ty(r.l, r.t) },
+			{ op: 'lineTo', x: tx(r.r, r.t), y: ty(r.r, r.t) },
+			{ op: 'lineTo', x: tx(r.r, r.b), y: ty(r.r, r.b) },
+			{ op: 'lineTo', x: tx(r.l, r.b), y: ty(r.l, r.b) },
+			{ op: 'closePath' },
+		);
+	}
+	const shape: ClipShape = cmds.length > 0 ? { cmds, fillRule: 'nonzero', simple: rects.length === 1 } : emptyClipShape();
+	const ext = plusExt(rCtx);
+	ext.tsClip = concatClip(effectivePlusClip(rCtx) ?? undefined, pixelSnapPlusClip(rCtx, [shape]) ?? undefined);
+	reapplyPlusClip(rCtx);
+}
+
+// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -431,6 +756,7 @@ export function handleEmfPlusStateRecord(
 	switch (recType) {
 		// ---- transforms ----
 		case EMFPLUS_SETWORLDTRANSFORM: {
+			dropTsDevice(rCtx);
 			if (recDataSize >= 24) {
 				rCtx.worldTransform = [
 					view.getFloat32(dataOff, true),
@@ -445,11 +771,13 @@ export function handleEmfPlusStateRecord(
 		}
 
 		case EMFPLUS_RESETWORLDTRANSFORM: {
+			dropTsDevice(rCtx);
 			rCtx.worldTransform = [1, 0, 0, 1, 0, 0];
 			return true;
 		}
 
 		case EMFPLUS_MULTIPLYWORLDTRANSFORM: {
+			dropTsDevice(rCtx);
 			if (recDataSize >= 24) {
 				const xf: TransformMatrix = [
 					view.getFloat32(dataOff, true),
@@ -469,6 +797,7 @@ export function handleEmfPlusStateRecord(
 		}
 
 		case EMFPLUS_TRANSLATEWORLDTRANSFORM: {
+			dropTsDevice(rCtx);
 			if (recDataSize >= 8) {
 				const dx = view.getFloat32(dataOff, true);
 				const dy = view.getFloat32(dataOff + 4, true);
@@ -483,6 +812,7 @@ export function handleEmfPlusStateRecord(
 		}
 
 		case EMFPLUS_SCALEWORLDTRANSFORM: {
+			dropTsDevice(rCtx);
 			if (recDataSize >= 8) {
 				const sx = view.getFloat32(dataOff, true);
 				const sy = view.getFloat32(dataOff + 4, true);
@@ -497,6 +827,7 @@ export function handleEmfPlusStateRecord(
 		}
 
 		case EMFPLUS_ROTATEWORLDTRANSFORM: {
+			dropTsDevice(rCtx);
 			if (recDataSize >= 4) {
 				const angle = (view.getFloat32(dataOff, true) * Math.PI) / 180;
 				const cos = Math.cos(angle);
@@ -602,7 +933,21 @@ export function handleEmfPlusStateRecord(
 		// ---- containers ----
 		case EMFPLUS_BEGINCONTAINERNOPARAMS: {
 			if (recDataSize >= 4) {
-				pushState(rCtx, view.getUint32(dataOff, true));
+				beginContainer(rCtx, view.getUint32(dataOff, true), null);
+			}
+			return true;
+		}
+
+		case EMFPLUS_BEGINCONTAINER: {
+			// DestRect, SrcRect (RectF each), StackIndex; the source unit in the flags' low byte.
+			if (recDataSize >= 36) {
+				const f = (k: number): number => view.getFloat32(dataOff + k, true);
+				const t = containerRectTransform(
+					{ x: f(0), y: f(4), w: f(8), h: f(12) },
+					{ x: f(16), y: f(20), w: f(24), h: f(28) },
+					recFlags & 0xff,
+				);
+				beginContainer(rCtx, view.getUint32(dataOff + 32, true), t ?? [1, 0, 0, 1, 0, 0]);
 			}
 			return true;
 		}
@@ -616,6 +961,7 @@ export function handleEmfPlusStateRecord(
 
 		// ---- page transform ----
 		case EMFPLUS_SETPAGETRANSFORM: {
+			dropTsDevice(rCtx);
 			const pageUnit = recFlags & 0xff;
 			const pageScale = recDataSize >= 4 ? view.getFloat32(dataOff, true) : 1;
 			rCtx.pageUnit = pageUnit;
@@ -651,8 +997,32 @@ export function handleEmfPlusStateRecord(
 			rCtx.antiAlias = (recFlags & 0x01) !== 0;
 			return true;
 
-		// ---- rendering hints (accepted, ignored) ----
+		// ---- compositing, rendering origin, text contrast ----
 		case EMFPLUS_SETCOMPOSITINGQUALITY:
+			plusExt(rCtx).compositingQuality = recFlags & 0xff;
+			return true;
+
+		case EMFPLUS_SETCOMPOSITINGMODE:
+			plusExt(rCtx).compositingMode = recFlags & 0xff;
+			return true;
+
+		case EMFPLUS_SETRENDERINGORIGIN:
+			if (recDataSize >= 8) {
+				plusExt(rCtx).renderingOrigin = { x: view.getInt32(dataOff, true), y: view.getInt32(dataOff + 4, true) };
+			}
+			return true;
+
+		case EMFPLUS_SETTEXTCONTRAST:
+			plusExt(rCtx).textContrast = recFlags & 0x0fff;
+			return true;
+
+		// ---- terminal-server state ----
+		case EMFPLUS_SETTSGRAPHICS:
+			setTsGraphics(rCtx, dataOff, recDataSize);
+			return true;
+
+		case EMFPLUS_SETTSCLIP:
+			setTsClip(rCtx, recFlags, dataOff, recDataSize);
 			return true;
 
 		default:
