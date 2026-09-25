@@ -42,6 +42,7 @@
  * @module gdi-font-engine
  */
 
+import { parseRasterFontFile, type RasterFace } from './fnt-font';
 import { parseFontFile, type TtfFont } from './ttf-font';
 import { HintedSize, type HintedGlyph } from './ttf-hinting';
 import { dropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
@@ -126,6 +127,39 @@ const FONT_SUBSTITUTES: Record<string, string> = {
 };
 
 /**
+ * GDI's raster-font italic: a cell `H` rows tall leans by
+ * O = floor((H - 1) / 2) pixels from its bottom row to its top row, the
+ * row `r` rows below the top shifting right by (H - 1 - r) * O / (H - 1)
+ * rounded half up (measured on MS Sans Serif 13 and 20 px and Courier
+ * 16 px cells).
+ */
+function slantRows(b: GlyphBitmap): GlyphBitmap {
+	const span = b.height - 1;
+	const lean = Math.floor(span / 2);
+	const shift = (r: number): number => (span > 0 ? Math.floor(((span - r) * lean * 2 + span) / (2 * span)) : 0);
+	const width = b.width + lean;
+	const data = new Uint8Array(width * b.height);
+	for (let y = 0; y < b.height; y++) {
+		data.set(b.data.subarray(y * b.width, (y + 1) * b.width), y * width + shift(y));
+	}
+	return { ...b, width, data };
+}
+
+/** Raster-font stretch cost by whole-number factor (see `pickRaster`). */
+const RASTER_STRETCH_COST = [0, 0, 120, 150, 250, 250];
+
+/** A raster face's character height (cell minus internal leading). */
+function unitOf(f: RasterFace): number {
+	return Math.max(1, f.pixHeight - f.internalLeading);
+}
+
+/** Stock FontSubstitutes entries that point at raster (`.fon`) faces. */
+const RASTER_SUBSTITUTES: Record<string, string> = {
+	helv: 'ms sans serif',
+	'tms rmn': 'ms serif',
+};
+
+/**
  * GDI's synthetic-italic shear, 0x5700 / 65536 (about 18.8 degrees),
  * applied to the hinted outline (x += y * shear, rounded to 1/64); the
  * advance widths are unchanged (measured with GGO_NATIVE on Tahoma, which
@@ -141,8 +175,185 @@ function isItalicFace(f: TtfFont): boolean {
 // Realised font
 // ---------------------------------------------------------------------------
 
+/** The face-level facts text painting needs (a TrueType face, or a raster face's equivalent). */
+export interface GdiFaceInfo {
+	family: string;
+	weightClass: number;
+	fsSelection: number;
+	macStyle: number;
+	winAscent: number;
+	unitsPerEm: number;
+}
+
+/** A font realised at one device size: what text layout and painting use. */
+export interface GdiRealizedFont {
+	readonly ttf: GdiFaceInfo;
+	readonly ppem: number;
+	readonly ppemX: number;
+	readonly ascent: number;
+	readonly descent: number;
+	readonly underlinePosition: number;
+	readonly underlineThickness: number;
+	readonly strikeoutPosition: number;
+	readonly strikeoutThickness: number;
+	readonly mode: GdiTextMode;
+	readonly syntheticBold: boolean;
+	readonly syntheticItalic: boolean;
+	readonly gridFit: boolean;
+	glyphIndex(code: number): number;
+	advance(index: number): number;
+	rotatedAdvance(index: number): number;
+	glyph(index: number, m?: readonly [number, number, number, number], subX?: number): GdiGlyph;
+	charForGlyph(index: number): number;
+}
+
+/** Windows-1252 code points for bytes 0x80..0x9F (the rest of the code page is Latin-1). */
+const CP1252_HIGH = [
+	0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f,
+	0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d, 0x017e, 0x0178,
+];
+
+/** OEM_CHARSET: raster faces such as Terminal are encoded in the OEM code page (437). */
+const OEM_CHARSET = 255;
+
+/** Code page 437 code points for bytes 0x80..0xFF. */
+const CP437_HIGH = [
+	0xc7, 0xfc, 0xe9, 0xe2, 0xe4, 0xe0, 0xe5, 0xe7, 0xea, 0xeb, 0xe8, 0xef, 0xee, 0xec, 0xc4, 0xc5,
+	0xc9, 0xe6, 0xc6, 0xf4, 0xf6, 0xf2, 0xfb, 0xf9, 0xff, 0xd6, 0xdc, 0xa2, 0xa3, 0xa5, 0x20a7, 0x0192,
+	0xe1, 0xed, 0xf3, 0xfa, 0xf1, 0xd1, 0xaa, 0xba, 0xbf, 0x2310, 0xac, 0xbd, 0xbc, 0xa1, 0xab, 0xbb,
+	0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, 0x2555, 0x2563, 0x2551, 0x2557, 0x255d, 0x255c, 0x255b, 0x2510,
+	0x2514, 0x2534, 0x252c, 0x251c, 0x2500, 0x253c, 0x255e, 0x255f, 0x255a, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256c, 0x2567,
+	0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256b, 0x256a, 0x2518, 0x250c, 0x2588, 0x2584, 0x258c, 0x2590, 0x2580,
+	0x03b1, 0xdf, 0x0393, 0x03c0, 0x03a3, 0x03c3, 0xb5, 0x03c4, 0x03a6, 0x0398, 0x03a9, 0x03b4, 0x221e, 0x03c6, 0x03b5, 0x2229,
+	0x2261, 0xb1, 0x2265, 0x2264, 0x2320, 0x2321, 0xf7, 0x2248, 0xb0, 0x2219, 0xb7, 0x221a, 0x207f, 0xb2, 0x25a0, 0xa0,
+];
+
+/**
+ * A raster (`.fon`) face realised at one of its sizes, optionally scaled by
+ * an integer factor (GDI stretches raster fonts only by whole multiples).
+ * Glyphs are the font's own bitmaps; text is never antialiased or rotated
+ * (GDI ignores escapement for raster fonts).
+ */
+export class RasterRealizedFont implements GdiRealizedFont {
+	readonly ttf: GdiFaceInfo;
+	readonly ppem: number;
+	readonly ppemX: number;
+	readonly ascent: number;
+	readonly descent: number;
+	readonly underlinePosition: number;
+	readonly underlineThickness: number;
+	readonly strikeoutPosition: number;
+	readonly strikeoutThickness: number;
+	readonly mode: GdiTextMode = 'mono';
+	readonly syntheticBold: boolean;
+	readonly syntheticItalic = false;
+	readonly gridFit = true;
+	private readonly glyphs = new Map<number, GdiGlyph>();
+
+	/**
+	 * @param scale - Whole-number vertical stretch.
+	 * @param syntheticBold - Embolden (bold requested from a regular face).
+	 * @param scaleX - Whole-number horizontal stretch (defaults to `scale`;
+	 *   a non-zero lfWidth picks lfWidth / avgWidth rounded half down).
+	 * @param obliquify - Slant the bitmaps (italic requested from an
+	 *   upright face): GDI leans each row by about half its height above
+	 *   the cell bottom (see `slantRows`), keeping the advances.
+	 */
+	constructor(
+		readonly face: RasterFace,
+		readonly scale: number,
+		syntheticBold: boolean,
+		readonly scaleX: number = scale,
+		readonly obliquify = false,
+	) {
+		const n = scale;
+		this.syntheticBold = syntheticBold;
+		this.ascent = face.ascent * n;
+		this.descent = (face.pixHeight - face.ascent) * n;
+		this.ppem = (face.pixHeight - face.internalLeading) * n;
+		this.ppemX = (face.pixHeight - face.internalLeading) * scaleX;
+		this.underlinePosition = -n;
+		this.underlineThickness = n;
+		// Measured: the strike-out bar starts (ascent - internal leading) / 3,
+		// rounded up, above the baseline (MS Sans Serif 13/16, Courier 13).
+		this.strikeoutPosition = Math.ceil(((face.ascent - face.internalLeading) * n) / 3);
+		this.strikeoutThickness = n;
+		this.ttf = {
+			family: face.family,
+			weightClass: face.weight,
+			fsSelection: face.italic ? 1 : 0,
+			macStyle: 0,
+			winAscent: this.ascent,
+			unitsPerEm: this.ppem || 1,
+		};
+	}
+
+	/** The font's 8-bit code for a Unicode character (Windows-1252 for the ANSI charsets). */
+	glyphIndex(code: number): number {
+		if (code < 0x80) {
+			return code;
+		}
+		if (this.face.charSet === OEM_CHARSET) {
+			const j = CP437_HIGH.indexOf(code);
+			return j >= 0 ? 0x80 + j : this.face.defaultChar;
+		}
+		if (code >= 0xa0 && code < 0x100) {
+			return code;
+		}
+		const i = CP1252_HIGH.indexOf(code);
+		return i >= 0 ? 0x80 + i : this.face.defaultChar;
+	}
+
+	charForGlyph(index: number): number {
+		if (index >= 0x80 && this.face.charSet === OEM_CHARSET) {
+			return CP437_HIGH[index - 0x80] ?? index;
+		}
+		return index >= 0x80 && index < 0xa0 ? CP1252_HIGH[index - 0x80] : index;
+	}
+
+	advance(index: number): number {
+		return this.face.width(index) * this.scaleX + (this.syntheticBold ? 1 : 0);
+	}
+
+	rotatedAdvance(index: number): number {
+		return this.advance(index);
+	}
+
+	glyph(index: number): GdiGlyph {
+		let g = this.glyphs.get(index);
+		if (g) {
+			return g;
+		}
+		const src = this.face.bitmap(index);
+		const w = this.face.width(index);
+		let bitmap: GlyphBitmap | null = null;
+		if (src && w > 0) {
+			const n = this.scale;
+			const nx = this.scaleX;
+			const h = this.face.pixHeight;
+			const data = new Uint8Array(w * nx * h * n);
+			for (let y = 0; y < h * n; y++) {
+				for (let x = 0; x < w * nx; x++) {
+					data[y * w * nx + x] = src[Math.floor(y / n) * w + Math.floor(x / nx)];
+				}
+			}
+			bitmap = { width: w * nx, height: h * n, left: 0, top: this.ascent, data };
+			// GDI slants first, then emboldens the slanted rows.
+			if (this.obliquify) {
+				bitmap = slantRows(bitmap);
+			}
+			if (this.syntheticBold) {
+				bitmap = embolden(bitmap, 1);
+			}
+		}
+		g = { bitmap, advance: this.advance(index) };
+		this.glyphs.set(index, g);
+		return g;
+	}
+}
+
 /** A font realised at one device size and quality, with its glyph cache. */
-export class RealizedFont {
+export class RealizedFont implements GdiRealizedFont {
 	readonly ttf: TtfFont;
 	readonly ppem: number;
 	readonly ppemX: number;
@@ -393,12 +604,19 @@ const collectionCache = new WeakMap<object, GdiFontCollection>();
 /** The fonts a conversion may realise LOGFONTs from. */
 export class GdiFontCollection {
 	private readonly families = new Map<string, TtfFont[]>();
-	private readonly realized = new Map<string, RealizedFont | null>();
+	private readonly rasterFamilies = new Map<string, RasterFace[]>();
+	private readonly realized = new Map<string, GdiRealizedFont | null>();
 	readonly defaultSmoothing: DefaultTextSmoothing;
 
 	constructor(sources: readonly FontSource[], defaultSmoothing: DefaultTextSmoothing = 'cleartype') {
 		this.defaultSmoothing = defaultSmoothing;
 		for (const src of sources) {
+			for (const face of parseRasterFontFile(src)) {
+				const k = face.family.toLowerCase().trim();
+				const list = this.rasterFamilies.get(k) ?? [];
+				list.push(face);
+				this.rasterFamilies.set(k, list);
+			}
 			for (const face of parseFontFile(src)) {
 				this.add(face.family, face);
 				if (face.typoFamily && face.typoFamily !== face.family) {
@@ -426,7 +644,7 @@ export class GdiFontCollection {
 	}
 
 	get size(): number {
-		return this.families.size;
+		return this.families.size + this.rasterFamilies.size;
 	}
 
 	private add(name: string, face: TtfFont): void {
@@ -472,14 +690,102 @@ export class GdiFontCollection {
 		return this.families.get(fallback) ?? null;
 	}
 
+	/**
+	 * The raster size GDI's font mapper picks for a device height, as a face
+	 * and a whole-number stretch (1 to 5). Heights compare as character
+	 * heights for a negative lfHeight and cell heights for a positive one.
+	 * The cost model is fitted to GetTextMetrics over lfHeight -60..60 for
+	 * MS Sans Serif, MS Serif, Courier, Small Fonts, System and Terminal
+	 * (98% exact): 150 per pixel too small; 290 plus 350 per pixel too big;
+	 * a stretch cost by factor (120, 150, 250, 250 for 2x..5x) plus 100 per
+	 * extra factor divided by the face's character height (small faces
+	 * stretch less readily); ties go to the smaller stretch, then to the
+	 * 96 dpi face. A weight mismatch costs 3 per 10 units (so Terminal's
+	 * bold 8 pixel size serves regular requests).
+	 */
+	private pickRaster(faces: RasterFace[], height: number, weight: number): { face: RasterFace; scale: number } | null {
+		const pool = faces;
+		if (pool.length === 0) {
+			return null;
+		}
+		if (height === 0) {
+			const sorted = pool.slice().sort((a, b) => a.pixHeight - b.pixHeight);
+			return { face: sorted.find((f) => f.points >= 10) ?? sorted[0], scale: 1 };
+		}
+		const target = Math.abs(height);
+		let best: { face: RasterFace; scale: number } | null = null;
+		let bestCost = Infinity;
+		for (const f of pool) {
+			const unit = height < 0 ? unitOf(f) : f.pixHeight;
+			for (let n = 1; n <= 5; n++) {
+				const d = unit * n - target;
+				const cost =
+					(d < 0 ? -d * 150 : d > 0 ? 290 + d * 350 : 0) +
+					RASTER_STRETCH_COST[n] +
+					(n > 1 ? (100 * (n - 1)) / unitOf(f) : 0) +
+					(Math.abs(f.weight - weight) * 3) / 10 +
+					n * 0.01 +
+					(f.vertRes === 96 ? 0 : 0.001);
+				if (cost < bestCost) {
+					bestCost = cost;
+					best = { face: f, scale: n };
+				}
+			}
+		}
+		return best;
+	}
+
+	private realizeRaster(faces: RasterFace[], spec: LogFontSpec): GdiRealizedFont | null {
+		const weight = spec.weight || 400;
+		const pick = this.pickRaster(faces, spec.height, weight);
+		if (!pick) {
+			return null;
+		}
+		const { face, scale } = pick;
+		const scaleX = spec.width > 0 && face.avgWidth > 0 ? Math.max(1, Math.ceil(spec.width / face.avgWidth - 0.5)) : scale;
+		return new RasterRealizedFont(face, scale, weight >= 600 && face.weight < 600, scaleX, spec.italic && !face.italic);
+	}
+
+	/**
+	 * MS Shell Dlg renders with Microsoft Sans Serif but GDI snaps small
+	 * sizes to the MS Sans Serif bitmap sizes: when the raster mapper would
+	 * pick an unstretched 8 or 10 point bitmap whose cell is at most one
+	 * pixel taller than the TrueType cell `ttCell`, the TrueType ppem
+	 * becomes that bitmap's character height (measured: lfHeight -9..-12
+	 * give ppem 11, -13..-15 ppem 13, cell heights 12..15 ppem 11 and
+	 * 16..19 ppem 13, while -8 and cell heights up to 11 stay unsnapped).
+	 */
+	private shellDlgPpem(spec: LogFontSpec, ttCell: number): number {
+		const raster = this.rasterFamilies.get('ms sans serif');
+		if (!raster || spec.height === 0) {
+			return 0;
+		}
+		const pick = this.pickRaster(raster, spec.height, spec.weight || 400);
+		if (!pick || pick.scale !== 1 || pick.face.pixHeight > 16) {
+			return 0;
+		}
+		const f = pick.face;
+		return f.pixHeight <= ttCell + 1 ? f.pixHeight - f.internalLeading : 0;
+	}
+
 	/** Realises `spec`, or null when no supplied font can stand in for it. */
-	realize(spec: LogFontSpec, fontFamilyMap?: Record<string, string>): RealizedFont | null {
+	realize(spec: LogFontSpec, fontFamilyMap?: Record<string, string>): GdiRealizedFont | null {
 		const key = JSON.stringify(spec) + (fontFamilyMap ? JSON.stringify(fontFamilyMap) : '');
 		if (this.realized.has(key)) {
 			return this.realized.get(key)!;
 		}
+		const k = spec.face.toLowerCase().trim();
+		if (!this.families.has(k)) {
+			const rasterName = this.rasterFamilies.has(k) ? k : RASTER_SUBSTITUTES[k];
+			const raster = rasterName ? this.rasterFamilies.get(rasterName) : undefined;
+			if (raster) {
+				const r = this.realizeRaster(raster, spec);
+				this.realized.set(key, r);
+				return r;
+			}
+		}
 		const faces = this.familyFaces(spec.face, spec.pitchAndFamily, fontFamilyMap);
-		let result: RealizedFont | null = null;
+		let result: GdiRealizedFont | null = null;
 		if (faces && faces.length > 0) {
 			const weight = spec.weight || 400;
 			let best = faces[0];
@@ -497,28 +803,39 @@ export class GdiFontCollection {
 			}
 			const synthItalic = spec.italic && !isItalicFace(best);
 			const synthBold = weight >= 600 && best.weightClass < 600;
-			const ppem = resolvePpem(best, spec.height);
-			// lfWidth equal to the natural tmAveCharWidth is no stretch at all
-			// (measured: Times New Roman 11 px with lfWidth 4).
-			const naturalAvg = Math.round((best.xAvgCharWidth * ppem) / best.unitsPerEm);
-			const ppemX =
-				spec.width > 0 && best.xAvgCharWidth > 0 && spec.width !== naturalAvg
-					? Math.max(1, Math.round((spec.width * best.unitsPerEm) / best.xAvgCharWidth))
-					: ppem;
-			if (ppem > 0 && ppem <= 2048) {
-				result = new RealizedFont(
+			const make = (ppem: number, cellHeight: number): RealizedFont | null => {
+				if (!(ppem > 0 && ppem <= 2048)) {
+					return null;
+				}
+				// lfWidth equal to the natural tmAveCharWidth is no stretch at all
+				// (measured: Times New Roman 11 px with lfWidth 4).
+				const naturalAvg = Math.round((best.xAvgCharWidth * ppem) / best.unitsPerEm);
+				const ppemX =
+					spec.width > 0 && best.xAvgCharWidth > 0 && spec.width !== naturalAvg
+						? Math.max(1, Math.round((spec.width * best.unitsPerEm) / best.xAvgCharWidth))
+						: ppem;
+				const tt = new RealizedFont(
 					best,
 					ppem,
 					ppemX,
 					this.modeFor(best, spec.quality, ppem),
 					synthBold,
 					synthItalic,
-					spec.height > 0 ? Math.round(spec.height) : 0,
+					cellHeight,
 					spec.width,
 					!spec.unhinted,
 				);
-				result.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
+				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
+				return tt;
+			};
+			let tt = make(resolvePpem(best, spec.height), spec.height > 0 ? Math.round(spec.height) : 0);
+			if (tt && k === 'ms shell dlg') {
+				const snapped = this.shellDlgPpem(spec, tt.ascent + tt.descent);
+				if (snapped && snapped !== tt.ppem) {
+					tt = make(snapped, 0);
+				}
 			}
+			result = tt;
 		}
 		this.realized.set(key, result);
 		return result;

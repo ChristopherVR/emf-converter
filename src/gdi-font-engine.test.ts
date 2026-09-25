@@ -12,12 +12,14 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 import { fixturePath, windowsFonts } from './__fixtures__/gdi-parity-harness';
+import { buildTestFnt, buildTestFon } from './__fixtures__/test-fnt';
 import { buildTestFont } from './__fixtures__/test-font';
 import { ensureNodeCanvasModule } from './emf-canvas-helpers';
-import { GdiFontCollection, resolvePpem, type LogFontSpec } from './gdi-font-engine';
+import { GdiFontCollection, RasterRealizedFont, resolvePpem, type LogFontSpec } from './gdi-font-engine';
 import { gdiTextCoverage, paintGdiTextRun, type GdiTextRun } from './gdi-text-render';
 import { SvgContext } from './svg-context';
 import { svgTreeToString } from './svg-tree';
+import { parseRasterFontFile } from './fnt-font';
 import { convertMetafileToSvg } from './index';
 import { parseFontFile } from './ttf-font';
 import { HintedSize, mulDiv, mulFix } from './ttf-hinting';
@@ -176,6 +178,109 @@ describe('gdi-font-engine', () => {
 	it('returns null for a face it cannot stand in for, unless mapped', () => {
 		expect(fonts.realize(spec({ face: 'No Such Face' }))).toBeNull();
 		expect(fonts.realize(spec({ face: 'No Such Face' }), { 'no such face': 'Test Sans' })).not.toBeNull();
+	});
+});
+
+describe('raster (.fon) fonts', () => {
+	const small = { pixHeight: 13, ascent: 11, internalLeading: 2, width: 5 };
+	const large = { pixHeight: 16, ascent: 13, internalLeading: 3, width: 7 };
+	const FON = buildTestFon([buildTestFnt(small), buildTestFnt(large)]);
+	const fonts = new GdiFontCollection([FON], 'gray');
+	const raster = (o: Partial<LogFontSpec> = {}): RasterRealizedFont => {
+		const r = fonts.realize(spec({ face: 'Test Raster', ...o }));
+		expect(r).toBeInstanceOf(RasterRealizedFont);
+		return r as RasterRealizedFont;
+	};
+
+	it('parses the NE container and the FNT bitmaps (column-major, MSB left)', () => {
+		const faces = parseRasterFontFile(FON);
+		expect(faces.map((x) => [x.family, x.pixHeight, x.ascent, x.internalLeading])).toEqual([
+			['Test Raster', 13, 11, 2],
+			['Test Raster', 16, 13, 3],
+		]);
+		const a = faces[0].bitmap(0x41)!;
+		expect(faces[0].width(0x41)).toBe(5);
+		expect(a[2 * 5 + 0]).toBe(1); // em top, left column
+		expect(a[2 * 5 + 4]).toBe(0); // the gap column
+		expect(a[1 * 5 + 0]).toBe(0); // internal leading
+		expect(parseRasterFontFile(buildTestFnt(small))).toHaveLength(1);
+		expect(parseRasterFontFile(new Uint8Array(200))).toEqual([]);
+	});
+
+	it('picks a size (or a whole-number stretch) by the mapper\'s height penalties', () => {
+		expect([raster({ height: -11 }).face.pixHeight, raster({ height: -11 }).scale]).toEqual([13, 1]);
+		// Character height 12: 11 is one short (150) but 13 one over (640).
+		expect(raster({ height: -12 }).face.pixHeight).toBe(13);
+		expect(raster({ height: -13 }).face.pixHeight).toBe(16);
+		// Cell heights compare the whole cell.
+		expect(raster({ height: 16 }).face.pixHeight).toBe(16);
+		// 26 = 2 x 13 exactly beats 16 ten pixels short.
+		const big = raster({ height: -26 });
+		expect([big.face.pixHeight, big.scale, big.ascent, big.descent]).toEqual([16, 2, 26, 6]);
+		expect(big.advance(0x41)).toBe(14);
+		expect(big.glyph(0x41).bitmap!.height).toBe(32);
+	});
+
+	it('simulates bold, italic and lfWidth on the bitmaps', () => {
+		const plain = raster({ height: -11 });
+		const bold = raster({ height: -11, weight: 700 });
+		expect(bold.syntheticBold).toBe(true);
+		expect(bold.advance(0x41)).toBe(plain.advance(0x41) + 1);
+		const italic = raster({ height: -11, italic: true });
+		const g = italic.glyph(0x41).bitmap!;
+		// A 13-row cell leans 6 pixels; the advance is unchanged.
+		expect(g.width).toBe(5 + 6);
+		expect(italic.advance(0x41)).toBe(5);
+		const firstInk = (row: number): number => Array.from(g.data.subarray(row * g.width, (row + 1) * g.width)).indexOf(1);
+		expect(firstInk(2)).toBe(5);
+		expect(firstInk(10)).toBe(1);
+		const wide = raster({ height: -11, width: 10 });
+		expect([wide.scale, wide.scaleX, wide.advance(0x41)]).toEqual([1, 2, 10]);
+	});
+
+	it('serves the stock raster substitutes and falls back to the default character', () => {
+		const named = new GdiFontCollection([buildTestFon([buildTestFnt({ ...small, family: 'MS Sans Serif' })])], 'gray');
+		const helv = named.realize(spec({ face: 'Helv', height: -11 }));
+		expect(helv).toBeInstanceOf(RasterRealizedFont);
+		expect(helv!.glyphIndex(0x2022)).toBe(0x95); // bullet, Windows-1252
+		expect(helv!.glyphIndex(0x4e00)).toBe(0x3f); // not in the code page: the default '?'
+		expect(named.realize(spec({ face: 'Helv', height: -11, quality: 5 }))!.mode).toBe('mono');
+	});
+
+	it('paints raster glyphs 1:1', async () => {
+		ensureNodeCanvasModule();
+		const napi = await import('@napi-rs/canvas');
+		const canvas = napi.createCanvas(40, 20);
+		const ctx = canvas.getContext('2d') as unknown as CanvasContext;
+		ctx.fillStyle = '#fff';
+		ctx.fillRect(0, 0, 40, 20);
+		const font = raster({ height: -11 });
+		const run: GdiTextRun = {
+			codes: [0x41, 0x41],
+			glyphIndices: false,
+			x: 2,
+			y: 15,
+			dx: null,
+			dy: null,
+			textAlign: 0x18,
+			textColor: '#000000',
+			bkColor: '#ffffff',
+			bkMode: 1,
+			options: 0,
+			rect: null,
+			matrix: null,
+			underline: false,
+			strikeOut: false,
+		};
+		paintGdiTextRun(ctx, font, run);
+		const d = ctx.getImageData(0, 0, 40, 20).data;
+		const ink = (x: number, y: number): boolean => d[(y * 40 + x) * 4] < 128;
+		// Baseline 15, ascent 11: rows 6..14 inked (the em), columns 2..5 and 7..10.
+		expect(ink(2, 6)).toBe(true);
+		expect(ink(2, 5)).toBe(false);
+		expect(ink(6, 10)).toBe(false);
+		expect(ink(7, 14)).toBe(true);
+		expect(ink(7, 15)).toBe(false);
 	});
 });
 

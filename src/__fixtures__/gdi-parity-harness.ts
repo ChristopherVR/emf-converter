@@ -191,6 +191,8 @@ export function windowsFonts(): Buffer[] | null {
 		'cour.ttf', 'courbd.ttf', 'couri.ttf', 'courbi.ttf',
 		'segoeui.ttf', 'segoeuib.ttf', 'segoeuii.ttf', 'segoeuiz.ttf',
 		'tahoma.ttf', 'tahomabd.ttf', 'micross.ttf',
+		// Raster faces: MS Sans Serif, MS Serif, Courier, Small Fonts, System, Terminal, Fixedsys.
+		'sserife.fon', 'sseriff.fon', 'serife.fon', 'seriff.fon', 'coure.fon', 'courf.fon', 'smalle.fon', 'smallf.fon', 'vgasys.fon', 'vgaoem.fon', 'dosapp.fon', 'vgafix.fon',
 	];
 	const paths = files.map((f) => join(dir, f));
 	systemFontsCache = paths.every((p) => existsSync(p)) ? paths.map((p) => readFileSync(p)) : null;

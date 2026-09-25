@@ -18,7 +18,7 @@
 
 import { canvasDrawImage, canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mapFontFamily } from './emf-canvas-helpers';
-import type { GdiFontCollection, LogFontSpec, RealizedFont } from './gdi-font-engine';
+import type { GdiFontCollection, GdiRealizedFont, LogFontSpec } from './gdi-font-engine';
 import { isSvgContext, type SvgContext } from './svg-context';
 import type { CanvasContext, DrawState, TransformMatrix } from './emf-types';
 
@@ -113,7 +113,7 @@ function blendGray(s: number, d: number, k: number): number {
 interface PlacedGlyph {
 	x: number;
 	y: number;
-	bitmap: NonNullable<ReturnType<RealizedFont['glyph']>['bitmap']>;
+	bitmap: NonNullable<ReturnType<GdiRealizedFont['glyph']>['bitmap']>;
 }
 
 /** Fills a device rectangle (clipped to `clip` when given) with `color`. */
@@ -177,7 +177,7 @@ interface RunLayout {
  * TA_* alignment along and across the baseline, and every glyph bitmap at
  * an integer device origin.
  */
-function layoutGdiRun(font: RealizedFont, run: GdiTextRun): RunLayout {
+function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 	const n = run.codes.length;
 	const glyphs = run.codes.map((c) => (run.glyphIndices ? c : font.glyphIndex(c)));
 	// Advances along the baseline (device, may be fractional under scaling).
@@ -254,7 +254,7 @@ function layoutGdiRun(font: RealizedFont, run: GdiTextRun): RunLayout {
  */
 export function paintGdiTextRun(
 	ctx: CanvasContext,
-	font: RealizedFont,
+	font: GdiRealizedFont,
 	run: GdiTextRun,
 	fontFamilyMap?: Record<string, string>,
 ): GdiTextAdvance {
@@ -353,7 +353,7 @@ export function paintGdiTextRun(
  */
 function emitSvgRun(
 	ctx: SvgContext,
-	font: RealizedFont,
+	font: GdiRealizedFont,
 	run: GdiTextRun,
 	glyphs: number[],
 	origins: Array<{ x: number; y: number; along: number; down: number }>,
@@ -719,7 +719,7 @@ export interface GdiTextCoverage {
  * something other than a solid colour (e.g. an EMF+ gradient or texture
  * brush sampled per pixel through the mask). Returns null for an empty run.
  */
-export function gdiTextCoverage(font: RealizedFont, run: GdiTextRun): GdiTextCoverage | null {
+export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun): GdiTextCoverage | null {
 	const { placed } = layoutGdiRun(font, run);
 	if (placed.length === 0) {
 		return null;

@@ -1284,6 +1284,10 @@ public static class GdiFixtures
 		TxPlusCase("textx-plus-antialias", System.Drawing.Text.TextRenderingHint.AntiAlias);
 		TxPlusCase("textx-plus-cleartype", System.Drawing.Text.TextRenderingHint.ClearTypeGridFit);
 		TxPlusCase("textx-plus-systemdefault", System.Drawing.Text.TextRenderingHint.SystemDefault);
+		TxRasterCases();
+	}
+
+	// -----------------------------------------------------------------------
 	// GDI rasteriser cases (category "gdi-raster"): what GDI itself paints,
 	// pixel for pixel, for cosmetic lines at every angle (integer and 28.4
 	// fractional end points), ellipses of many sizes (odd/even, tiny, null
@@ -1841,6 +1845,11 @@ public static class GdiFixtures
 					else if (kind == 3) { MoveToEx(hdc, x, y, IntPtr.Zero); LineTo(hdc, x + w, y + h); }
 					else { RoundRect(hdc, x, y, x + w, y + h, 9, 9); }
 				});
+			}
+		});
+	}
+
+	// -----------------------------------------------------------------------
 	// gdiplus-extra: GDI+ linear-gradient interpolation table (preset
 	// colours, blend factors, sigma/triangular shapes, gamma correction,
 	// translucency, PixelOffsetMode), see emf-plus-linear-ramp.ts.
@@ -2363,6 +2372,24 @@ public static class GdiFixtures
 		RasterWidePenCases();
 		RasterBlitCases();
 		RasterBenchCase();
+	}
+
+	// Raster (.fon) faces: GDI draws these from their bitmaps, picking a size
+	// (and a whole-number stretch) by its mapper's height penalties.
+	static readonly string[] TxRasterFaces = { "MS Sans Serif", "MS Serif", "Courier", "Small Fonts", "System", "Terminal", "Fixedsys", "Helv", "Tms Rmn", "MS Shell Dlg" };
+	static readonly int[] TxRasterSizes = { -6, -8, -10, -11, -13, -15, -16, -18, -20, -22, -24, -27, -30, -33, -36, -40, -44, -52 };
+	static readonly int[] TxRasterCellSizes = { 8, 12, 13, 15, 16, 18, 20, 22, 24, 25, 29, 33, 39, 45, 50 };
+
+	static void TxRasterCases()
+	{
+		foreach (string f in TxRasterFaces)
+		{
+			TxSizeSheet("textx-fon-" + TxKey(f), f, 3, TxRasterSizes, false);
+			TxSizeSheet("textx-fon-" + TxKey(f) + "-cell", f, 3, TxRasterCellSizes, true);
+		}
+		TxStyleSheet("textx-fon-mssansserif-styles", "MS Sans Serif", 0, false);
+		TxStyleSheet("textx-fon-courier-styles", "Courier", 0, true);
+		TxSizeSheet("textx-fon-mssansserif-aa", "MS Sans Serif", 4, TxRasterSizes, false);
 	}
 
 	public static void Run(string dir, string which)

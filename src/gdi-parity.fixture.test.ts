@@ -421,83 +421,106 @@ const fontCase = (name: string, ext: 'emf' | 'wmf', maxMismatch: number): Parity
 });
 
 const FONT_ENGINE_CASES: ParityCase[] = [
-	fontCase('rotate-text-25deg', 'emf', 0.0182), // measured 1.460%
+	fontCase('rotate-text-25deg', 'emf', 0.0183), // measured 1.460%
 	fontCase('text-arial-hm13', 'wmf', 0.0006), // measured 0.029%
 	fontCase('text-arial-hm20', 'wmf', 0.0004), // measured 0.007%
 	fontCase('text-arial-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('text-couriernew-hm13', 'wmf', 0), // measured 0.000%
 	fontCase('text-couriernew-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-couriernew-hp18', 'wmf', 0), // measured 0.000%
-	fontCase('text-helv-hm13', 'wmf', 0.029), // measured 2.307%
-	fontCase('text-helv-hm20', 'wmf', 0.12), // measured 9.571%
-	fontCase('text-helv-hp18', 'wmf', 0.0635), // measured 5.078%
+	fontCase('text-helv-hm13', 'wmf', 0), // measured 0.000%
+	fontCase('text-helv-hm20', 'wmf', 0), // measured 0.000%
+	fontCase('text-helv-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('text-msshelldlg-hm13', 'wmf', 0.0009), // measured 0.057%
 	fontCase('text-msshelldlg-hm20', 'wmf', 0), // measured 0.000%
-	fontCase('text-msshelldlg-hp18', 'wmf', 0.051), // measured 4.071%
+	fontCase('text-msshelldlg-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('text-nosuchfacexyz-hm13', 'wmf', 0), // measured 0.000%
 	fontCase('text-nosuchfacexyz-hm20', 'wmf', 0), // measured 0.000%
-	fontCase('text-nosuchfacexyz-hp18', 'wmf', 0.0005), // measured 0.021%
+	fontCase('text-nosuchfacexyz-hp18', 'wmf', 0.0006), // measured 0.021%
 	fontCase('text-timesnewroman-hm13', 'wmf', 0), // measured 0.000%
 	fontCase('text-timesnewroman-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-timesnewroman-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
-	fontCase('textx-arial-aa', 'emf', 0.0015), // measured 0.122%
+	fontCase('textx-arial-aa', 'emf', 0.0016), // measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-arial-cleartype', 'emf', 0.1009), // measured 8.074%
-	fontCase('textx-arial-ctnatural', 'emf', 0.21), // measured 16.501%
+	fontCase('textx-arial-cleartype', 'emf', 0.0646), // measured 5.163%
+	fontCase('textx-arial-ctnatural', 'emf', 0.1856), // measured 14.847%
 	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
-	fontCase('textx-arial-q0-default', 'emf', 0.1009), // measured 8.074%
-	fontCase('textx-arial-q1-draft', 'emf', 0.1009), // measured 8.074%
-	fontCase('textx-arial-q2-proof', 'emf', 0.1009), // measured 8.074%
+	fontCase('textx-arial-q0-default', 'emf', 0.0646), // measured 5.163%
+	fontCase('textx-arial-q1-draft', 'emf', 0.0646), // measured 5.163%
+	fontCase('textx-arial-q2-proof', 'emf', 0.0646), // measured 5.163%
 	fontCase('textx-arial-styles-aa', 'emf', 0.0009), // measured 0.059%
 	fontCase('textx-arial-styles-mono', 'emf', 0.0006), // measured 0.027%
 	fontCase('textx-color-aa', 'emf', 0.017), // measured 1.352%
-	fontCase('textx-color-cleartype', 'emf', 0.036), // measured 2.850%
-	fontCase('textx-color-mono', 'emf', 0.0003), // measured 0.005%
+	fontCase('textx-color-cleartype', 'emf', 0.0234), // measured 1.868%
+	fontCase('textx-color-mono', 'emf', 0.0004), // measured 0.005%
 	fontCase('textx-couriernew-aa', 'emf', 0.0004), // measured 0.010%
-	fontCase('textx-couriernew-cell-mono', 'emf', 0.0004), // measured 0.011%
+	fontCase('textx-couriernew-cell-mono', 'emf', 0.0005), // measured 0.011%
 	fontCase('textx-couriernew-mono', 'emf', 0.0004), // measured 0.010%
-	fontCase('textx-couriernew-styles-mono', 'emf', 0.0004), // measured 0.012%
+	fontCase('textx-couriernew-styles-mono', 'emf', 0.0005), // measured 0.012%
 	fontCase('textx-escapement-aa', 'emf', 0.0034), // measured 0.270%
 	fontCase('textx-escapement-mono', 'emf', 0.0034), // measured 0.270%
-	fontCase('textx-eto-aa', 'emf', 0.0062), // measured 0.499%
-	fontCase('textx-eto-mono', 'emf', 0.0054), // measured 0.435%
-	fontCase('textx-opaque-aa', 'emf', 0.0003), // measured 0.001%
-	fontCase('textx-opaque-mono', 'emf', 0.0003), // measured 0.004%
+	fontCase('textx-eto-aa', 'emf', 0.0063), // measured 0.499%
+	fontCase('textx-eto-mono', 'emf', 0.0055), // measured 0.435%
+	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
+	fontCase('textx-fon-courier-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-fon-courier-styles', 'wmf', 0.0044), // measured 0.350%
+	fontCase('textx-fon-fixedsys', 'emf', 0.0208), // measured 1.664%
+	fontCase('textx-fon-fixedsys-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-fon-helv', 'emf', 0), // measured 0.000%
+	fontCase('textx-fon-helv-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-fon-mssansserif', 'emf', 0), // measured 0.000%
+	fontCase('textx-fon-mssansserif-aa', 'emf', 0), // measured 0.000%
+	fontCase('textx-fon-mssansserif-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-fon-mssansserif-styles', 'emf', 0.0005), // measured 0.018%
+	fontCase('textx-fon-msserif', 'emf', 0), // measured 0.000%
+	fontCase('textx-fon-msserif-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-fon-msshelldlg', 'emf', 0.0006), // measured 0.021%
+	fontCase('textx-fon-msshelldlg-cell', 'wmf', 0.0005), // measured 0.013%
+	fontCase('textx-fon-smallfonts', 'emf', 0.0046), // measured 0.368%
+	fontCase('textx-fon-smallfonts-cell', 'wmf', 0.0048), // measured 0.382%
+	fontCase('textx-fon-system', 'emf', 0), // measured 0.000%
+	fontCase('textx-fon-system-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-fon-terminal', 'emf', 0.0208), // measured 1.661%
+	fontCase('textx-fon-terminal-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-fon-tmsrmn', 'emf', 0), // measured 0.000%
+	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
+	fontCase('textx-opaque-aa', 'emf', 0.0004), // measured 0.001%
+	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
 	fontCase('textx-plus-antialias', 'emf', 0.204), // measured 16.320%
-	fontCase('textx-plus-antialiasgridfit', 'emf', 0.068), // measured 5.405%
-	fontCase('textx-plus-cleartype', 'emf', 0.1827), // measured 14.615%
-	fontCase('textx-plus-singlebit', 'emf', 0.12), // measured 9.420%
-	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0009), // measured 0.065%
-	fontCase('textx-plus-systemdefault', 'emf', 0.0009), // measured 0.065%
-	fontCase('textx-segoeui-aa', 'emf', 0.0006), // measured 0.031%
+	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0674), // measured 5.385%
+	fontCase('textx-plus-cleartype', 'emf', 0.1818), // measured 14.540%
+	fontCase('textx-plus-singlebit', 'emf', 0.1178), // measured 9.420%
+	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
+	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
+	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
 	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
-	fontCase('textx-segoeui-cleartype', 'emf', 0.073), // measured 5.832%
-	fontCase('textx-segoeui-mono', 'emf', 0.0004), // measured 0.015%
+	fontCase('textx-segoeui-cleartype', 'emf', 0.0506), // measured 4.041%
+	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
-	fontCase('textx-tahoma-aa', 'emf', 0.0012), // measured 0.092%
+	fontCase('textx-tahoma-aa', 'emf', 0.0013), // measured 0.092%
 	fontCase('textx-tahoma-cell-mono', 'emf', 0.0005), // measured 0.019%
 	fontCase('textx-tahoma-mono', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-tahoma-styles-mono', 'emf', 0.0006), // measured 0.028%
-	fontCase('textx-timesnewroman-aa', 'emf', 0.0012), // measured 0.092%
+	fontCase('textx-timesnewroman-aa', 'emf', 0.0013), // measured 0.092%
 	fontCase('textx-timesnewroman-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-timesnewroman-mono', 'emf', 0.0004), // measured 0.013%
-	fontCase('textx-timesnewroman-styles-mono', 'emf', 0.0004), // measured 0.012%
+	fontCase('textx-timesnewroman-mono', 'emf', 0.0005), // measured 0.013%
+	fontCase('textx-timesnewroman-styles-mono', 'emf', 0.0005), // measured 0.012%
 	fontCase('textx-wmf-align-mono', 'wmf', 0), // measured 0.000%
-	fontCase('textx-wmf-arial-aa', 'wmf', 0.0015), // measured 0.122%
+	fontCase('textx-wmf-arial-aa', 'wmf', 0.0016), // measured 0.122%
 	fontCase('textx-wmf-arial-mono', 'wmf', 0.0005), // measured 0.017%
 	fontCase('textx-wmf-arial-styles-mono', 'wmf', 0.0006), // measured 0.027%
 	fontCase('textx-wmf-couriernew-mono', 'wmf', 0.0004), // measured 0.010%
-	fontCase('textx-wmf-escapement-mono', 'wmf', 0.0038), // measured 0.305%
-	fontCase('textx-wmf-eto-mono', 'wmf', 0.0003), // measured 0.004%
-	fontCase('textx-wmf-opaque-mono', 'wmf', 0.0003), // measured 0.004%
-	fontCase('textx-wmf-segoeui-mono', 'wmf', 0.0004), // measured 0.015%
+	fontCase('textx-wmf-escapement-mono', 'wmf', 0.0039), // measured 0.305%
+	fontCase('textx-wmf-eto-mono', 'wmf', 0.0004), // measured 0.004%
+	fontCase('textx-wmf-opaque-mono', 'wmf', 0.0004), // measured 0.004%
+	fontCase('textx-wmf-segoeui-mono', 'wmf', 0.0005), // measured 0.015%
 	fontCase('textx-wmf-tahoma-mono', 'wmf', 0.0005), // measured 0.020%
 	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.0006), // measured 0.028%
 	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0.0005), // measured 0.020%
-	fontCase('textx-wmf-timesnewroman-styles-mono', 'wmf', 0.0004), // measured 0.012%
-	fontCase('textx-world-aa', 'emf', 0.0043), // measured 0.346%
-	fontCase('textx-world-mono', 'emf', 0.0035), // measured 0.282%
+	fontCase('textx-wmf-timesnewroman-styles-mono', 'wmf', 0.0005), // measured 0.012%
+	fontCase('textx-world-aa', 'emf', 0.0044), // measured 0.346%
+	fontCase('textx-world-mono', 'emf', 0.0036), // measured 0.282%
 ];
 
 /**
