@@ -61,7 +61,7 @@ export function handleEmfPlusObjectRecord(
 		// Pen
 		// ---------------------------------------------------------------
 		case EMFPLUS_OBJECTTYPE_PEN: {
-			const pen = parseEmfPlusPenObject(view, dataOff, recDataSize);
+			const pen = parseEmfPlusPenObject(view, dataOff, recDataSize, rCtx.textureCache, cacheKey);
 			if (pen) {
 				objectTable.set(objectId, pen);
 			}
@@ -120,6 +120,7 @@ export function handleEmfPlusObjectRecord(
 				kind: 'plus-image',
 				data: parsed.data,
 				type: parsed.type,
+				cacheKey,
 			});
 			rCtx.totalImageObjects++;
 			emfLog(
@@ -132,7 +133,18 @@ export function handleEmfPlusObjectRecord(
 		// ImageAttributes
 		// ---------------------------------------------------------------
 		case EMFPLUS_OBJECTTYPE_IMAGEATTRIBUTES: {
-			objectTable.set(objectId, { kind: 'plus-imageattributes' });
+			// Version, Reserved1, WrapMode, ClampColor, ObjectClamp, Reserved2.
+			if (recDataSize >= 16) {
+				const wrap = view.getUint32(dataOff + 8, true);
+				const names = ['tile', 'tile-flip-x', 'tile-flip-y', 'tile-flip-xy', 'clamp'] as const;
+				objectTable.set(objectId, {
+					kind: 'plus-imageattributes',
+					wrapMode: names[wrap] ?? 'clamp',
+					clampArgb: view.getUint32(dataOff + 12, true),
+				});
+			} else {
+				objectTable.set(objectId, { kind: 'plus-imageattributes' });
+			}
 			break;
 		}
 

@@ -205,7 +205,8 @@ describe('emf-constants', () => {
 		});
 
 		it('has new EMFPLUS object type constants', () => {
-			expect(EMFPLUS_OBJECTTYPE_REGION).toBe(0x08);
+			// MS-EMFPLUS 2.1.1.22 ObjectType: Region 0x04, ImageAttributes 0x08 (as real GDI+ records them).
+			expect(EMFPLUS_OBJECTTYPE_REGION).toBe(0x04);
 			expect(EMFPLUS_OBJECTTYPE_CUSTOMLINECAP).toBe(0x09);
 		});
 

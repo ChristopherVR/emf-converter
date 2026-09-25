@@ -1,5 +1,13 @@
 /**
  * EMF GDI polygon, polyline, and path-operation record handlers.
+ *
+ * Like the shape handlers (`emf-gdi-draw-shapes.ts`), every poly record is
+ * described both as Canvas geometry and as GDI's own device geometry
+ * (`GdiRasterPath`, points in 28.4 fixed point, Beziers flattened by GDI's
+ * own flattener) and handed to `paintGdiShape`, which picks the
+ * antialiased or the exact route. Inside a `BeginPath`/`EndPath` bracket
+ * both are recorded (`rCtx.pathCmds`, `rCtx.rasterPath`) for
+ * `EMR_FILLPATH`/`EMR_STROKEANDFILLPATH`/`EMR_STROKEPATH`.
  */
 
 import {
@@ -27,19 +35,132 @@ import {
 import type { ClipShape } from './emf-clip-region';
 import { gdiCombineClip, RGN_MODE_OPS } from './emf-gdi-clip-records';
 import { gmapPoint } from './emf-gdi-coord';
-import { emfLog } from './emf-logging';
 import { gdiPathRecorder, replayGdiPathCmds } from './emf-gdi-path-record';
-import { fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
+import { fixPoint } from './emf-gdi-raster-shapes';
+import { paintGdiShape } from './emf-gdi-shape-paint';
 import {
 	handlePolyPolygon32,
 	handlePolyPolyline32,
 	handlePolyPolygon16,
 } from './emf-gdi-polypolygon-helpers';
+import { emfLog } from './emf-logging';
 import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
+import { GdiRasterPath } from './gdi-raster';
 
 // ---------------------------------------------------------------------------
-// 32-bit poly helper
+// Poly records (32- and 16-bit)
 // ---------------------------------------------------------------------------
+
+/**
+ * Handles one Poly* record whose `count` logical points `readPt(i)`
+ * returns. `*To` records start from (and move) the current position.
+ */
+function handlePoly(
+	rCtx: EmfGdiReplayCtx,
+	recType: number,
+	count: number,
+	readPt: (i: number) => [number, number],
+	kinds: { polygon: boolean; bezier: boolean; to: boolean },
+): void {
+	const { state, inPath } = rCtx;
+	const { polygon: isPolygon, bezier: isBezier, to: isTo } = kinds;
+	const pt = (i: number) => {
+		const [x, y] = readPt(i);
+		return gmapPoint(rCtx, x, y);
+	};
+
+	const build = (target: CanvasContext) => {
+		if (!isTo) {
+			const p0 = pt(0);
+			target.moveTo(p0.x, p0.y);
+		}
+		let i = isTo ? 0 : 1;
+		if (isBezier) {
+			while (i + 2 < count) {
+				const p1 = pt(i);
+				const p2 = pt(i + 1);
+				const p3 = pt(i + 2);
+				target.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+				i += 3;
+			}
+		} else {
+			for (; i < count; i++) {
+				const p = pt(i);
+				target.lineTo(p.x, p.y);
+			}
+		}
+		if (isPolygon) {
+			target.closePath();
+		}
+	};
+
+	const fx = (i: number) => {
+		const [x, y] = readPt(i);
+		return fixPoint(rCtx, x, y);
+	};
+	/** Appends the record's GDI geometry to `path`; `from` is the current position for a `*To` record. */
+	const buildRaster = (path: GdiRasterPath, from: [number, number] | null) => {
+		let i = 0;
+		if (isTo) {
+			if (from) {
+				path.moveTo(from[0], from[1]);
+			}
+		} else {
+			const p0 = fx(0);
+			path.moveTo(p0[0], p0[1]);
+			i = 1;
+		}
+		if (isBezier) {
+			for (; i + 2 < count; i += 3) {
+				const a = fx(i);
+				const b = fx(i + 1);
+				const c = fx(i + 2);
+				path.bezierTo(a[0], a[1], b[0], b[1], c[0], c[1]);
+			}
+		} else {
+			for (; i < count; i++) {
+				const p = fx(i);
+				path.lineTo(p[0], p[1]);
+			}
+		}
+		if (isPolygon) {
+			path.closeFigure();
+		}
+	};
+
+	if (inPath) {
+		build(gdiPathRecorder(rCtx));
+		rCtx.rasterPath ??= new GdiRasterPath();
+		buildRaster(rCtx.rasterPath, isTo && rCtx.rasterPath.figures.length === 0 ? fixPoint(rCtx, state.curX, state.curY) : null);
+	} else {
+		const from = isTo ? fixPoint(rCtx, state.curX, state.curY) : null;
+		const start = isTo ? gmapPoint(rCtx, state.curX, state.curY) : null;
+		rCtx.lineStyle = { pos: 0 };
+		paintGdiShape(rCtx, {
+			build: (target: CanvasContext) => {
+				target.beginPath();
+				if (start) {
+					target.moveTo(start.x, start.y);
+				}
+				build(target);
+			},
+			raster: () => {
+				const path = new GdiRasterPath();
+				buildRaster(path, from);
+				return path;
+			},
+			fill: isPolygon,
+			stroke: true,
+			fillRule: state.polyFillMode === 2 ? 'nonzero' : 'evenodd',
+		});
+	}
+
+	if (count > 0) {
+		const [x, y] = readPt(count - 1);
+		state.curX = x;
+		state.curY = y;
+	}
+}
 
 function handlePoly32(
 	rCtx: EmfGdiReplayCtx,
@@ -48,73 +169,22 @@ function handlePoly32(
 	dataOff: number,
 	recSize: number,
 ): boolean {
-	const { ctx, view, state, inPath } = rCtx;
+	const { view } = rCtx;
 	if (recSize < 28) {
 		return true;
 	}
-
 	const count = view.getUint32(dataOff + 16, true);
 	const ptOff = dataOff + 20;
 	if (count === 0 || ptOff + count * 8 > offset + recSize) {
 		return true;
 	}
-
-	const isPolygon = recType === EMR_POLYGON;
-	const isBezier = recType === EMR_POLYBEZIER || recType === EMR_POLYBEZIERTO;
-	const isTo = recType === EMR_POLYBEZIERTO || recType === EMR_POLYLINETO;
-	const pt = (i: number) => gmapPoint(rCtx, view.getInt32(ptOff + i * 8, true), view.getInt32(ptOff + i * 8 + 4, true));
-
-	const build = (target: CanvasContext) => {
-		if (!isTo) {
-			const p0 = pt(0);
-			target.moveTo(p0.x, p0.y);
-		}
-		let i = isTo ? 0 : 1;
-		if (isBezier) {
-			while (i + 2 < count) {
-				const p1 = pt(i);
-				const p2 = pt(i + 1);
-				const p3 = pt(i + 2);
-				target.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
-				i += 3;
-			}
-		} else {
-			for (; i < count; i++) {
-				const p = pt(i);
-				target.lineTo(p.x, p.y);
-			}
-		}
-		if (isPolygon) {
-			target.closePath();
-		}
-	};
-
-	if (inPath) {
-		build(gdiPathRecorder(rCtx));
-	} else {
-		ctx.beginPath();
-		build(ctx);
-		const buildWithPath = (target: CanvasContext) => {
-			target.beginPath();
-			build(target);
-		};
-		if (isPolygon) {
-			fillShapeExactOrFast(rCtx, buildWithPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
-		}
-		strokeShapeExactOrFast(rCtx, buildWithPath);
-	}
-
-	if (count > 0) {
-		const last = count - 1;
-		state.curX = view.getInt32(ptOff + last * 8, true);
-		state.curY = view.getInt32(ptOff + last * 8 + 4, true);
-	}
+	handlePoly(rCtx, recType, count, (i) => [view.getInt32(ptOff + i * 8, true), view.getInt32(ptOff + i * 8 + 4, true)], {
+		polygon: recType === EMR_POLYGON,
+		bezier: recType === EMR_POLYBEZIER || recType === EMR_POLYBEZIERTO,
+		to: recType === EMR_POLYBEZIERTO || recType === EMR_POLYLINETO,
+	});
 	return true;
 }
-
-// ---------------------------------------------------------------------------
-// 16-bit poly helper
-// ---------------------------------------------------------------------------
 
 function handlePoly16(
 	rCtx: EmfGdiReplayCtx,
@@ -123,73 +193,46 @@ function handlePoly16(
 	dataOff: number,
 	recSize: number,
 ): boolean {
-	const { ctx, view, state, inPath } = rCtx;
+	const { view } = rCtx;
 	if (recSize < 28) {
 		return true;
 	}
-
 	const count = view.getUint32(dataOff + 16, true);
 	const ptOff = dataOff + 20;
 	if (count === 0 || ptOff + count * 4 > offset + recSize) {
 		return true;
 	}
-
-	const isPolygon = recType === EMR_POLYGON16;
-	const isBezier = recType === EMR_POLYBEZIER16 || recType === EMR_POLYBEZIERTO16;
-	const isTo = recType === EMR_POLYBEZIERTO16 || recType === EMR_POLYLINETO16;
-	const pt = (i: number) => gmapPoint(rCtx, view.getInt16(ptOff + i * 4, true), view.getInt16(ptOff + i * 4 + 2, true));
-
-	const build = (target: CanvasContext) => {
-		if (!isTo) {
-			const p0 = pt(0);
-			target.moveTo(p0.x, p0.y);
-		}
-		let i = isTo ? 0 : 1;
-		if (isBezier) {
-			while (i + 2 < count) {
-				const p1 = pt(i);
-				const p2 = pt(i + 1);
-				const p3 = pt(i + 2);
-				target.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
-				i += 3;
-			}
-		} else {
-			for (; i < count; i++) {
-				const p = pt(i);
-				target.lineTo(p.x, p.y);
-			}
-		}
-		if (isPolygon) {
-			target.closePath();
-		}
-	};
-
-	if (inPath) {
-		build(gdiPathRecorder(rCtx));
-	} else {
-		ctx.beginPath();
-		build(ctx);
-		const buildWithPath = (target: CanvasContext) => {
-			target.beginPath();
-			build(target);
-		};
-		if (isPolygon) {
-			fillShapeExactOrFast(rCtx, buildWithPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
-		}
-		strokeShapeExactOrFast(rCtx, buildWithPath);
-	}
-
-	if (count > 0) {
-		const last = count - 1;
-		state.curX = view.getInt16(ptOff + last * 4, true);
-		state.curY = view.getInt16(ptOff + last * 4 + 2, true);
-	}
+	handlePoly(rCtx, recType, count, (i) => [view.getInt16(ptOff + i * 4, true), view.getInt16(ptOff + i * 4 + 2, true)], {
+		polygon: recType === EMR_POLYGON16,
+		bezier: recType === EMR_POLYBEZIER16 || recType === EMR_POLYBEZIERTO16,
+		to: recType === EMR_POLYBEZIERTO16 || recType === EMR_POLYLINETO16,
+	});
 	return true;
 }
 
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
+
+/** Fills and/or strokes the current bracket's path (`EMR_FILLPATH` and friends). */
+function paintBracketPath(rCtx: EmfGdiReplayCtx, fill: boolean, stroke: boolean): void {
+	const { state } = rCtx;
+	// `build` replays the commands recorded during the preceding
+	// BeginPath/EndPath bracket (`rCtx.pathCmds`); the exact route uses the
+	// bracket's GDI geometry (`rCtx.rasterPath`).
+	const buildPath = (target: CanvasContext) => {
+		target.beginPath();
+		replayGdiPathCmds(target, rCtx.pathCmds);
+	};
+	const raster = rCtx.rasterPath ?? new GdiRasterPath();
+	paintGdiShape(rCtx, {
+		build: buildPath,
+		raster: () => raster,
+		fill,
+		stroke,
+		fillRule: state.polyFillMode === 2 ? 'nonzero' : 'evenodd',
+	});
+}
 
 export function handleEmfGdiPolyPathRecord(
 	rCtx: EmfGdiReplayCtx,
@@ -238,6 +281,7 @@ export function handleEmfGdiPolyPathRecord(
 		case EMR_BEGINPATH:
 			rCtx.inPath = true;
 			rCtx.pathCmds = [];
+			rCtx.rasterPath = new GdiRasterPath();
 			ctx.beginPath();
 			return true;
 		case EMR_ENDPATH:
@@ -247,41 +291,18 @@ export function handleEmfGdiPolyPathRecord(
 			ctx.closePath();
 			if (rCtx.inPath) {
 				rCtx.pathCmds.push({ op: 'closePath' });
+				rCtx.rasterPath?.closeFigure();
 			}
 			return true;
-		case EMR_FILLPATH: {
-			// `buildPath` replays the commands recorded during the preceding
-			// BeginPath/EndPath bracket (`rCtx.pathCmds`), so the exact bitwise
-			// ROP2 combine (`emf-rop2-exact.ts`) can run on a scratch canvas the
-			// same way it already does for an immediate (non-bracketed) shape;
-			// the fast/pattern branches inside `fillShapeExactOrFast` act on
-			// `ctx`'s own current path (already built live while the bracket's
-			// MoveTo/LineTo/etc. records ran), so `buildPath` is only actually
-			// invoked for the exact-ROP2 case.
-			const buildPath = (target: CanvasContext) => {
-				target.beginPath();
-				replayGdiPathCmds(target, rCtx.pathCmds);
-			};
-			fillShapeExactOrFast(rCtx, buildPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
+		case EMR_FILLPATH:
+			paintBracketPath(rCtx, true, false);
 			return true;
-		}
-		case EMR_STROKEANDFILLPATH: {
-			const buildPath = (target: CanvasContext) => {
-				target.beginPath();
-				replayGdiPathCmds(target, rCtx.pathCmds);
-			};
-			fillShapeExactOrFast(rCtx, buildPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
-			strokeShapeExactOrFast(rCtx, buildPath);
+		case EMR_STROKEANDFILLPATH:
+			paintBracketPath(rCtx, true, true);
 			return true;
-		}
-		case EMR_STROKEPATH: {
-			const buildPath = (target: CanvasContext) => {
-				target.beginPath();
-				replayGdiPathCmds(target, rCtx.pathCmds);
-			};
-			strokeShapeExactOrFast(rCtx, buildPath);
+		case EMR_STROKEPATH:
+			paintBracketPath(rCtx, false, true);
 			return true;
-		}
 
 		case EMR_SELECTCLIPPATH: {
 			// The bracketed path was recorded command by command into

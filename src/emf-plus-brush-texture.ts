@@ -68,6 +68,86 @@ export function textureTexelAt(
 	return (ty * width + tx) * 4;
 }
 
+/**
+ * Writes the colour a texture brush paints at device pixel (`dx`, `dy`)
+ * into `out` at `o` (straight RGBA; left untouched where it paints
+ * nothing), the way GDI+ samples a texture brush: BILINEARLY, whatever the
+ * Graphics `InterpolationMode` (every mode was measured to produce the
+ * identical fill, `src/__fixtures__/gdi/gpx-texture-*`), point-sampled at
+ * every scale (a reduced texture is not prefiltered). Under
+ * `PixelOffsetMode` None the pixel is the point (`dx`, `dy`) and texel (i,
+ * j) sits at (i, j); under Half/HighQuality (`halfPixel`) both move by half
+ * a pixel. The four neighbouring texels wrap per the `WrapMode` (TileFlipX/
+ * Y mirror alternate tiles texel for texel), and under Clamp a neighbour
+ * outside the bitmap is transparent, so the last half texel along each
+ * edge fades out. Blending is premultiplied. `inv` is the device-to-texture
+ * matrix. Pure apart from writing `out`.
+ */
+export function writeTextureColor(
+	inv: TransformMatrix,
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	wrap: EmfPlusGradientWrapMode,
+	halfPixel: boolean,
+	dx: number,
+	dy: number,
+	out: Uint8ClampedArray,
+	o: number,
+): void {
+	const off = halfPixel ? 0.5 : 0;
+	const px = dx + off;
+	const py = dy + off;
+	const cu = inv[0] * px + inv[2] * py + inv[4] - off;
+	const cv = inv[1] * px + inv[3] * py + inv[5] - off;
+	// The epsilon keeps an exact texel position from flooring down through
+	// float noise in the inverse matrix.
+	const iu = Math.floor(cu + 1e-9);
+	const iv = Math.floor(cv + 1e-9);
+	const fu = Math.max(0, cu - iu);
+	const fv = Math.max(0, cv - iv);
+	const clamp = wrap === 'clamp';
+	const mirrorX = wrap === 'tile-flip-x' || wrap === 'tile-flip-xy';
+	const mirrorY = wrap === 'tile-flip-y' || wrap === 'tile-flip-xy';
+	let r = 0;
+	let g = 0;
+	let b = 0;
+	let a = 0;
+	for (let k = 0; k < 4; k++) {
+		const tu = iu + (k & 1);
+		const tv = iv + (k >> 1);
+		const w = ((k & 1) ? fu : 1 - fu) * ((k >> 1) ? fv : 1 - fv);
+		if (w <= 0) {
+			continue;
+		}
+		let x: number;
+		let y: number;
+		if (clamp) {
+			if (tu < 0 || tv < 0 || tu >= width || tv >= height) {
+				continue;
+			}
+			x = tu;
+			y = tv;
+		} else {
+			x = wrapTexel(tu, width, mirrorX);
+			y = wrapTexel(tv, height, mirrorY);
+		}
+		const s = (y * width + x) * 4;
+		const wa = w * rgba[s + 3];
+		r += wa * rgba[s];
+		g += wa * rgba[s + 1];
+		b += wa * rgba[s + 2];
+		a += wa;
+	}
+	if (a <= 0) {
+		return;
+	}
+	out[o] = r / a;
+	out[o + 1] = g / a;
+	out[o + 2] = b / a;
+	out[o + 3] = a;
+}
+
 const IDENTITY: TransformMatrix = [1, 0, 0, 1, 0, 0];
 
 /** Packs a texel's RGBA bytes into `0xAARRGGBB`-ordered ARGB (matching `buildPattern`'s `colorAt`). */

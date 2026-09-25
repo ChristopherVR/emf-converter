@@ -227,7 +227,7 @@ export function measurePathBox(
 }
 
 /** A scratch canvas, possibly larger than the region currently in use. */
-interface Scratch {
+export interface Scratch {
 	canvas: Drawable;
 	ctx: CanvasContext;
 	w: number;
@@ -249,7 +249,7 @@ let cachedScratch: Scratch | null = null;
  * from the previous call when it is big enough (and small enough to cache),
  * otherwise freshly created. `null` when the backend cannot create one.
  */
-function acquireScratch(w: number, h: number): Scratch | null {
+export function acquireScratch(w: number, h: number): Scratch | null {
 	let scratch = cachedScratch && cachedScratch.w >= w && cachedScratch.h >= h ? cachedScratch : null;
 	if (!scratch) {
 		const cw = Math.max(w, cachedScratch?.w ?? 0);
@@ -279,7 +279,7 @@ function acquireScratch(w: number, h: number): Scratch | null {
  * ACTIVE CLIP applies: `putImageData` ignores clipping, which let an exact
  * ROP2 or pattern fill paint straight through a GDI clip region before.
  */
-function compositeOverlay(ctx: CanvasContext, box: PixelBox, scratch: Scratch, pixels: ImageData): void {
+export function compositeOverlay(ctx: CanvasContext, box: PixelBox, scratch: Scratch, pixels: ImageData): void {
 	canvasPutImageData(scratch.ctx, pixels, 0, 0);
 	const draw = ctx.drawImage as unknown as (
 		img: Scratch['canvas'],

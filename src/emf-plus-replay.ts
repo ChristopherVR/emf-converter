@@ -95,8 +95,8 @@ export function replayEmfPlusRecords(
 		totalDrawImageCalls: 0,
 		clipSaveDepth: s.clipSaveDepth,
 		clipRegion: s.clipRegion,
-		pageUnit: 2,
-		pageScale: 1,
+		pageUnit: s.pageUnit ?? 2,
+		pageScale: s.pageScale ?? 1,
 		...(s.continuation ?? createContinuationAccumulator()),
 		dpiScale,
 		canvasW,
@@ -107,6 +107,11 @@ export function replayEmfPlusRecords(
 		pixelOffsetMode: s.pixelOffsetMode,
 		textRenderingHint: s.textRenderingHint,
 		fonts,
+		baseTransform: s.baseTransform,
+		imageCache: s.imageCache,
+		nestingDepth: s.nestingDepth,
+		gdiAntialias: s.gdiAntialias,
+		antiAlias: s.antiAlias,
 	};
 
 	const end = offset + length;
@@ -219,6 +224,9 @@ export function replayEmfPlusRecords(
 		state.interpolationMode = rCtx.interpolationMode;
 		state.pixelOffsetMode = rCtx.pixelOffsetMode;
 		state.textRenderingHint = rCtx.textRenderingHint;
+		state.pageUnit = rCtx.pageUnit;
+		state.pageScale = rCtx.pageScale;
+		state.antiAlias = rCtx.antiAlias;
 	}
 
 	ctx.setTransform(1, 0, 0, 1, 0, 0);

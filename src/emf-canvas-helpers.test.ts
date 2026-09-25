@@ -86,32 +86,32 @@ describe('applyPen', () => {
 		expect(ctx._lineDash).toStrictEqual([]);
 	});
 
-	it('sets dash pattern for pen style 1', () => {
+	it('sets the GDI dash pattern for pen style 1', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({ penStyle: 1 });
 		applyPen(asCtx(ctx), state);
-		expect(ctx._lineDash).toStrictEqual([8, 4]);
+		expect(ctx._lineDash).toStrictEqual([18, 6]);
 	});
 
 	it('sets dot pattern for pen style 2', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({ penStyle: 2 });
 		applyPen(asCtx(ctx), state);
-		expect(ctx._lineDash).toStrictEqual([2, 2]);
+		expect(ctx._lineDash).toStrictEqual([3, 3]);
 	});
 
 	it('sets dash-dot pattern for pen style 3', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({ penStyle: 3 });
 		applyPen(asCtx(ctx), state);
-		expect(ctx._lineDash).toStrictEqual([8, 4, 2, 4]);
+		expect(ctx._lineDash).toStrictEqual([9, 6, 3, 6]);
 	});
 
 	it('sets dash-dot-dot pattern for pen style 4', () => {
 		const ctx = createMockCtx();
 		const state = createDefaultDrawState({ penStyle: 4 });
 		applyPen(asCtx(ctx), state);
-		expect(ctx._lineDash).toStrictEqual([8, 4, 2, 4, 2, 4]);
+		expect(ctx._lineDash).toStrictEqual([9, 3, 3, 3, 3, 3]);
 	});
 
 	it('enforces minimum line width of 1', () => {

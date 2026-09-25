@@ -116,6 +116,7 @@ export const EMR_CHORD = 46;
 export const EMR_PIE = 47;
 export const EMR_LINETO = 54;
 export const EMR_ARCTO = 55;
+export const EMR_SETARCDIRECTION = 57;
 export const EMR_SETMITERLIMIT = 58;
 export const EMR_BEGINPATH = 59;
 export const EMR_ENDPATH = 60;
@@ -221,11 +222,11 @@ export const EMFPLUS_COMMENT = 0x4003;
 export const EMFPLUS_OBJECTTYPE_BRUSH = 0x01;
 export const EMFPLUS_OBJECTTYPE_PEN = 0x02;
 export const EMFPLUS_OBJECTTYPE_PATH = 0x03;
-export const EMFPLUS_OBJECTTYPE_IMAGEATTRIBUTES = 0x04;
+export const EMFPLUS_OBJECTTYPE_REGION = 0x04;
 export const EMFPLUS_OBJECTTYPE_IMAGE = 0x05;
 export const EMFPLUS_OBJECTTYPE_FONT = 0x06;
 export const EMFPLUS_OBJECTTYPE_STRINGFORMAT = 0x07;
-export const EMFPLUS_OBJECTTYPE_REGION = 0x08;
+export const EMFPLUS_OBJECTTYPE_IMAGEATTRIBUTES = 0x08;
 export const EMFPLUS_OBJECTTYPE_CUSTOMLINECAP = 0x09;
 
 // EMF+ brush types

@@ -158,7 +158,10 @@ describe('emf-plus-draw-handlers', () => {
 				const flags = 1 | 0x4000; // penId=1, compressed
 				handleEmfPlusDrawRecord(rCtx, EMFPLUS_DRAWRECTS, flags, d, 12);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.strokeRect).toHaveBeenCalledOnce();
+				// Rectangles are stroked as one path (so a pen's brush can paint it exactly).
+				expect(ctx.rect).toHaveBeenCalledWith(5, 5, 40, 40);
+				expect(ctx.stroke).toHaveBeenCalledOnce();
+				expect(ctx.strokeStyle).toBe('#ff0000');
 			});
 		});
 

@@ -1284,6 +1284,1085 @@ public static class GdiFixtures
 		TxPlusCase("textx-plus-antialias", System.Drawing.Text.TextRenderingHint.AntiAlias);
 		TxPlusCase("textx-plus-cleartype", System.Drawing.Text.TextRenderingHint.ClearTypeGridFit);
 		TxPlusCase("textx-plus-systemdefault", System.Drawing.Text.TextRenderingHint.SystemDefault);
+	// GDI rasteriser cases (category "gdi-raster"): what GDI itself paints,
+	// pixel for pixel, for cosmetic lines at every angle (integer and 28.4
+	// fractional end points), ellipses of many sizes (odd/even, tiny, null
+	// pen, rotated), rounded rectangles, arcs/chords/pies in both
+	// directions, Beziers, bracketed paths, ALTERNATE vs WINDING polygon
+	// fills, cosmetic and geometric pen styles, wide pens with every cap and
+	// join, ROP2 double-combination, and rotated/mirrored/stretched/skewed
+	// bitmap blits. Every case draws in GM_ADVANCED where a null pen meets a
+	// curved shape: GM_COMPATIBLE shrinks such a shape by a pixel when it
+	// paints directly, which an EMF (always played back in GM_ADVANCED)
+	// cannot record.
+	// -----------------------------------------------------------------------
+
+	[StructLayout(LayoutKind.Sequential)]
+	public struct LOGBRUSH { public uint lbStyle; public int lbColor; public IntPtr lbHatch; }
+
+	[DllImport("gdi32.dll")] static extern bool Arc(IntPtr hdc, int l, int t, int r, int b, int xs, int ys, int xe, int ye);
+	[DllImport("gdi32.dll")] static extern bool ArcTo(IntPtr hdc, int l, int t, int r, int b, int xs, int ys, int xe, int ye);
+	[DllImport("gdi32.dll")] static extern bool Chord(IntPtr hdc, int l, int t, int r, int b, int xs, int ys, int xe, int ye);
+	[DllImport("gdi32.dll")] static extern bool Pie(IntPtr hdc, int l, int t, int r, int b, int xs, int ys, int xe, int ye);
+	[DllImport("gdi32.dll")] static extern bool Polyline(IntPtr hdc, [In] POINT[] pts, int count);
+	[DllImport("gdi32.dll")] static extern bool PolyBezier(IntPtr hdc, [In] POINT[] pts, int count);
+	[DllImport("gdi32.dll")] static extern bool PolyBezierTo(IntPtr hdc, [In] POINT[] pts, int count);
+	[DllImport("gdi32.dll")] static extern bool PolyPolygon(IntPtr hdc, [In] POINT[] pts, [In] int[] counts, int n);
+	[DllImport("gdi32.dll")] static extern IntPtr ExtCreatePen(uint style, uint width, ref LOGBRUSH lb, uint count, uint[] styles);
+	[DllImport("gdi32.dll")] static extern int SetArcDirection(IntPtr hdc, int dir);
+	[DllImport("gdi32.dll")] static extern bool SetMiterLimit(IntPtr hdc, float limit, IntPtr old);
+
+	const uint PS_GEOMETRIC = 0x10000, PS_ENDCAP_SQUARE = 0x100, PS_ENDCAP_FLAT = 0x200, PS_JOIN_BEVEL = 0x1000, PS_JOIN_MITER = 0x2000;
+
+	/** A solid `ExtCreatePen` pen. */
+	static IntPtr ExtPen(uint style, int width, int color, uint[] user)
+	{
+		var lb = new LOGBRUSH { lbStyle = 0, lbColor = color, lbHatch = IntPtr.Zero };
+		return ExtCreatePen(style, (uint)width, ref lb, user == null ? 0u : (uint)user.Length, user);
+	}
+
+	static POINT P(int x, int y) { return new POINT { X = x, Y = y }; }
+
+	/** Deterministic pseudo-random sequence (same numbers on every run). */
+	sealed class Lcg
+	{
+		uint s;
+		public Lcg(uint seed) { s = seed; }
+		public int Next(int n) { s = s * 1103515245u + 12345u; return (int)((s >> 8) % (uint)n); }
+	}
+
+	/** Selects `pen` and `brush` (either may be IntPtr.Zero to keep the current one), runs `draw`, then restores and deletes them. */
+	static void WithObjects(IntPtr hdc, IntPtr pen, IntPtr brush, Action draw)
+	{
+		IntPtr op = pen != IntPtr.Zero ? SelectObject(hdc, pen) : IntPtr.Zero;
+		IntPtr ob = brush != IntPtr.Zero ? SelectObject(hdc, brush) : IntPtr.Zero;
+		draw();
+		if (pen != IntPtr.Zero) { SelectObject(hdc, op); DeleteObject(pen); }
+		if (brush != IntPtr.Zero) { SelectObject(hdc, ob); DeleteObject(brush); }
+	}
+
+	static void RasterLineCases()
+	{
+		// Stars of one-pixel lines from two centres to ring points at every
+		// angle (1-degree-ish steps), plus short lines of length 1..3.
+		GdiCase("raster-lines-star", 200, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 200);
+			for (int k = 0; k < 96; k++)
+			{
+				double a = k * Math.PI * 2 / 96;
+				int cx = k % 2 == 0 ? 60 : 141, cy = k % 3 == 0 ? 60 : 141;
+				int r = 20 + (k * 7) % 38;
+				IntPtr pen = CreatePen(0, 0, Palette[k % 8] ^ 0x404040);
+				WithObjects(hdc, pen, IntPtr.Zero, delegate
+				{
+					MoveToEx(hdc, cx, cy, IntPtr.Zero);
+					LineTo(hdc, cx + (int)Math.Round(Math.Cos(a) * r), cy + (int)Math.Round(Math.Sin(a) * r));
+				});
+			}
+			IntPtr p2 = CreatePen(0, 1, Rgb(0, 0, 0));
+			WithObjects(hdc, p2, IntPtr.Zero, delegate
+			{
+				for (int i = 0; i < 12; i++)
+				{
+					int x = 8 + i * 15, y = 190;
+					MoveToEx(hdc, x, y, IntPtr.Zero); LineTo(hdc, x + (i % 4), y - (i / 4));
+				}
+			});
+		});
+
+		// Fractional (28.4) end points: a rotated, scaled world transform.
+		GdiCase("raster-lines-fractional", 200, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 200);
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = RotationXform(17, 100, 100);
+			xf.eM11 *= 0.73f; xf.eM12 *= 0.73f; xf.eM21 *= 0.73f; xf.eM22 *= 0.73f;
+			SetWorldTransform(hdc, ref xf);
+			var rng = new Lcg(7);
+			for (int k = 0; k < 120; k++)
+			{
+				IntPtr pen = CreatePen(0, 0, Palette[k % 8] ^ 0x202020);
+				int x0 = rng.Next(240) - 120, y0 = rng.Next(240) - 120;
+				int x1 = x0 + rng.Next(80) - 40, y1 = y0 + rng.Next(80) - 40;
+				if (k % 5 == 0) { x1 = x0 + (y1 - y0); } // 45 degrees before the transform
+				WithObjects(hdc, pen, IntPtr.Zero, delegate
+				{
+					MoveToEx(hdc, x0, y0, IntPtr.Zero); LineTo(hdc, x1, y1);
+				});
+			}
+		});
+
+		// Polylines with sharp turns, zigzags, closed outlines, PolylineTo and
+		// PolyBezier/PolyBezierTo, all with one-pixel pens.
+		GdiCase("raster-polylines-beziers", 200, 160, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 200, 160);
+			IntPtr pen = CreatePen(0, 0, Rgb(0x10, 0x10, 0x10));
+			IntPtr brush = GetStockObject(5); // NULL_BRUSH
+			IntPtr ob = SelectObject(hdc, brush);
+			WithObjects(hdc, pen, IntPtr.Zero, delegate
+			{
+				Polyline(hdc, new[] { P(5, 5), P(60, 12), P(8, 30), P(70, 40), P(12, 55), P(40, 70) }, 6);
+				Polyline(hdc, new[] { P(80, 5), P(90, 70), P(100, 5), P(110, 70), P(120, 5), P(130, 70) }, 6);
+				Polygon(hdc, new[] { P(140, 10), P(195, 25), P(150, 70), P(185, 40) }, 4);
+				PolyBezier(hdc, new[] { P(5, 90), P(20, 60), P(60, 150), P(80, 100), P(90, 80), P(120, 155), P(150, 95) }, 7);
+				MoveToEx(hdc, 150, 150, IntPtr.Zero);
+				PolyBezierTo(hdc, new[] { P(160, 100), P(200, 160), P(195, 90) }, 3);
+				MoveToEx(hdc, 10, 150, IntPtr.Zero);
+				PolyBezier(hdc, new[] { P(10, 150), P(12, 149), P(15, 152), P(18, 150) }, 4);
+			});
+			SelectObject(hdc, ob);
+		});
+	}
+
+	static void RasterEllipseCases()
+	{
+		// A grid of pen-and-brush ellipses of every size from 1x1 to 16x16.
+		GdiCase("raster-ellipses-sizes", 240, 240, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 240);
+			for (int j = 0; j < 12; j++)
+			{
+				for (int i = 0; i < 12; i++)
+				{
+					int w = 1 + ((i + j * 12) * 5) % 18, h = 1 + ((i * 7 + j * 3) % 18);
+					IntPtr pen = CreatePen(0, 0, Rgb(0x10, 0x10, 0x30));
+					IntPtr brush = CreateSolidBrush(Palette[(i + j) % 8]);
+					int x = 2 + i * 20, y = 2 + j * 20;
+					WithObjects(hdc, pen, brush, delegate { Ellipse(hdc, x, y, x + w, y + h); });
+				}
+			}
+		});
+
+		// Null-pen fills (GM_ADVANCED), at identity and under a scale.
+		GdiCase("raster-ellipses-nullpen", 240, 160, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 160);
+			SetGraphicsMode(hdc, 2);
+			IntPtr np = GetStockObject(8); // NULL_PEN
+			IntPtr op = SelectObject(hdc, np);
+			for (int i = 0; i < 30; i++)
+			{
+				IntPtr brush = CreateSolidBrush(Palette[i % 8] ^ 0x303030);
+				int w = 1 + (i * 3) % 23, h = 1 + (i * 5) % 19;
+				int x = 3 + (i % 10) * 23, y = 3 + (i / 10) * 25;
+				WithObjects(hdc, IntPtr.Zero, brush, delegate { Ellipse(hdc, x, y, x + w, y + h); });
+			}
+			XFORM xf = new XFORM { eM11 = 1.37f, eM12 = 0, eM21 = 0, eM22 = 0.81f, eDx = 3.3f, eDy = 80.6f };
+			SetWorldTransform(hdc, ref xf);
+			for (int i = 0; i < 16; i++)
+			{
+				IntPtr brush = CreateSolidBrush(Palette[(i + 3) % 8]);
+				int w = 2 + (i * 7) % 15, h = 2 + (i * 3) % 17;
+				int x = (i % 8) * 20, y = (i / 8) * 40;
+				WithObjects(hdc, IntPtr.Zero, brush, delegate { Ellipse(hdc, x, y, x + w, y + h); });
+			}
+			SelectObject(hdc, op);
+		});
+
+		// Rotated, skewed and mirrored ellipses (pen + brush).
+		GdiCase("raster-ellipses-rotated", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			SetGraphicsMode(hdc, 2);
+			var rng = new Lcg(11);
+			for (int k = 0; k < 20; k++)
+			{
+				XFORM xf = RotationXform(k * 19 + 3, 25 + (k % 5) * 48, 25 + (k / 5) * 48);
+				if (k % 4 == 1) { xf.eM21 += 0.3f; }
+				if (k % 4 == 2) { xf.eM11 = -xf.eM11; xf.eM12 = -xf.eM12; }
+				SetWorldTransform(hdc, ref xf);
+				int w = 6 + rng.Next(30), h = 4 + rng.Next(24);
+				IntPtr pen = CreatePen(0, 1, Rgb(0x20, 0x10, 0x10));
+				IntPtr brush = CreateSolidBrush(Palette[k % 8]);
+				WithObjects(hdc, pen, brush, delegate { Ellipse(hdc, -w / 2, -h / 2, w - w / 2, h - h / 2); });
+			}
+		});
+	}
+
+	// RoundRect, Arc, ArcTo, Chord and Pie draw in GM_ADVANCED: in
+	// GM_COMPATIBLE Windows paints them differently when drawing directly
+	// than when it plays the recorded EMF back (PlayEnhMetaFile renders the
+	// recorded, already inclusive, GM_ADVANCED geometry; measured on 20 random
+	// shapes each), so only GM_ADVANCED gives a reference that is the EMF's
+	// own meaning.
+	static void RasterRoundArcCases()
+	{
+		// Rounded rectangles: many boxes and corner sizes (corners larger than
+		// the box included), GM_COMPATIBLE with a pen.
+		GdiCase("raster-roundrects", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			SetGraphicsMode(hdc, 2); // see RasterRoundArcCases
+			var rng = new Lcg(5);
+			for (int k = 0; k < 30; k++)
+			{
+				int x = 4 + (k % 6) * 39, y = 4 + (k / 6) * 39;
+				int w = 6 + rng.Next(30), h = 6 + rng.Next(30);
+				int cw = rng.Next(k % 7 == 0 ? 60 : 24), ch = rng.Next(k % 7 == 0 ? 60 : 24);
+				IntPtr pen = CreatePen(0, 0, Rgb(0x10, 0x20, 0x10));
+				IntPtr brush = CreateSolidBrush(Palette[k % 8]);
+				WithObjects(hdc, pen, brush, delegate { RoundRect(hdc, x, y, x + w, y + h, cw, ch); });
+			}
+		});
+
+		// Arcs from radials all round the clock, both directions, plus ArcTo.
+		GdiCase("raster-arcs", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			SetGraphicsMode(hdc, 2);
+			var rng = new Lcg(21);
+			for (int k = 0; k < 30; k++)
+			{
+				int x = 4 + (k % 6) * 39, y = 4 + (k / 6) * 39;
+				int w = 8 + rng.Next(28), h = 8 + rng.Next(28);
+				double a0 = rng.Next(360) * Math.PI / 180, a1 = rng.Next(360) * Math.PI / 180;
+				int cx = x + w / 2, cy = y + h / 2;
+				SetArcDirection(hdc, k % 3 == 2 ? 2 : 1);
+				IntPtr pen = CreatePen(0, 0, Palette[k % 8] ^ 0x404040);
+				WithObjects(hdc, pen, IntPtr.Zero, delegate
+				{
+					int xs = cx + (int)(Math.Cos(a0) * 50), ys = cy - (int)(Math.Sin(a0) * 50);
+					int xe = cx + (int)(Math.Cos(a1) * 50), ye = cy - (int)(Math.Sin(a1) * 50);
+					if (k % 5 == 4)
+					{
+						MoveToEx(hdc, x, y + h, IntPtr.Zero);
+						ArcTo(hdc, x, y, x + w, y + h, xs, ys, xe, ye);
+						LineTo(hdc, x + w, y + h);
+					}
+					else
+					{
+						Arc(hdc, x, y, x + w, y + h, xs, ys, xe, ye);
+					}
+				});
+			}
+			SetArcDirection(hdc, 1);
+		});
+
+		// Filled pies and chords, both directions.
+		GdiCase("raster-pies-chords", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			SetGraphicsMode(hdc, 2);
+			var rng = new Lcg(33);
+			for (int k = 0; k < 30; k++)
+			{
+				int x = 4 + (k % 6) * 39, y = 4 + (k / 6) * 39;
+				int w = 8 + rng.Next(28), h = 8 + rng.Next(28);
+				double a0 = rng.Next(360) * Math.PI / 180, a1 = rng.Next(360) * Math.PI / 180;
+				int cx = x + w / 2, cy = y + h / 2;
+				SetArcDirection(hdc, k % 4 == 3 ? 2 : 1);
+				IntPtr pen = CreatePen(0, 0, Rgb(0x10, 0x10, 0x10));
+				IntPtr brush = CreateSolidBrush(Palette[k % 8]);
+				WithObjects(hdc, pen, brush, delegate
+				{
+					int xs = cx + (int)(Math.Cos(a0) * 50), ys = cy - (int)(Math.Sin(a0) * 50);
+					int xe = cx + (int)(Math.Cos(a1) * 50), ye = cy - (int)(Math.Sin(a1) * 50);
+					if (k % 2 == 0) { Pie(hdc, x, y, x + w, y + h, xs, ys, xe, ye); }
+					else { Chord(hdc, x, y, x + w, y + h, xs, ys, xe, ye); }
+				});
+			}
+			SetArcDirection(hdc, 1);
+		});
+	}
+
+	static void RasterFillCases()
+	{
+		// Self-intersecting and nested polygons, ALTERNATE vs WINDING, with a
+		// null pen and with a pen; PolyPolygon with nested figures.
+		GdiCase("raster-polygon-fillmodes", 240, 160, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 160);
+			POINT[] star = { P(40, 5), P(62, 70), P(5, 28), P(75, 28), P(18, 70) };
+			for (int m = 0; m < 4; m++)
+			{
+				SetPolyFillMode(hdc, m % 2 == 0 ? 1 : 2);
+				int ox = m * 60;
+				var pts = new POINT[star.Length];
+				for (int i = 0; i < star.Length; i++) { pts[i] = P(star[i].X + ox - (m > 1 ? 2 : 0), star[i].Y); }
+				IntPtr pen = m < 2 ? GetStockObject(8) : CreatePen(0, 0, Rgb(0, 0, 0x40));
+				IntPtr brush = CreateSolidBrush(Palette[m + 1]);
+				IntPtr op = SelectObject(hdc, pen);
+				WithObjects(hdc, IntPtr.Zero, brush, delegate { Polygon(hdc, pts, pts.Length); });
+				SelectObject(hdc, op);
+				if (m >= 2) { DeleteObject(pen); }
+			}
+			for (int m = 0; m < 2; m++)
+			{
+				SetPolyFillMode(hdc, m + 1);
+				int ox = 10 + m * 120;
+				POINT[] pp = {
+					P(ox, 80), P(ox + 100, 80), P(ox + 100, 155), P(ox, 155),
+					P(ox + 20, 95), P(ox + 80, 95), P(ox + 80, 140), P(ox + 20, 140),
+					P(ox + 35, 105), P(ox + 65, 130), P(ox + 35, 130), P(ox + 65, 105),
+				};
+				IntPtr pen = CreatePen(0, 0, Rgb(0x30, 0, 0));
+				IntPtr brush = CreateSolidBrush(Palette[5 + m]);
+				WithObjects(hdc, pen, brush, delegate { PolyPolygon(hdc, pp, new[] { 4, 4, 4 }, 3); });
+			}
+			SetPolyFillMode(hdc, 1);
+		});
+
+		// Bracketed paths: lines, Beziers, an ellipse, a rectangle and an arc as
+		// figures of one path, filled (WINDING), stroked, and both.
+		GdiCase("raster-paths", 240, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 120);
+			SetGraphicsMode(hdc, 2); // ArcTo: see RasterRoundArcCases
+			SetPolyFillMode(hdc, 2);
+			for (int m = 0; m < 3; m++)
+			{
+				int ox = m * 80;
+				IntPtr pen = CreatePen(0, 0, Rgb(0x10, 0x10, 0x10));
+				IntPtr brush = CreateSolidBrush(Palette[m + 2]);
+				WithObjects(hdc, pen, brush, delegate
+				{
+					BeginPath(hdc);
+					MoveToEx(hdc, ox + 5, 5, IntPtr.Zero);
+					LineTo(hdc, ox + 70, 12);
+					PolyBezierTo(hdc, new[] { P(ox + 80, 60), P(ox + 20, 20), P(ox + 30, 70) }, 3);
+					CloseFigure(hdc);
+					Ellipse(hdc, ox + 10, 60, ox + 50, 100);
+					Rectangle(hdc, ox + 40, 70, ox + 75, 115);
+					MoveToEx(hdc, ox + 60, 40, IntPtr.Zero);
+					ArcTo(hdc, ox + 45, 30, ox + 78, 62, ox + 78, 30, ox + 45, 62);
+					EndPath(hdc);
+					if (m == 0) { FillPath(hdc); }
+					else if (m == 1) { StrokePath(hdc); }
+					else { StrokeAndFillPath(hdc); }
+				});
+			}
+			SetPolyFillMode(hdc, 1);
+		});
+
+		// XOR pen and brush on overlapping shapes: which pixels GDI combines
+		// twice (fill under outline) and which only once (Rectangle).
+		GdiCase("raster-rop2-shapes", 240, 120, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 120);
+			SetGraphicsMode(hdc, 2); // RoundRect/Pie/Chord: see RasterRoundArcCases
+			SetROP2(hdc, 7); // R2_XORPEN
+			IntPtr pen = CreatePen(0, 0, Rgb(0x55, 0xaa, 0x33));
+			IntPtr brush = CreateSolidBrush(Rgb(0x0f, 0xf0, 0x99));
+			WithObjects(hdc, pen, brush, delegate
+			{
+				Ellipse(hdc, 5, 5, 60, 50);
+				Rectangle(hdc, 30, 20, 90, 70);
+				RoundRect(hdc, 70, 5, 140, 60, 20, 16);
+				Polygon(hdc, new[] { P(120, 10), P(200, 40), P(130, 80) }, 3);
+				Pie(hdc, 150, 30, 235, 115, 235, 30, 150, 115);
+				Chord(hdc, 5, 60, 80, 115, 80, 60, 5, 115);
+				Polyline(hdc, new[] { P(90, 70), P(140, 115), P(140, 70), P(90, 115), P(90, 70) }, 5);
+			});
+			SetROP2(hdc, 13);
+		});
+	}
+
+	static void RasterPenStyleCases()
+	{
+		// Cosmetic styles (DASH, DOT, DASHDOT, DASHDOTDOT, ALTERNATE,
+		// USERSTYLE) on horizontal/vertical/diagonal lines, a polyline, a LineTo
+		// chain broken by a MoveTo, and ellipse/rectangle outlines; OPAQUE and
+		// TRANSPARENT background.
+		GdiCase("raster-dash-cosmetic", 240, 240, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 240);
+			SetBkColor(hdc, Rgb(0xff, 0xff, 0x80));
+			IntPtr nb = GetStockObject(5);
+			IntPtr obr = SelectObject(hdc, nb);
+			for (int s = 0; s < 6; s++)
+			{
+				for (int bk = 0; bk < 2; bk++)
+				{
+					SetBkMode(hdc, bk == 0 ? 2 : 1);
+					int y = 4 + (s * 2 + bk) * 19;
+					IntPtr pen;
+					if (s < 4) { pen = CreatePen(s + 1, 0, Rgb(0x10, 0x10, 0x80)); }
+					else if (s == 4) { pen = ExtPen(8, 1, Rgb(0x80, 0x10, 0x10), null); } // PS_COSMETIC | PS_ALTERNATE
+					else { pen = ExtPen(7, 1, Rgb(0x10, 0x60, 0x10), new uint[] { 3, 2, 5, 1 }); } // PS_USERSTYLE
+					WithObjects(hdc, pen, IntPtr.Zero, delegate
+					{
+						MoveToEx(hdc, 3, y, IntPtr.Zero); LineTo(hdc, 90, y);
+						MoveToEx(hdc, 3, y + 3, IntPtr.Zero); LineTo(hdc, 40, y + 16); LineTo(hdc, 70, y + 4);
+						MoveToEx(hdc, 70, y + 9, IntPtr.Zero); LineTo(hdc, 90, y + 15);
+						Polyline(hdc, new[] { P(95, y), P(130, y + 15), P(160, y), P(165, y + 16) }, 4);
+						Ellipse(hdc, 170, y, 200, y + 17);
+						Rectangle(hdc, 205, y, 236, y + 17);
+					});
+				}
+			}
+			SelectObject(hdc, obr);
+			SetBkMode(hdc, 2);
+		});
+
+		// Geometric styles on wide pens: DASH/DOT/DASHDOT/DASHDOTDOT/USERSTYLE,
+		// widths 3 and 4, flat, square and round caps, three directions.
+		GdiCase("raster-dash-geometric", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			uint[] caps = { PS_ENDCAP_FLAT, PS_ENDCAP_SQUARE, 0 };
+			for (int s = 0; s < 5; s++)
+			{
+				for (int c = 0; c < 3; c++)
+				{
+					int w = c == 1 ? 4 : 3;
+					uint style = s < 4 ? (uint)(s + 1) : 7u;
+					IntPtr pen = ExtPen(PS_GEOMETRIC | caps[c] | style, w, Palette[(s + c) % 8] ^ 0x404040, s == 4 ? new uint[] { 6, 3, 2, 4 } : null);
+					int y = 8 + (s * 3 + c) * 12;
+					WithObjects(hdc, pen, IntPtr.Zero, delegate
+					{
+						MoveToEx(hdc, 6, y, IntPtr.Zero); LineTo(hdc, 150, y);
+						MoveToEx(hdc, 160, y, IntPtr.Zero); LineTo(hdc, 190, y + 10);
+					});
+				}
+			}
+			IntPtr vp = ExtPen(PS_GEOMETRIC | PS_ENDCAP_FLAT | 1, 3, Rgb(0, 0, 0), null);
+			WithObjects(hdc, vp, IntPtr.Zero, delegate { MoveToEx(hdc, 215, 5, IntPtr.Zero); LineTo(hdc, 215, 195); });
+		});
+	}
+
+	static void RasterWidePenCases()
+	{
+		// CreatePen wide pens (round caps and joins), widths 2..8: lines at
+		// several angles, a polyline, a rectangle and an ellipse outline.
+		GdiCase("raster-wide-pens", 240, 240, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 240);
+			IntPtr nb = GetStockObject(5);
+			IntPtr obr = SelectObject(hdc, nb);
+			for (int w = 2; w <= 8; w++)
+			{
+				IntPtr pen = CreatePen(0, w, Palette[w % 8] ^ 0x505050);
+				int y = 6 + (w - 2) * 33;
+				WithObjects(hdc, pen, IntPtr.Zero, delegate
+				{
+					MoveToEx(hdc, 8, y, IntPtr.Zero); LineTo(hdc, 60, y);
+					MoveToEx(hdc, 8, y + 8, IntPtr.Zero); LineTo(hdc, 60, y + 22);
+					MoveToEx(hdc, 70, y, IntPtr.Zero); LineTo(hdc, 80, y + 24);
+					Polyline(hdc, new[] { P(90, y), P(120, y + 20), P(140, y + 2), P(150, y + 24) }, 4);
+					Rectangle(hdc, 160, y, 190, y + 24);
+					Ellipse(hdc, 200, y, 234, y + 26);
+				});
+			}
+			SelectObject(hdc, obr);
+		});
+
+		// ExtCreatePen geometric solid pens: every cap on open polylines, every
+		// join on a zigzag, and the miter limit cutting sharp joins.
+		GdiCase("raster-wide-joins", 240, 200, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 200);
+			uint[] caps = { 0, PS_ENDCAP_SQUARE, PS_ENDCAP_FLAT };
+			uint[] joins = { 0, PS_JOIN_BEVEL, PS_JOIN_MITER };
+			for (int c = 0; c < 3; c++)
+			{
+				for (int j = 0; j < 3; j++)
+				{
+					int w = 5 + (c + j) % 3 * 2;
+					IntPtr pen = ExtPen(PS_GEOMETRIC | caps[c] | joins[j], w, Palette[(c * 3 + j) % 8] ^ 0x303030, null);
+					int ox = 8 + j * 78, oy = 10 + c * 62;
+					SetMiterLimit(hdc, c == 2 ? 1.5f : 10f, IntPtr.Zero);
+					WithObjects(hdc, pen, IntPtr.Zero, delegate
+					{
+						Polyline(hdc, new[] { P(ox, oy + 40), P(ox + 15, oy), P(ox + 30, oy + 40), P(ox + 45, oy + 5), P(ox + 64, oy + 20) }, 5);
+					});
+				}
+			}
+			SetMiterLimit(hdc, 10f, IntPtr.Zero);
+		});
+	}
+
+	static void RasterBlitCases()
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		// Rotated BitBlt/StretchBlt at several angles, mirrored, stretched and
+		// skewed, including a pattern-brush ROP3 (P, S and D all involved).
+		GdiCase("raster-blit-rotated", 240, 240, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 240, 240);
+			SetGraphicsMode(hdc, 2);
+			using (var src = SourceBitmap(screen, 20, 16))
+			{
+				float[] angles = { 10, 45, 90, 135, 200, 300, 33, 77, 160 };
+				for (int k = 0; k < angles.Length; k++)
+				{
+					XFORM xf = RotationXform(angles[k], 40 + (k % 3) * 80, 40 + (k / 3) * 80);
+					if (k == 6) { xf.eM11 = -xf.eM11; xf.eM12 = -xf.eM12; }
+					if (k == 7) { xf.eM21 += 0.35f; }
+					SetWorldTransform(hdc, ref xf);
+					if (k == 8)
+					{
+						IntPtr hb = CreateHatchBrush(3, Rgb(0x20, 0x20, 0xc0));
+						IntPtr ob = SelectObject(hdc, hb);
+						SetBkColor(hdc, Rgb(0xf0, 0xf0, 0x20));
+						StretchBlt(hdc, -15, -12, 30, 24, src.Dc, 0, 0, 20, 16, 0x00E20746); // DSPDxax
+						SelectObject(hdc, ob);
+						DeleteObject(hb);
+					}
+					else if (k % 3 == 1)
+					{
+						StretchBlt(hdc, -16, -9, 33, 19, src.Dc, 2, 1, 14, 12, 0x00CC0020); // SRCCOPY, stretched
+					}
+					else
+					{
+						BitBlt(hdc, -10, -8, 20, 16, src.Dc, 0, 0, k % 2 == 0 ? 0x00CC0020u : 0x00660046u); // SRCCOPY / SRCINVERT
+					}
+				}
+			}
+		});
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	static void RasterBenchCase()
+	{
+		// A shape-heavy drawing for the aliased-vs-antialiased benchmark (and a
+		// parity case of its own): rectangles, ellipses, triangles, lines and
+		// rounded rectangles with one-pixel pens and solid brushes.
+		GdiCase("raster-bench-shapes", 400, 300, delegate (IntPtr hdc)
+		{
+			var rng = new Lcg(99);
+			SetGraphicsMode(hdc, 2); // see RasterRoundArcCases
+			var bg = new RECT { Left = 0, Top = 0, Right = 400, Bottom = 300 };
+			IntPtr white = CreateSolidBrush(Rgb(255, 255, 255));
+			FillRect(hdc, ref bg, white);
+			DeleteObject(white);
+			for (int i = 0; i < 800; i++)
+			{
+				int x = rng.Next(400), y = rng.Next(300), w = 3 + rng.Next(40), h = 3 + rng.Next(40);
+				IntPtr pen = CreatePen(0, 1, Rgb(rng.Next(256), rng.Next(256), 0));
+				IntPtr brush = CreateSolidBrush(Rgb(rng.Next(256), 128, rng.Next(256)));
+				int kind = i % 5;
+				WithObjects(hdc, pen, brush, delegate
+				{
+					if (kind == 0) { Rectangle(hdc, x, y, x + w, y + h); }
+					else if (kind == 1) { Ellipse(hdc, x, y, x + w, y + h); }
+					else if (kind == 2) { Polygon(hdc, new[] { P(x, y), P(x + w, y + 4), P(x + 8, y + h) }, 3); }
+					else if (kind == 3) { MoveToEx(hdc, x, y, IntPtr.Zero); LineTo(hdc, x + w, y + h); }
+					else { RoundRect(hdc, x, y, x + w, y + h, 9, 9); }
+				});
+	// gdiplus-extra: GDI+ linear-gradient interpolation table (preset
+	// colours, blend factors, sigma/triangular shapes, gamma correction,
+	// translucency, PixelOffsetMode), see emf-plus-linear-ramp.ts.
+	// -----------------------------------------------------------------------
+
+	static ColorBlend Presets(float[] pos, params Color[] cols)
+	{
+		var cb = new ColorBlend(cols.Length);
+		cb.Colors = cols; cb.Positions = pos;
+		return cb;
+	}
+
+	static void GpxLinearGradientCases()
+	{
+		const int W = 160, H = 100;
+		var five = Presets(new float[] { 0f, 0.13f, 0.5f, 0.77f, 1f }, Color.Black, Color.FromArgb(255, 255, 40, 0), Color.FromArgb(255, 0, 220, 60), Color.FromArgb(255, 20, 40, 255), Color.White);
+		// Five presets on a large rect (w + h > 128: a 64-interval table) and a
+		// small one (16 intervals), both at an angle.
+		GpCase("gpx-lin-preset5-large", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(10, 10, 120, 40), Color.Black, Color.Black, 20f))
+			{ b.InterpolationColors = five; g.FillRectangle(b, 0, 0, W, H); }
+		});
+		GpCase("gpx-lin-preset5-small", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(10, 10, 70, 40), Color.Black, Color.Black, -35f))
+			{ b.InterpolationColors = five; b.WrapMode = WrapMode.TileFlipX; g.FillRectangle(b, 0, 0, W, H); }
+		});
+		// A rect with w + h > 512: the 256-interval table.
+		GpCase("gpx-lin-preset5-huge", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(-200, 0, 560, 20), Color.Black, Color.Black, 0f))
+			{ b.InterpolationColors = five; g.FillRectangle(b, 0, 0, W, H); }
+		});
+		GpCase("gpx-lin-sigma", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(5, 0, 150, 30), Color.FromArgb(255, 250, 240, 10), Color.FromArgb(255, 30, 0, 120), 60f))
+			{ b.SetSigmaBellShape(0.35f, 0.9f); g.FillRectangle(b, 0, 0, W, H); }
+		});
+		GpCase("gpx-lin-triangular", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(20, 0, 90, 30), Color.FromArgb(255, 10, 90, 200), Color.FromArgb(255, 240, 230, 220), 0f))
+			{ b.SetBlendTriangularShape(0.3f, 0.8f); b.WrapMode = WrapMode.TileFlipX; g.FillRectangle(b, 0, 0, W, H); }
+		});
+		GpCase("gpx-lin-gamma", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(10, 0, 110, 30), Color.FromArgb(255, 200, 0, 30), Color.FromArgb(255, 0, 60, 255), 15f))
+			{ b.GammaCorrection = true; g.FillRectangle(b, 0, 0, W, H); }
+		});
+		GpCase("gpx-lin-gamma-preset", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(0, 0, 100, 60), Color.Black, Color.Black, 45f))
+			{
+				b.GammaCorrection = true;
+				b.InterpolationColors = Presets(new float[] { 0f, 0.4f, 1f }, Color.FromArgb(255, 255, 60, 0), Color.White, Color.FromArgb(255, 0, 90, 200));
+				g.FillRectangle(b, 0, 0, W, H);
+			}
+		});
+		GpCase("gpx-lin-alpha", W, H, delegate (Graphics g)
+		{
+			g.FillRectangle(Brushes.White, 0, 0, W, H);
+			using (var stripes = new SolidBrush(Color.FromArgb(255, 30, 30, 30)))
+			{ for (int x = 0; x < W; x += 20) { g.FillRectangle(stripes, x, 0, 10, H); } }
+			using (var b = new LinearGradientBrush(new RectangleF(0, 0, 120, 50), Color.FromArgb(0, 255, 0, 0), Color.FromArgb(200, 0, 0, 255), 30f))
+			{ g.FillRectangle(b, 0, 0, W, H); }
+		});
+		GpCase("gpx-lin-pixeloffset-half", W, H, delegate (Graphics g)
+		{
+			g.PixelOffsetMode = PixelOffsetMode.Half;
+			using (var b = new LinearGradientBrush(new RectangleF(3, 0, 23, 10), Color.FromArgb(255, 250, 250, 0), Color.FromArgb(255, 0, 0, 160), 0f))
+			{ g.FillRectangle(b, 0, 0, W, H); }
+		});
+		// Blend factors and presets under a world transform, on an ellipse
+		// (span starts vary per row).
+		GpCase("gpx-lin-blend-ellipse", W, H, delegate (Graphics g)
+		{
+			g.FillRectangle(Brushes.White, 0, 0, W, H);
+			g.TranslateTransform(80, 50);
+			g.RotateTransform(-25);
+			using (var b = new LinearGradientBrush(new RectangleF(-60, -30, 50, 60), Color.FromArgb(255, 220, 30, 60), Color.FromArgb(255, 20, 200, 140), 0f))
+			{
+				var blend = new Blend(4);
+				blend.Factors = new float[] { 0f, 0.7f, 0.2f, 1f };
+				blend.Positions = new float[] { 0f, 0.25f, 0.6f, 1f };
+				b.Blend = blend;
+				g.FillEllipse(b, -70, -40, 140, 80);
+			}
+		});
+	}
+
+	// -----------------------------------------------------------------------
+	// gdiplus-extra: GraphicsPath FillMode (Alternate / Winding) for FillPath
+	// and SetClip(path), on a self-overlapping star and two overlapping
+	// same-direction rectangles (where the two rules differ).
+	// -----------------------------------------------------------------------
+
+	static GraphicsPath StarPath(FillMode mode, float cx, float cy, float r)
+	{
+		var p = new GraphicsPath(mode);
+		var pts = new PointF[5];
+		for (int i = 0; i < 5; i++)
+		{
+			double a = -Math.PI / 2 + i * 4 * Math.PI / 5;
+			pts[i] = new PointF(cx + (float)(r * Math.Cos(a)), cy + (float)(r * Math.Sin(a)));
+		}
+		p.AddPolygon(pts);
+		// Two overlapping rectangles wound the same way.
+		p.AddRectangle(new RectangleF(cx + r + 6, cy - 30, 30, 40));
+		p.AddRectangle(new RectangleF(cx + r + 16, cy - 20, 30, 40));
+		return p;
+	}
+
+	static void GpxPathFillModeCases()
+	{
+		const int W = 160, H = 100;
+		// SetClip(Region): a Region object (ObjectType 4) built from a union
+		// and an exclusion, as GDI+ records it.
+		GpCase("gpx-clipregion", W, H, delegate (Graphics g)
+		{
+			g.FillRectangle(Brushes.White, 0, 0, W, H);
+			using (var r = new Region(new Rectangle(10, 10, 60, 40)))
+			{
+				r.Union(new Rectangle(50, 30, 80, 50));
+				r.Exclude(new Rectangle(30, 20, 60, 20));
+				g.SetClip(r, CombineMode.Replace);
+				using (var b = new SolidBrush(Color.FromArgb(255, 90, 40, 160)))
+				{ g.FillRectangle(b, 0, 0, W, H); }
+				g.ResetClip();
+			}
+		});
+		foreach (var mode in new[] { FillMode.Alternate, FillMode.Winding })
+		{
+			var fm = mode;
+			string tag = fm == FillMode.Alternate ? "alternate" : "winding";
+			GpCase("gpx-fillpath-" + tag, W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				using (var p = StarPath(fm, 45, 52, 40))
+				using (var b = new SolidBrush(Color.FromArgb(255, 30, 90, 200)))
+				{ g.FillPath(b, p); }
+			});
+			GpCase("gpx-clippath-" + tag, W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				using (var p = StarPath(fm, 45, 52, 40))
+				{
+					g.SetClip(p);
+					using (var b = new SolidBrush(Color.FromArgb(255, 200, 40, 40)))
+					{ g.FillRectangle(b, 0, 0, W, H); }
+					g.ResetClip();
+				}
+			});
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// gdiplus-extra: DrawImage resampling (every InterpolationMode, up and
+	// down, and each PixelOffsetMode), in-order DrawImage under a clip and
+	// beneath later shapes, and DrawImage of an embedded metafile.
+	// -----------------------------------------------------------------------
+
+	/** A PNG-backed bitmap with smooth ramps, hard edges and single-pixel detail. */
+	static Bitmap GpxSourceBitmap(int w, int h)
+	{
+		string tmp = Path.Combine(outDir, "_tmp_gpx_source_" + w + "x" + h + ".png");
+		using (var src = new Bitmap(w, h, PixelFormat.Format32bppArgb))
+		{
+			for (int y = 0; y < h; y++)
+			{
+				for (int x = 0; x < w; x++)
+				{
+					int r = (x * 255) / Math.Max(1, w - 1);
+					int g = (y * 255) / Math.Max(1, h - 1);
+					int b = ((x / 4 + y / 4) % 2 == 0) ? 40 : 220;
+					if ((x * 7 + y * 3) % 11 == 0) { r = 255 - r; g = 255 - g; }
+					src.SetPixel(x, y, Color.FromArgb(255, r, g, b));
+				}
+			}
+			src.Save(tmp, ImageFormat.Png);
+		}
+		var bytes = File.ReadAllBytes(tmp);
+		File.Delete(tmp);
+		return new Bitmap(new MemoryStream(bytes));
+	}
+
+	static readonly InterpolationMode[] GpxModes = {
+		InterpolationMode.NearestNeighbor, InterpolationMode.Bilinear, InterpolationMode.Bicubic,
+		InterpolationMode.HighQualityBilinear, InterpolationMode.HighQualityBicubic,
+		InterpolationMode.Default, InterpolationMode.Low, InterpolationMode.High,
+	};
+
+	static void GpxImageCases()
+	{
+		const int W = 160, H = 100;
+		using (var small = GpxSourceBitmap(20, 16))
+		using (var big = GpxSourceBitmap(64, 48))
+		{
+			foreach (var mode in GpxModes)
+			{
+				var m = mode;
+				GpCase("gpx-image-" + m.ToString().ToLowerInvariant(), W, H, delegate (Graphics g)
+				{
+					g.FillRectangle(Brushes.White, 0, 0, W, H);
+					g.InterpolationMode = m;
+					// Up (x2.6 / x2.35), down (x0.4 / x0.45), and a non-uniform up/down.
+					g.DrawImage(small, new RectangleF(4, 4, 52, 37.6f));
+					g.DrawImage(big, new RectangleF(64, 6, 25.6f, 21.6f));
+					g.DrawImage(big, new RectangleF(98, 4, 58, 20));
+					g.DrawImage(small, new RectangleF(64, 50, 90, 44));
+				});
+			}
+			foreach (var pom in new[] { PixelOffsetMode.Half, PixelOffsetMode.HighQuality, PixelOffsetMode.HighSpeed })
+			{
+				foreach (var mode in new[] { InterpolationMode.Bilinear, InterpolationMode.HighQualityBicubic, InterpolationMode.NearestNeighbor })
+				{
+					var p = pom; var m = mode;
+					GpCase("gpx-image-pom-" + p.ToString().ToLowerInvariant() + "-" + m.ToString().ToLowerInvariant(), W, H, delegate (Graphics g)
+					{
+						g.FillRectangle(Brushes.White, 0, 0, W, H);
+						g.InterpolationMode = m;
+						g.PixelOffsetMode = p;
+						g.DrawImage(small, new RectangleF(4, 4, 52, 37.6f));
+						g.DrawImage(big, new RectangleF(64, 6, 25.6f, 21.6f));
+					});
+				}
+			}
+			// Rotated DrawImage (parallelogram) in two modes.
+			foreach (var mode in new[] { InterpolationMode.Bilinear, InterpolationMode.HighQualityBicubic })
+			{
+				var m = mode;
+				GpCase("gpx-image-rotated-" + m.ToString().ToLowerInvariant(), W, H, delegate (Graphics g)
+				{
+					g.FillRectangle(Brushes.White, 0, 0, W, H);
+					g.InterpolationMode = m;
+					g.DrawImage(small, new PointF[] { new PointF(30, 10), new PointF(90, 30), new PointF(15, 55) });
+				});
+			}
+			// In-order DrawImage: under a clip, then partly covered by later shapes.
+			GpCase("gpx-image-clip-zorder", W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SetClip(new Rectangle(10, 10, 60, 40));
+				g.DrawImage(small, new RectangleF(0, 0, 90, 70));
+				g.ResetClip();
+				using (var b = new SolidBrush(Color.FromArgb(255, 30, 120, 60)))
+				{ g.FillRectangle(b, 40, 30, 50, 40); }
+				g.SetClip(new Rectangle(100, 20, 40, 60), CombineMode.Replace);
+				g.SetClip(new Rectangle(90, 50, 60, 20), CombineMode.Exclude);
+				g.DrawImage(big, new RectangleF(85, 10, 70, 80));
+				g.ResetClip();
+				using (var b = new SolidBrush(Color.FromArgb(160, 200, 30, 30)))
+				{ g.FillRectangle(b, 110, 5, 20, 90); }
+			});
+		}
+	}
+
+	// DrawImage with an ImageAttributes WrapMode (the usual TileFlipXY idiom
+	// against faded edges, Tile, and Clamp with a clamp colour).
+	static void GpxImageAttributeCases()
+	{
+		const int W = 160, H = 100;
+		using (var small = GpxSourceBitmap(20, 16))
+		using (var big = GpxSourceBitmap(64, 48))
+		{
+			foreach (var wrap in new[] { WrapMode.TileFlipXY, WrapMode.Tile, WrapMode.Clamp })
+			{
+				foreach (var mode in new[] { InterpolationMode.Bilinear, InterpolationMode.HighQualityBicubic })
+				{
+					var wm = wrap; var m = mode;
+					GpCase("gpx-image-attr-" + WrapName(wm) + "-" + m.ToString().ToLowerInvariant(), W, H, delegate (Graphics g)
+					{
+						g.FillRectangle(Brushes.White, 0, 0, W, H);
+						g.InterpolationMode = m;
+						using (var ia = new ImageAttributes())
+						{
+							if (wm == WrapMode.Clamp) { ia.SetWrapMode(wm, Color.FromArgb(255, 40, 200, 80)); }
+							else { ia.SetWrapMode(wm); }
+							g.DrawImage(small, new Rectangle(4, 4, 52, 38), 0, 0, 20, 16, GraphicsUnit.Pixel, ia);
+							g.DrawImage(big, new Rectangle(64, 6, 26, 22), 0, 0, 64, 48, GraphicsUnit.Pixel, ia);
+							g.DrawImage(small, new Rectangle(64, 50, 90, 44), 2, 3, 14, 10, GraphicsUnit.Pixel, ia);
+						}
+					});
+				}
+			}
+		}
+	}
+
+	/** Records `draw` into an in-memory EMF+ metafile of `w` x `h` pixels and reloads it. */
+	static Metafile GpxMemoryMetafile(int w, int h, EmfType type, GpDraw draw)
+	{
+		var ms = new MemoryStream();
+		using (var refG = Graphics.FromHwnd(IntPtr.Zero))
+		{
+			IntPtr hdc = refG.GetHdc();
+			var mf = new Metafile(ms, hdc, new RectangleF(0, 0, w, h), MetafileFrameUnit.Pixel, type);
+			refG.ReleaseHdc(hdc);
+			using (var g = Graphics.FromImage(mf)) { g.PageUnit = GraphicsUnit.Pixel; draw(g); }
+			mf.Dispose();
+		}
+		return new Metafile(new MemoryStream(ms.ToArray()));
+	}
+
+	static void GpxNestedMetafileDraw(Graphics g)
+	{
+		g.FillRectangle(Brushes.White, 0, 0, 80, 60);
+		using (var b = new SolidBrush(Color.FromArgb(255, 220, 40, 30)))
+		{ g.FillRectangle(b, 5, 5, 30, 20); }
+		using (var b = new LinearGradientBrush(new RectangleF(40, 0, 36, 60), Color.FromArgb(255, 20, 60, 220), Color.FromArgb(255, 250, 220, 40), 90f))
+		{ g.FillRectangle(b, 40, 4, 36, 52); }
+		using (var b = new SolidBrush(Color.FromArgb(255, 30, 150, 60)))
+		{ g.FillEllipse(b, 8, 30, 26, 24); }
+		g.SetClip(new Rectangle(10, 12, 60, 10));
+		using (var b = new SolidBrush(Color.FromArgb(180, 250, 250, 0)))
+		{ g.FillRectangle(b, 0, 0, 80, 60); }
+		g.ResetClip();
+	}
+
+	static void GpxNestedMetafileCases()
+	{
+		const int W = 160, H = 100;
+		using (var mf = GpxMemoryMetafile(80, 60, EmfType.EmfPlusOnly, GpxNestedMetafileDraw))
+		{
+			GpCase("gpx-metafile-scaled", W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.DrawImage(mf, new RectangleF(10, 10, 120, 80));
+			});
+			GpCase("gpx-metafile-clip-zorder", W, H, delegate (Graphics g)
+			{
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				g.SetClip(new Rectangle(20, 15, 100, 50));
+				g.DrawImage(mf, new RectangleF(10, 10, 80, 60));
+				g.ResetClip();
+				using (var b = new SolidBrush(Color.FromArgb(255, 60, 60, 60)))
+				{ g.FillRectangle(b, 60, 40, 60, 30); }
+				g.DrawImage(mf, new RectangleF(100, 50, 40, 30));
+			});
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// gdiplus-extra: TextureBrush fills scaled up, rotated and scaled down by
+	// the brush transform, for each WrapMode. GDI+ samples a texture brush
+	// bilinearly whatever the InterpolationMode (every mode produced the
+	// identical bitmap when this was measured), so the default mode covers
+	// them all; two cases under other modes, and one under PixelOffsetMode
+	// Half, pin that down.
+	// -----------------------------------------------------------------------
+
+	static void GpxTextureFill(Graphics g, Bitmap tex, WrapMode wm)
+	{
+		const int W = 160, H = 100;
+		g.FillRectangle(Brushes.White, 0, 0, W, H);
+		using (var b = new TextureBrush(tex, wm))
+		{
+			b.ScaleTransform(2.6f, 2.3f);
+			b.TranslateTransform(3, 2, MatrixOrder.Append);
+			g.FillRectangle(b, 0, 0, 70, 50);
+		}
+		using (var b = new TextureBrush(tex, wm))
+		{
+			b.RotateTransform(30);
+			b.ScaleTransform(1.7f, 1.7f, MatrixOrder.Append);
+			b.TranslateTransform(100, 10, MatrixOrder.Append);
+			g.FillRectangle(b, 75, 0, 85, 55);
+		}
+		using (var b = new TextureBrush(tex, wm))
+		{
+			b.ScaleTransform(0.45f, 0.4f);
+			b.TranslateTransform(1, 57, MatrixOrder.Append);
+			g.FillRectangle(b, 0, 55, 160, 45);
+		}
+	}
+
+	static void GpxTextureCases()
+	{
+		const int W = 160, H = 100;
+		using (var tex = GpxSourceBitmap(12, 10))
+		{
+			foreach (var wrap in Wraps)
+			{
+				var wm = wrap;
+				GpCase("gpx-texture-" + WrapName(wm), W, H, delegate (Graphics g) { GpxTextureFill(g, tex, wm); });
+			}
+			GpCase("gpx-texture-nearest-tile", W, H, delegate (Graphics g)
+			{
+				g.InterpolationMode = InterpolationMode.NearestNeighbor;
+				GpxTextureFill(g, tex, WrapMode.Tile);
+			});
+			GpCase("gpx-texture-hqbicubic-flipxy", W, H, delegate (Graphics g)
+			{
+				g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+				GpxTextureFill(g, tex, WrapMode.TileFlipXY);
+			});
+			GpCase("gpx-texture-pom-half-tile", W, H, delegate (Graphics g)
+			{
+				g.PixelOffsetMode = PixelOffsetMode.Half;
+				GpxTextureFill(g, tex, WrapMode.Tile);
+			});
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// gdiplus-extra: pens and text painted with a texture, linear-gradient
+	// or path-gradient brush. Strokes are axis-aligned and whole-pixel wide
+	// (so edge antialiasing, which Canvas and GDI+ do differently, does not
+	// enter), plus one curved stroke for the edges; text interiors show the
+	// brush colour, glyph edges belong to the font engine.
+	// -----------------------------------------------------------------------
+
+	static void GpxBrushStrokes(Graphics g, Brush brush)
+	{
+		g.FillRectangle(Brushes.White, 0, 0, 160, 100);
+		using (var pen = new Pen(brush, 10))
+		{
+			g.DrawRectangle(pen, 15, 15, 60, 40);
+			g.DrawLine(pen, 100, 5, 100, 95);
+			g.DrawLine(pen, 90, 80, 155, 80);
+		}
+		using (var pen = new Pen(brush, 6))
+		{
+			g.DrawEllipse(pen, 112, 12, 36, 50);
+		}
+	}
+
+	static void GpxBrushText(Graphics g, Brush brush)
+	{
+		g.FillRectangle(Brushes.White, 0, 0, 160, 100);
+		using (var f = new Font("Arial", 40, FontStyle.Bold, GraphicsUnit.Pixel))
+		{
+			g.DrawString("HIM", f, brush, 4, 8);
+		}
+		using (var pen = new Pen(brush, 12))
+		{
+			g.DrawLine(pen, 0, 80, 160, 80);
+		}
+	}
+
+	static void GpxPenTextCases()
+	{
+		const int W = 160, H = 100;
+		using (var tex = GpxSourceBitmap(12, 10))
+		{
+			GpCase("gpx-pen-texture", W, H, delegate (Graphics g)
+			{
+				using (var b = new TextureBrush(tex, WrapMode.Tile)) { b.ScaleTransform(2.5f, 2.5f); GpxBrushStrokes(g, b); }
+			});
+			GpCase("gpx-text-texture", W, H, delegate (Graphics g)
+			{
+				using (var b = new TextureBrush(tex, WrapMode.TileFlipXY)) { b.ScaleTransform(3f, 3f); GpxBrushText(g, b); }
+			});
+		}
+		GpCase("gpx-pen-lingrad", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(10, 0, 70, 40), Color.FromArgb(255, 230, 30, 30), Color.FromArgb(255, 20, 40, 220), 35f))
+			{ GpxBrushStrokes(g, b); }
+		});
+		GpCase("gpx-text-lingrad", W, H, delegate (Graphics g)
+		{
+			using (var b = new LinearGradientBrush(new RectangleF(0, 0, 60, 30), Color.FromArgb(255, 250, 200, 0), Color.FromArgb(255, 120, 0, 160), 70f))
+			{ b.WrapMode = WrapMode.TileFlipX; GpxBrushText(g, b); }
+		});
+		GpCase("gpx-pen-pathgrad", W, H, delegate (Graphics g)
+		{
+			using (var p = new GraphicsPath())
+			{
+				p.AddEllipse(0, 0, 50, 40);
+				using (var b = new PathGradientBrush(p))
+				{
+					b.CenterColor = Color.White;
+					b.SurroundColors = new Color[] { Color.FromArgb(255, 200, 20, 90) };
+					b.WrapMode = WrapMode.TileFlipXY;
+					GpxBrushStrokes(g, b);
+				}
+			}
+		});
+		GpCase("gpx-text-pathgrad", W, H, delegate (Graphics g)
+		{
+			var pts = new PointF[] { new PointF(10, 0), new PointF(70, 20), new PointF(30, 60) };
+			using (var b = new PathGradientBrush(pts))
+			{
+				b.CenterColor = Color.FromArgb(255, 255, 250, 180);
+				b.SurroundColors = new Color[] { Color.FromArgb(255, 220, 30, 30), Color.FromArgb(255, 30, 160, 40), Color.FromArgb(255, 30, 40, 220) };
+				b.WrapMode = WrapMode.Tile;
+				GpxBrushText(g, b);
+			}
+		});
+		// Pen options that move the embedded brush's offset in the record
+		// (dash pattern, alignment, compound line, caps, join, miter limit).
+		GpCase("gpx-pen-styles", W, H, delegate (Graphics g)
+		{
+			g.FillRectangle(Brushes.White, 0, 0, W, H);
+			using (var pen = new Pen(Color.FromArgb(255, 20, 110, 200), 8))
+			{
+				pen.DashPattern = new float[] { 3f, 1f, 1f, 1f };
+				pen.DashOffset = 0.5f;
+				pen.Alignment = PenAlignment.Inset;
+				pen.LineJoin = LineJoin.Round;
+				pen.StartCap = LineCap.Round;
+				pen.EndCap = LineCap.Square;
+				pen.MiterLimit = 4f;
+				g.DrawRectangle(pen, 20, 20, 50, 40);
+				g.DrawLine(pen, 90, 20, 150, 20);
+			}
+			using (var pen = new Pen(Color.FromArgb(255, 200, 60, 20), 12))
+			{
+				pen.CompoundArray = new float[] { 0f, 0.3f, 0.6f, 1f };
+				g.DrawLine(pen, 90, 60, 150, 60);
+			}
+		});
+	}
+
+	static void RasterCases()
+	{
+		RasterLineCases();
+		RasterEllipseCases();
+		RasterRoundArcCases();
+		RasterFillCases();
+		RasterPenStyleCases();
+		RasterWidePenCases();
+		RasterBlitCases();
+		RasterBenchCase();
 	}
 
 	public static void Run(string dir, string which)
@@ -1299,5 +2378,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "image") { ImageDrawCases(); TextureFillCompressedCase(); }
 		if (which == "all" || which == "rotation-affine") { RotationAffineBlitTextCases(); }
 		if (which == "all" || which == "text-extra") { TextExtraCases(); }
+		if (which == "all" || which == "gdi-raster") { RasterCases(); }
+		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
 	}
 }

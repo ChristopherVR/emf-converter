@@ -1,11 +1,17 @@
 /**
- * EMF GDI polypolygon record helpers (32-bit and 16-bit).
+ * EMF GDI polypolygon/polypolyline record helpers (32-bit and 16-bit).
+ * Each sub-polygon is one figure of the shape, filled as a whole with the
+ * current polygon fill mode (so overlapping or nested figures follow
+ * ALTERNATE/WINDING exactly on the exact route) and outlined figure by
+ * figure (the pen's dash pattern restarts at each figure, as in GDI).
  */
 
 import { gmapPoint } from './emf-gdi-coord';
 import { gdiPathRecorder } from './emf-gdi-path-record';
-import { fillShapeExactOrFast, strokeShapeExactOrFast } from './emf-gdi-shape-paint';
+import { fixPoint } from './emf-gdi-raster-shapes';
+import { paintGdiShape } from './emf-gdi-shape-paint';
 import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
+import { GdiRasterPath } from './gdi-raster';
 
 /** Builds one or more polygon/polyline sub-paths from a PolyPolygon(16)/PolyPolyline record's counts/points. */
 function buildPolyPolygonPath(
@@ -36,49 +42,46 @@ function buildPolyPolygonPath(
 	}
 }
 
-export function handlePolyPolygon32(
+/** The same figures as GDI device geometry (FIX). */
+function buildPolyPolygonRaster(
+	path: GdiRasterPath,
 	rCtx: EmfGdiReplayCtx,
-	offset: number,
-	dataOff: number,
-	recSize: number,
+	readLogical: (pIdx: number) => [number, number],
+	countsOff: number,
+	numPolys: number,
+	totalPoints: number,
+	close: boolean,
 ): void {
-	const { ctx, view, state, inPath } = rCtx;
-	const numPolys = view.getUint32(dataOff + 16, true);
-	const totalPoints = view.getUint32(dataOff + 20, true);
-	if (numPolys === 0 || numPolys >= 10000 || totalPoints >= 100000) {
-		return;
-	}
-	const countsOff = dataOff + 24;
-	const ptOff = countsOff + numPolys * 4;
-	if (ptOff + totalPoints * 8 > offset + recSize) {
-		return;
-	}
-	const readPoint = (pIdx: number) =>
-		gmapPoint(rCtx, view.getInt32(ptOff + pIdx * 8, true), view.getInt32(ptOff + pIdx * 8 + 4, true));
-	const build = (target: CanvasContext) => {
-		buildPolyPolygonPath(target, rCtx, readPoint, countsOff, numPolys, totalPoints, true);
-	};
-	if (inPath) {
-		build(gdiPathRecorder(rCtx));
-	} else {
-		ctx.beginPath();
-		build(ctx);
-		const buildWithPath = (target: CanvasContext) => {
-			target.beginPath();
-			build(target);
-		};
-		fillShapeExactOrFast(rCtx, buildWithPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
-		strokeShapeExactOrFast(rCtx, buildWithPath);
+	const { view } = rCtx;
+	let pIdx = 0;
+	for (let p = 0; p < numPolys; p++) {
+		const count = view.getUint32(countsOff + p * 4, true);
+		for (let i = 0; i < count && pIdx < totalPoints; i++) {
+			const [lx, ly] = readLogical(pIdx);
+			const [x, y] = fixPoint(rCtx, lx, ly);
+			if (i === 0) {
+				path.moveTo(x, y);
+			} else {
+				path.lineTo(x, y);
+			}
+			pIdx++;
+		}
+		if (close && count > 0) {
+			path.closeFigure();
+		}
 	}
 }
 
-export function handlePolyPolyline32(
+/** Shared body of the three record handlers. */
+function handlePolyPoly(
 	rCtx: EmfGdiReplayCtx,
 	offset: number,
 	dataOff: number,
 	recSize: number,
+	pointSize: 4 | 8,
+	close: boolean,
 ): void {
-	const { ctx, view, inPath } = rCtx;
+	const { view, state, inPath } = rCtx;
 	const numPolys = view.getUint32(dataOff + 16, true);
 	const totalPoints = view.getUint32(dataOff + 20, true);
 	if (numPolys === 0 || numPolys >= 10000 || totalPoints >= 100000) {
@@ -86,59 +89,51 @@ export function handlePolyPolyline32(
 	}
 	const countsOff = dataOff + 24;
 	const ptOff = countsOff + numPolys * 4;
-	if (ptOff + totalPoints * 8 > offset + recSize) {
+	if (ptOff + totalPoints * pointSize > offset + recSize) {
 		return;
 	}
-	const readPoint = (pIdx: number) =>
-		gmapPoint(rCtx, view.getInt32(ptOff + pIdx * 8, true), view.getInt32(ptOff + pIdx * 8 + 4, true));
+	const readLogical = (pIdx: number): [number, number] =>
+		pointSize === 8
+			? [view.getInt32(ptOff + pIdx * 8, true), view.getInt32(ptOff + pIdx * 8 + 4, true)]
+			: [view.getInt16(ptOff + pIdx * 4, true), view.getInt16(ptOff + pIdx * 4 + 2, true)];
+	const readPoint = (pIdx: number) => {
+		const [x, y] = readLogical(pIdx);
+		return gmapPoint(rCtx, x, y);
+	};
 	const build = (target: CanvasContext) => {
-		buildPolyPolygonPath(target, rCtx, readPoint, countsOff, numPolys, totalPoints, false);
+		buildPolyPolygonPath(target, rCtx, readPoint, countsOff, numPolys, totalPoints, close);
 	};
 	if (inPath) {
 		build(gdiPathRecorder(rCtx));
-	} else {
-		ctx.beginPath();
-		build(ctx);
-		const buildWithPath = (target: CanvasContext) => {
+		rCtx.rasterPath ??= new GdiRasterPath();
+		buildPolyPolygonRaster(rCtx.rasterPath, rCtx, readLogical, countsOff, numPolys, totalPoints, close);
+		return;
+	}
+	rCtx.lineStyle = { pos: 0 };
+	paintGdiShape(rCtx, {
+		build: (target: CanvasContext) => {
 			target.beginPath();
 			build(target);
-		};
-		strokeShapeExactOrFast(rCtx, buildWithPath);
-	}
+		},
+		raster: () => {
+			const path = new GdiRasterPath();
+			buildPolyPolygonRaster(path, rCtx, readLogical, countsOff, numPolys, totalPoints, close);
+			return path;
+		},
+		fill: close,
+		stroke: true,
+		fillRule: state.polyFillMode === 2 ? 'nonzero' : 'evenodd',
+	});
 }
 
-export function handlePolyPolygon16(
-	rCtx: EmfGdiReplayCtx,
-	offset: number,
-	dataOff: number,
-	recSize: number,
-): void {
-	const { ctx, view, state, inPath } = rCtx;
-	const numPolys = view.getUint32(dataOff + 16, true);
-	const totalPoints = view.getUint32(dataOff + 20, true);
-	if (numPolys === 0 || numPolys >= 10000 || totalPoints >= 100000) {
-		return;
-	}
-	const countsOff = dataOff + 24;
-	const ptOff = countsOff + numPolys * 4;
-	if (ptOff + totalPoints * 4 > offset + recSize) {
-		return;
-	}
-	const readPoint = (pIdx: number) =>
-		gmapPoint(rCtx, view.getInt16(ptOff + pIdx * 4, true), view.getInt16(ptOff + pIdx * 4 + 2, true));
-	const build = (target: CanvasContext) => {
-		buildPolyPolygonPath(target, rCtx, readPoint, countsOff, numPolys, totalPoints, true);
-	};
-	if (inPath) {
-		build(gdiPathRecorder(rCtx));
-	} else {
-		ctx.beginPath();
-		build(ctx);
-		const buildWithPath = (target: CanvasContext) => {
-			target.beginPath();
-			build(target);
-		};
-		fillShapeExactOrFast(rCtx, buildWithPath, state.polyFillMode === 2 ? 'nonzero' : 'evenodd');
-		strokeShapeExactOrFast(rCtx, buildWithPath);
-	}
+export function handlePolyPolygon32(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, recSize: number): void {
+	handlePolyPoly(rCtx, offset, dataOff, recSize, 8, true);
+}
+
+export function handlePolyPolyline32(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, recSize: number): void {
+	handlePolyPoly(rCtx, offset, dataOff, recSize, 8, false);
+}
+
+export function handlePolyPolygon16(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, recSize: number): void {
+	handlePolyPoly(rCtx, offset, dataOff, recSize, 4, true);
 }

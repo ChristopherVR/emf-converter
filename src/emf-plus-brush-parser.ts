@@ -30,6 +30,7 @@ import type {
 	EmfPlusDecodedTexture,
 	EmfPlusGradientStop,
 	EmfPlusGradientWrapMode,
+	EmfPlusLinearRamp,
 	EmfPlusPathGradientShape,
 	EmfPlusTexture,
 	EmfPlusTextureCache,
@@ -42,6 +43,7 @@ const BRUSH_DATA_TRANSFORM = 0x00000002;
 const BRUSH_DATA_PRESET_COLORS = 0x00000004;
 const BRUSH_DATA_BLEND_FACTORS_H = 0x00000008;
 const BRUSH_DATA_FOCUS_SCALES = 0x00000040;
+const BRUSH_DATA_IS_GAMMA_CORRECTED = 0x00000080;
 
 /** Sanity cap for blend-stop / surrounding-colour / boundary-point counts. */
 const MAX_GRADIENT_ELEMENTS = 4096;
@@ -196,10 +198,21 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 		{ offset: 0, color: argbToRgba(startArgb), argb: startArgb },
 		{ offset: 1, color: argbToRgba(endArgb), argb: endArgb },
 	];
+	const ramp: EmfPlusLinearRamp = {
+		startArgb,
+		endArgb,
+		preset: null,
+		blend: null,
+		gammaCorrected: (flags & BRUSH_DATA_IS_GAMMA_CORRECTED) !== 0,
+	};
 	if (flags & BRUSH_DATA_PRESET_COLORS) {
 		const preset = readPresetColors(view, o, end);
 		if (preset) {
 			stops = preset.stops;
+			ramp.preset = {
+				positions: preset.stops.map((s) => s.offset),
+				argb: preset.stops.map((s) => s.argb ?? 0),
+			};
 		}
 	} else if (flags & BRUSH_DATA_BLEND_FACTORS_H) {
 		const blend = readBlendFactors(view, o, end);
@@ -209,6 +222,10 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 				color: lerpArgbToRgba(startArgb, endArgb, e.factor),
 				argb: lerpArgb(startArgb, endArgb, e.factor),
 			}));
+			ramp.blend = {
+				positions: blend.entries.map((e) => e.pos),
+				factors: blend.entries.map((e) => e.factor),
+			};
 		}
 	}
 
@@ -237,6 +254,7 @@ function parseLinearGradient(view: DataView, b: number, end: number): EmfPlusBru
 			wrapMode,
 			rect: { x: rx, y: ry, w: rw, h: rh },
 			transform,
+			ramp,
 		},
 	};
 }

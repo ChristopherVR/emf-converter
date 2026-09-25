@@ -45,6 +45,7 @@ import {
 	EMFPLUS_BRUSHTYPE_TEXTUREFILL,
 	EMFPLUS_OBJECT,
 	EMFPLUS_OBJECTTYPE_BRUSH,
+	EMFPLUS_OBJECTTYPE_PEN,
 	EMFPLUS_SIGNATURE,
 	EMR_COMMENT,
 	EMR_EOF,
@@ -61,6 +62,7 @@ import {
 	textureBrushImageOffset,
 } from './emf-plus-brush-parser';
 import { emfLog, emfWarn } from './emf-logging';
+import { penBrushOffset } from './emf-plus-object-complex';
 import type { EmfPlusDecodedTexture, EmfPlusTextureCache } from './emf-types';
 
 /** One candidate compressed-texture image found during the scan. */
@@ -75,15 +77,24 @@ interface Candidate {
 
 /**
  * Collects the compressed TextureFill image byte range of one complete EMF+
- * object, if it is such a brush.
+ * object, if it is such a brush, or a pen whose own brush is one (keyed by
+ * the pen object, which parses its brush with the same key).
  */
 function collectTextureCandidate(obj: AssembledEmfPlusObject, out: Candidate[]): void {
 	const objectType = (obj.flags >> 8) & 0x7f;
-	if (objectType !== EMFPLUS_OBJECTTYPE_BRUSH || obj.dataSize < 8) {
+	if ((objectType !== EMFPLUS_OBJECTTYPE_BRUSH && objectType !== EMFPLUS_OBJECTTYPE_PEN) || obj.dataSize < 8) {
 		return;
 	}
-	const { view, dataOff } = obj;
-	const recEnd = dataOff + obj.dataSize;
+	const { view } = obj;
+	const recEnd = obj.dataOff + obj.dataSize;
+	let dataOff = obj.dataOff;
+	if (objectType === EMFPLUS_OBJECTTYPE_PEN) {
+		const brushOff = penBrushOffset(view, obj.dataOff, obj.dataSize);
+		if (brushOff === null) {
+			return;
+		}
+		dataOff = brushOff;
+	}
 	const hasVersion = looksLikeGraphicsVersion(view.getUint32(dataOff, true));
 	const typeOff = dataOff + (hasVersion ? 4 : 0);
 	if (typeOff + 8 > recEnd || view.getUint32(typeOff, true) !== EMFPLUS_BRUSHTYPE_TEXTUREFILL) {
@@ -100,9 +111,8 @@ function collectTextureCandidate(obj: AssembledEmfPlusObject, out: Candidate[]):
 }
 
 /**
- * Scans one EMF+ record sub-stream (the payload of a single EMR_COMMENT) for
- * Brush objects, collecting compressed TextureFill image byte ranges.
- * Mirrors just enough of `replayEmfPlusRecords`' record-walking loop to find
+ * Scans one EMF+ record sub-stream (the payload of a single EMR_COMMENT),
+ * calling `visit` with every complete object record. Mirrors just enough of `replayEmfPlusRecords`' record-walking loop to find
  * OBJECT records (reassembling continuation runs through `acc`, which
  * persists across sub-streams); it does not track drawing state, since
  * object records are self-contained.
@@ -112,7 +122,7 @@ function scanEmfPlusStream(
 	offset: number,
 	length: number,
 	acc: ContinuationAccumulator,
-	out: Candidate[],
+	visit: (obj: AssembledEmfPlusObject) => void,
 ): void {
 	const end = offset + length;
 	let off = offset;
@@ -130,7 +140,7 @@ function scanEmfPlusStream(
 		if (recType === EMFPLUS_OBJECT) {
 			const assembled = feedEmfPlusObjectRecord(acc, view, recFlags, off + 12, recDataSize);
 			if (assembled) {
-				collectTextureCandidate(assembled, out);
+				visit(assembled);
 			}
 		}
 		off += recSize;
@@ -138,12 +148,12 @@ function scanEmfPlusStream(
 }
 
 /**
- * Walks the raw EMF byte stream's `EMR_COMMENT`/EMF+ sub-streams looking for
- * `EMR_COMMENT` records at the top level (WMF has no EMF+ records at all, so
- * this is a no-op for WMF input).
+ * Calls `visit` with every complete EMF+ object (continuation runs
+ * reassembled exactly as the replay reassembles them, so its cache key
+ * matches) found in the raw EMF byte stream's `EMR_COMMENT`/EMF+
+ * sub-streams. A no-op for WMF input, which has no EMF+ records.
  */
-function scanEmfForTextureCandidates(view: DataView): Candidate[] {
-	const candidates: Candidate[] = [];
+export function walkEmfPlusObjects(view: DataView, visit: (obj: AssembledEmfPlusObject) => void): void {
 	const acc = createContinuationAccumulator();
 	let offset = 0;
 	const maxOffset = view.byteLength;
@@ -161,18 +171,24 @@ function scanEmfForTextureCandidates(view: DataView): Candidate[] {
 			const commentDataSize = view.getUint32(dataOff, true);
 			const sig = view.getUint32(dataOff + 4, true);
 			if (sig === EMFPLUS_SIGNATURE && commentDataSize > 4) {
-				scanEmfPlusStream(view, dataOff + 8, commentDataSize - 4, acc, candidates);
+				scanEmfPlusStream(view, dataOff + 8, commentDataSize - 4, acc, visit);
 			}
 		} else if (recType === EMR_EOF) {
 			break;
 		}
 		offset += recSize;
 	}
+}
+
+/** Collects every compressed TextureFill image byte range in the file. */
+function scanEmfForTextureCandidates(view: DataView): Candidate[] {
+	const candidates: Candidate[] = [];
+	walkEmfPlusObjects(view, (obj) => collectTextureCandidate(obj, candidates));
 	return candidates;
 }
 
 /** Decodes compressed image bytes (a PNG/JPEG/etc. blob) into top-down RGBA pixels. */
-async function decodeCompressedBytesToRgba(
+export async function decodeCompressedBytesToRgba(
 	view: DataView,
 	start: number,
 	end: number,

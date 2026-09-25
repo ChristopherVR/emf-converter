@@ -30,12 +30,17 @@
  * @module emf-plus-exact-fill
  */
 
-import { canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
+import { canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mulMatrix, pathGradientColorAt } from './emf-plus-brush-gradient';
-import { textureTexelAt } from './emf-plus-brush-texture';
+import { writeTextureColor } from './emf-plus-brush-texture';
+import { isHalfPixelOffset } from './emf-plus-image-resample';
+import { linearRampSampler } from './emf-plus-linear-ramp';
 import { applyPlusWorldTransform, plusWorldMatrix } from './emf-plus-state-handlers';
+import { flatteningContext } from './emf-plus-flatten';
+import { isSvgContext } from './svg-context';
 import type {
 	CanvasContext,
+	EmfPlusBrush,
 	EmfPlusGradientWrapMode,
 	EmfPlusPathGradientShape,
 	EmfPlusReplayCtx,
@@ -84,11 +89,16 @@ function surfaceSize(ctx: CanvasContext): { w: number; h: number } | null {
 // ---------------------------------------------------------------------------
 
 /**
- * A texture brush sampled per device pixel: nearest texel at the pixel's
- * integer origin, wrapped per the brush's `WrapMode` (see
- * {@link textureTexelAt}). `device` is the world-to-device matrix.
+ * A texture brush sampled per device pixel the way GDI+ samples it:
+ * bilinearly (whatever the InterpolationMode), wrapped per the brush's
+ * `WrapMode`, on the grid of the active `PixelOffsetMode` (`halfPixel`),
+ * see {@link writeTextureColor}. `device` is the world-to-device matrix.
  */
-export function textureSampler(texture: EmfPlusTexture, device: TransformMatrix): DeviceBrushSampler | null {
+export function textureSampler(
+	texture: EmfPlusTexture,
+	device: TransformMatrix,
+	halfPixel: boolean = false,
+): DeviceBrushSampler | null {
 	const { width, height, rgba, wrapMode } = texture;
 	if (width <= 0 || height <= 0) {
 		return null;
@@ -100,15 +110,7 @@ export function textureSampler(texture: EmfPlusTexture, device: TransformMatrix)
 	return (x0, y0, w, h, out) => {
 		for (let j = 0; j < h; j++) {
 			for (let i = 0; i < w; i++) {
-				const t = textureTexelAt(inv, width, height, wrapMode, x0 + i, y0 + j);
-				if (t < 0) {
-					continue;
-				}
-				const o = (j * w + i) * 4;
-				out[o] = rgba[t];
-				out[o + 1] = rgba[t + 1];
-				out[o + 2] = rgba[t + 2];
-				out[o + 3] = rgba[t + 3];
+				writeTextureColor(inv, width, height, rgba, wrapMode, halfPixel, x0 + i, y0 + j, out, (j * w + i) * 4);
 			}
 		}
 	};
@@ -209,7 +211,7 @@ export function pathGradientSampler(
 /**
  * The per-device-pixel sampler for the brush a fill record names, or
  * `null` when it is an inline colour or a brush Canvas already paints
- * exactly (solid, hatch, linear gradient).
+ * exactly (solid, hatch; a linear gradient in SVG output).
  */
 export function deviceBrushSampler(
 	rCtx: EmfPlusReplayCtx,
@@ -223,12 +225,27 @@ export function deviceBrushSampler(
 	if (!obj || obj.kind !== 'plus-brush') {
 		return null;
 	}
+	return brushSampler(rCtx, obj);
+}
+
+/**
+ * The per-device-pixel sampler of an EMF+ brush object (a fill record's
+ * brush, or a pen's own brush), or `null` for a brush Canvas already paints
+ * exactly (solid, hatch; a linear gradient in SVG output).
+ */
+export function brushSampler(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): DeviceBrushSampler | null {
 	const device = plusWorldMatrix(rCtx);
 	if (obj.texture) {
-		return textureSampler(obj.texture, device);
+		return textureSampler(obj.texture, device, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0));
 	}
 	if (obj.gradient && obj.gradient.type === 'radial' && obj.gradient.shape) {
 		return pathGradientSampler(obj.gradient.shape, obj.gradient.wrapMode, device);
+	}
+	// SVG keeps a linear gradient as a vector <linearGradient> (its stops are
+	// GDI+'s table knots already, see effectiveLinearStops); a raster fill
+	// reproduces GDI+'s fixed-point per-pixel interpolation as well.
+	if (obj.gradient && obj.gradient.type === 'linear' && !isSvgContext(rCtx.ctx)) {
+		return linearRampSampler(obj.gradient, device, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0));
 	}
 	return null;
 }
@@ -239,12 +256,14 @@ export function deviceBrushSampler(
 
 /**
  * Device-pixel bounding box (clamped to the surface) of world-space points
- * under `device`, or the whole surface when `points` is null or empty.
+ * under `device`, grown by `margin` device pixels on every side, or the
+ * whole surface when `points` is null or empty.
  */
-function deviceBounds(
+export function deviceBounds(
 	points: ReadonlyArray<{ x: number; y: number }> | null,
 	device: TransformMatrix,
 	size: { w: number; h: number },
+	margin: number = 0,
 ): { x: number; y: number; w: number; h: number } | null {
 	if (!points || points.length === 0) {
 		return { x: 0, y: 0, w: size.w, h: size.h };
@@ -264,10 +283,11 @@ function deviceBounds(
 	if (!Number.isFinite(x0 + y0 + x1 + y1)) {
 		return { x: 0, y: 0, w: size.w, h: size.h };
 	}
-	const bx0 = Math.max(0, Math.floor(x0) - 1);
-	const by0 = Math.max(0, Math.floor(y0) - 1);
-	const bx1 = Math.min(size.w, Math.ceil(x1) + 1);
-	const by1 = Math.min(size.h, Math.ceil(y1) + 1);
+	const m = Math.ceil(Math.max(0, margin)) + 1;
+	const bx0 = Math.max(0, Math.floor(x0) - m);
+	const by0 = Math.max(0, Math.floor(y0) - m);
+	const bx1 = Math.min(size.w, Math.ceil(x1) + m);
+	const by1 = Math.min(size.h, Math.ceil(y1) + m);
 	return bx1 > bx0 && by1 > by0 ? { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 } : null;
 }
 
@@ -295,6 +315,12 @@ export function tryFillPlusShapeExact(
 	const size = surfaceSize(ctx);
 	if (!size || typeof ctx.clip !== 'function' || typeof ctx.drawImage !== 'function') {
 		return false;
+	}
+	if (isPlusAliased(rCtx)) {
+		const any = anyBrushSampler(rCtx, flags, brushIdOrColor);
+		if (any && fillPlusShapeAliased(rCtx, any, buildPath, points, fillRule, size)) {
+			return true;
+		}
 	}
 	const sampler = deviceBrushSampler(rCtx, flags, brushIdOrColor);
 	if (!sampler) {
@@ -327,4 +353,192 @@ export function tryFillPlusShapeExact(
 		ctx.restore();
 	}
 	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Strokes and text: brush colour through a coverage mask
+// ---------------------------------------------------------------------------
+
+/**
+ * Paints a brush through a coverage mask, exactly: the geometry
+ * `drawCoverage` draws (a stroke, glyphs) is rendered ONCE, opaque, onto a
+ * scratch canvas the size of `box` (its alpha is the coverage, with
+ * Canvas's own antialiasing at the edges), the brush colour of every
+ * device pixel in the box comes from `sampler` (exactly as a fill does),
+ * the two are multiplied, and the block is composited at an integer device
+ * offset under an identity transform, which every backend copies
+ * unfiltered, through the live clip. This replaces painting a stroke or
+ * text through a `CanvasPattern` (which every canvas backend filters) or
+ * a flat colour. `drawCoverage` receives the scratch context already
+ * transformed so world coordinates land on the box, and must draw in an
+ * opaque colour. Returns `false`, having drawn nothing, when the context
+ * lacks the canvas support this needs or the box is implausibly large.
+ */
+export function paintBrushThroughMask(
+	rCtx: EmfPlusReplayCtx,
+	sampler: DeviceBrushSampler,
+	box: { x: number; y: number; w: number; h: number },
+	drawCoverage: (c: CanvasContext) => void,
+	aliased: boolean = false,
+	hitTest?: (c: CanvasContext, x: number, y: number) => boolean,
+): boolean {
+	const { ctx } = rCtx;
+	if (typeof ctx.drawImage !== 'function' || box.w * box.h > MAX_EXACT_PIXELS) {
+		return false;
+	}
+	const mask = createTempCanvas(box.w, box.h);
+	const out = createTempCanvas(box.w, box.h);
+	if (!mask || !out || typeof mask.ctx.getImageData !== 'function') {
+		return false;
+	}
+	const device = plusWorldMatrix(rCtx);
+	const m = mask.ctx;
+	// An aliased mask moves GDI+'s sample point of each pixel onto the
+	// canvas pixel's centre, less a hair (see aliasedSampleShift): a pixel is
+	// covered when that point is inside the geometry (GDI+'s top-left rule
+	// on ties). Fully covered and fully empty pixels are decided by the
+	// rendered coverage alone; a partly covered one (an edge pixel) asks
+	// `hitTest` (`isPointInPath`/`isPointInStroke` on the geometry
+	// `drawCoverage` left current), or, without one, whether it is at least
+	// half covered.
+	const shift = aliased ? aliasedSampleShift(rCtx) : 0;
+	m.setTransform(device[0], device[1], device[2], device[3], device[4] - box.x + shift, device[5] - box.y + shift);
+	m.fillStyle = '#000';
+	m.strokeStyle = '#000';
+	// Aliased: curves become the polygon GDI+ flattens them to (emf-plus-flatten.ts).
+	drawCoverage(aliased ? flatteningContext(m, device) : m);
+	const coverage = canvasGetImageData(m, 0, 0, box.w, box.h).data;
+	if (aliased) {
+		const probe = hitTest && typeof m.isPointInPath === 'function' ? hitTest : null;
+		for (let i = 3; i < coverage.length; i += 4) {
+			const cv = coverage[i];
+			if (cv === 0 || cv === 255) {
+				continue;
+			}
+			if (probe) {
+				const p = (i - 3) / 4;
+				const px = (p % box.w) + 0.5;
+				const py = Math.floor(p / box.w) + 0.5;
+				// isPointInPath/isPointInStroke take untransformed canvas coordinates.
+				coverage[i] = probe(m, px, py) ? 255 : 0;
+			} else {
+				coverage[i] = cv >= 128 ? 255 : 0;
+			}
+		}
+	}
+	const data = new Uint8ClampedArray(box.w * box.h * 4);
+	sampler(box.x, box.y, box.w, box.h, data);
+	for (let i = 3; i < data.length; i += 4) {
+		data[i] = (data[i] * coverage[i] + 127) / 255;
+	}
+	canvasPutImageData(out.ctx, createImageDataCompat(data, box.w, box.h), 0, 0);
+	ctx.save();
+	try {
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.imageSmoothingEnabled = false;
+		(ctx.drawImage as unknown as (img: unknown, x: number, y: number) => void).call(ctx, out.canvas, box.x, box.y);
+	} finally {
+		ctx.restore();
+	}
+	return true;
+}
+
+/**
+ * Canvas-space shift that puts GDI+'s sample point of a device pixel at the
+ * canvas pixel's centre, less 1/32 pixel (half of GDI+'s 1/16-pixel 28.4
+ * fixed-point step) so a sample exactly on a left or top edge lands inside
+ * and one exactly on a right or bottom edge outside (GDI+'s top-left rule).
+ * Under `PixelOffsetMode` None GDI+ samples pixel (x, y) at the point
+ * (x, y), half a pixel before the canvas centre; under Half/HighQuality at
+ * (x + 0.5, y + 0.5).
+ */
+export function aliasedSampleShift(rCtx: EmfPlusReplayCtx): number {
+	return (isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0) ? 0 : 0.5) - 1 / 32;
+}
+
+/**
+ * True when EMF+ fills and strokes must be rasterised without antialiasing,
+ * on GDI+'s own pixel grid: the `gdiAntialias: false` option is set, the
+ * recorded GDI+ `SmoothingMode` is not antialiased (GDI+'s default), and
+ * the output is raster (SVG keeps vector edges).
+ */
+export function isPlusAliased(rCtx: EmfPlusReplayCtx): boolean {
+	return rCtx.gdiAntialias === false && !rCtx.antiAlias && !isSvgContext(rCtx.ctx);
+}
+
+/** A sampler painting one flat colour (packed ARGB) everywhere. */
+export function solidSampler(argb: number): DeviceBrushSampler {
+	const a = (argb >>> 24) & 0xff;
+	const r = (argb >>> 16) & 0xff;
+	const g = (argb >>> 8) & 0xff;
+	const b = argb & 0xff;
+	return (_x0, _y0, w, h, out) => {
+		for (let i = 0; i < w * h * 4; i += 4) {
+			out[i] = r;
+			out[i + 1] = g;
+			out[i + 2] = b;
+			out[i + 3] = a;
+		}
+	};
+}
+
+/** Parses a CSS `rgba(r,g,b,a)`/`#rrggbb` colour (as the parsers produce) to packed ARGB, or `null`. */
+export function cssColorToArgb(color: string): number | null {
+	const m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(color);
+	if (m) {
+		const a = m[4] === undefined ? 1 : Number(m[4]);
+		const ch = (v: string): number => Math.min(255, Math.max(0, Math.round(Number(v))));
+		return ((Math.round(Math.min(1, Math.max(0, a)) * 255) << 24) | (ch(m[1]) << 16) | (ch(m[2]) << 8) | ch(m[3])) >>> 0;
+	}
+	const h = /^#([0-9a-f]{6})$/i.exec(color);
+	return h ? (0xff000000 | parseInt(h[1], 16)) >>> 0 : null;
+}
+
+/**
+ * The sampler for a fill record's brush, including a flat colour (an inline
+ * ARGB colour or a solid/hatch brush's colour), for the aliased path which
+ * must paint every brush through a mask.
+ */
+function anyBrushSampler(rCtx: EmfPlusReplayCtx, flags: number, brushIdOrColor: number): DeviceBrushSampler | null {
+	if (flags & 0x8000) {
+		return solidSampler(brushIdOrColor >>> 0);
+	}
+	const exact = deviceBrushSampler(rCtx, flags, brushIdOrColor);
+	if (exact) {
+		return exact;
+	}
+	const obj = rCtx.objectTable.get(brushIdOrColor & 0xff);
+	const argb = obj && obj.kind === 'plus-brush' ? cssColorToArgb(obj.color) : null;
+	return argb === null ? null : solidSampler(argb);
+}
+
+/**
+ * Fills a shape without antialiasing, on GDI+'s pixel grid (see
+ * {@link isPlusAliased}): the shape's coverage is thresholded per pixel at
+ * GDI+'s sample point and every covered pixel takes the brush colour.
+ */
+function fillPlusShapeAliased(
+	rCtx: EmfPlusReplayCtx,
+	sampler: DeviceBrushSampler,
+	buildPath: (ctx: CanvasContext) => void,
+	points: ReadonlyArray<{ x: number; y: number }> | null,
+	fillRule: CanvasFillRule,
+	size: { w: number; h: number },
+): boolean {
+	const box = deviceBounds(points, plusWorldMatrix(rCtx), size);
+	if (!box) {
+		return true;
+	}
+	return paintBrushThroughMask(
+		rCtx,
+		sampler,
+		box,
+		(c) => {
+			c.beginPath();
+			buildPath(c);
+			c.fill(fillRule);
+		},
+		true,
+		(c, x, y) => c.isPointInPath(x, y, fillRule),
+	);
 }

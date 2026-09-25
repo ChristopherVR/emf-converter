@@ -110,6 +110,39 @@ interface RasterState {
 	clip: ClipMask | null;
 }
 
+let unpremultiplied: Uint8Array | null = null;
+
+/**
+ * Premultiplied channel → straight channel, indexed `(alpha << 8) | value`,
+ * reproducing Skia's float32 conversion (the one `getImageData` goes through
+ * in every Skia-based canvas): both operands scaled by `f32(1/255)`, the
+ * channel multiplied by the float32 reciprocal of alpha, the product scaled
+ * back by 255 and rounded half to even. Fitted exhaustively against
+ * `@napi-rs/canvas` (all 65,280 alpha/value pairs agree); plain `255 / a`
+ * rounding differs on about 1 in 500 translucent pixels, where an exact
+ * `.5` falls either way depending on float32 error.
+ */
+function unpremultiplyTable(): Uint8Array {
+	if (unpremultiplied) {
+		return unpremultiplied;
+	}
+	const f = Math.fround;
+	const inv255 = f(1 / 255);
+	const table = new Uint8Array(256 * 256);
+	for (let a = 1; a < 256; a++) {
+		const recip = f(1 / f(a * inv255));
+		for (let p = 0; p < 256; p++) {
+			const x = f(f(f(p * inv255) * recip) * 255);
+			const clamped = Math.min(Math.max(x, 0), 255);
+			const lo = Math.floor(clamped);
+			const frac = clamped - lo;
+			table[(a << 8) | p] = frac > 0.5 || (frac === 0.5 && lo % 2 === 1) ? lo + 1 : lo;
+		}
+	}
+	unpremultiplied = table;
+	return table;
+}
+
 /** The "canvas" half of a software raster: dimensions, pixels, and its context. */
 export class SoftwareRasterCanvas {
 	readonly width: number;
@@ -164,10 +197,11 @@ export class SoftwareRasterCanvas {
 					out[di + 2] = data[si + 2];
 					out[di + 3] = 255;
 				} else if (a !== 0) {
-					const k = 255 / a;
-					out[di] = data[si] * k;
-					out[di + 1] = data[si + 1] * k;
-					out[di + 2] = data[si + 2] * k;
+					const table = unpremultiplyTable();
+					const row = a << 8;
+					out[di] = table[row | data[si]];
+					out[di + 1] = table[row | data[si + 1]];
+					out[di + 2] = table[row | data[si + 2]];
 					out[di + 3] = a;
 				}
 			}

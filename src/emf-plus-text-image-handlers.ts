@@ -16,17 +16,17 @@ import {
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { mulMatrix } from './emf-plus-brush-gradient';
-import { tryFillPlusShapeExact } from './emf-plus-exact-fill';
+import { drawEmfPlusImageNow } from './emf-plus-draw-image';
+import { deviceBounds, deviceBrushSampler, paintBrushThroughMask, tryFillPlusShapeExact } from './emf-plus-exact-fill';
 import { isHalfPixelOffset, resampleKernelFor } from './emf-plus-image-resample';
 import { replayEmfPlusPath } from './emf-plus-path';
+import { strokePlusGeometry } from './emf-plus-stroke';
 import {
 	resolveBrushPaint,
 	applyPlusWorldTransform,
-	getPageUnitMultiplier,
 	plusWorldMatrix,
 } from './emf-plus-state-handlers';
 import { isSvgContext } from './svg-context';
-import type { DeferredImageResample, EmfPlusFont, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 import {
 	ANTIALIASED_QUALITY,
 	CLEARTYPE_QUALITY,
@@ -34,6 +34,29 @@ import {
 	type LogFontSpec,
 } from './gdi-font-engine';
 import { paintGdiTextRun } from './gdi-text-render';
+import type {
+	DeferredImageDraw,
+	DeferredImageResample,
+	EmfPlusFont,
+	EmfPlusImage,
+	EmfPlusReplayCtx,
+	TransformMatrix,
+} from './emf-types';
+
+/**
+ * The WrapMode and clamp colour of a draw record's ImageAttributes object
+ * (its first field, 0xFFFFFFFF or a missing object meaning none).
+ */
+function imageAttributesWrap(
+	rCtx: EmfPlusReplayCtx,
+	attributesId: number,
+): Pick<DeferredImageResample, 'wrap' | 'clampArgb'> {
+	const obj = attributesId <= 0xff ? rCtx.objectTable.get(attributesId) : undefined;
+	if (!obj || obj.kind !== 'plus-imageattributes' || !obj.wrapMode) {
+		return {};
+	}
+	return { wrap: obj.wrapMode, clampArgb: obj.clampArgb };
+}
 
 /** GDI+ `UnitPixel` (MS-EMFPLUS 2.1.1.33): the only source-rectangle unit resampled per pixel. */
 const UNIT_PIXEL = 2;
@@ -70,7 +93,7 @@ function imageResampleSpec(
 ): DeferredImageResample | undefined {
 	const { view } = rCtx;
 	const kernel = resampleKernelFor(rCtx.interpolationMode ?? 0);
-	if (isMetafile || !kernel || view.getUint32(dataOff + 4, true) !== UNIT_PIXEL) {
+	if (isMetafile || view.getUint32(dataOff + 4, true) !== UNIT_PIXEL) {
 		return undefined;
 	}
 	const srcX = view.getFloat32(dataOff + 8, true);
@@ -88,7 +111,150 @@ function imageResampleSpec(
 		toDevice: mulMatrix(plusWorldMatrix(rCtx), toWorld(srcX, srcY, srcW, srcH)),
 		kernel,
 		halfPixelOffset: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0),
+		...imageAttributesWrap(rCtx, view.getUint32(dataOff, true)),
 	};
+}
+
+/**
+ * Paints an EMF+ image draw now, in record order and under the active clip
+ * (`emf-plus-draw-image.ts`), or, when its content could not be prepared
+ * ahead of replay, queues it for `processDeferredImages` (reserving its
+ * SVG slot here so SVG output keeps its z-order either way). `toWorld`
+ * maps the record's source rectangle (image pixels, at `dataOff + 8`) to
+ * world coordinates.
+ */
+function drawOrDeferImage(
+	rCtx: EmfPlusReplayCtx,
+	imgObj: EmfPlusImage,
+	dataOff: number,
+	dx: number,
+	dy: number,
+	dw: number,
+	dh: number,
+	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
+): void {
+	if (!imgObj.data) {
+		return;
+	}
+	const isMetafile = imgObj.type === 2;
+	const draw: DeferredImageDraw = {
+		imageData: imgObj.data,
+		dx,
+		dy,
+		dw,
+		dh,
+		transform: plusWorldMatrix(rCtx),
+		isMetafile,
+		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld),
+	};
+	const { view } = rCtx;
+	const source = {
+		unit: view.getUint32(dataOff + 4, true),
+		srcX: view.getFloat32(dataOff + 8, true),
+		srcY: view.getFloat32(dataOff + 12, true),
+		srcW: view.getFloat32(dataOff + 16, true),
+		srcH: view.getFloat32(dataOff + 20, true),
+		toWorld,
+	};
+	if (drawEmfPlusImageNow(rCtx, imgObj, draw, source)) {
+		emfLog('DrawImage: painted in record order');
+		return;
+	}
+	if (isSvgContext(rCtx.ctx)) {
+		// The raster mirror never sees a deferred image, so mark the device
+		// quad it will cover as unknown (see `SvgContext.reserveSlot`): the
+		// source rectangle's corners mapped to world by `toWorld`, then to device.
+		const m = toWorld(source.srcX, source.srcY, source.srcW, source.srcH);
+		const corners = [
+			source.srcX,
+			source.srcY,
+			source.srcX + source.srcW,
+			source.srcY,
+			source.srcX + source.srcW,
+			source.srcY + source.srcH,
+			source.srcX,
+			source.srcY + source.srcH,
+		];
+		const world: number[] = [];
+		for (let i = 0; i < corners.length; i += 2) {
+			world.push(m[0] * corners[i] + m[2] * corners[i + 1] + m[4], m[1] * corners[i] + m[3] * corners[i + 1] + m[5]);
+		}
+		draw.svgSlot = rCtx.ctx.reserveSlot(deviceQuad(plusWorldMatrix(rCtx), 1, world));
+	}
+	rCtx.deferredImages.push(draw);
+	emfLog(`DrawImage: queued deferred image (total=${rCtx.deferredImages.length})`);
+}
+
+/**
+ * True when every figure of an EMF+ path is closed (its last point carries
+ * the close flag, 0x80), so an Inset pen paints inside it. Pure.
+ */
+function isClosedPath(types: Uint8Array): boolean {
+	if (types.length === 0) {
+		return false;
+	}
+	for (let i = 1; i <= types.length; i++) {
+		// The point before each figure start (and the very last point) ends a figure.
+		if ((i === types.length || (types[i] & 0x0f) === 0) && !(types[i - 1] & 0x80)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Fills text (with the context's font, alignment and baseline already set)
+ * at world (`x`, `y`) with a record's brush. A texture, linear- or
+ * path-gradient brush on a raster context is painted exactly: the glyphs'
+ * coverage comes from one opaque `fillText` on a scratch canvas and the
+ * colour of every covered device pixel from the brush sampler a fill uses
+ * (`paintBrushThroughMask`), instead of a `CanvasPattern` every backend
+ * filters. Any other brush (and SVG output, which keeps real `<text>` with
+ * a paint server) fills through `fillStyle`. `emSize` bounds the glyph
+ * extent above and below the text line.
+ */
+function fillPlusText(
+	rCtx: EmfPlusReplayCtx,
+	recFlags: number,
+	brushVal: number,
+	text: string,
+	x: number,
+	y: number,
+	emSize: number,
+): void {
+	const { ctx } = rCtx;
+	const sampler = isSvgContext(ctx) ? null : deviceBrushSampler(rCtx, recFlags, brushVal);
+	const size = (ctx as { canvas?: { width?: number; height?: number } }).canvas;
+	if (sampler && size && typeof size.width === 'number' && typeof size.height === 'number') {
+		const width = typeof ctx.measureText === 'function' ? ctx.measureText(text).width : text.length * emSize;
+		const em = Math.abs(emSize) || 1;
+		// Generous world-space bounds for any alignment/baseline: the whole
+		// advance on either side, and two ems above and below the anchor.
+		const pts = [
+			{ x: x - width - em, y: y - 2 * em },
+			{ x: x + width + em, y: y - 2 * em },
+			{ x: x - width - em, y: y + 2 * em },
+			{ x: x + width + em, y: y + 2 * em },
+		];
+		const box = deviceBounds(pts, plusWorldMatrix(rCtx), { w: size.width, h: size.height });
+		if (!box) {
+			return;
+		}
+		const { font, textAlign, textBaseline } = ctx;
+		if (
+			paintBrushThroughMask(rCtx, sampler, box, (c) => {
+				c.font = font;
+				c.textAlign = textAlign;
+				c.textBaseline = textBaseline;
+				c.fillText(text, x, y);
+			})
+		) {
+			return;
+		}
+	}
+	ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
+	applyPlusWorldTransform(rCtx);
+	ctx.fillText(text, x, y);
 }
 
 // ---------------------------------------------------------------------------
@@ -210,18 +376,22 @@ export function handleEmfPlusTextImageRecord(
 				if (pathObj && pathObj.kind === 'plus-path') {
 					// replayEmfPlusPath issues its own beginPath(), harmlessly
 					// repeating the one tryFillPlusShapeExact has already issued.
+					// The path's own FillMode: Alternate (even-odd, GDI+'s default)
+					// or Winding (nonzero).
+					const rule = pathObj.fillRule ?? 'nonzero';
 					const exact = tryFillPlusShapeExact(
 						rCtx,
 						recFlags,
 						brushVal,
 						(c) => replayEmfPlusPath(c, pathObj),
 						pathObj.points,
+						rule,
 					);
 					if (!exact) {
 						ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 						applyPlusWorldTransform(rCtx);
 						replayEmfPlusPath(ctx, pathObj);
-						ctx.fill();
+						ctx.fill(rule);
 					}
 				}
 			}
@@ -235,13 +405,14 @@ export function handleEmfPlusTextImageRecord(
 				const pathObj = objectTable.get(pathId);
 				const pen = objectTable.get(penIndex & 0xff);
 				if (pathObj && pathObj.kind === 'plus-path') {
-					if (pen && pen.kind === 'plus-pen') {
-						ctx.strokeStyle = pen.color;
-						ctx.lineWidth = pen.width;
-					}
-					applyPlusWorldTransform(rCtx);
-					replayEmfPlusPath(ctx, pathObj);
-					ctx.stroke();
+					// replayEmfPlusPath issues its own beginPath().
+					strokePlusGeometry(
+						rCtx,
+						pen && pen.kind === 'plus-pen' ? pen : null,
+						(c) => replayEmfPlusPath(c, pathObj),
+						pathObj.points,
+						isClosedPath(pathObj.types),
+					);
 				}
 			}
 			return true;
@@ -276,7 +447,6 @@ export function handleEmfPlusTextImageRecord(
 						const italic = font.flags & 2 ? 'italic ' : '';
 						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
 						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
-						ctx.fillStyle = paint;
 						ctx.textBaseline = 'top';
 
 						if (sf && sf.kind === 'plus-stringformat') {
@@ -294,8 +464,7 @@ export function handleEmfPlusTextImageRecord(
 							ctx.textAlign = 'left';
 						}
 
-						applyPlusWorldTransform(rCtx);
-						ctx.fillText(text, layoutX, layoutY);
+						fillPlusText(rCtx, recFlags, brushVal, text, layoutX, layoutY, font.emSize);
 					}
 				}
 			}
@@ -326,15 +495,12 @@ export function handleEmfPlusTextImageRecord(
 						const italic = font.flags & 2 ? 'italic ' : '';
 						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
 						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
-						ctx.fillStyle = resolveBrushPaint(rCtx, recFlags, brushVal);
 						ctx.textBaseline = 'alphabetic';
 						ctx.textAlign = 'left';
 
-						applyPlusWorldTransform(rCtx);
-
 						const gx = view.getFloat32(alignedPosOff, true);
 						const gy = view.getFloat32(alignedPosOff + 4, true);
-						ctx.fillText(text, gx, gy);
+						fillPlusText(rCtx, recFlags, brushVal, text, gx, gy, font.emSize);
 					}
 				}
 			}
@@ -372,38 +538,16 @@ export function handleEmfPlusTextImageRecord(
 					`DrawImage: worldTransform=[${rCtx.worldTransform.map((v) => v.toFixed(3)).join(', ')}]`,
 				);
 				if (imgObj && imgObj.kind === 'plus-image' && imgObj.data) {
-					// Store the fully-scaled transform (world × pageUnit × dpiScale)
-					// so processDeferredImages can restore it directly.
-					const wt = rCtx.worldTransform;
-					const s = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale) * rCtx.dpiScale;
-					rCtx.deferredImages.push({
-						imageData: imgObj.data,
-						dx,
-						dy,
-						dw,
-						dh,
-						transform: [
-							wt[0] * s,
-							wt[1] * s,
-							wt[2] * s,
-							wt[3] * s,
-							wt[4] * s,
-							wt[5] * s,
-						] as TransformMatrix,
-						isMetafile: imgObj.type === 2,
-						svgSlot: isSvgContext(rCtx.ctx)
-							? rCtx.ctx.reserveSlot(deviceQuad(wt, s, [dx, dy, dx + dw, dy, dx + dw, dy + dh, dx, dy + dh]))
-							: undefined,
-						resample: imageResampleSpec(rCtx, dataOff, imgObj.type === 2, (sx, sy, sw, sh) => [
-							dw / sw,
-							0,
-							0,
-							dh / sh,
-							dx - (sx * dw) / sw,
-							dy - (sy * dh) / sh,
-						]),
-					});
-					emfLog(`DrawImage: queued deferred image (total=${rCtx.deferredImages.length})`);
+					// Store the fully-scaled transform (world × pageUnit × dpiScale ×
+					// base) so processDeferredImages can restore it directly.
+					drawOrDeferImage(rCtx, imgObj, dataOff, dx, dy, dw, dh, (sx, sy, sw, sh) => [
+						dw / sw,
+						0,
+						0,
+						dh / sh,
+						dx - (sx * dw) / sw,
+						dy - (sy * dh) / sh,
+					]);
 				} else {
 					emfWarn(`DrawImage: SKIPPED, no valid image data for id=${imgId}`);
 				}
@@ -449,41 +593,17 @@ export function handleEmfPlusTextImageRecord(
 					emfLog(
 						`DrawImagePoints: worldTransform=[${rCtx.worldTransform.map((v) => v.toFixed(3)).join(', ')}]`,
 					);
-					// Store the fully-scaled transform (world × pageUnit × dpiScale)
-					const wt2 = rCtx.worldTransform;
-					const s2 = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale) * rCtx.dpiScale;
-					rCtx.deferredImages.push({
-						imageData: imgObj.data,
-						dx,
-						dy,
-						dw,
-						dh,
-						transform: [
-							wt2[0] * s2,
-							wt2[1] * s2,
-							wt2[2] * s2,
-							wt2[3] * s2,
-							wt2[4] * s2,
-							wt2[5] * s2,
-						] as TransformMatrix,
-						isMetafile: imgObj.type === 2,
-						svgSlot: isSvgContext(rCtx.ctx)
-							? rCtx.ctx.reserveSlot(
-									deviceQuad(wt2, s2, [p1x, p1y, p2x, p2y, p2x + p3x - p1x, p2y + p3y - p1y, p3x, p3y]),
-								)
-							: undefined,
-						// The three points are the destinations of the source
-						// rectangle's top-left, top-right and bottom-left corners,
-						// so any rotation or shear is carried exactly here.
-						resample: imageResampleSpec(rCtx, dataOff, imgObj.type === 2, (sx, sy, sw, sh) => {
-							const a = (p2x - p1x) / sw;
-							const b = (p2y - p1y) / sw;
-							const c = (p3x - p1x) / sh;
-							const d = (p3y - p1y) / sh;
-							return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
-						}),
+					// Store the fully-scaled transform (world × pageUnit × dpiScale × base).
+					// The three points are the destinations of the source
+					// rectangle's top-left, top-right and bottom-left corners,
+					// so any rotation or shear is carried exactly here.
+					drawOrDeferImage(rCtx, imgObj, dataOff, dx, dy, dw, dh, (sx, sy, sw, sh) => {
+						const a = (p2x - p1x) / sw;
+						const b = (p2y - p1y) / sw;
+						const c = (p3x - p1x) / sh;
+						const d = (p3y - p1y) / sh;
+						return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
 					});
-					emfLog(`DrawImagePoints: queued deferred image (total=${rCtx.deferredImages.length})`);
 				} else {
 					const hasData = imgObj && imgObj.kind === 'plus-image' && imgObj.data;
 					emfWarn(

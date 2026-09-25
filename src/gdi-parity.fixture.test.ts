@@ -59,31 +59,71 @@ const ROP3_CASES: ParityCase[] = [
 ];
 
 /**
+ * A gradient/image case measured pixel-for-pixel: every channel within one
+ * level (GDI+'s own fixed-point rounding) and no pixel beyond it.
+ */
+const levelExact = (name: string, options?: EmfConvertOptions): ParityCase => ({
+	name,
+	ext: 'emf',
+	tolerance: 1,
+	maxMismatch: 0,
+	options,
+});
+
+/**
  * Linear-gradient WrapMode tiling (Tile/TileFlipX/TileFlipY/TileFlipXY) at a
  * horizontal angle, a 30-degree angle, an arbitrary shear+blend transform,
- * and preset (InterpolationColors) stops at 120 degrees. All are unrolled
- * into one hard-stopped `CanvasGradient` (see `tiledLinear` in
- * `emf-plus-brush-gradient.ts`), so they are exact up to float colour
- * rounding at period seams; measured mismatch tops out at 1.46% (the
- * preset-colours case, where GDI+'s own blend curve is coarsest).
+ * and preset (InterpolationColors) stops at 120 degrees. Painted per device
+ * pixel with GDI+'s own interpolation table (`emf-plus-linear-ramp.ts`:
+ * 16/64/256 knots rounded to 8 bits, 16.16 fixed-point ramp coordinates,
+ * a doubled table for TileFlipX), so every pixel is within one level of
+ * GDI+ (down from 1.46% of pixels beyond 8 levels on the preset-colours
+ * case, which a plain gradient through the exact preset stops left, and a
+ * seam pixel one period off on the sheared blend case). The one-level
+ * residue is GDI+'s float rounding of exact-tie blend knots.
  */
 const LINEAR_TILE_CASES: ParityCase[] = [
-	close('grad-linear-h-tile', 0.001),
-	close('grad-linear-h-flipx', 0.001),
-	close('grad-linear-h-flipy', 0.001),
-	close('grad-linear-h-flipxy', 0.001),
-	close('grad-linear-a30-tile', 0.001),
-	close('grad-linear-a30-flipx', 0.001),
-	close('grad-linear-a30-flipy', 0.001),
-	close('grad-linear-a30-flipxy', 0.001),
-	close('grad-linear-skew-blend-tile', 0.003),
-	close('grad-linear-skew-blend-flipx', 0.001),
-	close('grad-linear-skew-blend-flipy', 0.003),
-	close('grad-linear-skew-blend-flipxy', 0.001),
-	close('grad-linear-preset-a120-tile', 0.02),
-	close('grad-linear-preset-a120-flipx', 0.02),
-	close('grad-linear-preset-a120-flipy', 0.02),
-	close('grad-linear-preset-a120-flipxy', 0.02),
+	levelExact('grad-linear-h-tile'),
+	levelExact('grad-linear-h-flipx'),
+	levelExact('grad-linear-h-flipy'),
+	levelExact('grad-linear-h-flipxy'),
+	levelExact('grad-linear-a30-tile'),
+	levelExact('grad-linear-a30-flipx'),
+	levelExact('grad-linear-a30-flipy'),
+	levelExact('grad-linear-a30-flipxy'),
+	levelExact('grad-linear-skew-blend-tile'),
+	levelExact('grad-linear-skew-blend-flipx'),
+	levelExact('grad-linear-skew-blend-flipy'),
+	levelExact('grad-linear-skew-blend-flipxy'),
+	levelExact('grad-linear-preset-a120-tile'),
+	levelExact('grad-linear-preset-a120-flipx'),
+	levelExact('grad-linear-preset-a120-flipy'),
+	levelExact('grad-linear-preset-a120-flipxy'),
+];
+
+/**
+ * GDI+'s linear-gradient interpolation table in the cases that decide its
+ * size and shape (`emf-plus-linear-ramp.ts`): five preset colours on a
+ * brush rectangle whose w + h picks a 16-, 64- and 256-interval table,
+ * `SetSigmaBellShape` (hundreds of blend points), `SetBlendTriangularShape`
+ * (three), `GammaCorrection` on a two-colour and a preset ramp,
+ * translucent end colours, and `PixelOffsetMode` Half. All within one
+ * level of GDI+ on every pixel. `gpx-lin-blend-ellipse` (four blend
+ * factors, rotated, on an ellipse) is level-exact inside the shape; its
+ * curved edge is Canvas antialiasing where GDI+'s default SmoothingMode
+ * paints aliased pixels (see the `gdiAntialias: false` block below).
+ */
+const LINEAR_RAMP_CASES: ParityCase[] = [
+	levelExact('gpx-lin-preset5-small'),
+	levelExact('gpx-lin-preset5-large'),
+	levelExact('gpx-lin-preset5-huge'),
+	levelExact('gpx-lin-sigma'),
+	levelExact('gpx-lin-triangular'),
+	levelExact('gpx-lin-gamma'),
+	levelExact('gpx-lin-gamma-preset'),
+	levelExact('gpx-lin-alpha'),
+	levelExact('gpx-lin-pixeloffset-half'),
+	close('gpx-lin-blend-ellipse', 0.03), // measured 2.41% (antialiased edge only)
 ];
 
 /**
@@ -198,42 +238,125 @@ const ROP2_EXACT_CASES: ParityCase[] = [
  * `emf-gdi-draw-text.ts`'s `handleExtTextOutW`). Real GDI DOES rotate both
  * under a rotated world transform (confirmed against these exact fixtures:
  * the reference PNG is painted by the identical GDI calls under the same
- * transform). Not `exact()`: a rotated raster necessarily resamples at
- * every output pixel (`rotate-bitblt-25deg`), and glyph rasterisation
- * already differs from GDI's own font engine even without rotation
- * (`rotate-text-25deg`).
+ * transform). The blit maps every device pixel of the FIX parallelogram
+ * back to one source texel, as GDI does, instead of resampling a local
+ * raster: measured 0.005% (one pixel whose centre maps exactly onto a
+ * texel boundary), down from 0.67%. Glyph rasterisation already differs
+ * from GDI's own font engine even without rotation (`rotate-text-25deg`).
  */
 const ROTATION_AFFINE_CASES: ParityCase[] = [
-	close('rotate-bitblt-25deg', 0.01), // measured 0.67%
+	close('rotate-bitblt-25deg', 0.001), // measured 0.005%
 	close('rotate-text-25deg', 0.035), // measured 2.39%
 ];
 
 /**
  * The same GDI vector fixtures with `gdiAntialias: false`: every fill and
- * stroke rasterised one device pixel at a time, without antialiasing, on
- * GDI's own pixel grid (fills point-sampled at GDI's pixel centres with its
- * top-left rule, 1px strokes along pixel centres). What is left is
- * single-pixel stepping differences along steep lines and curves (GDI's
- * own line DDA picks a neighbouring pixel at some steps).
+ * stroke goes through the GDI rasteriser (`gdi-raster.ts`): GDI's exact
+ * 28.4 geometry (point mapping, ellipse and rounded-rectangle Beziers,
+ * fixed-point Bezier flattening), its polygon fill rule and its one-pixel
+ * line algorithm. Every one of them is pixel-exact at tolerance 0 (they
+ * measured 0.01% to 0.22% with the previous per-pixel `isPointInPath`
+ * sampling).
  */
-const aliased = (name: string, maxMismatch: number): ParityCase => ({
-	...close(name, maxMismatch),
+const aliased = (name: string): ParityCase => ({
+	...exact(name),
 	options: { gdiAntialias: false },
 });
 
 const ALIASED_CASES: ParityCase[] = [
-	aliased('pattern-fill-rect-mono', 0.001), // measured 0.00%
-	aliased('pattern-fill-rect-color', 0.001), // measured 0.00%
-	aliased('pattern-fill-ellipse-color', 0.003), // measured 0.14%
-	aliased('pattern-fill-polygon-color', 0.001), // measured 0.01%
-	aliased('pattern-fill-roundrect-mono', 0.001), // measured 0.00%
-	aliased('rotate-rect-25deg', 0.001), // measured 0.01%
-	aliased('rotate-ellipse-40deg', 0.002), // measured 0.10%
-	aliased('rotate-polygon-15deg', 0.001), // measured 0.03%
-	aliased('rotate-roundrect-30deg', 0.002), // measured 0.10%
-	aliased('skew-rect', 0.004), // measured 0.22%
-	aliased('rop2-bitwise-grid', 0.001), // measured 0.00%
-	aliased('rop2-bitwise-path-bracket', 0.003), // measured 0.18%
+	aliased('pattern-fill-rect-mono'),
+	aliased('pattern-fill-rect-color'),
+	aliased('pattern-fill-ellipse-color'), // was 0.14%
+	aliased('pattern-fill-polygon-color'), // was 0.01%
+	aliased('pattern-fill-roundrect-mono'),
+	aliased('rotate-rect-25deg'), // was 0.01%
+	aliased('rotate-ellipse-40deg'), // was 0.10%
+	aliased('rotate-polygon-15deg'), // was 0.03%
+	aliased('rotate-roundrect-30deg'), // was 0.10%
+	aliased('skew-rect'), // was 0.22%
+	aliased('rop2-bitwise-grid'),
+	aliased('rop2-bitwise-path-bracket'), // was 0.18%
+];
+
+/**
+ * The `gdi-raster` fixtures (`scripts/gdi-fixtures/GdiFixtures.cs`,
+ * `RasterCases`): cosmetic lines at every angle (integer and 28.4 end
+ * points), polylines and Beziers, ellipses of every size 1..18 (pen, null
+ * pen, rotated, skewed, mirrored), rounded rectangles, arcs/pies/chords in
+ * both directions, ALTERNATE vs WINDING polygon fills, bracketed paths, XOR
+ * double-combination, cosmetic and geometric pen styles, wide pens with
+ * every cap and join, rotated/mirrored/stretched/skewed blits, and a
+ * 800-shape benchmark drawing. Under `gdiAntialias: false`:
+ *   - exact at tolerance 0: everything but the rows below;
+ *   - `raster-arcs`, `raster-paths`: a partial arc's control and end points
+ *     are one FIX (1/16 px) off GDI's at about one arc in three (GDI's own
+ *     trigonometry is slightly less precise than ours), moving a few pixels;
+ *   - `raster-wide-pens`, `raster-wide-joins`, `raster-dash-geometric`: GDI
+ *     adjusts its pen nib per segment slope and places flat/square caps and
+ *     miter/bevel joins by its own rounding, which `gdi-raster-widen.ts`
+ *     approximates;
+ *   - `raster-blit-rotated`: about one blit in seven maps a handful of edge
+ *     texels one texel off GDI's (random-probe evidence: 255 of 300 random
+ *     rotated/mirrored/stretched/skewed blits pixel-exact).
+ */
+const raster = (name: string, maxMismatch = 0): ParityCase => ({
+	name,
+	ext: 'emf',
+	tolerance: 0,
+	maxMismatch,
+	options: { gdiAntialias: false },
+});
+
+const RASTER_CASES: ParityCase[] = [
+	raster('raster-lines-star'),
+	raster('raster-lines-fractional'),
+	raster('raster-polylines-beziers'),
+	raster('raster-ellipses-sizes'),
+	raster('raster-ellipses-nullpen'),
+	raster('raster-ellipses-rotated'),
+	raster('raster-roundrects'),
+	raster('raster-pies-chords'),
+	raster('raster-polygon-fillmodes'),
+	raster('raster-rop2-shapes'),
+	raster('raster-dash-cosmetic'),
+	raster('raster-bench-shapes'),
+	raster('raster-arcs', 0.002), // measured 0.117%
+	raster('raster-paths', 0.001), // measured 0.057%
+	raster('raster-blit-rotated', 0.005), // measured 0.350%
+	raster('raster-wide-pens', 0.006), // measured 0.420%
+	raster('raster-wide-joins', 0.013), // measured 0.991%
+	raster('raster-dash-geometric', 0.045), // measured 3.943%
+];
+
+/**
+ * The same fixtures in the default antialiased mode (tolerance 8). The
+ * residual is the deliberate one: Canvas's antialiased edge pixels, which
+ * differ from GDI's binary coverage along every edge (hence the high share
+ * on drawings made of many small shapes, like `raster-bench-shapes`).
+ * Everything that is not an edge (GDI's device geometry and flattened
+ * curves for dashed pens, dash lengths and phase, pen widths, caps, joins,
+ * pixel-grid alignment) follows GDI; the pattern-brush, bitwise-ROP2 and
+ * rotated-blit content is exact in both modes (`raster-rop2-shapes` 0%).
+ */
+const RASTER_AA_CASES: ParityCase[] = [
+	close('raster-lines-star', 0.14), // measured 11.97%
+	close('raster-lines-fractional', 0.11), // measured 9.77%
+	close('raster-polylines-beziers', 0.06), // measured 4.83%
+	close('raster-ellipses-sizes', 0.12), // measured 10.83%
+	close('raster-ellipses-nullpen', 0.05), // measured 3.87%
+	close('raster-ellipses-rotated', 0.045), // measured 3.59%
+	close('raster-roundrects', 0.045), // measured 3.70%
+	close('raster-arcs', 0.04), // measured 3.21%
+	close('raster-pies-chords', 0.065), // measured 5.65%
+	close('raster-polygon-fillmodes', 0.05), // measured 3.94%
+	close('raster-paths', 0.075), // measured 6.63%
+	close('raster-rop2-shapes', 0.001), // measured 0.00%
+	close('raster-dash-cosmetic', 0.1), // measured 8.71%
+	close('raster-dash-geometric', 0.09), // measured 7.80%
+	close('raster-wide-pens', 0.075), // measured 6.36%
+	close('raster-wide-joins', 0.06), // measured 4.87%
+	close('raster-blit-rotated', 0.005), // measured 0.35%
+	close('raster-bench-shapes', 0.17), // measured 15.87%
 ];
 
 /**
@@ -377,6 +500,173 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-world-mono', 'emf', 0.0035), // measured 0.282%
 ];
 
+/**
+ * EMF+ `DrawImage` resampled per device pixel with each GDI+
+ * InterpolationMode's own kernel (`emf-plus-image-resample.ts`, measured
+ * from GDI+'s full weight matrices): NearestNeighbor (halves round up),
+ * point-sampled Bilinear (Default, LowQuality) and Catmull-Rom Bicubic,
+ * and the area-integrated, reduction-prefiltered HighQualityBilinear/
+ * HighQualityBicubic (High), up- and down-scaled and non-uniform, under
+ * every PixelOffsetMode. Before, only Bilinear/NearestNeighbor under None
+ * were modelled and Bicubic/HQ fell back to Canvas scaling (39% to 46% of
+ * pixels off). Every pixel within 8 levels of GDI+ (the largest channel
+ * difference seen is 7, on Bicubic's clamped negative lobes).
+ */
+const IMAGE_MODE_CASES: ParityCase[] = [
+	...[
+		'nearestneighbor',
+		'bilinear',
+		'default',
+		'low',
+		'bicubic',
+		'highqualitybilinear',
+		'highqualitybicubic',
+		'high',
+		'pom-half-bilinear',
+		'pom-half-highqualitybicubic',
+		'pom-half-nearestneighbor',
+		'pom-highquality-bilinear',
+		'pom-highquality-highqualitybicubic',
+		'pom-highquality-nearestneighbor',
+		'pom-highspeed-bilinear',
+		'pom-highspeed-highqualitybicubic',
+		'pom-highspeed-nearestneighbor',
+		'rotated-bilinear',
+	].map((m) => close(`gpx-image-${m}`, 0)),
+	// A rotated HighQualityBicubic draw: exact inside, a few edge pixels
+	// fade differently (GDI+'s rotated high-quality edge is not modelled).
+	close('gpx-image-rotated-highqualitybicubic', 0.003), // measured 0.14%
+];
+
+/**
+ * In-order `DrawImage`: images are decoded before replay
+ * (`emf-plus-image-predecode.ts`) and painted at their own record, under
+ * the clip active there (a rectangle, then a rectangle minus another) and
+ * beneath shapes recorded after them. Previously the PNG output painted
+ * them after replay, on top of everything and unclipped.
+ */
+const IMAGE_ORDER_CASES: ParityCase[] = [close('gpx-image-clip-zorder', 0)];
+
+/**
+ * `DrawImage` with an ImageAttributes WrapMode (TileFlipXY, Tile, Clamp
+ * with a clamp colour), whole images and a source sub-rectangle, under
+ * Bilinear and HighQualityBicubic: the kernel's overhang reads the
+ * bitmap's own texels and, beyond the bitmap, wraps or reads the clamp
+ * colour. ImageAttributes objects were not parsed at all before (their
+ * ObjectType, 8, was swapped with Region's, 4), so every edge faded to
+ * transparent (4.9% to 13.2% of pixels off).
+ */
+const IMAGE_ATTRIBUTE_CASES: ParityCase[] = ['flipxy', 'tile', 'clamp'].flatMap((w) => [
+	close(`gpx-image-attr-${w}-bilinear`, 0),
+	close(`gpx-image-attr-${w}-highqualitybicubic`, 0),
+]);
+
+/**
+ * `SetClip(Region)` from a real GDI+ recording (a union and an exclusion
+ * of rectangles): the Region object (ObjectType 4) is parsed and applied.
+ */
+const REGION_CLIP_CASES: ParityCase[] = [exact('gpx-clipregion')];
+
+/**
+ * An EMF+ `DrawImage` of an embedded metafile, replayed record by record
+ * into the destination (`emf-plus-draw-image.ts`) instead of rasterised
+ * and scaled: scaled 1.5x/1.33x, and under a clip with later shapes over
+ * it. Nested shape edges land where GDI+ puts them (its playback scales
+ * about pixel centres); the residual is antialiased edges against GDI+'s
+ * aliased ones (the `gdiAntialias: false` block takes it under 0.1%).
+ */
+const NESTED_METAFILE_CASES: ParityCase[] = [
+	close('gpx-metafile-scaled', 0.05), // measured 4.57%
+	close('gpx-metafile-clip-zorder', 0.03), // measured 2.31%
+];
+
+/**
+ * TextureBrush fills scaled up, rotated and scaled down by the brush
+ * transform, for every WrapMode: sampled bilinearly per device pixel, as
+ * GDI+ samples a texture brush whatever the InterpolationMode (the
+ * NearestNeighbor and HighQualityBicubic cases paint the identical bitmap
+ * in GDI+), including PixelOffsetMode Half (`writeTextureColor`,
+ * `emf-plus-brush-texture.ts`). Before, nearest-texel sampling left
+ * 85% to 92% of these pixels off.
+ */
+const TEXTURE_SAMPLING_CASES: ParityCase[] = [
+	'tile',
+	'flipx',
+	'flipy',
+	'flipxy',
+	'clamp',
+	'nearest-tile',
+	'hqbicubic-flipxy',
+	'pom-half-tile',
+].map((w) => levelExact(`gpx-texture-${w}`));
+
+/**
+ * Pens and text painted with a texture, linear-gradient or path-gradient
+ * brush: the stroke's or glyphs' coverage comes from Canvas and every
+ * covered pixel's colour from the brush's own per-pixel sampler
+ * (`paintBrushThroughMask`), where a pen used to paint its brush's flat
+ * colour and text a filtered `CanvasPattern`. Pen strokes: exact but for
+ * the curved stroke's antialiased edge (19% to 28% before); text: the
+ * residual is glyph shapes and layout from the host font engine, the
+ * colours inside the glyphs match. `gpx-pen-styles` checks the pen record's
+ * optional data (dash pattern and offset, alignment, compound line, caps,
+ * join, miter limit) is parsed in GDI+'s order so the brush after it is
+ * found; compound lines and separate dash/line caps are not modelled.
+ */
+const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
+	close('gpx-pen-texture', 0.025), // measured 1.79%
+	close('gpx-pen-lingrad', 0.025), // measured 1.84%
+	close('gpx-pen-pathgrad', 0.02), // measured 1.40%
+	close('gpx-pen-styles', 0.05), // measured 4.37%
+	close('gpx-text-texture', 0.14), // measured 11.57% (glyph shapes)
+	close('gpx-text-lingrad', 0.14), // measured 11.76% (glyph shapes)
+	close('gpx-text-pathgrad', 0.09), // measured 6.85% (glyph shapes)
+];
+
+/**
+ * GraphicsPath FillMode for FillPath and SetClip(path): Alternate (GDI+'s
+ * default, recorded as PathPointFlags without 0x2000) fills even-odd, so
+ * the star's centre and the overlap of two same-direction rectangles stay
+ * empty; Winding fills them. Alternate used to fill nonzero (9.7% of
+ * pixels off). The residual is antialiased edges (see below for aliased).
+ */
+const PATH_FILL_MODE_CASES: ParityCase[] = [
+	close('gpx-fillpath-alternate', 0.035), // measured 2.52%
+	close('gpx-fillpath-winding', 0.03), // measured 1.96%
+	close('gpx-clippath-alternate', 0.035), // measured 2.53%
+	close('gpx-clippath-winding', 0.03), // measured 1.96%
+];
+
+/**
+ * The same EMF+ fixtures with `gdiAntialias: false`: EMF+ fills and
+ * strokes recorded under GDI+'s default SmoothingMode (None) are
+ * rasterised aliased on GDI+'s pixel grid (a pixel is painted when its
+ * sample point, the integer device coordinate under PixelOffsetMode None,
+ * is inside; curves flattened into GDI+'s 0.25-pixel polygon), and EMF+
+ * clip regions become the pixel sets GDI+ holds. What is left is single
+ * pixels along slanted and curved edges, where GDI+'s fixed-point edge
+ * stepping rounds a crossing the other way.
+ */
+const plusAliased = (name: string, maxMismatch: number): ParityCase => ({
+	...close(name, maxMismatch),
+	options: { gdiAntialias: false },
+});
+
+const PLUS_ALIASED_CASES: ParityCase[] = [
+	plusAliased('gpx-fillpath-alternate', 0.002), // measured 0.07%
+	plusAliased('gpx-fillpath-winding', 0.002), // measured 0.04%
+	plusAliased('gpx-clippath-alternate', 0.002), // measured 0.08%
+	plusAliased('gpx-clippath-winding', 0.002), // measured 0.06%
+	plusAliased('gpx-lin-blend-ellipse', 0.003), // measured 0.11%
+	plusAliased('gpx-metafile-scaled', 0.002), // measured 0.10%
+	plusAliased('gpx-metafile-clip-zorder', 0.002), // measured 0.05%
+	plusAliased('gpx-pen-texture', 0.003), // measured 0.12%
+	plusAliased('gpx-pen-lingrad', 0.003), // measured 0.12%
+	plusAliased('gpx-pen-pathgrad', 0.003), // measured 0.14%
+	plusAliased('gpx-image-clip-zorder', 0), // measured 0%
+	plusAliased('gpx-texture-tile', 0), // measured 0%
+];
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -442,6 +732,22 @@ describe('GDI ground-truth parity', () => {
 		});
 	});
 
+	describe('GDI rasteriser (gdi-raster fixtures, gdiAntialias: false)', () => {
+		it.each(RASTER_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
+	describe('GDI rasteriser fixtures, default antialiased mode', () => {
+		it.each(RASTER_AA_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
+			expect(diff).not.toBeNull();
+			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+		});
+	});
+
 	describe('EMF+ DrawImage of a real PNG-backed Bitmap', () => {
 		it.each(IMAGE_DRAW_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
@@ -465,6 +771,28 @@ describe('GDI ground-truth parity', () => {
 			expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
 		});
 	});
+
+	const groups: Array<[string, ParityCase[]]> = [
+		['GDI+ linear-gradient interpolation table', LINEAR_RAMP_CASES],
+		['EMF+ DrawImage InterpolationMode / PixelOffsetMode kernels', IMAGE_MODE_CASES],
+		['EMF+ DrawImage painted in record order under its clip', IMAGE_ORDER_CASES],
+		['EMF+ DrawImage with ImageAttributes WrapMode', IMAGE_ATTRIBUTE_CASES],
+		['EMF+ SetClip(Region) from a real GDI+ recording', REGION_CLIP_CASES],
+		['EMF+ DrawImage of an embedded metafile, replayed as vectors', NESTED_METAFILE_CASES],
+		['EMF+ TextureBrush sampling and WrapMode', TEXTURE_SAMPLING_CASES],
+		['EMF+ pens and text painted with texture/gradient brushes', PEN_TEXT_BRUSH_CASES],
+		['EMF+ path FillMode for fills and clips', PATH_FILL_MODE_CASES],
+		['EMF+ SmoothingMode None with gdiAntialias: false', PLUS_ALIASED_CASES],
+	];
+	for (const [title, cases] of groups) {
+		describe(title, () => {
+			it.each(cases.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
+				const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
+				expect(diff).not.toBeNull();
+				expect(diff!.mismatchRatio).toBeLessThanOrEqual(c.maxMismatch);
+			});
+		});
+	}
 });
 
 /**

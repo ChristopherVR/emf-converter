@@ -2,12 +2,20 @@
  * EMF+ path parsing and canvas replay.
  */
 
-import type { ClipPathCmd } from './emf-clip-region';
+import type { ClipPathCmd, ClipShape } from './emf-clip-region';
+import { flattenClipCmds } from './emf-clip-scanline';
 import type { CanvasContext, EmfPlusPath, TransformMatrix } from './emf-types';
 
 // ---------------------------------------------------------------------------
 // Parse an EMF+ Path object from a DataView
 // ---------------------------------------------------------------------------
+
+/**
+ * `PathPointFlags` bit GDI+ sets when the path's `FillMode` is Winding
+ * (clear for Alternate). Confirmed against real GDI+ recordings
+ * (`src/__fixtures__/gdi/gpx-fillpath-*`, `gpx-clippath-*`).
+ */
+const PATH_FLAG_WINDING = 0x2000;
 
 export function parseEmfPlusPath(data: DataView, off: number, maxLen: number): EmfPlusPath | null {
 	if (maxLen < 12) {
@@ -54,7 +62,12 @@ export function parseEmfPlusPath(data: DataView, off: number, maxLen: number): E
 	const alignedPOff = (pOff + 3) & ~3;
 	const types = new Uint8Array(data.buffer, data.byteOffset + alignedPOff, pointCount);
 
-	return { kind: 'plus-path', points, types: new Uint8Array(types) };
+	return {
+		kind: 'plus-path',
+		points,
+		types: new Uint8Array(types),
+		fillRule: pathFlags & PATH_FLAG_WINDING ? 'nonzero' : 'evenodd',
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +119,84 @@ export function emfPlusPathToClipCmds(path: EmfPlusPath, m: TransformMatrix): Cl
 		}
 	}
 	return cmds;
+}
+
+/** Largest vertex count {@link isSingleSimpleFigure} checks for self-intersection. */
+const MAX_SIMPLE_CHECK_VERTICES = 512;
+
+/** True when segments p1-p2 and p3-p4 properly cross (touching endpoints do not count). */
+function segmentsCross(
+	x1: number,
+	y1: number,
+	x2: number,
+	y2: number,
+	x3: number,
+	y3: number,
+	x4: number,
+	y4: number,
+): boolean {
+	const d1 = (x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3);
+	const d2 = (x4 - x3) * (y2 - y3) - (y4 - y3) * (x2 - x3);
+	const d3 = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+	const d4 = (x2 - x1) * (y4 - y1) - (y2 - y1) * (x4 - x1);
+	return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+/**
+ * True when device-space clip commands flatten to exactly one closed
+ * figure whose edges never cross: its winding is 0 or +/-1 everywhere, so
+ * the clip machinery may invert and compose it as a `simple` shape
+ * (`emf-clip-region.ts`). Several figures, which may overlap, or a
+ * self-intersecting one are not simple. Pure.
+ */
+export function isSingleSimpleFigure(cmds: ClipPathCmd[]): boolean {
+	const polys = flattenClipCmds(cmds);
+	if (polys.length !== 1) {
+		return false;
+	}
+	const poly = polys[0];
+	const n = poly.length / 2;
+	if (n < 3) {
+		return true;
+	}
+	if (n > MAX_SIMPLE_CHECK_VERTICES) {
+		return false;
+	}
+	for (let i = 0; i < n; i++) {
+		const i2 = (i + 1) % n;
+		for (let j = i + 2; j < n; j++) {
+			const j2 = (j + 1) % n;
+			if (j2 === i) {
+				continue;
+			}
+			if (
+				segmentsCross(
+					poly[2 * i],
+					poly[2 * i + 1],
+					poly[2 * i2],
+					poly[2 * i2 + 1],
+					poly[2 * j],
+					poly[2 * j + 1],
+					poly[2 * j2],
+					poly[2 * j2 + 1],
+				)
+			) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+/**
+ * The device-space clip shape of an EMF+ path under matrix `m`, filled
+ * with the path's own GDI+ `FillMode` (see {@link EmfPlusPath.fillRule})
+ * and marked `simple` only when it provably is (see
+ * {@link isSingleSimpleFigure}).
+ */
+export function emfPlusPathClipShape(path: EmfPlusPath, m: TransformMatrix): ClipShape {
+	const cmds = emfPlusPathToClipCmds(path, m);
+	return { cmds, fillRule: path.fillRule ?? 'nonzero', simple: isSingleSimpleFigure(cmds) };
 }
 
 export function replayEmfPlusPath(ctx: CanvasContext, path: EmfPlusPath): void {

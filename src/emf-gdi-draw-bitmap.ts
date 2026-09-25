@@ -23,10 +23,12 @@ import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } f
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { gmx, gmy, gmw, gmh, gdiDeviceMatrix, gmapPoint, hasWorldRotation } from './emf-gdi-coord';
+import { gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
+import { fixPoint } from './emf-gdi-raster-shapes';
 import { HALFTONE, stretchGdi } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
 import { drawBlendLayers, splitUnknownDestination, unknownDestination, type BlendLayer } from './emf-rop2-exact';
+import { rewritePixels } from './emf-rop2-exact';
 import { applyRop3, classifyRop3, clampPositiveRect, evalRop3, rop3Index, rop3Operands } from './emf-rop3';
 import type { Rop3Pattern, Rop3Plan } from './emf-rop3';
 import type { AnyCanvas, CanvasContext, EmfGdiReplayCtx } from './emf-types';
@@ -308,33 +310,25 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 
 /**
  * Full-affine (rotated/skewed `EMR_SETWORLDTRANSFORM`) bitmap blit for
- * BitBlt/StretchBlt/StretchDIBits. Real GDI DOES rotate a blit's destination
- * under a rotated world transform (measured against a real fixture:
- * `probe-rotate-bitblt-25deg` under `src/__fixtures__/gdi`, where the
- * blitted source's horizontal colour bands come out visibly tilted); the
- * axis-aligned `runTernary` above only carries the transform's scale and
- * translation, since its exact per-pixel evaluator assumes a destination
- * rectangle it can `getImageData`/`putImageData` directly.
+ * BitBlt/StretchBlt/StretchDIBits, done the way GDI does it: per DEVICE
+ * pixel, never by resampling a local raster.
  *
- * Technique ("draw to a scratch canvas in device space then combine"): the
- * exact per-pixel ROP3 combine still runs on an UNROTATED local raster
- * (sized from the transform's true per-axis magnitude via `Math.hypot`, not
- * just `a`/`d`, so a rotated blit is not mis-sized). That sizing is exact
- * for a skew as well, not an approximation: the local raster's axes ARE the
- * mapped basis vectors (the placement below uses them unchanged), so one
- * local step moves exactly one device pixel along each mapped axis. Under a
- * skew the two axes are no longer perpendicular, so the raster holds
- * `1 / sin(angle between the axes)` samples per device pixel of area:
- * slightly oversampled, never undersampled, and every device pixel in the
- * parallelogram still receives a texel. Each local pixel's
- * destination operand (D) is sampled from its actual rotated DEVICE
- * position (nearest-neighbour, read once from a single bounding-box
- * `getImageData`) rather than from the same local index `applyRop3` assumes.
- * The finished local raster is then placed with `ctx.setTransform` using the
- * same per-step device deltas, so `drawImage` performs the (unavoidable,
- * since a rotated raster blit cannot stay nearest-neighbour-exact at every
- * output pixel) final resample; the brush pattern (P) is sampled at the true
- * device position too, matching `SetBrushOrgEx`'s device-space anchor.
+ * GDI turns the destination rectangle into a parallelogram in device 28.4
+ * fixed point (FIX): the corners the logical (x, y), (x + w, y) and
+ * (x, y + h) map to, each through `fixPoint` (the transform's linear part
+ * and its translation rounded to FIX separately), the fourth corner
+ * implied. A device pixel is painted when its centre (FIX `16 * x`) lies in
+ * the parallelogram, half-open on the far edges (`0 <= u, v < 1` in the
+ * parallelogram's own coordinates); its source texel is the one the centre
+ * maps back to (`floor(u * |sw|)`, `floor(v * |sh|)`, counted inward from the
+ * anchor for a mirrored source), with the ROP3 evaluated against that very
+ * device pixel's destination value (D) and the brush pattern sampled there
+ * (P). All of it is exact integer arithmetic on the FIX corners; matched
+ * against real GDI rotated, mirrored, stretched and skewed blits (see the
+ * `raster-blit-*` fixtures).
+ *
+ * The painted pixels reach the canvas through `rewritePixels`, so the
+ * active clip applies.
  */
 function executeRotatedBlit(
 	rCtx: EmfGdiReplayCtx,
@@ -364,44 +358,32 @@ function executeRotatedBlit(
 		emfWarn('executeRotatedBlit: context cannot read pixels back; rotated ROP3 skipped');
 		return;
 	}
-
-	const m = gdiDeviceMatrix(rCtx);
-	const origin = gmapPoint(rCtx, logDx, logDy);
-	const scaleX = Math.hypot(m[0], m[1]);
-	const scaleY = Math.hypot(m[2], m[3]);
-	const dw = Math.max(1, Math.min(MAX_CANVAS_DIMENSION, Math.round(scaleX * Math.abs(logDw)) || 1));
-	const dh = Math.max(1, Math.min(MAX_CANVAS_DIMENSION, Math.round(scaleY * Math.abs(logDh)) || 1));
-	// Device-space delta per local step (one step per output pixel); the sign
-	// of the logical width/height folds GDI's mirrored-destination convention
-	// directly into the basis vectors.
-	const signDw = logDw < 0 ? -1 : 1;
-	const signDh = logDh < 0 ? -1 : 1;
-	const exX = (m[0] * signDw * Math.abs(logDw)) / dw;
-	const exY = (m[1] * signDw * Math.abs(logDw)) / dw;
-	const eyX = (m[2] * signDh * Math.abs(logDh)) / dh;
-	const eyY = (m[3] * signDh * Math.abs(logDh)) / dh;
-
-	const corners = [
-		origin,
-		{ x: origin.x + exX * dw, y: origin.y + exY * dw },
-		{ x: origin.x + eyX * dh, y: origin.y + eyY * dh },
-		{ x: origin.x + exX * dw + eyX * dh, y: origin.y + exY * dw + eyY * dh },
-	];
-	let minX = Infinity;
-	let minY = Infinity;
-	let maxX = -Infinity;
-	let maxY = -Infinity;
-	for (const c of corners) {
-		minX = Math.min(minX, c.x);
-		minY = Math.min(minY, c.y);
-		maxX = Math.max(maxX, c.x);
-		maxY = Math.max(maxY, c.y);
+	if (logDw === 0 || logDh === 0) {
+		return;
 	}
-	const bx = Math.max(0, Math.floor(minX));
-	const by = Math.max(0, Math.floor(minY));
-	const bw = Math.min(rCtx.canvasW, Math.ceil(maxX)) - bx;
-	const bh = Math.min(rCtx.canvasH, Math.ceil(maxY)) - by;
-	if (bw <= 0 || bh <= 0) {
+
+	// The device parallelogram, in FIX.
+	const [ax, ay] = fixPoint(rCtx, logDx, logDy);
+	const [bx, by] = fixPoint(rCtx, logDx + logDw, logDy);
+	const [qx, qy] = fixPoint(rCtx, logDx, logDy + logDh);
+	const exx = bx - ax;
+	const exy = by - ay;
+	const eyx = qx - ax;
+	const eyy = qy - ay;
+	let det = exx * eyy - exy * eyx;
+	if (det === 0) {
+		return;
+	}
+	const sign = det < 0 ? -1 : 1;
+	det *= sign;
+	const xs = [ax, bx, qx, bx + eyx];
+	const ys = [ay, by, qy, by + eyy];
+	const size = { w: rCtx.canvasW, h: rCtx.canvasH };
+	const x0 = Math.max(0, Math.floor(Math.min(...xs) / 16) - 1);
+	const y0 = Math.max(0, Math.floor(Math.min(...ys) / 16) - 1);
+	const x1 = Math.min(size.w, Math.ceil(Math.max(...xs) / 16) + 2);
+	const y1 = Math.min(size.h, Math.ceil(Math.max(...ys) / 16) + 2);
+	if (x1 <= x0 || y1 <= y0) {
 		return;
 	}
 
@@ -411,73 +393,62 @@ function executeRotatedBlit(
 	}
 	const pattern = patternOperand(rCtx, brush);
 
-	// Build S in LOCAL (unrotated) raster space: source stretch-mode sampling
-	// is unaffected by the destination's rotation, only its placement is.
+	// The source texels, unscaled: GDI samples the source bitmap itself.
 	let src: ImageData | null = null;
+	let srcX = sx;
+	let srcY = sy;
 	if (operands.usesS) {
-		const localReq: BlitRequest = {
+		const decoded = decodeSource(rCtx, {
 			plan: { kind: 'ternary', index, operands },
 			dx: 0,
 			dy: 0,
-			dw: signDw * dw,
-			dh: signDh * dh,
+			dw: logDw,
+			dh: logDh,
 			source,
 			sx,
 			sy,
 			sw,
 			sh,
 			dibOrigin,
-		};
-		const decoded = decodeSource(rCtx, localReq);
+		});
 		if (!decoded) {
 			return;
 		}
-		const srcLayer = createTempCanvas(dw, dh);
-		if (!srcLayer) {
-			return;
+		src = decoded.decoded.pixels;
+		srcX = decoded.req.sx;
+		srcY = decoded.req.sy;
+	}
+	const asw = Math.abs(sw) || 1;
+	const ash = Math.abs(sh) || 1;
+	// decodeSource has already turned a bottom-up DIB's source rect into
+	// top-down image rows; a negative source extent mirrors, addressing texels
+	// from the anchor inward.
+	const texel = (ix: number, iy: number): number => {
+		if (!src) {
+			return 0;
 		}
-		drawSourceMapped(srcLayer.ctx, decoded.decoded, decoded.req, 0, 0, rCtx.state.stretchBltMode);
-		src = canvasGetImageData(srcLayer.ctx, 0, 0, dw, dh);
-	}
+		let tx = sw < 0 ? srcX - 1 - ix : srcX + ix;
+		let ty = sh < 0 ? srcY - 1 - iy : srcY + iy;
+		tx = Math.max(0, Math.min(src.width - 1, tx));
+		ty = Math.max(0, Math.min(src.height - 1, ty));
+		const i = (ty * src.width + tx) * 4;
+		return (src.data[i] << 16) | (src.data[i + 1] << 8) | src.data[i + 2];
+	};
 
-	const destBBox = canvasGetImageData(ctx, bx, by, bw, bh);
-	const dd = destBBox.data;
-	const out = new Uint8ClampedArray(dw * dh * 4);
-	for (let ly = 0; ly < dh; ly++) {
-		for (let lx = 0; lx < dw; lx++) {
-			const devX = origin.x + exX * lx + eyX * ly;
-			const devY = origin.y + exY * lx + eyY * ly;
-			const oi = (ly * dw + lx) * 4;
-			const ix = Math.round(devX) - bx;
-			const iy = Math.round(devY) - by;
-			if (ix < 0 || iy < 0 || ix >= bw || iy >= bh) {
-				continue; // Leaves this output texel transparent: outside the canvas.
-			}
-			const di = (iy * bw + ix) * 4;
-			const dv = (dd[di] << 16) | (dd[di + 1] << 8) | dd[di + 2];
-			const si = (ly * dw + lx) * 4;
-			const sv = src ? (src.data[si] << 16) | (src.data[si + 1] << 8) | src.data[si + 2] : 0;
-			const pv = typeof pattern === 'function' ? pattern(Math.round(devX), Math.round(devY)) : pattern;
-			const r = evalRop3(index, pv, sv, dv);
-			out[oi] = (r >> 16) & 0xff;
-			out[oi + 1] = (r >> 8) & 0xff;
-			out[oi + 2] = r & 0xff;
-			out[oi + 3] = 255;
+	rewritePixels(ctx, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, (x, y, d) => {
+		const px = x * 16 - ax;
+		const py = y * 16 - ay;
+		const un = sign * (px * eyy - py * eyx);
+		const vn = sign * (exx * py - exy * px);
+		if (un < 0 || un >= det || vn < 0 || vn >= det) {
+			return -1;
 		}
-	}
-
-	const outLayer = createTempCanvas(dw, dh);
-	if (!outLayer) {
-		return;
-	}
-	canvasPutImageData(outLayer.ctx, createImageDataCompat(out, dw, dh), 0, 0);
-	ctx.save();
-	ctx.setTransform(exX, exY, eyX, eyY, origin.x, origin.y);
-	ctx.imageSmoothingEnabled = false;
-	ctx.globalCompositeOperation = 'source-over';
-	ctx.globalAlpha = 1;
-	canvasDrawImage(ctx, outLayer.canvas, 0, 0, dw, dh);
-	ctx.restore();
+		const ix = Math.min(asw - 1, Math.floor((un * asw) / det));
+		const iy = Math.min(ash - 1, Math.floor((vn * ash) / det));
+		const s = operands.usesS ? texel(ix, iy) : 0;
+		const p = typeof pattern === 'function' ? pattern(x, y) : pattern;
+		return evalRop3(index, p, s, d);
+	});
 }
 
 /**

@@ -64,6 +64,16 @@ export interface GdiPen {
 	widthX: number;
 	/** CSS hex colour string, e.g. `"#ff0000"`. */
 	color: string;
+	/**
+	 * The full pen style dword (`PS_STYLE_MASK` 0x0F, `PS_ENDCAP_MASK`
+	 * 0xF00, `PS_JOIN_MASK` 0xF000, `PS_TYPE_MASK` 0xF0000). Omitted for pens
+	 * that only carry `style`.
+	 */
+	flags?: number;
+	/** `PS_USERSTYLE` dash/gap lengths (EMR_EXTCREATEPEN), in style units. */
+	userStyle?: number[];
+	/** True for a pen created by EMR_EXTCREATEPEN (its cosmetic/geometric type is explicit). */
+	extended?: boolean;
 }
 
 /**
@@ -165,6 +175,16 @@ export interface DrawState {
 	penWidth: number;
 	/** Current pen style constant. */
 	penStyle: number;
+	/** Current pen's full style dword (see {@link GdiPen.flags}); defaults to {@link penStyle}. */
+	penFlags?: number;
+	/** Current pen's `PS_USERSTYLE` array. */
+	penUserStyle?: number[];
+	/** True when the current pen came from EMR_EXTCREATEPEN. */
+	penExtended?: boolean;
+	/** Arc direction (EMR_SETARCDIRECTION): 1 = AD_COUNTERCLOCKWISE (default), 2 = AD_CLOCKWISE. */
+	arcDirection?: number;
+	/** Miter limit (EMR_SETMITERLIMIT); GDI's default is 10. */
+	miterLimit?: number;
 	/** Current brush fill colour (CSS hex). */
 	brushColor: string;
 	/** Current brush style constant. */
@@ -295,6 +315,11 @@ export interface ReplayOptions {
 	 * brush's fill uses the real image instead of falling back to black.
 	 */
 	textureCache?: EmfPlusTextureCache;
+	/**
+	 * Pre-decoded EMF+ Image objects (`emf-plus-image-predecode.ts`), so
+	 * `DrawImage` paints in record order under the active clip.
+	 */
+	imageCache?: EmfPlusImageCache;
 	/** `EmfConvertOptions.gdiAntialias`: `false` rasterises GDI vector shapes without antialiasing. */
 	gdiAntialias?: boolean;
 	/**
@@ -302,6 +327,20 @@ export interface ReplayOptions {
 	 * by `gdi-font-engine.ts`; omitted, text uses the canvas font engine.
 	 */
 	fonts?: import('./gdi-font-engine').GdiFontCollection;
+	/**
+	 * Replay of a metafile nested in an EMF+ `DrawImage`: its depth (1 for
+	 * a metafile drawn by the top-level file). A nested replay draws into
+	 * its parent's context and, when done, unwinds any canvas `save()` its
+	 * own records left open.
+	 */
+	nestingDepth?: number;
+	/**
+	 * Overrides the EMF+ base transform derived from the bounds (a nested
+	 * metafile drawn onto a rotated or sheared destination).
+	 */
+	plusBaseTransform?: TransformMatrix;
+	/** `false` skips the GDI drawing records (only the EMF+ stream is replayed). */
+	gdiDrawing?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +414,32 @@ export interface EmfPlusLinearGradient {
 	rect?: EmfPlusRectF;
 	/** Brush space to world space (GDI+ encodes the gradient angle here). */
 	transform?: TransformMatrix | null;
+	/**
+	 * The colour ramp exactly as recorded (end colours plus the optional
+	 * preset colours or blend factors, and the gamma flag), from which
+	 * `emf-plus-linear-ramp.ts` rebuilds GDI+'s own interpolation table.
+	 * Absent on descriptors built by hand; rendering then uses `stops`.
+	 */
+	ramp?: EmfPlusLinearRamp;
+}
+
+/**
+ * The recorded colour ramp of a GDI+ linear gradient brush
+ * (MS-EMFPLUS 2.2.2.24): the start and end colours, plus either preset
+ * colours (`InterpolationColors`) or blend factors (`Blend`), and the
+ * `BrushDataIsGammaCorrected` flag.
+ */
+export interface EmfPlusLinearRamp {
+	/** Start colour, packed ARGB. */
+	startArgb: number;
+	/** End colour, packed ARGB. */
+	endArgb: number;
+	/** Preset colours (`InterpolationColors`): ascending positions (0..1) and packed ARGB colours. */
+	preset: { positions: number[]; argb: number[] } | null;
+	/** Blend factors (`Blend`): ascending positions (0..1) and factors (0 = start colour, 1 = end colour). */
+	blend: { positions: number[]; factors: number[] } | null;
+	/** True when the brush interpolates in linear light (gamma 2.2). */
+	gammaCorrected: boolean;
 }
 
 /**
@@ -451,6 +516,32 @@ export interface EmfPlusDecodedTexture {
 /** Maps a brush object's cache key (see {@link EmfPlusReplayCtx.textureCache}) to its pre-decoded texture image. */
 export type EmfPlusTextureCache = Map<number, EmfPlusDecodedTexture>;
 
+/**
+ * An EMF+ Image object's content, prepared ahead of replay (see
+ * `emf-plus-image-predecode.ts`) so `DrawImage` can paint it synchronously,
+ * in record order and under the clip active at that record: a raster
+ * bitmap's decoded pixels, or, for an embedded metafile, the pre-decoded
+ * caches its own nested replay needs.
+ */
+export type EmfPlusPreDecodedImage =
+	| {
+			kind: 'bitmap';
+			width: number;
+			height: number;
+			/** Top-down, non-premultiplied RGBA pixels, `width * height * 4` bytes. */
+			rgba: Uint8ClampedArray;
+	  }
+	| { kind: 'metafile'; caches: EmfPlusMetafileCaches };
+
+/** Maps an Image object's cache key (see {@link EmfPlusImage.cacheKey}) to its pre-decoded content. */
+export type EmfPlusImageCache = Map<number, EmfPlusPreDecodedImage>;
+
+/** Everything one metafile's replay pre-decodes: compressed texture brush images and Image objects. */
+export interface EmfPlusMetafileCaches {
+	textures: EmfPlusTextureCache;
+	images: EmfPlusImageCache;
+}
+
 /** An EMF+ (GDI+) brush object (solid colour, hatch, gradient, or texture). */
 export interface EmfPlusBrush {
 	kind: 'plus-brush';
@@ -471,6 +562,28 @@ export interface EmfPlusPen {
 	width: number;
 	/** Dash style enum: 0=Solid, 1=Dash, 2=Dot, 3=DashDot, 4=DashDotDot, 5=Custom. */
 	dashStyle: number;
+	/** GDI+ `LineCap` at the start / end (0 Flat, 1 Square, 2 Round, 3 Triangle, 0x1x anchors). */
+	startCap?: number;
+	endCap?: number;
+	/** GDI+ `LineJoin`: 0 Miter, 1 Bevel, 2 Round, 3 MiterClipped. */
+	lineJoin?: number;
+	/** Miter limit, in pen widths (GDI+ default 10). */
+	miterLimit?: number;
+	/** Dash offset, in pen widths. */
+	dashOffset?: number;
+	/** GDI+ `DashCap` on every dash end (0 Flat, 2 Round, 3 Triangle); the start/end caps only cap the line itself. */
+	dashCap?: number;
+	/** Custom dash pattern (`PenDataDashedLine`), in pen widths. */
+	dashPattern?: number[] | null;
+	/** GDI+ `PenAlignment`: 0 Center, 1 Inset. */
+	alignment?: number;
+	/** Pen transform (`PenDataTransform`), applied to the pen's width and shape. */
+	transform?: TransformMatrix | null;
+	/**
+	 * The pen's brush: a solid colour is also in {@link color}; a texture or
+	 * gradient brush paints the stroke's pixels (see `emf-plus-stroke.ts`).
+	 */
+	brush?: EmfPlusBrush | null;
 }
 
 /** An EMF+ (GDI+) font object used for text rendering. */
@@ -499,6 +612,13 @@ export interface EmfPlusPath {
 	 * (0=Start, 1=Line, 3=Bezier); bit 7 signals "close sub-path".
 	 */
 	types: Uint8Array;
+	/**
+	 * The path's GDI+ `FillMode`, which a path fill and a path clip honour:
+	 * `'evenodd'` for Alternate (GDI+'s default), `'nonzero'` for Winding
+	 * (`PathPointFlags` bit 0x2000, as GDI+ records it). Absent on paths
+	 * built by hand, which fill nonzero.
+	 */
+	fillRule?: CanvasFillRule;
 }
 
 /** An EMF+ (GDI+) image object: either a raster bitmap or an embedded metafile. */
@@ -508,6 +628,12 @@ export interface EmfPlusImage {
 	data: ArrayBuffer | SharedArrayBuffer | null;
 	/** Image type: 0=Unknown, 1=Bitmap, 2=Metafile (embedded EMF/WMF). */
 	type: number;
+	/**
+	 * The object's key in the pre-decoded image cache
+	 * ({@link EmfPlusReplayCtx.imageCache}): the `dataOff` of its
+	 * `EMFPLUS_OBJECT` record, or of the first record of a continuation run.
+	 */
+	cacheKey?: number;
 }
 
 /** An EMF+ (GDI+) string format object controlling text layout and alignment. */
@@ -524,6 +650,13 @@ export interface EmfPlusStringFormat {
 /** An EMF+ (GDI+) image-attributes object (colour remapping, gamma, etc.). Currently a stub. */
 export interface EmfPlusImageAttributes {
 	kind: 'plus-imageattributes';
+	/**
+	 * `WrapMode` a `DrawImage` with these attributes applies beyond the
+	 * source rectangle (MS-EMFPLUS 2.2.1.5), when recorded.
+	 */
+	wrapMode?: EmfPlusGradientWrapMode;
+	/** Packed ARGB colour outside the source rectangle under WrapMode Clamp. */
+	clampArgb?: number;
 }
 
 /**
@@ -611,6 +744,14 @@ export interface DeferredImageDraw {
 	resample?: DeferredImageResample;
 }
 
+/**
+ * The GDI+ `DrawImage` resampling kernel of an `InterpolationMode`
+ * (see `emf-plus-image-resample.ts`): nearest texel, point-sampled bilinear
+ * (Default, LowQuality, Bilinear), point-sampled bicubic (Bicubic), or the
+ * area-integrated, reduction-prefiltered high-quality kernels.
+ */
+export type ImageResampleKernel = 'nearest' | 'bilinear' | 'bicubic' | 'hq-bilinear' | 'hq-bicubic';
+
 /** How to resample a deferred EMF+ image draw the way GDI+ does (see {@link DeferredImageDraw.resample}). */
 export interface DeferredImageResample {
 	/** Source rectangle, in image pixels. */
@@ -621,9 +762,19 @@ export interface DeferredImageResample {
 	/** Maps a source-pixel coordinate to a device-pixel coordinate. */
 	toDevice: TransformMatrix;
 	/** Resampling kernel, from the active GDI+ `InterpolationMode`. */
-	kernel: 'nearest' | 'bilinear';
+	kernel: ImageResampleKernel;
 	/** True under `PixelOffsetMode` Half/HighQuality (pixel centres), false under None/Default. */
 	halfPixelOffset: boolean;
+	/**
+	 * The draw's `ImageAttributes` WrapMode: a kernel tap outside the source
+	 * rectangle then reads the bitmap's own texel, and one outside the bitmap
+	 * wraps within it (Tile/TileFlipX/Y/XY) or reads `clampArgb` (Clamp),
+	 * as measured on the `gpx-image-attr-*` fixtures. Absent: a tap outside
+	 * the source rectangle is transparent, GDI+'s default without attributes.
+	 */
+	wrap?: EmfPlusGradientWrapMode;
+	/** Packed ARGB read outside the source rectangle under `wrap` Clamp. */
+	clampArgb?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -671,6 +822,25 @@ export interface EmfPlusState {
 	pixelOffsetMode?: number;
 	/** Active GDI+ `TextRenderingHint` (`EmfPlusSetTextRenderingHint`; 0 = SystemDefault when absent). */
 	textRenderingHint?: number;
+	/** Active page unit (`EmfPlusSetPageTransform`), persisted across comment batches. */
+	pageUnit?: number;
+	/** Active page scale (`EmfPlusSetPageTransform`), persisted across comment batches. */
+	pageScale?: number;
+	/**
+	 * Device-space mapping applied after world x page units x DPI scale:
+	 * the metafile's device origin (its header bounds' top-left) moved to
+	 * the canvas origin, or, for a metafile nested in a `DrawImage`, the
+	 * mapping onto the destination (see {@link EmfPlusReplayCtx.baseTransform}).
+	 */
+	baseTransform?: TransformMatrix;
+	/** Pre-decoded Image objects (see {@link EmfPlusReplayCtx.imageCache}). */
+	imageCache?: EmfPlusImageCache;
+	/** Nesting depth of an embedded metafile (see {@link EmfPlusReplayCtx.nestingDepth}). */
+	nestingDepth?: number;
+	/** Active GDI+ antialiasing (see {@link EmfPlusReplayCtx.antiAlias}). */
+	antiAlias?: boolean;
+	/** `EmfConvertOptions.gdiAntialias`, for nested metafile replays. */
+	gdiAntialias?: boolean;
 }
 
 /**
@@ -843,6 +1013,30 @@ export interface EmfPlusReplayCtx {
 	textRenderingHint?: number;
 	/** Font files for exact text (see {@link ReplayOptions.fonts}). */
 	fonts?: import('./gdi-font-engine').GdiFontCollection;
+	/**
+	 * Canvas-space affine applied after world x page units x DPI scale (see
+	 * `plusWorldMatrix`): translates the metafile's device origin (its
+	 * header bounds' top-left, which a drawing reaching above or left of
+	 * device (0, 0) moves negative) to the canvas origin, and places a nested
+	 * metafile onto its `DrawImage` destination. Identity when absent.
+	 */
+	baseTransform?: TransformMatrix;
+	/**
+	 * Pre-decoded Image objects keyed by {@link EmfPlusImage.cacheKey}: a
+	 * `DrawImage` whose image is here is painted immediately, in record
+	 * order and under the clip active at that record, instead of being
+	 * deferred until after replay.
+	 */
+	imageCache?: EmfPlusImageCache;
+	/** Nesting depth of an embedded metafile being replayed (0 = the top-level file). */
+	nestingDepth?: number;
+	/**
+	 * GDI+ `SmoothingMode` antialiasing (`EmfPlusSetAntiAliasMode` flag A):
+	 * `false`/absent is GDI+'s default (SmoothingMode None, aliased edges).
+	 */
+	antiAlias?: boolean;
+	/** `EmfConvertOptions.gdiAntialias`, threaded through for nested metafile replays. */
+	gdiAntialias?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -918,4 +1112,20 @@ export interface EmfGdiReplayCtx {
 	gdiAntialias?: boolean;
 	/** Font files for exact GDI text (see {@link ReplayOptions.fonts}). */
 	fonts?: import('./gdi-font-engine').GdiFontCollection;
+	/**
+	 * The current `BeginPath`/`EndPath` bracket's geometry in device FIX, as
+	 * the GDI rasteriser needs it (`gdi-raster.ts`); built alongside
+	 * {@link pathCmds}.
+	 */
+	rasterPath?: import('./gdi-raster').GdiRasterPath;
+	/**
+	 * The cosmetic pen's dash-pattern position, carried across consecutive
+	 * EMR_LINETO records (GDI restarts it at a MoveTo or any other call).
+	 */
+	lineStyle?: import('./gdi-raster').StyleState;
+	/**
+	 * Deferred exact pixels (`emf-gdi-raster-layer.ts`): `undefined` until
+	 * first needed, `null` when the replay cannot use one.
+	 */
+	rasterLayer?: import('./emf-gdi-raster-layer').RasterLayer | null;
 }

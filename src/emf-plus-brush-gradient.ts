@@ -37,6 +37,7 @@ import {
 	createTempCanvas,
 } from './emf-canvas-helpers';
 import { emfLog } from './emf-logging';
+import { buildLinearRampTable, linearRampOf, linearRampStops } from './emf-plus-linear-ramp';
 import type {
 	CanvasContext,
 	EmfPlusGradient,
@@ -454,11 +455,22 @@ function tiledLinear(
 	return g;
 }
 
+/**
+ * The stops a linear gradient is painted with: GDI+'s own interpolation
+ * table as one stop per knot (see `emf-plus-linear-ramp.ts`) when the
+ * recorded ramp is known, else the descriptor's stops as given.
+ */
+export function effectiveLinearStops(grad: EmfPlusLinearGradient): EmfPlusGradientStop[] {
+	const ramp = grad.rect ? linearRampOf(grad) : null;
+	return ramp && grad.rect ? linearRampStops(buildLinearRampTable(ramp, grad.rect)) : grad.stops;
+}
+
 function linearPaint(
 	ctx: CanvasContext,
-	grad: EmfPlusLinearGradient,
+	recorded: EmfPlusLinearGradient,
 	device: TransformMatrix,
 ): CanvasGradient | CanvasPattern | null {
+	const grad = { ...recorded, stops: effectiveLinearStops(recorded) };
 	const rect = grad.rect;
 	if (grad.wrapMode !== 'clamp' && rect && rect.w !== 0) {
 		const unrolled = tiledLinear(ctx, grad, rect, device);

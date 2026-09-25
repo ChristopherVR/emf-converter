@@ -290,6 +290,22 @@ describe('SoftwareRasterCanvas images and pixels', () => {
 		back.slice(0, 3).forEach((v, i) => expect(Math.abs(v - [200, 100, 50][i])).toBeLessThanOrEqual(1));
 	});
 
+	it('un-premultiplies exactly like Skia for every alpha/value pair', async () => {
+		const napi = await import('@napi-rs/canvas');
+		const data = new Uint8ClampedArray(256 * 255 * 4);
+		for (let a = 1; a <= 255; a++) {
+			for (let v = 0; v < 256; v++) {
+				const i = ((a - 1) * 256 + v) * 4;
+				data.set([v, 255 - v, v >> 1, a], i);
+			}
+		}
+		const real = napi.createCanvas(256, 255).getContext('2d');
+		real.putImageData(new napi.ImageData(data, 256, 255), 0, 0);
+		const soft = new SoftwareRasterCanvas(256, 255);
+		soft.ctx.putImageData({ data, width: 256, height: 255 }, 0, 0);
+		expect(Array.from(soft.ctx.getImageData(0, 0, 256, 255).data)).toEqual(Array.from(real.getImageData(0, 0, 256, 255).data));
+	});
+
 	it('paints no glyphs but counts text and marks where it would be unknown', () => {
 		const s = page(100, 40, (c) => {
 			c.font = '16px Arial';

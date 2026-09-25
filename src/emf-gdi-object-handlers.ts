@@ -42,21 +42,35 @@ export function handleEmfObjectRecord(
 					style: penStyle & 0xff,
 					widthX,
 					color,
+					flags: penStyle,
 				});
 			}
 			return true;
 		}
 		case EMR_EXTCREATEPEN: {
+			// [MS-EMF] 2.3.7.9: ihPen, offBmi, cbBmi, offBits, cbBits, then the
+			// LogPenEx (PenStyle, Width, BrushStyle, Color, BrushHatch,
+			// NumStyleEntries, StyleEntry[]).
 			if (recSize >= 52) {
 				const ihPen = view.getUint32(dataOff, true);
-				const penStyle = view.getUint32(dataOff + 12, true);
-				const widthX = view.getInt32(dataOff + 16, true);
-				const color = readColorRef(view, dataOff + 24);
+				const penStyle = view.getUint32(dataOff + 20, true);
+				const widthX = view.getInt32(dataOff + 24, true);
+				const color = readColorRef(view, dataOff + 32);
+				const numEntries = view.getUint32(dataOff + 40, true);
+				const userStyle: number[] = [];
+				if ((penStyle & 0x0f) === 7) {
+					for (let i = 0; i < numEntries && i < 16 && 8 + 44 + i * 4 + 4 <= recSize; i++) {
+						userStyle.push(view.getUint32(dataOff + 44 + i * 4, true));
+					}
+				}
 				rCtx.objectTable.set(ihPen, {
 					kind: 'pen',
-					style: penStyle & 0xff,
+					style: penStyle & 0x0f,
 					widthX,
 					color,
+					flags: penStyle,
+					extended: true,
+					...(userStyle.length > 0 ? { userStyle } : {}),
 				});
 			}
 			return true;
@@ -145,6 +159,9 @@ export function handleEmfObjectRecord(
 							state.penStyle = obj.style;
 							state.penWidth = obj.widthX;
 							state.penColor = obj.color;
+							state.penFlags = obj.flags ?? obj.style;
+							state.penUserStyle = obj.userStyle;
+							state.penExtended = obj.extended === true;
 							break;
 						case 'brush':
 							state.brushStyle = obj.style;

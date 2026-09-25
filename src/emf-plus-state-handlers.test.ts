@@ -28,6 +28,7 @@ import {
 	resolveBrushPaint,
 	getPageUnitMultiplier,
 	applyPlusWorldTransform,
+	plusWorldMatrix,
 } from './emf-plus-state-handlers';
 import type { EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
@@ -580,4 +581,42 @@ describe('emf-plus-state-handlers', () => {
 			});
 		});
 	});
+
+	describe('antialiasing, base transform and pixel-exact clips', () => {
+		it('tracks EmfPlusSetAntiAliasMode (flag A)', () => {
+			const rCtx = makeRCtx();
+			handleEmfPlusStateRecord(rCtx, EMFPLUS_SETANTIALIASMODE, 0x0001 | (2 << 1), 8, 0);
+			expect(rCtx.antiAlias).toBe(true);
+			handleEmfPlusStateRecord(rCtx, EMFPLUS_SETANTIALIASMODE, 0, 8, 0);
+			expect(rCtx.antiAlias).toBe(false);
+		});
+
+		it('maps EMF+ world coordinates through the replay base transform (canvas origin)', () => {
+			const rCtx = makeRCtx();
+			rCtx.baseTransform = [1, 0, 0, 1, 0, 7]; // header bounds top at y = -7
+			rCtx.worldTransform = [2, 0, 0, 2, 3, 4];
+			expect(plusWorldMatrix(rCtx)).toStrictEqual([2, 0, 0, 2, 3, 11]);
+		});
+
+		it('keeps a vector clip by default and snaps it to GDI+ pixels under gdiAntialias: false', () => {
+			const clipRect = (rCtx: EmfPlusReplayCtx): void => {
+				rCtx.view.setFloat32(8, 10.25, true);
+				rCtx.view.setFloat32(12, 10, true);
+				rCtx.view.setFloat32(16, 20, true);
+				rCtx.view.setFloat32(20, 5.6, true);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETCLIPRECT, 0, 8, 16);
+			};
+			const vector = makeRCtx();
+			clipRect(vector);
+			expect(vector.clipRegion![0].cmds[0]).toMatchObject({ op: 'moveTo', x: 10.25 });
+			const pixels = makeRCtx();
+			pixels.gdiAntialias = false;
+			pixels.canvasW = 100;
+			pixels.canvasH = 100;
+			clipRect(pixels);
+			// GDI+ samples pixel x at x (PixelOffsetMode None): x 11..30, y 10..15.
+			expect(pixels.clipRegion![0].cmds).toEqual([{ op: 'rect', x: 11, y: 10, w: 20, h: 6 }]);
+		});
+	});
 });
+

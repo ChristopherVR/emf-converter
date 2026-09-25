@@ -8,6 +8,7 @@ import {
 	combineClipRegions,
 	emptyClipShape,
 	reapplyClipRegion,
+	rectsClipShape,
 	translateClipRegion,
 	type ClipCombineOp,
 	type ClipCombineResult,
@@ -16,6 +17,7 @@ import {
 	type ClipRegion,
 	type ClipShape,
 } from './emf-clip-region';
+import { scanlineCombineRegions } from './emf-clip-scanline';
 import { argbToRgba } from './emf-color-helpers';
 import {
 	EMFPLUS_SETWORLDTRANSFORM,
@@ -43,8 +45,10 @@ import {
 import { emfLog, emfWarn } from './emf-logging';
 import { createBrushGradient } from './emf-plus-brush-gradient';
 import { createBrushTexture } from './emf-plus-brush-texture';
-import { emfPlusPathToClipCmds } from './emf-plus-path';
-import type { EmfPlusRegionNode, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
+import { isHalfPixelOffset } from './emf-plus-image-resample';
+import { emfPlusPathClipShape } from './emf-plus-path';
+import { isSvgContext } from './svg-context';
+import type { EmfPlusBrush, EmfPlusRegionNode, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
 // ---------------------------------------------------------------------------
 // Shared utilities
@@ -96,21 +100,30 @@ export function resolveBrushPaint(
 	}
 	const obj = rCtx.objectTable.get(brushIdOrColor & 0xff);
 	if (obj && obj.kind === 'plus-brush') {
-		if (obj.gradient) {
-			const g = createBrushGradient(rCtx.ctx, obj.gradient, plusWorldMatrix(rCtx));
-			if (g) {
-				return g;
-			}
-		}
-		if (obj.texture) {
-			const p = createBrushTexture(rCtx.ctx, obj.texture, plusWorldMatrix(rCtx));
-			if (p) {
-				return p;
-			}
-		}
-		return obj.color;
+		return brushPaint(rCtx, obj);
 	}
 	return 'rgba(0,0,0,1)';
+}
+
+/**
+ * A brush object as a canvas paint style: a CanvasGradient/CanvasPattern
+ * for a gradient or texture brush (see {@link resolveBrushPaint}), else its
+ * colour. Used for a fill's brush and for a pen's own brush.
+ */
+export function brushPaint(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): string | CanvasGradient | CanvasPattern {
+	if (obj.gradient) {
+		const g = createBrushGradient(rCtx.ctx, obj.gradient, plusWorldMatrix(rCtx));
+		if (g) {
+			return g;
+		}
+	}
+	if (obj.texture) {
+		const p = createBrushTexture(rCtx.ctx, obj.texture, plusWorldMatrix(rCtx));
+		if (p) {
+			return p;
+		}
+	}
+	return obj.color;
 }
 
 /**
@@ -140,11 +153,27 @@ export function getPageUnitMultiplier(pageUnit: number, pageScale: number): numb
 	return unitToPixel * pageScale;
 }
 
-/** The world-to-device matrix EMF+ drawing runs under (world transform, page units, DPI scale). */
+/**
+ * The world-to-device matrix EMF+ drawing runs under: world transform,
+ * page units and DPI scale, then the replay's base (canvas-origin or
+ * nested-metafile) transform, {@link EmfPlusReplayCtx.baseTransform}.
+ */
 export function plusWorldMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
 	const wt = rCtx.worldTransform;
 	const k = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale) * rCtx.dpiScale;
-	return [wt[0] * k, wt[1] * k, wt[2] * k, wt[3] * k, wt[4] * k, wt[5] * k];
+	const m: TransformMatrix = [wt[0] * k, wt[1] * k, wt[2] * k, wt[3] * k, wt[4] * k, wt[5] * k];
+	const b = rCtx.baseTransform;
+	if (!b) {
+		return m;
+	}
+	return [
+		b[0] * m[0] + b[2] * m[1],
+		b[1] * m[0] + b[3] * m[1],
+		b[0] * m[2] + b[2] * m[3],
+		b[1] * m[2] + b[3] * m[3],
+		b[0] * m[4] + b[2] * m[5] + b[4],
+		b[1] * m[4] + b[3] * m[5] + b[5],
+	];
 }
 
 /** Apply the current EMF+ world transform to the canvas, incorporating page units and DPI scale. */
@@ -190,9 +219,7 @@ function popState(rCtx: EmfPlusReplayCtx, stackId: number): void {
  * they survive later transform changes, exactly like a native canvas clip.
  */
 function plusDeviceMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix {
-	const wt = rCtx.worldTransform;
-	const s = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale) * rCtx.dpiScale;
-	return [wt[0] * s, wt[1] * s, wt[2] * s, wt[3] * s, wt[4] * s, wt[5] * s];
+	return plusWorldMatrix(rCtx);
 }
 
 /** Build a device-space polygon shape from a world-space rectangle. */
@@ -215,9 +242,12 @@ function transformedRectShape(
 	return { cmds, fillRule: 'nonzero', simple: true };
 }
 
-/** Build a device-space clip shape from an EMF+ path object. */
+/**
+ * Build a device-space clip shape from an EMF+ region path node, with the
+ * path's own FillMode (Alternate or Winding) and `simple` only when proven.
+ */
 function pathClipShape(path: EmfPlusRegionNode & { type: 'path' }, m: TransformMatrix): ClipShape {
-	return { cmds: emfPlusPathToClipCmds(path.path, m), fillRule: 'nonzero', simple: true };
+	return emfPlusPathClipShape(path.path, m);
 }
 
 /** RegionNodeDataType (MS-EMFPLUS 2.1.1.27) → boolean combine op. */
@@ -299,12 +329,29 @@ function reapplyPlusClip(rCtx: EmfPlusReplayCtx): void {
  * Combine the tracked clip with an incoming region per the CombineMode and
  * rebuild the canvas clip state.
  */
+/**
+ * Under `gdiAntialias: false` (raster output), an incoming EMF+ clip region
+ * as GDI+ itself holds it: the set of device pixels whose sample point lies
+ * inside (see `aliasedSampleShift`), as disjoint pixel rectangles, instead
+ * of a vector clip Canvas would antialias. Otherwise the region unchanged.
+ */
+function pixelSnapPlusClip(rCtx: EmfPlusReplayCtx, incoming: ClipRegion): ClipRegion {
+	const domain = plusClipDomain(rCtx);
+	if (rCtx.gdiAntialias !== false || !incoming || !domain || isSvgContext(rCtx.ctx)) {
+		return incoming;
+	}
+	const shift = (isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0) ? 0 : 0.5) - 1 / 32;
+	const shifted = translateClipRegion(incoming, shift, shift);
+	return [rectsClipShape(scanlineCombineRegions(shifted, null, 'intersect', domain))];
+}
+
 function applyPlusClipRegion(
 	rCtx: EmfPlusReplayCtx,
-	incoming: ClipRegion,
+	rawIncoming: ClipRegion,
 	combineMode: number,
 	opName: string,
 ): void {
+	const incoming = pixelSnapPlusClip(rCtx, rawIncoming);
 	const op = PLUS_COMBINE_OPS[combineMode];
 	if (!op) {
 		emfWarn(`${opName}: unknown CombineMode ${combineMode}, falling back to Intersect`);
@@ -488,11 +535,9 @@ export function handleEmfPlusStateRecord(
 			const combineMode = (recFlags >> 8) & 0x0f;
 			const pathObj = rCtx.objectTable.get(pathId);
 			if (pathObj && pathObj.kind === 'plus-path') {
-				const shape: ClipShape = {
-					cmds: emfPlusPathToClipCmds(pathObj, plusDeviceMatrix(rCtx)),
-					fillRule: 'nonzero',
-					simple: true,
-				};
+				// The path's own FillMode decides the clip's fill rule (GDI+ records
+				// Winding as PathPointFlags 0x2000; Alternate, its default, as 0).
+				const shape = emfPlusPathClipShape(pathObj, plusDeviceMatrix(rCtx));
 				applyPlusClipShape(rCtx, shape, combineMode, 'SetClipPath');
 			}
 			return true;
@@ -565,8 +610,12 @@ export function handleEmfPlusStateRecord(
 			rCtx.textRenderingHint = recFlags & 0xff;
 			return true;
 
-		// ---- rendering hints (accepted, ignored) ----
+		// ---- antialiasing (honoured for fills and strokes under gdiAntialias: false) ----
 		case EMFPLUS_SETANTIALIASMODE:
+			rCtx.antiAlias = (recFlags & 0x01) !== 0;
+			return true;
+
+		// ---- rendering hints (accepted, ignored) ----
 		case EMFPLUS_SETCOMPOSITINGQUALITY:
 			return true;
 

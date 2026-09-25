@@ -28,6 +28,7 @@ import {
 import { emfLog, emfWarn } from './emf-logging';
 import { decodePng, isPng } from './png-decoder';
 import { encodePng } from './png-encoder';
+import { cosmeticStyle } from './gdi-raster';
 import { SoftwareRasterCanvas } from './software-raster';
 import { bytesToBase64 } from './svg-tree';
 import type { AnyCanvas, CanvasContext, DrawState, GdiObject } from './emf-types';
@@ -411,23 +412,10 @@ export function applyPen(ctx: CanvasContext, state: DrawState): void {
 	}
 	ctx.strokeStyle = rop2TransformColor(state.penColor, paint.colorTransform);
 	ctx.lineWidth = Math.max(state.penWidth, 1);
-	switch (state.penStyle) {
-		case 1:
-			ctx.setLineDash([8, 4]);
-			break;
-		case 2:
-			ctx.setLineDash([2, 2]);
-			break;
-		case 3:
-			ctx.setLineDash([8, 4, 2, 4]);
-			break;
-		case 4:
-			ctx.setLineDash([8, 4, 2, 4, 2, 4]);
-			break;
-		default:
-			ctx.setLineDash([]);
-			break;
-	}
+	// GDI's own dash lengths (measured against real GDI, see `cosmeticStyle`
+	// in `gdi-raster.ts`): a one-pixel pen's stock styles; a wider
+	// `CreatePen` pen draws its styles solid.
+	ctx.setLineDash(state.penWidth <= 1 ? (cosmeticStyle(state.penStyle, state.penUserStyle) ?? []) : []);
 }
 
 /**

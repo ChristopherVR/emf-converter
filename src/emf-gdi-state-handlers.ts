@@ -18,6 +18,7 @@ import {
 	EMR_SETSTRETCHBLTMODE,
 	EMR_SETBRUSHORGEX,
 	EMR_SETMITERLIMIT,
+	EMR_SETARCDIRECTION,
 	EMR_SETTEXTALIGN,
 } from './emf-constants';
 import { handleEmfObjectRecord } from './emf-gdi-object-handlers';
@@ -144,9 +145,22 @@ export function handleEmfGdiStateRecord(
 			}
 			return true;
 		}
-		case EMR_SETMITERLIMIT:
+		case EMR_SETMITERLIMIT: {
+			// Windows records the limit as a 32-bit float (the GDI API's type).
+			if (recSize >= 12) {
+				const limit = view.getFloat32(dataOff, true);
+				state.miterLimit = Number.isFinite(limit) && limit >= 1 ? limit : Math.max(1, view.getUint32(dataOff, true));
+			}
+			return true;
+		}
+		case EMR_SETARCDIRECTION: {
+			if (recSize >= 12) {
+				state.arcDirection = view.getUint32(dataOff, true) === 2 ? 2 : 1;
+			}
+			return true;
+		}
 		case EMR_SETTEXTALIGN: {
-			if (recType === EMR_SETTEXTALIGN && recSize >= 12) {
+			if (recSize >= 12) {
 				state.textAlign = view.getUint32(dataOff, true);
 			}
 			return true;

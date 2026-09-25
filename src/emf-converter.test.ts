@@ -193,6 +193,7 @@ describe('convertMetafileToDataUrl (EMF path)', () => {
 				maxRecordsEmfPlus: 1234,
 				fontFamilyMap: { calibri: 'Carlito' },
 				textureCache: expect.any(Map),
+				imageCache: expect.any(Map),
 			},
 		);
 	});

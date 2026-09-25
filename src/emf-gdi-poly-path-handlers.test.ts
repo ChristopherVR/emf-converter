@@ -270,7 +270,7 @@ describe('emf-gdi-poly-path-handlers', () => {
 
 		// -- "to" variants (POLYBEZIERTO, POLYLINETO) --
 		describe('eMR_POLYBEZIERTO', () => {
-			it('does not emit moveTo (continues from current position)', () => {
+			it('starts at the current position, not at a data point', () => {
 				const rCtx = makeRCtx();
 				rCtx.state.curX = 0;
 				rCtx.state.curY = 0;
@@ -283,16 +283,16 @@ describe('emf-gdi-poly-path-handlers', () => {
 				writePoly32(rCtx.view, dataOff, pts);
 				handleEmfGdiPolyPathRecord(rCtx, EMR_POLYBEZIERTO, 0, dataOff, 28 + pts.length * 8);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				// moveTo should NOT be called from the data (since isTo = true)
-				// but beginPath is called
-				// Once in the path, once in its half-pixel-aligned stroke rebuild.
+				// The curve runs from the current position (the only moveTo), never
+				// from a data point. Once in the path, once in its
+				// half-pixel-aligned stroke rebuild.
 				expect(ctx.bezierCurveTo).toHaveBeenCalledTimes(2);
-				expect(ctx.moveTo).not.toHaveBeenCalled();
+				expect(ctx.moveTo.mock.calls.every((c) => c[0] === 0 && c[1] === 0)).toBe(true);
 			});
 		});
 
 		describe('eMR_POLYLINETO16', () => {
-			it('draws lineTo segments without initial moveTo from data', () => {
+			it('draws lineTo segments from the current position, none from a data point', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				const pts: Array<[number, number]> = [
@@ -302,9 +302,9 @@ describe('emf-gdi-poly-path-handlers', () => {
 				writePoly16(rCtx.view, dataOff, pts);
 				handleEmfGdiPolyPathRecord(rCtx, EMR_POLYLINETO16, 0, dataOff, 28 + pts.length * 4);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				// All points should be lineTo (no moveTo since isTo = true)
+				// All data points are lineTo; the only moveTo is the current position.
 				expect(ctx.lineTo).toHaveBeenCalledTimes(4); // path + aligned stroke rebuild
-				expect(ctx.moveTo).not.toHaveBeenCalled();
+				expect(ctx.moveTo.mock.calls.every((c) => c[0] === 0 && c[1] === 0)).toBe(true);
 			});
 		});
 

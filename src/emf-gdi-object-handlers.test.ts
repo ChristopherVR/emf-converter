@@ -119,14 +119,14 @@ describe('emf-gdi-object-handlers', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				rCtx.view.setUint32(dataOff, 2, true); // ihPen
-				// penStyle at dataOff + 12
-				rCtx.view.setUint32(dataOff + 12, 2, true); // PS_DOT
-				// widthX at dataOff + 16
-				rCtx.view.setInt32(dataOff + 16, 3, true);
-				// color at dataOff + 24
-				rCtx.view.setUint8(dataOff + 24, 0x00);
-				rCtx.view.setUint8(dataOff + 25, 0xff);
-				rCtx.view.setUint8(dataOff + 26, 0x00);
+				// [MS-EMF] 2.3.7.9: ihPen, offBmi, cbBmi, offBits, cbBits, then the
+				// LogPenEx: PenStyle at dataOff + 20, Width at + 24, BrushStyle at
+				// + 28, Color at + 32 (the layout Windows itself records).
+				rCtx.view.setUint32(dataOff + 20, 2, true); // PS_DOT
+				rCtx.view.setInt32(dataOff + 24, 3, true);
+				rCtx.view.setUint8(dataOff + 32, 0x00);
+				rCtx.view.setUint8(dataOff + 33, 0xff);
+				rCtx.view.setUint8(dataOff + 34, 0x00);
 
 				const result = handleEmfObjectRecord(rCtx, EMR_EXTCREATEPEN, dataOff, 52);
 				expect(result).toBeTruthy();
@@ -147,22 +147,35 @@ describe('emf-gdi-object-handlers', () => {
 				expect(rCtx.objectTable.size).toBe(0);
 			});
 
-			it('masks pen style to low byte', () => {
+			it('keeps the style (PS_STYLE_MASK) and the full flags (type, caps, joins)', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				rCtx.view.setUint32(dataOff, 5, true); // ihPen
-				rCtx.view.setUint32(dataOff + 12, 0x0100_0003, true); // high bits + PS_DASHDOT
-				rCtx.view.setInt32(dataOff + 16, 1, true);
-				rCtx.view.setUint8(dataOff + 24, 0);
-				rCtx.view.setUint8(dataOff + 25, 0);
-				rCtx.view.setUint8(dataOff + 26, 0);
+				rCtx.view.setUint32(dataOff + 20, 0x0001_2203, true); // PS_GEOMETRIC | JOIN_MITER | ENDCAP_FLAT | PS_DASHDOT
+				rCtx.view.setInt32(dataOff + 24, 4, true);
 
 				handleEmfObjectRecord(rCtx, EMR_EXTCREATEPEN, dataOff, 52);
 				const pen = rCtx.objectTable.get(5) as GdiObject;
 				expect(pen.kind).toBe('pen');
 				if (pen.kind === 'pen') {
 					expect(pen.style).toBe(3);
+					expect(pen.flags).toBe(0x0001_2203);
+					expect(pen.extended).toBe(true);
 				}
+			});
+
+			it('reads a PS_USERSTYLE dash array', () => {
+				const rCtx = makeRCtx();
+				const dataOff = 8;
+				rCtx.view.setUint32(dataOff, 6, true); // ihPen
+				rCtx.view.setUint32(dataOff + 20, 7, true); // PS_COSMETIC | PS_USERSTYLE
+				rCtx.view.setInt32(dataOff + 24, 1, true);
+				rCtx.view.setUint32(dataOff + 40, 4, true); // NumStyleEntries
+				[3, 2, 5, 1].forEach((v, i) => rCtx.view.setUint32(dataOff + 44 + i * 4, v, true));
+
+				handleEmfObjectRecord(rCtx, EMR_EXTCREATEPEN, dataOff, 8 + 44 + 16);
+				const pen = rCtx.objectTable.get(6) as GdiObject;
+				expect(pen.kind === 'pen' && pen.userStyle).toEqual([3, 2, 5, 1]);
 			});
 		});
 

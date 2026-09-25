@@ -463,6 +463,12 @@ export interface SvgContextOptions {
 	/** Prefix for every generated element id (keep unique per page when inlining several SVGs). */
 	idPrefix?: string;
 	/**
+	 * How EMF+ `DrawImage` bitmaps are scaled: `'renderer'` embeds the
+	 * original image and lets the SVG renderer scale it, `'exact'` embeds
+	 * the GDI+-resampled device-resolution pixels (`SvgConvertOptions.imageResampling`).
+	 */
+	imageResampling?: 'renderer' | 'exact';
+	/**
 	 * Mirror drawing onto this raster (a canvas backend's context, or a
 	 * `SoftwareRasterContext`) so destination-reading raster ops stay exact.
 	 */
@@ -483,6 +489,8 @@ export class SvgContext {
 	readonly canvas: { width: number; height: number; svgContext: SvgContext };
 	/** Hidden raster mirror, when exact destination reads are available. */
 	readonly shadow: CanvasContext | null;
+	/** See {@link SvgContextOptions.imageResampling}. */
+	readonly imageResampling: 'renderer' | 'exact';
 	private readonly idPrefix: string;
 	private nextId = 0;
 	private state: CtxState;
@@ -499,6 +507,7 @@ export class SvgContext {
 	constructor(width: number, height: number, options: SvgContextOptions = {}) {
 		this.canvas = { width, height, svgContext: this };
 		this.shadow = options.shadow ?? null;
+		this.imageResampling = options.imageResampling ?? 'renderer';
 		this.idPrefix = options.idPrefix ?? 'emf-';
 		this.state = {
 			transform: [...IDENTITY],

@@ -19,8 +19,11 @@ import {
 } from './emf-constants';
 import { handleEmfGdiDrawRecord } from './emf-gdi-draw-handlers';
 import { handleEmfGdiPolyPathRecord } from './emf-gdi-poly-path-handlers';
+import { flushRasterLayer, isLayerSafeRecord } from './emf-gdi-raster-layer';
 import { handleEmfGdiStateRecord } from './emf-gdi-state-handlers';
+import { parseEmfHeader } from './emf-header-parser';
 import { emfLog } from './emf-logging';
+import { registerNestedMetafileReplayer } from './emf-plus-draw-image';
 import { replayEmfPlusRecords } from './emf-plus-replay';
 import type {
 	CanvasContext,
@@ -30,6 +33,7 @@ import type {
 	GdiObject,
 	DrawState,
 	ReplayOptions,
+	TransformMatrix,
 } from './emf-types';
 import { defaultState, createEmfPlusState } from './emf-types';
 
@@ -95,6 +99,23 @@ export function replayEmfRecords(
 	const logicalH = bounds.bottom - bounds.top || 1;
 	const sx = canvasW / logicalW;
 	const sy = canvasH / logicalH;
+	// EMF+ coordinates are reference-device pixels, the same space as the
+	// header bounds: map them onto the canvas exactly as the GDI records are
+	// (bounds' top-left to the canvas origin, bounds scaled to the canvas).
+	// The EMF+ world matrix already carries `dpiScale`, so only the part of
+	// the canvas scale beyond it (a maxWidth/maxHeight fit) is added here.
+	const plusScale = dpiScale > 0 ? dpiScale : 1;
+	emfPlusState.imageCache = replayOptions.imageCache;
+	emfPlusState.gdiAntialias = replayOptions.gdiAntialias;
+	emfPlusState.baseTransform = replayOptions.plusBaseTransform ?? [
+		sx / plusScale,
+		0,
+		0,
+		sy / plusScale,
+		-bounds.left * sx,
+		-bounds.top * sy,
+	];
+	emfPlusState.nestingDepth = replayOptions.nestingDepth;
 	emfLog(
 		`replayEmfRecords: logical=${logicalW}×${logicalH}, scale=(${sx.toFixed(4)},${sy.toFixed(4)})`,
 	);
@@ -146,6 +167,7 @@ export function replayEmfRecords(
 				const commentDataSize = view.getUint32(dataOff, true);
 				const sig = view.getUint32(dataOff + 4, true);
 				if (sig === EMFPLUS_SIGNATURE && commentDataSize > 4) {
+					flushRasterLayer(rCtx);
 					emfPlusCommentCount++;
 					emfLog(
 						`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} at offset 0x${offset.toString(16)}, dataSize=${commentDataSize}`,
@@ -207,6 +229,16 @@ export function replayEmfRecords(
 			continue;
 		}
 
+		// Pending exact GDI pixels must reach the canvas before anything that
+		// draws another way or changes the clip.
+		if (!isLayerSafeRecord(recType)) {
+			flushRasterLayer(rCtx);
+		}
+		if (replayOptions.gdiDrawing === false) {
+			offset += recSize;
+			continue;
+		}
+
 		// --- delegate to handler modules ---
 		const handled =
 			handleEmfGdiStateRecord(rCtx, recType, offset, dataOff, recSize) ||
@@ -220,11 +252,63 @@ export function replayEmfRecords(
 		offset += recSize;
 	}
 
+	flushRasterLayer(rCtx);
+
 	if (recordCount >= maxRecords) {
 		console.warn(
 			`[emf-converter] EMF record limit reached (${maxRecords}). Output may be incomplete.`,
 		);
 	}
 
+	if (replayOptions.nestingDepth) {
+		// A nested metafile draws into its parent's context: pop every canvas
+		// save() its records left open (clip brackets, unmatched SaveDC), so
+		// the parent's own save/restore pairs stay balanced.
+		let open = emfPlusState.clipSaveDepth + rCtx.clipSaveDepth + rCtx.stateStack.length;
+		while (open-- > 0) {
+			ctx.restore();
+		}
+	}
+
 	return allDeferredImages;
 }
+
+/**
+ * Replays an EMF (EMF+ records included) nested in an EMF+ `DrawImage`
+ * straight into the parent replay's context, with `toCanvas` mapping the
+ * nested metafile's device pixels (its `DrawImage` source rectangle
+ * space) onto the canvas. An axis-aligned mapping is expressed through
+ * the GDI replay's own bounds-to-canvas scale, so GDI records land
+ * exactly as well; a rotated or sheared one replays the EMF+ stream only.
+ * Returns the nested draw's deferred images, or `null` when the bytes are
+ * not an EMF.
+ */
+export function replayNestedEmf(
+	bytes: ArrayBuffer,
+	ctx: CanvasContext,
+	canvasW: number,
+	canvasH: number,
+	toCanvas: TransformMatrix,
+	options: ReplayOptions,
+): DeferredImageDraw[] | null {
+	const view = new DataView(bytes);
+	const header = parseEmfHeader(view);
+	if (!header) {
+		return null;
+	}
+	const [a, b, c, d, e, f] = toCanvas;
+	if (b === 0 && c === 0 && a > 0 && d > 0) {
+		const left = -e / a;
+		const top = -f / d;
+		const bounds: EmfBounds = { left, top, right: left + canvasW / a, bottom: top + canvasH / d };
+		return replayEmfRecords(view, ctx, bounds, canvasW, canvasH, 1, options);
+	}
+	const bounds: EmfBounds = { left: 0, top: 0, right: canvasW, bottom: canvasH };
+	return replayEmfRecords(view, ctx, bounds, canvasW, canvasH, 1, {
+		...options,
+		plusBaseTransform: toCanvas,
+		gdiDrawing: false,
+	});
+}
+
+registerNestedMetafileReplayer(replayNestedEmf);

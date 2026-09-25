@@ -1,8 +1,15 @@
 /**
- * Fill/stroke dispatch for GDI shape and path drawing: picks an exact
- * per-pixel technique when the active brush pattern, `SetROP2` mode, or the
- * `gdiAntialias: false` option needs one, otherwise the fast path
- * (`applyBrush`/`applyPen` + `ctx.fill()`/`ctx.stroke()`).
+ * Fill/stroke dispatch for GDI shape and path drawing. {@link paintGdiShape}
+ * is the entry point: it sends a fill or stroke to the GDI rasteriser
+ * (`gdi-raster.ts`, exact GDI geometry and coverage) when the active brush
+ * pattern, a bitwise `SetROP2` mode, or the `gdiAntialias: false` option
+ * needs one, and otherwise to the antialiased Canvas path
+ * (`applyBrush`/`applyPen` + `ctx.fill()`/`ctx.stroke()`) with GDI's pen
+ * geometry ({@link applyGdiPenGeometry}, {@link strokeStyledCosmetic}). The
+ * older per-pixel helpers below (`fillCurrentPathWithGdiPattern`,
+ * `paintWithRop2PerPixel` inside `fillShapeExactOrFast`/
+ * `strokeShapeExactOrFast`) remain as fallbacks for geometry the rasteriser
+ * is not handed (a canvas-only caller).
  *
  * GDI's pixel grid. GDI names a pixel by its centre: device coordinate `x`
  * IS pixel column `x`, and every box an EMF records (`EMR_RECTANGLE`,
@@ -61,9 +68,12 @@
  * @module emf-gdi-shape-paint
  */
 
-import { applyBrush, applyPen, rop2Paint } from './emf-canvas-helpers';
+import { applyBrush, applyPen, rop2Paint, rop2TransformColor } from './emf-canvas-helpers';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
-import { hasWorldRotation } from './emf-gdi-coord';
+import { gdiDeviceMatrix, hasWorldRotation } from './emf-gdi-coord';
+import { paintSpansDeferred } from './emf-gdi-raster-paint';
+import { flushRasterLayer } from './emf-gdi-raster-layer';
+import { brushPaint, paintRasterPath, penIsCosmetic, penIsWidened } from './emf-gdi-raster-shapes';
 import {
 	isExactRop2Bitwise,
 	measurePathBox,
@@ -75,6 +85,17 @@ import {
 } from './emf-rop2-exact';
 import { evalRop3 } from './emf-rop3';
 import type { CanvasContext, DrawState, EmfGdiReplayCtx } from './emf-types';
+import {
+	cosmeticLine,
+	cosmeticStyle,
+	fillPathSpans,
+	geometricStyle,
+	SpanList,
+	strokeCosmetic,
+	styleGapsUseBackground,
+	type GdiRasterPath,
+	type StyleState,
+} from './gdi-raster';
 import { isSvgContext } from './svg-context';
 
 /**
@@ -254,9 +275,23 @@ export function fillShapeExactOrFast(
 	}
 }
 
-/** The pen's stroke width in canvas pixels, as `applyPen` sets it. */
-export function penLineWidth(state: DrawState): number {
-	return Math.max(state.penWidth, 1);
+
+/** `PS_NULL`. */
+const PS_NULL = 5;
+
+/**
+ * The pen's stroke width in canvas pixels: its logical width scaled by the
+ * logical-to-device transform (`scale`, 1 when omitted), at least one pixel
+ * (a zero-width or sub-pixel pen is GDI's one-pixel cosmetic pen).
+ */
+export function penLineWidth(state: DrawState, scale = 1): number {
+	return Math.max(state.penWidth * scale, 1);
+}
+
+/** The logical-to-device scale a pen width goes through (the transform's area scale). */
+export function penScale(rCtx: EmfGdiReplayCtx): number {
+	const m = gdiDeviceMatrix(rCtx);
+	return Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) || 1;
 }
 
 /**
@@ -267,33 +302,128 @@ export function penLineWidth(state: DrawState): number {
  * centred on a pixel boundary, and a fractional width cannot be aligned).
  * A null pen (`PS_NULL`) draws nothing, so needs no alignment.
  */
-export function gdiStrokeAlign(state: DrawState): number {
-	if (state.penStyle === 5) {
+export function gdiStrokeAlign(state: DrawState, scale = 1): number {
+	if (state.penStyle === PS_NULL) {
 		return 0;
 	}
-	const w = penLineWidth(state);
+	const w = penLineWidth(state, scale);
 	return Number.isInteger(w) && w % 2 === 1 ? 0.5 : 0;
 }
 
-/** Applies pen geometry (width, dash pattern) without the ROP2 colour/composite transform. */
-function applyPenGeometry(ctx: CanvasContext, state: DrawState): void {
-	ctx.lineWidth = penLineWidth(state);
-	switch (state.penStyle) {
-		case 1:
-			ctx.setLineDash([8, 4]);
-			break;
-		case 2:
-			ctx.setLineDash([2, 2]);
-			break;
-		case 3:
-			ctx.setLineDash([8, 4, 2, 4]);
-			break;
-		case 4:
-			ctx.setLineDash([8, 4, 2, 4, 2, 4]);
-			break;
-		default:
-			ctx.setLineDash([]);
-			break;
+/**
+ * Sets `ctx`'s line width, caps, joins, miter limit and dash pattern to what
+ * GDI draws with the current pen (colour and ROP2 excluded):
+ *   - width: the logical width through the transform, at least one pixel;
+ *   - caps/joins: a wide `CreatePen` pen is round/round; an `ExtCreatePen`
+ *     geometric pen carries `PS_ENDCAP_*` (round, square, flat) and
+ *     `PS_JOIN_*` (round, bevel, miter) plus the DC's miter limit;
+ *   - dashes: GDI's own patterns, measured against real output (see
+ *     `cosmeticStyle`/`geometricStyle`, `gdi-raster.ts`); a styled
+ *     `CreatePen` pen wider than one pixel draws solid, as GDI does. A
+ *     styled cosmetic pen is not dashed here: its pattern steps per pixel
+ *     along the major axis, which {@link strokeStyledCosmetic} emulates.
+ */
+export function applyGdiPenGeometry(ctx: CanvasContext, rCtx: EmfGdiReplayCtx): void {
+	const { state } = rCtx;
+	const scale = penScale(rCtx);
+	const width = penLineWidth(state, scale);
+	const flags = state.penFlags ?? state.penStyle;
+	ctx.lineWidth = width;
+	const cosmetic = penIsCosmetic(rCtx);
+	if (!cosmetic && state.penExtended) {
+		const cap = flags & 0xf00;
+		const join = flags & 0xf000;
+		ctx.lineCap = cap === 0x100 ? 'square' : cap === 0x200 ? 'butt' : 'round';
+		ctx.lineJoin = join === 0x1000 ? 'bevel' : join === 0x2000 ? 'miter' : 'round';
+		ctx.miterLimit = state.miterLimit ?? 10;
+		ctx.setLineDash(geometricStyle(flags, width, state.penUserStyle, scale) ?? []);
+	} else if (!cosmetic) {
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.setLineDash([]);
+	} else {
+		ctx.lineWidth = 1;
+		ctx.lineCap = 'butt';
+		ctx.lineJoin = 'miter';
+		ctx.miterLimit = 10;
+		ctx.setLineDash([]);
+	}
+}
+
+/** The current pen's cosmetic dash pattern, or `null` (solid, wide, or null pen). */
+function cosmeticPattern(rCtx: EmfGdiReplayCtx): number[] | null {
+	const { state } = rCtx;
+	if (state.penStyle === PS_NULL || !penIsCosmetic(rCtx)) {
+		return null;
+	}
+	return cosmeticStyle(state.penFlags ?? state.penStyle, state.penUserStyle);
+}
+
+/**
+ * Strokes a styled cosmetic pen along GDI's own (flattened) geometry with
+ * Canvas antialiasing, reproducing GDI's dash placement: GDI steps its
+ * pattern once per lit pixel, i.e. per pixel along each segment's major
+ * axis, so each segment is stroked on its own with the pattern stretched by
+ * that segment's length per pixel, and the pattern position carries from
+ * segment to segment (and, through `style`, across consecutive `LineTo`
+ * records). With `OPAQUE` background mode the gaps are painted in the
+ * background colour, as GDI does for the stock styles.
+ */
+export function strokeStyledCosmetic(
+	rCtx: EmfGdiReplayCtx,
+	path: GdiRasterPath,
+	pattern: number[],
+	style: StyleState,
+): void {
+	const { ctx, state } = rCtx;
+	const flags = state.penFlags ?? state.penStyle;
+	const period = pattern.reduce((a, b) => a + b, 0);
+	const paint = rop2Paint(state.rop2);
+	const bk = state.bkMode === 2 && styleGapsUseBackground(flags);
+	const segs: Array<[number, number, number, number, number, number]> = [];
+	path.figures.forEach((f, fi) => {
+		if (fi > 0) {
+			style.pos = 0;
+		}
+		const p = f.closed ? [...f.pts, f.pts[0], f.pts[1]] : f.pts;
+		for (let i = 0; i + 3 < p.length; i += 2) {
+			let n = 0;
+			cosmeticLine(p[i], p[i + 1], p[i + 2], p[i + 3], () => {
+				n++;
+			});
+			if (n === 0) {
+				continue;
+			}
+			segs.push([p[i], p[i + 1], p[i + 2], p[i + 3], style.pos, n]);
+			style.pos += n;
+		}
+	});
+	const c = (v: number) => v / 16 + 0.5;
+	ctx.save();
+	try {
+		ctx.globalCompositeOperation = paint.gco;
+		ctx.lineWidth = 1;
+		ctx.lineCap = 'butt';
+		for (const pass of bk ? ['bk', 'fg'] : ['fg']) {
+			ctx.strokeStyle = rop2TransformColor(pass === 'bk' ? state.bkColor : state.penColor, paint.colorTransform);
+			for (const [x0, y0, x1, y1, pos, n] of segs) {
+				const f = Math.hypot(x1 - x0, y1 - y0) / 16 / n;
+				if (pass === 'fg') {
+					ctx.setLineDash(pattern.map((v) => v * f));
+					ctx.lineDashOffset = (pos % period) * f;
+				} else {
+					ctx.setLineDash([]);
+				}
+				ctx.beginPath();
+				ctx.moveTo(c(x0), c(y0));
+				ctx.lineTo(c(x1), c(y1));
+				ctx.stroke();
+			}
+		}
+	} finally {
+		ctx.setLineDash([]);
+		ctx.lineDashOffset = 0;
+		ctx.restore();
 	}
 }
 
@@ -304,27 +434,28 @@ function applyPenGeometry(ctx: CanvasContext, state: DrawState): void {
  * When the pen can be aligned to GDI's pixel grid ({@link gdiStrokeAlign}),
  * the stroke geometry is rebuilt shifted by that half-pixel offset. The
  * per-pixel `paintWithRop2PerPixel` is used when the active mode is a
- * bitwise one Canvas cannot composite, or for every stroke under
- * `gdiAntialias: false` (a null pen, style 5, never draws anything so is
- * left to the fast path, which already no-ops it correctly); otherwise
- * `applyPen` + `stroke()`.
+ * bitwise one Canvas cannot composite, or under `gdiAntialias: false` for
+ * a wide pen (a one-pixel pen goes through the GDI rasteriser instead, see
+ * {@link paintGdiShape}); otherwise the GDI pen geometry
+ * ({@link applyGdiPenGeometry}) + `stroke()`.
  */
 export function strokeShapeExactOrFast(rCtx: EmfGdiReplayCtx, buildPath: (target: CanvasContext) => void): void {
 	const { ctx, state } = rCtx;
-	const align = gdiStrokeAlign(state);
+	const scale = penScale(rCtx);
+	const align = gdiStrokeAlign(state, scale);
 	const aligned = shifted(buildPath, align);
 	const paint = rop2Paint(state.rop2);
-	if (state.penStyle !== 5 && (isAliased(rCtx) || (!paint.exact && isExactRop2Bitwise(state.rop2)))) {
+	if (state.penStyle !== PS_NULL && (isAliased(rCtx) || (!paint.exact && isExactRop2Bitwise(state.rop2)))) {
 		const handled = paintWithRop2PerPixel(
 			ctx,
 			state.rop2,
 			state.penColor,
 			(scratch) => {
-				applyPenGeometry(scratch, state);
+				applyGdiPenGeometry(scratch, rCtx);
 				aligned(scratch);
 				scratch.stroke();
 			},
-			penLineWidth(state) / 2 + 2,
+			penLineWidth(state, scale) / 2 + 2,
 		);
 		if (handled) {
 			return;
@@ -334,5 +465,134 @@ export function strokeShapeExactOrFast(rCtx: EmfGdiReplayCtx, buildPath: (target
 		aligned(ctx);
 	}
 	applyPen(ctx, state);
+	if (state.penStyle !== PS_NULL) {
+		applyGdiPenGeometry(ctx, rCtx);
+	}
 	ctx.stroke();
+}
+
+// ---------------------------------------------------------------------------
+// Shape orchestration
+// ---------------------------------------------------------------------------
+
+/** One GDI shape (or bracketed path) to fill and/or stroke. */
+export interface GdiShape {
+	/** Issues the shape's Canvas geometry (with its own `beginPath()`), for the antialiased route. */
+	build: (target: CanvasContext) => void;
+	/** Builds GDI's own device geometry, for the exact route (called at most once). */
+	raster: () => GdiRasterPath;
+	fill: boolean;
+	stroke: boolean;
+	fillRule?: CanvasFillRule;
+	/**
+	 * An axis-aligned Rectangle: GDI fills only the interior inside a
+	 * one-pixel pen's border (it never combines a border pixel twice). The
+	 * Canvas route fills `interior`; the exact route leaves the outline's
+	 * pixels out of the fill.
+	 */
+	axisRect?: { interior?: (target: CanvasContext) => void };
+	/** Dash-pattern position to continue (consecutive `LineTo` records). */
+	style?: StyleState;
+}
+
+/**
+ * Fills and/or strokes one shape the way GDI does.
+ *
+ * The exact GDI rasteriser (`gdi-raster.ts`, painted by
+ * `emf-gdi-raster-paint.ts`) is used for the fill under
+ * `gdiAntialias: false`, for a hatch/monochrome/DIB pattern brush, and for a
+ * bitwise `SetROP2` mode Canvas cannot composite; and for a one-pixel pen's
+ * outline under `gdiAntialias: false` or such a ROP2 mode. Everything else
+ * takes Canvas's antialiased `fill()`/`stroke()` on the pixel-aligned
+ * geometry, with GDI's pen widths, caps, joins and dash patterns
+ * ({@link applyGdiPenGeometry}, {@link strokeStyledCosmetic}); only edge
+ * coverage differs from GDI there, by design. A wide pen under
+ * `gdiAntialias: false` goes through {@link strokeShapeExactOrFast}'s
+ * per-pixel route.
+ */
+export function paintGdiShape(rCtx: EmfGdiReplayCtx, shape: GdiShape): void {
+	const { ctx, state } = rCtx;
+	const aliased = isAliased(rCtx);
+	const bitwise = !rop2Paint(state.rop2).exact && isExactRop2Bitwise(state.rop2);
+	const penNull = state.penStyle === PS_NULL;
+	const cosmetic = !penNull && penIsCosmetic(rCtx);
+	let rasterPath: GdiRasterPath | null = null;
+	const getPath = (): GdiRasterPath => {
+		rasterPath ??= shape.raster();
+		return rasterPath;
+	};
+	let canvasBuilt = false;
+	const ensureCanvas = () => {
+		if (!canvasBuilt) {
+			shape.build(ctx);
+			canvasBuilt = true;
+		}
+	};
+	const fillRule = shape.fillRule ?? 'nonzero';
+	if (shape.fill && state.brushStyle !== 1) {
+		const tile = realizeBrush(state).kind === 'tile';
+		if (aliased || tile || bitwise) {
+			const paint = brushPaint(rCtx);
+			if (paint) {
+				let spans = fillPathSpans(getPath(), fillRule === 'nonzero');
+				if (shape.axisRect && shape.stroke && cosmetic) {
+					spans = withoutOutline(spans, getPath());
+				}
+				paintSpansDeferred(rCtx, spans, paint, state.rop2);
+			}
+		} else {
+			ensureCanvas();
+			const interior = shape.axisRect && shape.stroke && !penNull ? shape.axisRect.interior : undefined;
+			fillShapeExactOrFast(rCtx, shape.build, fillRule, interior);
+		}
+	}
+	if (!shape.stroke || penNull) {
+		return;
+	}
+	if ((cosmetic || penIsWidened(rCtx)) && (aliased || bitwise)) {
+		paintRasterPath(rCtx, getPath(), { fill: false, stroke: true, style: shape.style });
+		return;
+	}
+	const pattern = cosmeticPattern(rCtx);
+	if (pattern && !aliased && !bitwise) {
+		strokeStyledCosmetic(rCtx, getPath(), pattern, shape.style ?? { pos: 0 });
+		return;
+	}
+	// Canvas drawing from here on: pending exact pixels must land first.
+	flushRasterLayer(rCtx);
+	ensureCanvas();
+	strokeShapeExactOrFast(rCtx, shape.build);
+}
+
+/** `spans` minus the pixels of `path`'s one-pixel outline. */
+function withoutOutline(spans: SpanList, path: GdiRasterPath): SpanList {
+	const outline = new SpanList();
+	strokeCosmetic(path, outline, null, null);
+	const rows = new Map<number, Array<[number, number]>>();
+	const od = outline.data;
+	for (let i = 0; i < outline.length * 3; i += 3) {
+		let r = rows.get(od[i]);
+		if (!r) {
+			r = [];
+			rows.set(od[i], r);
+		}
+		r.push([od[i + 1], od[i + 2]]);
+	}
+	const out = new SpanList();
+	const d = spans.data;
+	for (let i = 0; i < spans.length * 3; i += 3) {
+		const y = d[i];
+		const cuts = (rows.get(y) ?? []).slice().sort((a, b) => a[0] - b[0]);
+		let x = d[i + 1];
+		const end = d[i + 2];
+		for (const [c0, c1] of cuts) {
+			if (c1 <= x || c0 >= end) {
+				continue;
+			}
+			out.add(y, x, Math.min(c0, end));
+			x = Math.max(x, c1);
+		}
+		out.add(y, x, end);
+	}
+	return out;
 }

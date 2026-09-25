@@ -19,35 +19,13 @@ import {
 import { tryFillPlusShapeExact } from './emf-plus-exact-fill';
 import { readRectFromView, readPointFromView } from './emf-plus-read-helpers';
 import { resolveBrushPaint, applyPlusWorldTransform } from './emf-plus-state-handlers';
-import type { CanvasContext, EmfPlusReplayCtx } from './emf-types';
+import { strokePlusGeometry } from './emf-plus-stroke';
+import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx } from './emf-types';
 
-/**
- * Apply an EMF+ pen to the canvas context (stroke colour, line width, dash pattern).
- */
-function applyEmfPlusPen(
-	ctx: CanvasContext,
-	pen: { color: string; width: number; dashStyle: number },
-): void {
-	ctx.strokeStyle = pen.color;
-	ctx.lineWidth = pen.width;
-	const w = pen.width || 1;
-	switch (pen.dashStyle) {
-		case 1:
-			ctx.setLineDash([w * 3, Number(w)]);
-			break; // Dash
-		case 2:
-			ctx.setLineDash([Number(w), Number(w)]);
-			break; // Dot
-		case 3:
-			ctx.setLineDash([w * 3, Number(w), Number(w), Number(w)]);
-			break; // DashDot
-		case 4:
-			ctx.setLineDash([w * 3, Number(w), Number(w), Number(w), Number(w), Number(w)]);
-			break; // DashDotDot
-		default:
-			ctx.setLineDash([]);
-			break; // Solid or Custom
-	}
+/** The pen object a draw record names, or `null`. */
+function penOf(rCtx: EmfPlusReplayCtx, penId: number): EmfPlusPen | null {
+	const pen = rCtx.objectTable.get(penId & 0xff);
+	return pen && pen.kind === 'plus-pen' ? pen : null;
 }
 
 export function handleEmfPlusDrawRecord(
@@ -83,6 +61,8 @@ export function handleEmfPlusDrawRecord(
 					},
 					rects.flatMap((r) => [
 						{ x: r.x, y: r.y },
+						{ x: r.x + r.w, y: r.y },
+						{ x: r.x, y: r.y + r.h },
 						{ x: r.x + r.w, y: r.y + r.h },
 					]),
 				);
@@ -99,21 +79,29 @@ export function handleEmfPlusDrawRecord(
 
 		case EMFPLUS_DRAWRECTS: {
 			if (recDataSize >= 4) {
-				const penId = recFlags & 0xff;
-				const pen = objectTable.get(penId);
 				const count = view.getUint32(dataOff, true);
 				const compressed = (recFlags & 0x4000) !== 0;
 				const rectSize = compressed ? 8 : 16;
-				if (pen && pen.kind === 'plus-pen') {
-					applyEmfPlusPen(ctx, pen);
-				}
-				applyPlusWorldTransform(rCtx);
+				const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
 				let rOff = dataOff + 4;
 				for (let i = 0; i < count && rOff + rectSize <= dataOff + recDataSize; i++) {
-					const { x, y, w, h } = readRectFromView(view, rOff, compressed);
-					ctx.strokeRect(x, y, w, h);
+					rects.push(readRectFromView(view, rOff, compressed));
 					rOff += rectSize;
 				}
+				strokePlusGeometry(
+					rCtx,
+					penOf(rCtx, recFlags),
+					(c) => {
+						for (const r of rects) {
+							c.rect(r.x, r.y, r.w, r.h);
+						}
+					},
+					rects.flatMap((r) => [
+						{ x: r.x, y: r.y },
+						{ x: r.x + r.w, y: r.y + r.h },
+					]),
+					true,
+				);
 			}
 			return true;
 		}
@@ -140,8 +128,12 @@ export function handleEmfPlusDrawRecord(
 				const ellipse = (c: CanvasContext): void => {
 					c.ellipse(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2);
 				};
+				// All four corners: under a rotated world transform the device
+				// bounding box of two opposite corners does not contain the shape.
 				const corners = [
 					{ x, y },
+					{ x: x + w, y },
+					{ x, y: y + h },
 					{ x: x + w, y: y + h },
 				];
 				if (!tryFillPlusShapeExact(rCtx, recFlags, brushVal, ellipse, corners)) {
@@ -173,13 +165,16 @@ export function handleEmfPlusDrawRecord(
 			} else {
 				return true;
 			}
-			if (pen && pen.kind === 'plus-pen') {
-				applyEmfPlusPen(ctx, pen);
-			}
-			applyPlusWorldTransform(rCtx);
-			ctx.beginPath();
-			ctx.ellipse(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2);
-			ctx.stroke();
+			strokePlusGeometry(
+				rCtx,
+				pen && pen.kind === 'plus-pen' ? pen : null,
+				(c) => c.ellipse(x + w / 2, y + h / 2, Math.abs(w) / 2, Math.abs(h) / 2, 0, 0, Math.PI * 2),
+				[
+					{ x, y },
+					{ x: x + w, y: y + h },
+				],
+				true,
+			);
 			return true;
 		}
 
@@ -217,13 +212,6 @@ export function handleEmfPlusDrawRecord(
 				return true;
 			}
 
-			if (recType !== EMFPLUS_FILLPIE) {
-				const penId = recFlags & 0xff;
-				const pen = objectTable.get(penId);
-				if (pen && pen.kind === 'plus-pen') {
-					applyEmfPlusPen(ctx, pen);
-				}
-			}
 
 			const cx = x + w / 2;
 			const cy = y + h / 2;
@@ -235,8 +223,12 @@ export function handleEmfPlusDrawRecord(
 					c.ellipse(cx, cy, rx, ry, 0, startAngle, startAngle + sweepAngle, sweepAngle < 0);
 					c.closePath();
 				};
+				// All four corners: under a rotated world transform the device
+				// bounding box of two opposite corners does not contain the shape.
 				const corners = [
 					{ x, y },
+					{ x: x + w, y },
+					{ x, y: y + h },
 					{ x: x + w, y: y + h },
 				];
 				if (!tryFillPlusShapeExact(rCtx, recFlags, brushVal, pie, corners)) {
@@ -248,39 +240,53 @@ export function handleEmfPlusDrawRecord(
 				}
 				return true;
 			}
-			applyPlusWorldTransform(rCtx);
-			ctx.beginPath();
-			ctx.ellipse(cx, cy, rx, ry, 0, startAngle, startAngle + sweepAngle, sweepAngle < 0);
-			ctx.stroke();
+			// DrawPie outlines the whole wedge (arc and both radii); DrawArc only the arc.
+			const isPie = recType === EMFPLUS_DRAWPIE;
+			strokePlusGeometry(
+				rCtx,
+				penOf(rCtx, recFlags),
+				(c) => {
+					if (isPie) {
+						c.moveTo(cx, cy);
+					}
+					c.ellipse(cx, cy, rx, ry, 0, startAngle, startAngle + sweepAngle, sweepAngle < 0);
+					if (isPie) {
+						c.closePath();
+					}
+				},
+				[
+					{ x, y },
+					{ x: x + w, y: y + h },
+				],
+				isPie,
+			);
 			return true;
 		}
 
 		case EMFPLUS_DRAWLINES: {
 			if (recDataSize >= 4) {
-				const penId = recFlags & 0xff;
-				const pen = objectTable.get(penId);
 				const count = view.getUint32(dataOff, true);
 				const compressed = (recFlags & 0x4000) !== 0;
 				const ptSize = compressed ? 4 : 8;
-				if (pen && pen.kind === 'plus-pen') {
-					applyEmfPlusPen(ctx, pen);
-				}
-				applyPlusWorldTransform(rCtx);
-				ctx.beginPath();
+				const pts: Array<{ x: number; y: number }> = [];
 				let pOff = dataOff + 4;
 				for (let i = 0; i < count && pOff + ptSize <= dataOff + recDataSize; i++) {
-					const pt = readPointFromView(view, pOff, compressed);
-					if (i === 0) {
-						ctx.moveTo(pt.x, pt.y);
-					} else {
-						ctx.lineTo(pt.x, pt.y);
-					}
+					pts.push(readPointFromView(view, pOff, compressed));
 					pOff += ptSize;
 				}
-				if (recFlags & 0x2000) {
-					ctx.closePath();
-				}
-				ctx.stroke();
+				const closed = (recFlags & 0x2000) !== 0;
+				strokePlusGeometry(
+					rCtx,
+					penOf(rCtx, recFlags),
+					(c) => {
+						pts.forEach((pt, i) => (i === 0 ? c.moveTo(pt.x, pt.y) : c.lineTo(pt.x, pt.y)));
+						if (closed) {
+							c.closePath();
+						}
+					},
+					pts,
+					closed,
+				);
 			}
 			return true;
 		}
