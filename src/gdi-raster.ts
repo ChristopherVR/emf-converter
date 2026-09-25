@@ -663,6 +663,31 @@ export function roundRectCorners(l: number, t: number, r: number, b: number, cw:
 // Arcs
 // ---------------------------------------------------------------------------
 
+/** GDI's arc trigonometry step: a 128-entry table per turn. */
+const TRIG_STEP = (2 * Math.PI) / 128;
+
+/**
+ * `cos`/`sin` the way GDI evaluates them for arcs: linear interpolation in a
+ * 128-entry table per turn (so points sit slightly inside the true ellipse,
+ * by up to 1 - cos(pi / 128) of the radius). Fitted against `GetPath`: arc
+ * start points match GDI 793 of 800 times (767 with exact trigonometry),
+ * the rest within 0.02 FIX of a rounding tie.
+ */
+function tableTrig(fn: (a: number) => number): (a: number) => number {
+	return (a: number) => {
+		let b = a % (2 * Math.PI);
+		if (b < 0) {
+			b += 2 * Math.PI;
+		}
+		const i = Math.floor(b / TRIG_STEP);
+		const f = b / TRIG_STEP - i;
+		return fn(i * TRIG_STEP) * (1 - f) + fn((i + 1) * TRIG_STEP) * f;
+	};
+}
+
+const tableCos = tableTrig(Math.cos);
+const tableSin = tableTrig(Math.sin);
+
 /**
  * The open run of Beziers (`1 + 3n` points, flat FIX pairs) GDI builds for
  * `Arc`/`ArcTo`/`Chord`/`Pie` on the inclusive box `l..r` x `t..b` (FIX)
@@ -710,8 +735,8 @@ export function arcBeziers(
 	} else {
 		while (a1 >= a0) a1 -= 2 * Math.PI;
 	}
-	const px = (a: number) => cx + rx * Math.cos(a);
-	const py = (a: number) => cy - ry * Math.sin(a);
+	const px = (a: number) => cx + rx * tableCos(a);
+	const py = (a: number) => cy - ry * tableSin(a);
 	const E = ellipseBeziers(l, t, r, b);
 	if (clockwise) {
 		// A clockwise arc's whole quadrants round their vertical control
@@ -742,10 +767,10 @@ export function arcBeziers(
 		const e = s > 0 ? Math.min(next, a1) : Math.max(next, a1);
 		const k = (4 / 3) * Math.tan((e - a) / 4);
 		out.push(
-			Math.round(px(a) - k * rx * Math.sin(a)),
-			Math.round(py(a) - k * ry * Math.cos(a)),
-			Math.round(px(e) + k * rx * Math.sin(e)),
-			Math.round(py(e) + k * ry * Math.cos(e)),
+			Math.round(px(a) - k * rx * tableSin(a)),
+			Math.round(py(a) - k * ry * tableCos(a)),
+			Math.round(px(e) + k * rx * tableSin(e)),
+			Math.round(py(e) + k * ry * tableCos(e)),
 			Math.round(px(e)),
 			Math.round(py(e)),
 		);

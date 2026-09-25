@@ -35,7 +35,8 @@ import {
 import type { ClipShape } from './emf-clip-region';
 import { gdiCombineClip, RGN_MODE_OPS } from './emf-gdi-clip-records';
 import { gmapPoint } from './emf-gdi-coord';
-import { gdiPathRecorder, replayGdiPathCmds } from './emf-gdi-path-record';
+import { gdiPathRecorder, replayGdiPathCmds, type GdiPathCmd } from './emf-gdi-path-record';
+import { currentFix } from './emf-gdi-draw-shapes';
 import { fixPoint } from './emf-gdi-raster-shapes';
 import { paintGdiShape } from './emf-gdi-shape-paint';
 import {
@@ -131,9 +132,9 @@ function handlePoly(
 	if (inPath) {
 		build(gdiPathRecorder(rCtx));
 		rCtx.rasterPath ??= new GdiRasterPath();
-		buildRaster(rCtx.rasterPath, isTo && rCtx.rasterPath.figures.length === 0 ? fixPoint(rCtx, state.curX, state.curY) : null);
+		buildRaster(rCtx.rasterPath, isTo && rCtx.rasterPath.figures.length === 0 ? currentFix(rCtx) : null);
 	} else {
-		const from = isTo ? fixPoint(rCtx, state.curX, state.curY) : null;
+		const from = isTo ? currentFix(rCtx) : null;
 		const start = isTo ? gmapPoint(rCtx, state.curX, state.curY) : null;
 		rCtx.lineStyle = { pos: 0 };
 		paintGdiShape(rCtx, {
@@ -214,17 +215,47 @@ function handlePoly16(
 // Main handler
 // ---------------------------------------------------------------------------
 
+/**
+ * `cmds` with every figure closed: a `closePath` before each later `moveTo`
+ * and one at the end (closing an already closed figure is a no-op).
+ */
+function closeAllFigures(cmds: readonly GdiPathCmd[]): GdiPathCmd[] {
+	const out: GdiPathCmd[] = [];
+	for (const c of cmds) {
+		if (c.op === 'moveTo' && out.length > 0) {
+			out.push({ op: 'closePath' });
+		}
+		out.push(c);
+	}
+	if (out.length > 0) {
+		out.push({ op: 'closePath' });
+	}
+	return out;
+}
+
 /** Fills and/or strokes the current bracket's path (`EMR_FILLPATH` and friends). */
 function paintBracketPath(rCtx: EmfGdiReplayCtx, fill: boolean, stroke: boolean): void {
 	const { state } = rCtx;
 	// `build` replays the commands recorded during the preceding
 	// BeginPath/EndPath bracket (`rCtx.pathCmds`); the exact route uses the
 	// bracket's GDI geometry (`rCtx.rasterPath`).
+	// StrokeAndFillPath closes every open figure before stroking it (the
+	// closing edges are drawn), StrokePath leaves them open.
+	const close = fill && stroke;
+	const cmds = close ? closeAllFigures(rCtx.pathCmds) : rCtx.pathCmds;
 	const buildPath = (target: CanvasContext) => {
 		target.beginPath();
-		replayGdiPathCmds(target, rCtx.pathCmds);
+		replayGdiPathCmds(target, cmds);
 	};
-	const raster = rCtx.rasterPath ?? new GdiRasterPath();
+	let raster = rCtx.rasterPath ?? new GdiRasterPath();
+	if (close) {
+		const closed = new GdiRasterPath();
+		closed.append(raster);
+		for (const f of closed.figures) {
+			f.closed = true;
+		}
+		raster = closed;
+	}
 	paintGdiShape(rCtx, {
 		build: buildPath,
 		raster: () => raster,

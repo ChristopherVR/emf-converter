@@ -1138,4 +1138,9 @@ export interface EmfGdiReplayCtx {
 	 * first needed, `null` when the replay cannot use one.
 	 */
 	rasterLayer?: import('./emf-gdi-raster-layer').RasterLayer | null;
+	/**
+	 * The current position at 28.4 precision after an EMR_ARCTO (device FIX
+	 * `x`, `y`), valid while the logical current position is still `lx`, `ly`.
+	 */
+	curFix?: { x: number; y: number; lx: number; ly: number };
 }

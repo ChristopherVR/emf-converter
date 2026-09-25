@@ -240,12 +240,13 @@ const ROP2_EXACT_CASES: ParityCase[] = [
  * the reference PNG is painted by the identical GDI calls under the same
  * transform). The blit maps every device pixel of the FIX parallelogram
  * back to one source texel, as GDI does, instead of resampling a local
- * raster: measured 0.005% (one pixel whose centre maps exactly onto a
- * texel boundary), down from 0.67%. Glyph rasterisation already differs
+ * raster, breaking a pixel centre that falls exactly on a texel boundary
+ * the way GDI does: pixel-exact (0.67% with the earlier local
+ * resampling). Glyph rasterisation already differs
  * from GDI's own font engine even without rotation (`rotate-text-25deg`).
  */
 const ROTATION_AFFINE_CASES: ParityCase[] = [
-	close('rotate-bitblt-25deg', 0.001), // measured 0.005%
+	close('rotate-bitblt-25deg', 0), // measured 0.00%
 	close('rotate-text-25deg', 0.035), // measured 2.39%
 ];
 
@@ -288,16 +289,10 @@ const ALIASED_CASES: ParityCase[] = [
  * every cap and join, rotated/mirrored/stretched/skewed blits, and a
  * 800-shape benchmark drawing. Under `gdiAntialias: false`:
  *   - exact at tolerance 0: everything but the rows below;
- *   - `raster-arcs`, `raster-paths`: a partial arc's control and end points
- *     are one FIX (1/16 px) off GDI's at about one arc in three (GDI's own
- *     trigonometry is slightly less precise than ours), moving a few pixels;
  *   - `raster-wide-pens`, `raster-wide-joins`, `raster-dash-geometric`: GDI
  *     adjusts its pen nib per segment slope and places flat/square caps and
  *     miter/bevel joins by its own rounding, which `gdi-raster-widen.ts`
- *     approximates;
- *   - `raster-blit-rotated`: about one blit in seven maps a handful of edge
- *     texels one texel off GDI's (random-probe evidence: 255 of 300 random
- *     rotated/mirrored/stretched/skewed blits pixel-exact).
+ *     approximates.
  */
 const raster = (name: string, maxMismatch = 0): ParityCase => ({
 	name,
@@ -320,9 +315,9 @@ const RASTER_CASES: ParityCase[] = [
 	raster('raster-rop2-shapes'),
 	raster('raster-dash-cosmetic'),
 	raster('raster-bench-shapes'),
-	raster('raster-arcs', 0.002), // measured 0.117%
-	raster('raster-paths', 0.001), // measured 0.057%
-	raster('raster-blit-rotated', 0.005), // measured 0.350%
+	raster('raster-arcs'), // was 0.117%
+	raster('raster-paths'), // was 0.057%
+	raster('raster-blit-rotated'), // was 0.350%
 	raster('raster-wide-pens', 0.006), // measured 0.420%
 	raster('raster-wide-joins', 0.013), // measured 0.991%
 	raster('raster-dash-geometric', 0.045), // measured 3.943%
@@ -346,7 +341,7 @@ const RASTER_AA_CASES: ParityCase[] = [
 	close('raster-ellipses-nullpen', 0.05), // measured 3.87%
 	close('raster-ellipses-rotated', 0.045), // measured 3.59%
 	close('raster-roundrects', 0.045), // measured 3.70%
-	close('raster-arcs', 0.04), // measured 3.21%
+	close('raster-arcs', 0.04), // measured 3.27%
 	close('raster-pies-chords', 0.065), // measured 5.65%
 	close('raster-polygon-fillmodes', 0.05), // measured 3.94%
 	close('raster-paths', 0.075), // measured 6.63%
@@ -355,7 +350,7 @@ const RASTER_AA_CASES: ParityCase[] = [
 	close('raster-dash-geometric', 0.09), // measured 7.80%
 	close('raster-wide-pens', 0.075), // measured 6.36%
 	close('raster-wide-joins', 0.06), // measured 4.87%
-	close('raster-blit-rotated', 0.005), // measured 0.35%
+	close('raster-blit-rotated', 0), // measured 0.00%
 	close('raster-bench-shapes', 0.17), // measured 15.87%
 ];
 
@@ -865,7 +860,7 @@ describe('GDI ground-truth parity', () => {
  * along edges, where this rasteriser's coverage is the exact covered area
  * (Skia's approximates it; see `software-raster-coverage.ts`). Measured
  * against GDI: rotate-ellipse-40deg 2.00% (napi 1.91%), rotate-bitblt-25deg
- * 0.81% (0.67%), rop2-bitwise-grid 0.28% (0.23%), pattern-fill-ellipse-color
+ * 0.00% (0.00%), rop2-bitwise-grid 0.28% (0.23%), pattern-fill-ellipse-color
  * 3.01% (3.08%), every other case equal to the napi figure. Text cannot be
  * rasterised without a font engine, so the text fixture yields no PNG.
  */

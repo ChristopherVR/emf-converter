@@ -68,6 +68,7 @@ import {
 	type ArcKind,
 } from './emf-gdi-raster-shapes';
 import { gdiStrokeAlign, paintGdiShape, penLineWidth, penScale } from './emf-gdi-shape-paint';
+import { invertAffine } from './emf-plus-exact-fill';
 import { isExactRop2Bitwise } from './emf-rop2-exact';
 import type { CanvasContext, DrawState, EmfGdiReplayCtx } from './emf-types';
 import { GdiRasterPath, type FixBox } from './gdi-raster';
@@ -106,6 +107,20 @@ function resetLineStyle(rCtx: EmfGdiReplayCtx): void {
 	rCtx.lineStyle = { pos: 0 };
 }
 
+/**
+ * The current position in device FIX: the exact arc end an ArcTo left
+ * (GDI keeps it at 28.4 precision) while the logical current position is
+ * still the one it set, otherwise the mapped logical point.
+ */
+export function currentFix(rCtx: EmfGdiReplayCtx): [number, number] {
+	const c = rCtx.curFix;
+	const { state } = rCtx;
+	if (c && c.lx === state.curX && c.ly === state.curY) {
+		return [c.x, c.y];
+	}
+	return fixPoint(rCtx, state.curX, state.curY);
+}
+
 /** A logical extent `v` along the device x (`axis` 0) or y (`axis` 1) direction, in device FIX. */
 function fixExtent(rCtx: EmfGdiReplayCtx, v: number, axis: 0 | 1): number {
 	const m = gdiDeviceMatrix(rCtx);
@@ -136,6 +151,7 @@ function handleMoveToEx(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number)
 		state.curX = view.getInt32(dataOff, true);
 		state.curY = view.getInt32(dataOff + 4, true);
 		resetLineStyle(rCtx);
+		rCtx.curFix = undefined;
 		if (inPath) {
 			const p = hasWorldRotation(rCtx)
 				? gmapPoint(rCtx, state.curX, state.curY)
@@ -163,7 +179,7 @@ function handleLineTo(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): 
 			const from = rotated
 				? gmapPoint(rCtx, state.curX, state.curY)
 				: { x: gmx(rCtx, state.curX), y: gmy(rCtx, state.curY) };
-			const fixFrom = fixPoint(rCtx, state.curX, state.curY);
+			const fixFrom = currentFix(rCtx);
 			paintGdiShape(rCtx, {
 				build: (c: CanvasContext) => {
 					c.beginPath();
@@ -550,7 +566,7 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			box: immediate && needsFill ? curvedFixBox(rCtx, l, t, r, b) : fixBox(rCtx, l, t, r, b),
 			s: fixPoint(rCtx, startX, startY),
 			e: fixPoint(rCtx, endX, endY),
-			from: fixPoint(rCtx, state.curX, state.curY),
+			from: currentFix(rCtx),
 		});
 		if (inPath) {
 			build(gdiPathRecorder(rCtx));
@@ -576,11 +592,26 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			});
 		}
 		if (isArcTo) {
-			// GDI leaves the current position at the arc's end point, on the
-			// ellipse (not at the end radial's defining point).
-			const sweepEnd = endAngle;
-			state.curX = Math.round(cxA + rx * Math.cos(sweepEnd));
-			state.curY = Math.round(cyA + ry * Math.sin(sweepEnd));
+			// GDI leaves the current position at the arc's end point truncated
+			// to its device pixel (the 28.4 end point floored to whole pixels,
+			// measured with GetCurrentPositionEx under a 1/16 world scale), and
+			// the next LineTo starts exactly there (inside a path the next segment
+			// continues from the unrounded end point).
+			const a = rasterArgs();
+			const end = arcRasterPath(a.box, a.s, a.e, clockwise, 'arc').end;
+			const dx = Math.floor(end[0] / 16);
+			const dy = Math.floor(end[1] / 16);
+			const inv = invertAffine(gdiDeviceMatrix(rCtx));
+			if (inv) {
+				state.curX = Math.round(inv[0] * dx + inv[2] * dy + inv[4]);
+				state.curY = Math.round(inv[1] * dx + inv[3] * dy + inv[5]);
+			} else {
+				state.curX = Math.round(cxA + rx * Math.cos(endAngle));
+				state.curY = Math.round(cyA + ry * Math.sin(endAngle));
+			}
+			rCtx.curFix = inPath
+				? { x: end[0], y: end[1], lx: state.curX, ly: state.curY }
+				: { x: dx * 16, y: dy * 16, lx: state.curX, ly: state.curY };
 		}
 	}
 	return true;

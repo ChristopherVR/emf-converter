@@ -309,6 +309,31 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 }
 
 /**
+ * The sign of `v + e * dx + e^2 * dy` for an infinitesimal `e > 0`: the sign
+ * a quantity that is linear in the device position takes at a pixel centre
+ * nudged right by `e` and down by `e^2` (`dx`, `dy`: its derivatives along
+ * device x and y).
+ */
+function nudgedSign(v: number, dx: number, dy: number): number {
+	return v !== 0 ? Math.sign(v) : dx !== 0 ? Math.sign(dx) : Math.sign(dy);
+}
+
+/** Whether `0 <= n < den` holds for the nudged numerator `n` (see {@link nudgedSign}). */
+function inHalfOpen(n: number, den: number, dx: number, dy: number): boolean {
+	return nudgedSign(n, dx, dy) >= 0 && nudgedSign(n - den, dx, dy) < 0;
+}
+
+/**
+ * `floor(num / den)` for the nudged numerator `num` (see {@link nudgedSign}):
+ * an exact multiple of `den` that the nudge moves down counts as the
+ * texel below.
+ */
+function nudgedFloor(num: number, den: number, dx: number, dy: number): number {
+	const q = Math.floor(num / den);
+	return num === q * den && nudgedSign(0, dx, dy) < 0 ? q - 1 : q;
+}
+
+/**
  * Full-affine (rotated/skewed `EMR_SETWORLDTRANSFORM`) bitmap blit for
  * BitBlt/StretchBlt/StretchDIBits, done the way GDI does it: per DEVICE
  * pixel, never by resampling a local raster.
@@ -326,6 +351,11 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
  * (P). All of it is exact integer arithmetic on the FIX corners; matched
  * against real GDI rotated, mirrored, stretched and skewed blits (see the
  * `raster-blit-*` fixtures).
+ *
+ * A centre that falls exactly on an edge or on a texel boundary is decided
+ * as if it sat an infinitesimal to the right and a smaller one further down
+ * (`nudgedSign`): 360 of 360 whole-degree rotations and every
+ * `raster-blit-*` fixture pixel-exact.
  *
  * The painted pixels reach the canvas through `rewritePixels`, so the
  * active clip applies.
@@ -435,16 +465,24 @@ function executeRotatedBlit(
 		return (src.data[i] << 16) | (src.data[i + 1] << 8) | src.data[i + 2];
 	};
 
+	// Derivatives of the u and v numerators along device x and y.
+	const dux = sign * eyy;
+	const duy = -sign * eyx;
+	const dvx = -sign * exy;
+	const dvy = sign * exx;
 	rewritePixels(ctx, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, (x, y, d) => {
 		const px = x * 16 - ax;
 		const py = y * 16 - ay;
 		const un = sign * (px * eyy - py * eyx);
 		const vn = sign * (exx * py - exy * px);
-		if (un < 0 || un >= det || vn < 0 || vn >= det) {
+		// A centre exactly on an edge or a texel boundary is decided as if it
+		// were nudged right by an infinitesimal, then down by a smaller one
+		// (GDI's top-left rule; 360 of 360 whole-degree rotations exact).
+		if (!inHalfOpen(un, det, dux, duy) || !inHalfOpen(vn, det, dvx, dvy)) {
 			return -1;
 		}
-		const ix = Math.min(asw - 1, Math.floor((un * asw) / det));
-		const iy = Math.min(ash - 1, Math.floor((vn * ash) / det));
+		const ix = Math.min(asw - 1, nudgedFloor(un * asw, det, dux, duy));
+		const iy = Math.min(ash - 1, nudgedFloor(vn * ash, det, dvx, dvy));
 		const s = operands.usesS ? texel(ix, iy) : 0;
 		const p = typeof pattern === 'function' ? pattern(x, y) : pattern;
 		return evalRop3(index, p, s, d);
