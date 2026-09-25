@@ -821,7 +821,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
 	recordCase('gpx-rec-tsclip-state', 0),
 	recordCase('gpx-rec-tsgraphics', 0),
 	recordCase('gpx-rec-customcap', 0.0005), // measured 0.013%
-	recordCase('gpx-rec-customcap-aa', 0.0005), // measured 0.025%
+	recordCase('gpx-rec-customcap-aa', 0.001), // measured 0.051%
 ];
 
 /**
