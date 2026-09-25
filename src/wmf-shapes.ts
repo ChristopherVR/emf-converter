@@ -285,4 +285,3 @@ export function penIsNull(p: WmfPlayer): boolean {
 	return (p.rCtx.state.penStyle & 0x0f) === PS_NULL;
 }
 
-export { penIsCosmetic };

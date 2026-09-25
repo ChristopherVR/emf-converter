@@ -144,10 +144,8 @@ import {
 	readColorRefRaw,
 	refreshColors,
 	resizePalette,
-	selectBrush,
 	selectObject,
 	selectPalette,
-	selectPen,
 	setPaletteEntries,
 } from './wmf-objects';
 import { wmfExtFloodFill, wmfSetPixel } from './wmf-pixel';
@@ -692,4 +690,3 @@ export function replayWmfRecords(
 	}
 }
 
-export { selectBrush, selectPen };
