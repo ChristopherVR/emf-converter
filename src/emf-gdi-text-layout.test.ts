@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	cumulativeGlyphOffsets,
 	totalGlyphAdvance,
+	applyTextJustification,
 	alignmentStartOffset,
 	escapementToCanvasRadians,
 	resolveFontPixelHeight,
@@ -19,6 +20,26 @@ describe('cumulativeGlyphOffsets', () => {
 
 	it('returns an empty array for an empty Dx array', () => {
 		expect(cumulativeGlyphOffsets([])).toEqual([]);
+	});
+});
+
+describe('applyTextJustification', () => {
+	it('spreads positive extra over spaces using DDA rounding', () => {
+		expect(applyTextJustification([4, 3, 4, 3, 4], [65, 32, 66, 32, 67], 5, 2)).toEqual([4, 6, 4, 5, 4]);
+	});
+
+	it('distributes negative extra with signed rounding and leaves non-breaks alone', () => {
+		expect(applyTextJustification([4, 3, 4, 3, 4], [65, 32, 66, 32, 67], -5, 2)).toEqual([4, 1, 4, 0, 4]);
+	});
+
+	it('leaves advances untouched when there are no space breaks', () => {
+		expect(applyTextJustification([7, 9], [65, 66], 10, 2)).toEqual([7, 9]);
+	});
+
+	it('does not mutate advances and preserves DDA shares when spaces exceed the count', () => {
+		const dx = [2, 3, 4];
+		expect(applyTextJustification(dx, [32, 32, 32], 2, 2)).toEqual([3, 4, 5]);
+		expect(dx).toEqual([2, 3, 4]);
 	});
 });
 

@@ -108,7 +108,7 @@ export function penDashArray(pen: EmfPlusPen): number[] {
  * Canvas's single `lineCap` then carries; a solid pen uses its start cap.
  */
 export function applyPlusPenStyle(ctx: CanvasContext, pen: EmfPlusPen, widthScale: number = 1): void {
-	ctx.lineWidth = pen.width * widthScale;
+	ctx.lineWidth = (pen.width || 1) * widthScale;
 	const dashes = penDashArray(pen);
 	ctx.lineCap = canvasLineCap(dashes.length > 0 ? (pen.dashCap ?? 0) : (pen.startCap ?? pen.endCap));
 	ctx.lineJoin = canvasLineJoin(pen.lineJoin);
@@ -138,6 +138,12 @@ export function strokePlusGeometry(
 	closedFigure: boolean = false,
 ): void {
 	const { ctx } = rCtx;
+	// PenDataTransform is a transform of the pen's geometric attributes. For
+	// a similarity transform its only effect on a centered stroke is to scale
+	// every pen-space length uniformly; its rotation does not change a round
+	// pen. Fold that scale into the pen so both the Canvas and widened/raster
+	// routes see it. Translation has no effect on centered pen geometry.
+	pen = applySimilarityPenTransform(pen);
 	const inset = !!pen && pen.alignment === 1 && closedFigure;
 	const widthScale = inset ? 2 : 1;
 	/** Strokes on `c` (transform already set), clipped to the figure for an inset pen. */
@@ -203,6 +209,25 @@ export function strokePlusGeometry(
 	}
 	applyPlusWorldTransform(rCtx);
 	stroke(ctx);
+}
+
+/** Fold a pen-local similarity transform into its scalar stroke dimensions. */
+function applySimilarityPenTransform(pen: EmfPlusPen | null): EmfPlusPen | null {
+	if (!pen?.transform) {
+		return pen;
+	}
+	if (isIdentity(pen.transform)) {
+		return { ...pen, transform: null };
+	}
+	const [a, b, c, d] = pen.transform;
+	const sx = Math.hypot(a, b);
+	const sy = Math.hypot(c, d);
+	const dot = a * c + b * d;
+	if (!Number.isFinite(sx + sy + dot) || !(sx > 0) || Math.abs(sx - sy) > 1e-6 * sx || Math.abs(dot) > 1e-6 * sx * sy) {
+		return pen;
+	}
+	// Native GDI+ does not scale a zero-width pen's minimum width.
+	return { ...pen, width: pen.width === 0 ? 1 : pen.width * sx, transform: null };
 }
 
 /**

@@ -1120,7 +1120,7 @@ describe('emf-plus-object-complex', () => {
 			expect(parseEmfPlusPenObject(view, 0, 16)).toBeNull();
 		});
 
-		it('defaults pen width to 1 when zero', () => {
+		it('preserves zero pen width so pen transforms retain hairline semantics', () => {
 			const size = 28;
 			const view = buildBuffer(size, (v) => {
 				v.setUint32(0, 0, true);
@@ -1135,7 +1135,7 @@ describe('emf-plus-object-complex', () => {
 			const result = parseEmfPlusPenObject(view, 0, size);
 			expect(result).not.toBeNull();
 			if (result!.kind === 'plus-pen') {
-				expect(result!.width).toBe(1); // fallback
+				expect(result!.width).toBe(0); // The renderer applies the minimum width.
 			}
 		});
 	});

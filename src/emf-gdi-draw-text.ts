@@ -1,5 +1,5 @@
 /**
- * EMR_EXTTEXTOUTW record handler.
+ * EMF ExtTextOut, PolyTextOut and SmallTextOut record handlers.
  *
  * With `EmfConvertOptions.fonts`, the record is drawn by the GDI font
  * engine (`gdi-text-render.ts`, `gdi-font-engine.ts`): the LOGFONT is
@@ -23,7 +23,8 @@ import {
 	fontSizePx,
 	readUtf16LE,
 } from './emf-canvas-helpers';
-import { EMR_EXTTEXTOUTW } from './emf-constants';
+import { decodeAnsiRecord } from './emf-ansi';
+import { EMR_EXTTEXTOUTA, EMR_EXTTEXTOUTW, EMR_POLYTEXTOUTA, EMR_POLYTEXTOUTW, EMR_SMALLTEXTOUT } from './emf-constants';
 import { gmx, gmy, gmw, gmh, gdiDeviceMatrix, gmapPoint, hasWorldRotation } from './emf-gdi-coord';
 import { drawGdiTextCall, ETO_GLYPH_INDEX, ETO_PDY } from './gdi-text-render';
 import {
@@ -31,12 +32,13 @@ import {
 	totalGlyphAdvance,
 	alignmentStartOffset,
 	escapementToCanvasRadians,
+	applyTextJustification,
 } from './emf-gdi-text-layout';
 import type { CanvasContext, DrawState, EmfGdiReplayCtx } from './emf-types';
 
 type HAlign = 'left' | 'center' | 'right';
 
-/** Reads the record's Dx array (one UINT32 advance per character), if present and in bounds. */
+/** Reads signed Dx advances (interleaved with Dy for ETO_PDY), within the record. */
 function readDxArray(
 	view: DataView,
 	offset: number,
@@ -55,7 +57,7 @@ function readDxArray(
 	}
 	const dx: number[] = [];
 	for (let i = 0; i < nChars; i++) {
-		dx.push(view.getUint32(start + i * 4, true));
+		dx.push(view.getInt32(start + i * 4, true));
 	}
 	return dx;
 }
@@ -65,7 +67,7 @@ function readDxArray(
  * supplied a usable font (see `gdi-text-render.ts`). Returns false, having
  * drawn nothing, otherwise.
  */
-function drawWithFontEngine(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, nChars: number, offString: number): boolean {
+function drawWithFontEngine(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, nChars: number, offString: number, viewEnd: number): boolean {
 	const { ctx, view, state } = rCtx;
 	const fonts = rCtx.fonts;
 	if (!fonts) {
@@ -77,7 +79,7 @@ function drawWithFontEngine(rCtx: EmfGdiReplayCtx, offset: number, dataOff: numb
 		codes.push(view.getUint16(offset + offString + i * 2, true));
 	}
 	const pdy = (options & ETO_PDY) !== 0;
-	const raw = readDxArray(view, offset, dataOff, pdy ? nChars * 2 : nChars, view.byteLength);
+	const raw = readDxArray(view, offset, dataOff, pdy ? nChars * 2 : nChars, viewEnd);
 	let dx: number[] | null = raw;
 	let dy: number[] | null = null;
 	if (raw && pdy) {
@@ -103,6 +105,7 @@ function drawWithFontEngine(rCtx: EmfGdiReplayCtx, offset: number, dataOff: numb
 		dx,
 		dy,
 		matrix: gdiDeviceMatrix(rCtx),
+		textJustification: state.textJustification,
 	});
 	if (!adv) {
 		return false;
@@ -115,11 +118,11 @@ function drawWithFontEngine(rCtx: EmfGdiReplayCtx, offset: number, dataOff: numb
 }
 
 function horizontalAlign(textAlign: number): HAlign {
+	if ((textAlign & 0x06) === 0x06) {
+		return 'center';
+	}
 	if (textAlign & 0x02) {
 		return 'right';
-	}
-	if (textAlign & 0x06) {
-		return 'center';
 	}
 	return 'left';
 }
@@ -185,11 +188,11 @@ function handleExtTextOutW(
 	const refY = view.getInt32(dataOff + 32, true);
 	const nChars = view.getUint32(dataOff + 36, true);
 	const offString = view.getUint32(dataOff + 40, true);
-	const viewEnd = view.byteLength;
-	if (nChars === 0 || offString === 0 || offset + offString + nChars * 2 > viewEnd) {
+	const viewEnd = Math.min(view.byteLength, offset + recSize);
+	if (nChars === 0 || offString === 0 || nChars > Math.floor((viewEnd - offset - offString) / 2)) {
 		return true;
 	}
-	if (drawWithFontEngine(rCtx, offset, dataOff, nChars, offString)) {
+	if (drawWithFontEngine(rCtx, offset, dataOff, nChars, offString, viewEnd)) {
 		return true;
 	}
 	const text = readUtf16LE(view, offset + offString, nChars);
@@ -220,8 +223,16 @@ function handleExtTextOutW(
 	ctx.textBaseline = verticalBaseline(state.textAlign);
 	ctx.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
 
-	const dxLogical = readDxArray(view, offset, dataOff, nChars, viewEnd);
-	const dxDevice = dxLogical ? dxLogical.map((v) => (advanceScale !== null ? v * advanceScale : gmw(rCtx, v))) : null;
+	const pdy = (view.getUint32(dataOff + 44, true) & ETO_PDY) !== 0;
+	const dxRaw = readDxArray(view, offset, dataOff, pdy ? nChars * 2 : nChars, viewEnd);
+	const dxLogical = dxRaw && pdy ? dxRaw.filter((_, i) => i % 2 === 0) : dxRaw;
+	let dxDevice = dxLogical ? dxLogical.map((v) => (advanceScale !== null ? v * advanceScale : gmw(rCtx, v))) : null;
+	if (!dxDevice && state.textJustification && !pdy) {
+		const units = text.split('');
+		const natural = units.map((ch) => ctx.measureText(ch).width);
+		const scale = advanceScale ?? gmw(rCtx, 1);
+		dxDevice = applyTextJustification(natural, units.map((ch) => ch.charCodeAt(0)), state.textJustification.extra * scale, state.textJustification.count);
+	}
 	// Per-glyph placement always anchors left; the run-level alignment is
 	// folded into `runStartX` inside paintRun instead.
 	if (dxDevice) {
@@ -259,6 +270,95 @@ function handleExtTextOutW(
 	return true;
 }
 
+/** Emits a parsed text call through the same EMR_EXTTEXTOUTW implementation. */
+function drawTextCall(rCtx: EmfGdiReplayCtx, x: number, y: number, codes: number[], options: number, rect: [number, number, number, number], dx: number[] | null): void {
+	const n = codes.length;
+	const offString = 76;
+	const offDx = (offString + n * 2 + 3) & ~3;
+	const dxCount = dx ? dx.length : 0;
+	const size = offDx + dxCount * 4;
+	const view = new DataView(new ArrayBuffer(size));
+	view.setUint32(44, n, true);
+	view.setUint32(48, offString, true);
+	view.setUint32(52, options, true);
+	view.setInt32(36, x, true);
+	view.setInt32(40, y, true);
+	view.setInt32(56, rect[0], true); view.setInt32(60, rect[1], true);
+	view.setInt32(64, rect[2], true); view.setInt32(68, rect[3], true);
+	view.setUint32(72, dx ? offDx : 0, true);
+	for (let i = 0; i < n; i++) view.setUint16(offString + i * 2, codes[i], true);
+	if (dx) for (let i = 0; i < dxCount; i++) view.setInt32(offDx + i * 4, dx[i], true);
+	const child = { ...rCtx, view };
+	handleExtTextOutW(child, 0, 8, size);
+}
+
+function readAnsiRecord(view: DataView, start: number, count: number, charSet: number): { codes: number[]; byteLengths: number[] } {
+	return decodeAnsiRecord(Array.from({ length: count }, (_, i) => view.getUint8(start + i)), charSet);
+}
+
+function collapseAnsiDx(dx: number[] | null, byteLengths: number[], pdy: boolean): number[] | null {
+	if (!dx) return null;
+	const result: number[] = [];
+	let at = 0;
+	for (const bytes of byteLengths) {
+		let x = 0, y = 0;
+		for (let i = 0; i < bytes; i++) {
+			x += dx[at + i * (pdy ? 2 : 1)] ?? 0;
+			if (pdy) y += dx[at + i * 2 + 1] ?? 0;
+		}
+		result.push(x);
+		if (pdy) result.push(y);
+		at += bytes * (pdy ? 2 : 1);
+	}
+	return result;
+}
+
+function handlePolyText(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, recSize: number, wide: boolean): boolean {
+	const { view, state } = rCtx;
+	const end = Math.min(view.byteLength, offset + recSize);
+	if (recSize < 40) return true;
+	const count = view.getUint32(dataOff + 28, true);
+	const arrayStart = dataOff + 32;
+	if (count > Math.floor((end - arrayStart) / 40)) return true;
+	const charSet = state.fontDetails?.charSet ?? 1;
+	for (let i = 0; i < count; i++) {
+		const e = arrayStart + i * 40;
+		const x = view.getInt32(e, true), y = view.getInt32(e + 4, true);
+		const n = view.getUint32(e + 8, true), offString = view.getUint32(e + 12, true);
+		const options = view.getUint32(e + 16, true);
+		const rect: [number, number, number, number] = [view.getInt32(e + 20, true), view.getInt32(e + 24, true), view.getInt32(e + 28, true), view.getInt32(e + 32, true)];
+		const offDx = view.getUint32(e + 36, true);
+		const unit = wide ? 2 : 1;
+		if (!offString || offString > end - offset || n > Math.floor((end - (offset + offString)) / unit)) continue;
+		const ansi = wide ? null : readAnsiRecord(view, offset + offString, n, charSet);
+		const codes = wide ? Array.from({ length: n }, (_, j) => view.getUint16(offset + offString + j * 2, true)) : ansi!.codes;
+		let dx: number[] | null = null;
+		const pdy = (options & ETO_PDY) !== 0;
+		const dxCount = n * (pdy ? 2 : 1);
+		if (offDx && offDx <= end - offset && dxCount <= Math.floor((end - (offset + offDx)) / 4)) {
+			dx = Array.from({ length: dxCount }, (_, j) => view.getInt32(offset + offDx + j * 4, true));
+			if (!wide) dx = collapseAnsiDx(dx, ansi!.byteLengths, pdy);
+		}
+		drawTextCall(rCtx, x, y, codes, options, rect, dx);
+	}
+	return true;
+}
+
+function handleSmallTextOut(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, recSize: number): boolean {
+	const { view } = rCtx;
+	const end = Math.min(view.byteLength, offset + recSize);
+	if (recSize < 36) return true;
+	const x = view.getInt32(dataOff, true), y = view.getInt32(dataOff + 4, true);
+	const n = view.getUint32(dataOff + 8, true), options = view.getUint32(dataOff + 12, true);
+	const small = (options & 0x200) !== 0, noRect = (options & 0x100) !== 0;
+	const base = dataOff + 28 + (noRect ? 0 : 16);
+	if (base > end || n > Math.floor((end - base) / (small ? 1 : 2))) return true;
+	const rect: [number, number, number, number] = noRect ? [0, 0, 0, 0] : [view.getInt32(dataOff + 28, true), view.getInt32(dataOff + 32, true), view.getInt32(dataOff + 36, true), view.getInt32(dataOff + 40, true)];
+	const codes = small ? Array.from({ length: n }, (_, i) => view.getUint8(base + i)) : Array.from({ length: n }, (_, i) => view.getUint16(base + i * 2, true));
+	drawTextCall(rCtx, x, y, codes, options, rect, null);
+	return true;
+}
+
 export function handleEmfGdiDrawTextRecord(
 	rCtx: EmfGdiReplayCtx,
 	recType: number,
@@ -268,6 +368,29 @@ export function handleEmfGdiDrawTextRecord(
 ): boolean {
 	if (recType === EMR_EXTTEXTOUTW) {
 		return handleExtTextOutW(rCtx, offset, dataOff, recSize);
+	}
+	if (recType === EMR_EXTTEXTOUTA || recType === EMR_POLYTEXTOUTA || recType === EMR_POLYTEXTOUTW || recType === EMR_SMALLTEXTOUT) {
+		if (recType === EMR_POLYTEXTOUTA || recType === EMR_POLYTEXTOUTW) return handlePolyText(rCtx, offset, dataOff, recSize, recType === EMR_POLYTEXTOUTW);
+		if (recType === EMR_SMALLTEXTOUT) return handleSmallTextOut(rCtx, offset, dataOff, recSize);
+		const { view, state } = rCtx;
+		const end = Math.min(view.byteLength, offset + recSize);
+		if (recSize < 76) return true;
+		const x = view.getInt32(dataOff + 28, true), y = view.getInt32(dataOff + 32, true);
+		const n = view.getUint32(dataOff + 36, true), strOff = view.getUint32(dataOff + 40, true), options = view.getUint32(dataOff + 44, true);
+		if (!strOff || strOff > end - offset) return true;
+		if (n > end - (offset + strOff)) return true;
+		const ansi = readAnsiRecord(view, offset + strOff, n, state.fontDetails?.charSet ?? 1);
+		const rect: [number, number, number, number] = [view.getInt32(dataOff + 48, true), view.getInt32(dataOff + 52, true), view.getInt32(dataOff + 56, true), view.getInt32(dataOff + 60, true)];
+		const offDx = view.getUint32(dataOff + 64, true);
+		let dx: number[] | null = null;
+		const pdy = (options & ETO_PDY) !== 0;
+		const dxCount = n * (pdy ? 2 : 1);
+		if (offDx && offDx <= end - offset && dxCount <= Math.floor((end - (offset + offDx)) / 4)) {
+			dx = Array.from({ length: dxCount }, (_, i) => view.getInt32(offset + offDx + i * 4, true));
+			dx = collapseAnsiDx(dx, ansi.byteLengths, pdy);
+		}
+		drawTextCall(rCtx, x, y, ansi.codes, options, rect, dx);
+		return true;
 	}
 	return false;
 }

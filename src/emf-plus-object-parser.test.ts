@@ -15,7 +15,7 @@ import {
 	EMFPLUS_BRUSHTYPE_TEXTUREFILL,
 } from './emf-constants';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
-import type { EmfPlusReplayCtx, TransformMatrix } from './emf-types';
+import type { EmfPlusPen, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -334,6 +334,19 @@ describe('emf-plus-object-parser', () => {
 			const pen = rCtx.objectTable.get(0);
 			expect(pen).toBeDefined();
 			expect(pen!.kind).toBe('plus-pen');
+		});
+
+		it('preserves zero PenWidth so pen-transform handling can keep its one-pixel minimum', () => {
+			const rCtx = makeRCtx();
+			rCtx.view.setUint32(0, 0xdbc01002, true);
+			rCtx.view.setUint32(4, 0, true);
+			rCtx.view.setUint32(8, 0, true);
+			rCtx.view.setFloat32(16, 0, true);
+			rCtx.view.setUint32(20, EMFPLUS_BRUSHTYPE_SOLID, true);
+			rCtx.view.setUint32(24, 0xff000000, true);
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_PEN, 0), 0, 28);
+			const pen = rCtx.objectTable.get(0) as EmfPlusPen;
+			expect(pen.width).toBe(0);
 		});
 
 		it('returns null for pen with insufficient data', () => {

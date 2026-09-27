@@ -2,6 +2,10 @@ import { describe, it, expect, vi, expectTypeOf } from 'vitest';
 
 import {
 	EMR_EXTTEXTOUTW,
+	EMR_EXTTEXTOUTA,
+	EMR_POLYTEXTOUTA,
+	EMR_POLYTEXTOUTW,
+	EMR_SMALLTEXTOUT,
 	EMR_BITBLT,
 	EMR_STRETCHDIBITS,
 	EMR_INTERSECTCLIPRECT,
@@ -98,6 +102,73 @@ describe('emf-gdi-draw-text-bitmap', () => {
 		// -----------------------------------------------------------------------
 		// EMR_EXTTEXTOUTW
 		// -----------------------------------------------------------------------
+		it('decodes EMR_EXTTEXTOUTA with the selected Windows charset', () => {
+			const rCtx = makeRCtx();
+			const d = 8;
+			rCtx.state.fontDetails = { ...(rCtx.state.fontDetails ?? {}), charSet: 0 } as typeof rCtx.state.fontDetails;
+			rCtx.view.setInt32(d + 28, 10, true); rCtx.view.setInt32(d + 32, 20, true);
+			rCtx.view.setUint32(d + 36, 1, true); rCtx.view.setUint32(d + 40, 76, true);
+			rCtx.view.setUint8(76, 0x80);
+			expect(handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTA, 0, d, 77)).toBe(true);
+			expect((rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>).fillText.mock.calls[0][0]).toBe('€');
+		});
+
+		it('combines DBCS byte advances and reads signed ETO_PDY pairs', () => {
+			const rCtx = makeRCtx();
+			rCtx.state.fontDetails = { ...(rCtx.state.fontDetails ?? {}), charSet: 128 } as typeof rCtx.state.fontDetails;
+			const d = 8;
+			rCtx.view.setInt32(d + 28, 10, true); rCtx.view.setInt32(d + 32, 20, true);
+			rCtx.view.setUint32(d + 36, 2, true); rCtx.view.setUint32(d + 40, 76, true);
+			rCtx.view.setUint32(d + 44, 0x2000, true); rCtx.view.setUint32(d + 64, 80, true);
+			rCtx.view.setUint8(76, 0x82); rCtx.view.setUint8(77, 0xa0);
+			rCtx.view.setInt32(80, 4, true); rCtx.view.setInt32(84, -2, true);
+			rCtx.view.setInt32(88, 5, true); rCtx.view.setInt32(92, 3, true);
+			expect(handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTA, 0, d, 96)).toBe(true);
+			const calls = (rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>).fillText.mock.calls;
+			expect(calls).toHaveLength(1);
+			expect(calls[0][0]).toBe('あ');
+		});
+
+		it.each([EMR_POLYTEXTOUTA, EMR_POLYTEXTOUTW])('draws strings from poly text record %s', (type) => {
+			const rCtx = makeRCtx();
+			const d = 8, entry = d + 32, str = 80;
+			rCtx.view.setUint32(d + 28, 1, true);
+			rCtx.view.setInt32(entry, 7, true); rCtx.view.setInt32(entry + 4, 9, true);
+			rCtx.view.setUint32(entry + 8, 1, true); rCtx.view.setUint32(entry + 12, str, true);
+			if (type === EMR_POLYTEXTOUTA) rCtx.view.setUint8(str, 0x41);
+			else rCtx.view.setUint16(str, 0x41, true);
+			expect(handleEmfGdiTextBitmapRecord(rCtx, type, 0, d, 84)).toBe(true);
+			expect((rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>).fillText.mock.calls[0][0]).toBe('A');
+		});
+
+		it('reads SMALLTEXTOUT strings and respects the record boundary', () => {
+			const rCtx = makeRCtx();
+			const d = 8;
+			rCtx.view.setInt32(d, 3, true); rCtx.view.setInt32(d + 4, 4, true);
+			rCtx.view.setUint32(d + 8, 1, true); rCtx.view.setUint32(d + 12, 0x100, true); // ETO_NO_RECT
+			rCtx.view.setUint16(d + 28, 0x03a9, true);
+			expect(handleEmfGdiTextBitmapRecord(rCtx, EMR_SMALLTEXTOUT, 0, d, 38)).toBe(true);
+			expect((rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>).fillText.mock.calls[0][0]).toBe('Ω');
+			const short = makeRCtx();
+			short.view.setUint32(d + 8, 20, true);
+			expect(handleEmfGdiTextBitmapRecord(short, EMR_SMALLTEXTOUT, 0, d, 38)).toBe(true);
+			expect((short.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>).fillText).not.toHaveBeenCalled();
+		});
+
+		it('centers justified Canvas text using the expanded run width', () => {
+			const rCtx = makeRCtx();
+			rCtx.state.textAlign = 0x06;
+			rCtx.state.textJustification = { extra: 20, count: 1 };
+			rCtx.view.setInt32(36, 100, true);
+			rCtx.view.setUint32(44, 3, true);
+			rCtx.view.setUint32(48, 76, true);
+			for (const [i, ch] of [...'A B'].entries()) {
+				rCtx.view.setUint16(76 + i * 2, ch.charCodeAt(0), true);
+			}
+			handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, 0, 8, 84);
+			expect(rCtx.ctx.fillText).toHaveBeenNthCalledWith(1, 'A', -30, 0);
+			expect(rCtx.ctx.fillText).toHaveBeenNthCalledWith(3, 'B', 80, 0);
+		});
 
 		describe('eMR_EXTTEXTOUTW', () => {
 			it('returns true even for small recSize', () => {

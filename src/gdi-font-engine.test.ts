@@ -352,6 +352,23 @@ describe('gdi-text-render', () => {
 		expect(columns(ink, 15)).toEqual([10, 15]);
 	});
 
+	it('does not paint C1 controls and gives them zero natural advance', async () => {
+		const { ink, adv } = await paint(run({ codes: [0x49, 0x81, 0x49] }));
+		expect(columns(ink, 15)).toEqual([10, 12]);
+		expect(adv).toEqual({ dx: 4, dy: 0 });
+	});
+
+	it('preserves explicit Dx advances for suppressed C1 glyphs', async () => {
+		const { ink, adv } = await paint(run({ codes: [0x49, 0x81, 0x49], dx: [3, 4, 5] }));
+		expect(columns(ink, 15)).toEqual([10, 17]);
+		expect(adv).toEqual({ dx: 12, dy: 0 });
+	});
+
+	it('honours ETO_IGNORELANGUAGE natural fallback advance for C1 codes', async () => {
+		const { adv } = await paint(run({ codes: [0x81], options: 0x1000 }));
+		expect(adv.dx).toBeGreaterThan(0);
+	});
+
 	it('fills the OPAQUE cell and draws the underline bar', async () => {
 		const { ink } = await paint(run({ bkMode: 2, underline: true }));
 		expect(ink(10, 11)).toBe('y'); // baseline 20 - ascent 9

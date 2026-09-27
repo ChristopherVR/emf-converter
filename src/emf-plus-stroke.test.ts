@@ -79,6 +79,53 @@ describe('pen geometry', () => {
 		expect(calls).toContain('clip()');
 		expect(ctx.lineWidth).toBe(6);
 	});
+
+	it('applies a pen-local uniform scale to its stroke width and dash lengths', () => {
+		const calls: string[] = [];
+		const ctx = new Proxy({} as Record<string, unknown>, {
+			get: (t, p) => p in t ? t[p as string] : (...a: unknown[]) => calls.push(`${String(p)}(${a.join(',')})`),
+			set: (t, p, v) => { t[p as string] = v; return true; },
+		}) as unknown as CanvasContext;
+		const rCtx = { ctx, worldTransform: [1, 0, 0, 1, 0, 0], pageUnit: 2, pageScale: 1, dpiScale: 1, objectTable: new Map() } as unknown as EmfPlusReplayCtx;
+		strokePlusGeometry(rCtx, {
+			kind: 'plus-pen', color: '#000', width: 2, dashStyle: 1,
+			transform: [3, 0, 0, 3, 17, -9],
+		}, (c) => c.moveTo(0, 0), null);
+		expect(ctx.lineWidth).toBe(6);
+		expect(calls).toContain('setLineDash(18,6)');
+	});
+
+	it('matches native GDI+ pen-transform pixels for a scaled, rotated, translated pen', async () => {
+		const { createCanvas } = await import('@napi-rs/canvas');
+		const canvas = createCanvas(80, 64);
+		const ctx = canvas.getContext('2d') as unknown as CanvasContext;
+		ctx.fillStyle = '#fff';
+		ctx.fillRect(0, 0, 80, 64);
+		const rCtx = { ctx, worldTransform: [1, 0, 0, 1, 0, 0], pageUnit: 2, pageScale: 1, dpiScale: 1, objectTable: new Map() } as unknown as EmfPlusReplayCtx;
+		strokePlusGeometry(rCtx, {
+			kind: 'plus-pen', color: '#000', width: 2, dashStyle: 0,
+			transform: [2.1213204, 2.1213204, -2.1213204, 2.1213204, 9, 12],
+		}, (c) => { c.moveTo(12, 30); c.lineTo(68, 30); }, null);
+		const pixels = ctx.getImageData!(0, 0, 80, 64).data;
+		let minY = 64, maxY = -1, count = 0;
+		for (let y = 0; y < 64; y++) for (let x = 0; x < 80; x++) {
+			if (pixels[(y * 80 + x) * 4] < 128) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); count++; }
+		}
+		// Native GDI+ produces the same 6-pixel-wide stroke as scale 3 alone;
+		// the pen transform's rotation and translation do not move/rotate the path.
+		expect({ minY, maxY, count }).toEqual({ minY: 27, maxY: 32, count: 336 });
+	});
+
+	it('keeps a zero-width pen at its one-pixel minimum under pen scaling', () => {
+		const calls: string[] = [];
+		const ctx = new Proxy({} as Record<string, unknown>, {
+			get: (t, p) => p in t ? t[p as string] : (...a: unknown[]) => calls.push(`${String(p)}(${a.join(',')})`),
+			set: (t, p, v) => { t[p as string] = v; return true; },
+		}) as unknown as CanvasContext;
+		const rCtx = { ctx, worldTransform: [1, 0, 0, 1, 0, 0], pageUnit: 2, pageScale: 1, dpiScale: 1, objectTable: new Map() } as unknown as EmfPlusReplayCtx;
+		strokePlusGeometry(rCtx, { kind: 'plus-pen', color: '#000', width: 0, dashStyle: 0, transform: [3, 0, 0, 3, 0, 0] }, (c) => c.moveTo(0, 0), null);
+		expect(ctx.lineWidth).toBe(1);
+	});
 });
 
 describe('writeTextureColor (GDI+ texture brush sampling)', () => {

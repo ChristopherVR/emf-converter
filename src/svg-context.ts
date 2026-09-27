@@ -502,7 +502,6 @@ export class SvgContext {
 	private readonly body: SvgNode[] = [];
 	private group: { node: SvgNode; clipId: string } | null = null;
 	private readonly images: PendingImage[] = [];
-	private measureCtx: CanvasContext | null | undefined;
 
 	constructor(width: number, height: number, options: SvgContextOptions = {}) {
 		this.canvas = { width, height, svgContext: this };
@@ -1273,20 +1272,10 @@ export class SvgContext {
 
 	// ---- text ---------------------------------------------------------------
 
-	private measurer(): CanvasContext | null {
-		if (this.measureCtx === undefined) {
-			const temp = createTempCanvas(1, 1);
-			this.measureCtx = temp && !isSoftwareRaster(temp.canvas) ? temp.ctx : null;
-		}
-		return this.measureCtx;
-	}
-
 	measureText(text: string): TextMetrics {
-		const real = this.shadow ?? this.measurer();
-		if (real) {
-			real.font = this.state.font;
-			return real.measureText(text) as TextMetrics;
-		}
+		// SVG text is emitted as vector text. Its layout must not depend on
+		// whether this context has a native canvas shadow for raster effects;
+		// use the same deterministic estimate in both backend configurations.
 		const size = parseFont(this.state.font).size;
 		return { width: estimateTextWidth(text, size) } as TextMetrics;
 	}

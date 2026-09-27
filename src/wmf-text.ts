@@ -20,25 +20,14 @@
  */
 
 import { EMR_EXTTEXTOUTW } from './emf-constants';
+import { ansiToCode } from './emf-ansi';
 import { gdiDeviceMatrix } from './emf-gdi-coord';
 import { flushRasterLayer } from './emf-gdi-raster-layer';
 import { deviceLogFont, drawGdiTextCall, ETO_CLIPPED, ETO_OPAQUE } from './gdi-text-render';
 import { EmfRecordWriter, playEmfRecord } from './wmf-emf-bridge';
 import type { WmfPlayer } from './wmf-player';
 
-/** Windows-1252 code points for bytes 0x80..0x9F (the rest of the code page is Latin-1). */
-const CP1252_HIGH = [
-	0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f,
-	0x90, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x9d, 0x017e, 0x0178,
-];
-
-/** Decodes one ANSI byte for character set `charSet` (see the module doc). */
-export function ansiToCode(b: number, charSet: number): number {
-	if (charSet === 2) {
-		return b;
-	}
-	return b >= 0x80 && b <= 0x9f ? CP1252_HIGH[b - 0x80] : b;
-}
+export { ansiToCode } from './emf-ansi';
 
 /** One WMF text call in logical units. */
 interface WmfTextCall {

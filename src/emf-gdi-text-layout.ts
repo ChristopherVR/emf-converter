@@ -46,6 +46,36 @@ export function totalGlyphAdvance(dx: readonly number[]): number {
 }
 
 /**
+ * Adds SetTextJustification's signed extra width to space advances. The
+ * supplied advances and `extra` use the same units. Shares follow GDI's
+ * line-DDA distribution, including when `extra` is negative. This matches
+ * the WMF text path's rounding behavior even if the string has more spaces
+ * than the recorded break count.
+ */
+export function applyTextJustification(
+	advances: readonly number[],
+	characters: readonly number[],
+	extra: number,
+	count: number,
+): number[] {
+	const result = advances.slice();
+	if (extra === 0 || count <= 0) {
+		return result;
+	}
+	let seen = 0;
+	for (let i = 0; i < result.length && i < characters.length; i++) {
+		if (characters[i] !== 0x20) {
+			continue;
+		}
+		const before = Math.round((seen * extra) / count);
+		seen++;
+		const after = Math.round((seen * extra) / count);
+		result[i] += after - before;
+	}
+	return result;
+}
+
+/**
  * The horizontal offset (from the anchor point GDI's alignment flags
  * establish) at which a run's first glyph should be drawn. GDI applies
  * TA_CENTER / TA_RIGHT to the string's total advance width whether or not a

@@ -18,6 +18,7 @@
 
 import { canvasDrawImage, canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mapFontFamily } from './emf-canvas-helpers';
+import { applyTextJustification } from './emf-gdi-text-layout';
 import type { GdiFontCollection, GdiRealizedFont, LogFontSpec } from './gdi-font-engine';
 import { isSvgContext, type SvgContext } from './svg-context';
 import type { CanvasContext, DrawState, TransformMatrix } from './emf-types';
@@ -26,6 +27,7 @@ import type { CanvasContext, DrawState, TransformMatrix } from './emf-types';
 export const ETO_OPAQUE = 0x0002;
 export const ETO_CLIPPED = 0x0004;
 export const ETO_GLYPH_INDEX = 0x0010;
+export const ETO_IGNORELANGUAGE = 0x1000;
 export const ETO_PDY = 0x2000;
 
 /** A device-space rectangle, [left, right) x [top, bottom). */
@@ -48,6 +50,8 @@ export interface GdiTextRun {
 	dx: number[] | null;
 	/** Per-glyph device advances across the baseline, y down (ETO_PDY), or null. */
 	dy: number[] | null;
+	/** DC text justification in device units; ignored when the run supplies Dx. */
+	textJustification?: { extra: number; count: number };
 	/** TA_* flags. */
 	textAlign: number;
 	/** CSS hex colours. */
@@ -205,6 +209,15 @@ interface RunLayout {
 	origins: Array<{ x: number; y: number; along: number; down: number }>;
 }
 
+/** Undefined C1 controls have no drawable glyph in GDI text output. */
+function isC1Control(code: number): boolean {
+	return code >= 0x80 && code <= 0x9f;
+}
+
+function suppressC1Glyph(run: GdiTextRun, index: number): boolean {
+	return !run.glyphIndices && !(run.options & ETO_IGNORELANGUAGE) && isC1Control(run.codes[index]);
+}
+
 /**
  * Lays a run out the way GDI does: advances (Dx, or the font's widths),
  * TA_* alignment along and across the baseline, and every glyph bitmap at
@@ -214,15 +227,20 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 	const n = run.codes.length;
 	const glyphs = run.codes.map((c) => (run.glyphIndices ? c : font.glyphIndex(c)));
 	// Advances along the baseline (device, may be fractional under scaling).
-	const adv: number[] = [];
+	let adv: number[] = [];
 	for (let i = 0; i < n; i++) {
 		adv.push(
-			run.dx && i < run.dx.length
+			suppressC1Glyph(run, i) && !run.dx
+				? 0
+				: run.dx && i < run.dx.length
 				? run.dx[i]
 				: run.matrix
 					? font.rotatedAdvance(glyphs[i])
 					: font.advance(glyphs[i]),
 		);
+	}
+	if (!run.dx && run.textJustification && !run.glyphIndices) {
+		adv = applyTextJustification(adv, run.codes, run.textJustification.extra, run.textJustification.count);
 	}
 	const advY: number[] = [];
 	for (let i = 0; i < n; i++) {
@@ -276,9 +294,11 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 		const subX = font.gridFit ? 0 : Math.round((origin.x - ox) * 64);
 		const oy = Math.round(origin.y);
 		origins.push({ x: ox + subX / 64, y: oy, along, down });
-		const g = font.glyph(glyphs[i], gm, subX);
-		if (g.bitmap) {
-			placed.push({ x: ox + g.bitmap.left, y: oy - g.bitmap.top, bitmap: g.bitmap });
+		if (!suppressC1Glyph(run, i)) {
+			const g = font.glyph(glyphs[i], gm, subX);
+			if (g.bitmap) {
+				placed.push({ x: ox + g.bitmap.left, y: oy - g.bitmap.top, bitmap: g.bitmap });
+			}
 		}
 		along += adv[i];
 		down += advY[i];
@@ -398,21 +418,25 @@ function emitSvgRun(
 	fontFamilyMap?: Record<string, string>,
 ): void {
 	let text = '';
+	const visibleOrigins: typeof origins = [];
 	for (let i = 0; i < origins.length; i++) {
 		const code = run.glyphIndices ? font.charForGlyph(glyphs[i]) : run.codes[i];
+		if (!run.glyphIndices && !(run.options & ETO_IGNORELANGUAGE) && isC1Control(code)) continue;
 		text += String.fromCharCode(code);
+		visibleOrigins.push(origins[i]);
 	}
+	if (text.length === 0) return;
 	const m = run.matrix;
 	const ttf = font.ttf;
 	const bold = font.syntheticBold || ttf.weightClass >= 600;
 	const italic = font.syntheticItalic || (ttf.fsSelection & 1) !== 0 || (ttf.macStyle & 2) !== 0;
-	const first = origins[0];
+	const first = visibleOrigins[0];
 	ctx.fillGlyphRun({
 		text,
 		// Upright runs: device positions. Rotated runs: offsets along/across
 		// the baseline from the first glyph, under the frame matrix.
-		xs: origins.map((o) => (m ? o.along - first.along : o.x)),
-		ys: origins.map((o) => (m ? o.down - first.down : o.y)),
+		xs: visibleOrigins.map((o) => (m ? o.along - first.along : o.x)),
+		ys: visibleOrigins.map((o) => (m ? o.down - first.down : o.y)),
 		matrix: m ? [m[0], m[1], m[2], m[3], first.x, first.y] : null,
 		scaleX: font.ppemX !== font.ppem ? font.ppemX / font.ppem : 1,
 		fontFamily: mapFontFamily(ttf.family, fontFamilyMap),
@@ -554,6 +578,8 @@ export interface GdiTextCall {
 	dx: number[] | null;
 	/** ETO_PDY vertical advances (logical), or null. */
 	dy: number[] | null;
+	/** DC text justification in logical units; ignored when the call supplies Dx. */
+	textJustification?: { extra: number; count: number };
 	/** Logical-to-device affine `[a, b, c, d, e, f]` (x' = a*x + c*y + e). */
 	matrix: TransformMatrix;
 }
@@ -640,6 +666,7 @@ export function drawGdiTextCall(
 		y: ref.y,
 		dx: call.dx ? call.dx.map((v) => v * advanceScale) : null,
 		dy: call.dy ? call.dy.map((v) => -v * fontScale) : null,
+		textJustification: call.textJustification ? { ...call.textJustification, extra: call.textJustification.extra * advanceScale } : undefined,
 		textAlign: state.textAlign,
 		textColor: state.textColor,
 		bkColor: state.bkColor,
