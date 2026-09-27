@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.1.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.1.0) - 2026-09-27
+
+### Features
+
+- Support additional EMF text records and pen transforms ([450b685](https://github.com/ChristopherVR/emf-converter/commit/450b68506b621e8c12c863bdaa83922de9300590))
+
 ## [3.5.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v3.5.1) - 2026-09-25
 
 ### Documentation
