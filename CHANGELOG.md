@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.2.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.2.1) - 2026-09-28
+
+### Bug Fixes
+
+- Draw custom caps of gradient and texture EMF+ pens ([c8d0f20](https://github.com/ChristopherVR/emf-converter/commit/c8d0f20fad9688af1ebae7ed2905ded429c89cec))
+- Remove leftover debug offsets from the brush mask transform ([c6653d1](https://github.com/ChristopherVR/emf-converter/commit/c6653d1a1b2f73991d93186e338f1fe1d041520b))
+- Apply EMF+ image effects to the source rectangle and grow expanded blurs ([381826d](https://github.com/ChristopherVR/emf-converter/commit/381826d04d0e0f3e12ded67b834b5e21c7d8733a))
+
+### Build & CI
+
+- Type-check the docs site ([b9c298e](https://github.com/ChristopherVR/emf-converter/commit/b9c298e89a15d4faef9480cdbc38db3d791d3556))
+
 ## [4.2.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.2.0) - 2026-09-28
 
 ### Features
