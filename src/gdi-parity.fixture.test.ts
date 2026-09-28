@@ -882,6 +882,23 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-path-widen-outline', 0.015), // measured 1.184%
 ];
 
+/**
+ * HALFTONE StretchBlt (`emfrec-coloradjustment*`): a 20x16 bitmap enlarged
+ * 3x and reduced to 13x11, without and with an EMR_SETCOLORADJUSTMENT
+ * (negative, gammas 2.0 / 1.5 / 2.5, contrast 40, brightness -30,
+ * colorfulness 50, tint 20). The integer enlargement is exact (Windows
+ * replicates pixels, as the box filter does); the residual is the
+ * reduction, where Windows' halftone engine uses a narrower kernel and its
+ * own colour mapping, and, with the adjustment, Windows' unpublished
+ * adjustment formulas and dithering (see `emf-gdi-color-adjust.ts`).
+ * Before the box filter and the adjustment: 7.716% (tolerance 0) and
+ * 24.375% (tolerance 24).
+ */
+const HALFTONE_CASES: ParityCase[] = [
+	{ name: 'emfrec-coloradjustment-off', ext: 'emf', tolerance: 0, maxMismatch: 0.015 }, // measured 1.048%
+	{ name: 'emfrec-coloradjustment', ext: 'emf', tolerance: 24, maxMismatch: 0.08 }, // measured 6.644%
+];
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -1054,6 +1071,7 @@ describe('GDI ground-truth parity', () => {
 		['EMF+ with gdiAntialias: false', PLUS_ALIASED_CASES],
 		['EMF+ drawing under each SmoothingMode', SMOOTHING_CASES],
 		['EMF+ records and objects (curves, regions, containers, hatches, compositing, terminal-server, MultiFormat)', EMF_PLUS_RECORD_CASES],
+		['HALFTONE StretchBlt with and without EMR_SETCOLORADJUSTMENT', HALFTONE_CASES],
 	];
 	for (const [title, cases] of groups) {
 		describe(title, () => {
@@ -1097,6 +1115,7 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 		...WMF_RECORD_CASES,
 		...EMF_PLUS_RECORD_CASES,
 		...EMF_RECORD_CASES,
+		...HALFTONE_CASES,
 	];
 	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
 		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);

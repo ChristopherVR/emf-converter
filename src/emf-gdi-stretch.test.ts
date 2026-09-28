@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 
-import { axisSamples, gdiNearest, stretchGdi, BLACKONWHITE, COLORONCOLOR, WHITEONBLACK } from './emf-gdi-stretch';
+import {
+	axisBoxWeights,
+	axisSamples,
+	gdiNearest,
+	stretchGdi,
+	stretchHalftone,
+	BLACKONWHITE,
+	COLORONCOLOR,
+	WHITEONBLACK,
+} from './emf-gdi-stretch';
 
 function row(values: number[]): { width: number; height: number; data: Uint8ClampedArray } {
 	const data = new Uint8ClampedArray(values.length * 4);
@@ -62,5 +71,50 @@ describe('stretchGdi', () => {
 		expect(unpack(stretchGdi(src, 4, 0, -4, 1, -4, 1, COLORONCOLOR))).toEqual([
 			0xff0000, 0x00ff00, 0x0000ff, 0xffffff,
 		]);
+	});
+});
+
+describe('axisBoxWeights', () => {
+	it('weights each overlapped source pixel by its share of the footprint', () => {
+		expect(axisBoxWeights(0, 3, 2, false)).toEqual([
+			[[0, 2 / 3], [1, 1 / 3]],
+			[[1, 1 / 3], [2, 2 / 3]],
+		]);
+	});
+
+	it('replicates on an integer enlargement', () => {
+		expect(axisBoxWeights(5, 2, 4, false)).toEqual([[[5, 1]], [[5, 1]], [[6, 1]], [[6, 1]]]);
+	});
+
+	it('walks the source backwards for a mirrored blit', () => {
+		expect(axisBoxWeights(0, 2, 2, true)).toEqual([[[1, 1]], [[0, 1]]]);
+	});
+});
+
+describe('stretchHalftone', () => {
+	it('replicates pixels on an integer enlargement, as Windows does', () => {
+		const src = row([0xff0000, 0x00ff00]);
+		expect(unpack(stretchHalftone(src, 0, 0, 2, 1, 6, 1))).toEqual([
+			0xff0000, 0xff0000, 0xff0000, 0x00ff00, 0x00ff00, 0x00ff00,
+		]);
+	});
+
+	it('area-averages on a reduction, truncating like Windows', () => {
+		expect(unpack(stretchHalftone(row([0xffffff, 0x000000]), 0, 0, 2, 1, 1, 1))).toEqual([0x7f7f7f]);
+		// 3 -> 2: 2/3 of the first pixel plus 1/3 of the second.
+		expect(unpack(stretchHalftone(row([0x900000, 0x000090, 0x009000]), 0, 0, 3, 1, 2, 1))).toEqual([
+			0x600030, 0x006030,
+		]);
+	});
+
+	it('blends the pixel boundaries on a non-integer enlargement', () => {
+		expect(unpack(stretchHalftone(row([0x000000, 0xf0f0f0]), 0, 0, 2, 1, 3, 1))).toEqual([
+			0x000000, 0x787878, 0xf0f0f0,
+		]);
+	});
+
+	it('mirrors when exactly one of the extents is negative', () => {
+		const src = row([0xff0000, 0x00ff00, 0x0000ff, 0xffffff]);
+		expect(unpack(stretchHalftone(src, 0, 0, 4, 1, -4, 1))).toEqual([0xffffff, 0x0000ff, 0x00ff00, 0xff0000]);
 	});
 });

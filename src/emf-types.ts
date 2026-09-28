@@ -274,7 +274,12 @@ export interface DrawState {
 	colorRefs?: { pen?: number; brush?: number; text?: number; bk?: number };
 	/** EMR_SETTEXTJUSTIFICATION: extra space (logical units) spread over `count` break characters. */
 	textJustification?: { extra: number; count: number };
-	/** EMR_SETCOLORADJUSTMENT: the COLORADJUSTMENT the HALFTONE stretch mode applies. */
+	/**
+	 * EMR_SETCOLORADJUSTMENT: the COLORADJUSTMENT that HALFTONE StretchBlt /
+	 * StretchDIBits apply to their source (see `emf-gdi-color-adjust.ts`);
+	 * absent means the default, which changes nothing. Replaced, never
+	 * mutated, so a {@link cloneState} copy (SaveDC) stays independent.
+	 */
 	colorAdjustment?: GdiColorAdjustment;
 }
 

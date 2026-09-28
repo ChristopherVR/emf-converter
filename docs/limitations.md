@@ -4,8 +4,8 @@ Output is compared with images rendered by Windows. The exact per-fixture bounds
 
 ## Color adjustment and image effects
 
-- `EMR_SETCOLORADJUSTMENT` is read but not applied.
-- The `HALFTONE` stretch mode is not bit-exact.
+- The `HALFTONE` stretch mode resamples with an area-averaging box filter. Integer enlargements match Windows exactly. Reductions do not, because Windows' halftone engine uses a narrower kernel and its own color mapping (1.05% of pixels differ on the fixture).
+- `EMR_SETCOLORADJUSTMENT` is applied to the source of `HALFTONE` `StretchBlt` and `StretchDIBits` calls, as in GDI. Windows does not publish its adjustment formulas, so gamma, reference black/white, contrast, brightness, colorfulness, red-green tint, negative and log filter use documented approximations. Windows' dithering of the adjusted colors is not reproduced (6.6% of pixels differ by more than 24 on the fixture). The illuminant is ignored.
 - EMF+ image effects (`SerializableObject`) are applied to the image's pixels before it is drawn. Color matrix and lookup table effects follow GDI+'s definitions. MS-EMFPLUS does not specify the algorithms for the others (blur, sharpen, brightness/contrast, levels, color balance, color curves, hue/saturation/lightness, tint, red-eye), so those use approximations that have not been compared with GDI+ output.
 - An effect is applied to the draw's source rectangle only, and a blur with `expandEdge` grows it by the blur radius, as GDI+ does. When the source rectangle is not in pixels, the effect is applied to the whole image without that growth.
 - An effect is skipped when the image cannot be decoded to pixels. PNG and BMP always can be. JPEG, GIF, TIFF and similar formats need a canvas backend (a browser or `@napi-rs/canvas`).
