@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { canvasGetImageData, createTempCanvas, ensureNodeCanvasModule } from './emf-canvas-helpers';
 import { writeTextureColor } from './emf-plus-brush-texture';
+import { arrowCapPath, type EmfPlusCustomLineCap } from './emf-plus-custom-cap';
 import { aliasedSampleShift, cssColorToArgb, isPlusAliased, plusRasterMode, solidSampler } from './emf-plus-exact-fill';
 import { parseEmfPlusPenObject } from './emf-plus-object-complex';
 import { applyPlusPenStyle, canvasLineCap, canvasLineJoin, penDashArray, strokePlusGeometry } from './emf-plus-stroke';
@@ -360,3 +362,168 @@ describe('aliased EMF+ helpers', () => {
 		expect(plusRasterMode({ ctx, gdiAntialias: true, antiAlias: true } as EmfPlusReplayCtx)).toBe('canvas');
 	});
 });
+
+describe('custom caps of gradient pens', () => {
+	// A filled AdjustableArrowCap(3, 4): at pen width 4 the arrow is 12 wide
+	// and 16 long, its tip on the line's end.
+	const arrow: EmfPlusCustomLineCap = {
+		kind: 'plus-customlinecap',
+		capType: 1,
+		baseCap: 0,
+		baseInset: 4 / 3,
+		strokeStartCap: 0,
+		strokeEndCap: 0,
+		strokeJoin: 0,
+		strokeMiterLimit: 10,
+		widthScale: 1,
+		fillPath: arrowCapPath(3, 4, 0, true),
+		linePath: null,
+		fillLength: 4,
+		strokeLength: 0,
+		arrow: { width: 3, height: 4, middleInset: 0, filled: true },
+	};
+	// Red at x = 0 to blue at x = 100, laid out in world space.
+	const brush: NonNullable<EmfPlusPen['brush']> = {
+		kind: 'plus-brush',
+		color: 'rgba(255,0,0,1.000)',
+		gradient: {
+			type: 'linear',
+			x1: 0,
+			y1: 50,
+			x2: 100,
+			y2: 50,
+			wrapMode: 'tile',
+			rect: { x: 0, y: 0, w: 100, h: 100 },
+			transform: null,
+			// As parsed: the recorded ramp selects GDI+'s exact sampler.
+			ramp: { startArgb: 0xffff0000, endArgb: 0xff0000ff, preset: null, blend: null, gammaCorrected: false },
+			stops: [
+				{ offset: 0, color: 'rgba(255,0,0,1.000)' },
+				{ offset: 1, color: 'rgba(0,0,255,1.000)' },
+			],
+		},
+	};
+	const pen: EmfPlusPen = { kind: 'plus-pen', color: 'rgba(255,0,0,1.000)', width: 4, dashStyle: 0, brush, customEndCap: arrow };
+	const line = (c: CanvasContext): void => {
+		c.moveTo(10, 50);
+		c.lineTo(80, 50);
+	};
+	const rCtxFor = (ctx: CanvasContext): EmfPlusReplayCtx =>
+		({
+			ctx,
+			worldTransform: [1, 0, 0, 1, 0, 0],
+			pageUnit: 2,
+			pageScale: 1,
+			dpiScale: 1,
+			objectTable: new Map(),
+			gdiAntialias: true,
+		}) as unknown as EmfPlusReplayCtx;
+
+	it('paints the arrow with the gradient on the Canvas route (gdiAntialias: true)', async () => {
+		await ensureNodeCanvasModule();
+		const surface = createTempCanvas(100, 100);
+		if (!surface) {
+			throw new Error('@napi-rs/canvas backend unavailable');
+		}
+		const ctx = surface.ctx;
+		ctx.fillStyle = '#fff';
+		ctx.fillRect(0, 0, 100, 100);
+		strokePlusGeometry(rCtxFor(ctx), pen, line, [
+			{ x: 10, y: 50 },
+			{ x: 80, y: 50 },
+		]);
+		const data = canvasGetImageData(ctx, 0, 0, 100, 100).data;
+		const px = (x: number, y: number): number[] => Array.from(data.subarray((y * 100 + x) * 4, (y * 100 + x) * 4 + 3));
+		// Beside the line (half width 2) but inside the arrow's wings, which
+		// are 12 wide at x = 64 and narrow to the tip at x = 80.
+		for (const y of [47, 52]) {
+			const [r, g, b] = px(70, y);
+			expect(g).toBeLessThan(40);
+			// The gradient's colour at x = 70: 30 % red, 70 % blue.
+			expect(Math.abs(r - 0.3 * 255)).toBeLessThan(25);
+			expect(Math.abs(b - 0.7 * 255)).toBeLessThan(25);
+		}
+		// The line keeps the gradient too: mostly red near its start.
+		const [r0, , b0] = px(20, 50);
+		expect(r0).toBeGreaterThan(b0);
+		// Past the tip and outside the wings: untouched.
+		expect(px(84, 50)).toEqual([255, 255, 255]);
+		expect(px(70, 40)).toEqual([255, 255, 255]);
+	});
+
+	it('fills the capped outline with the gradient paint in SVG', async () => {
+		const { SvgContext } = await import('./svg-context');
+		const ctx = new SvgContext(100, 100);
+		strokePlusGeometry(rCtxFor(ctx as unknown as CanvasContext), pen, line, null);
+		const tree = await ctx.toTree();
+		const paths: Array<Record<string, string>> = [];
+		let gradients = 0;
+		const walk = (n: { tag: string; attrs?: Record<string, string>; children?: unknown[] }): void => {
+			if (n.tag === 'path' && n.attrs) {
+				paths.push(n.attrs);
+			}
+			if (n.tag === 'linearGradient') {
+				gradients++;
+			}
+			(n.children as (typeof n)[] | undefined)?.forEach(walk);
+		};
+		walk(tree as never);
+		expect(gradients).toBe(1);
+		expect(paths).toHaveLength(1);
+		const outline = paths[0];
+		expect(outline.fill).toMatch(/^url\(/);
+		expect(outline.stroke).toBeUndefined();
+		// One outline takes in the line and the arrow: 12 wide about y = 50,
+		// its tip at x = 80.
+		const pts = svgPathPoints(outline.d);
+		const xs = pts.map((p) => p.x);
+		const ys = pts.map((p) => p.y);
+		expect(Math.min(...xs)).toBeCloseTo(10, 1);
+		expect(Math.max(...xs)).toBeCloseTo(80, 1);
+		expect(Math.min(...ys)).toBeCloseTo(44, 1);
+		expect(Math.max(...ys)).toBeCloseTo(56, 1);
+	});
+});
+
+/** The absolute vertices of an SVG path made of M/L/H/V/Z commands (either case). */
+function svgPathPoints(d: string): Array<{ x: number; y: number }> {
+	const out: Array<{ x: number; y: number }> = [];
+	let x = 0;
+	let y = 0;
+	let sx = 0;
+	let sy = 0;
+	for (const [, cmd, args] of d.matchAll(/([MmLlHhVvZz])([^MmLlHhVvZz]*)/g)) {
+		const n = (args.match(/-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g) ?? []).map(Number);
+		const rel = cmd === cmd.toLowerCase();
+		switch (cmd.toUpperCase()) {
+			case 'M':
+			case 'L':
+				for (let i = 0; i + 1 < n.length; i += 2) {
+					x = rel ? x + n[i] : n[i];
+					y = rel ? y + n[i + 1] : n[i + 1];
+					if (cmd.toUpperCase() === 'M' && i === 0) {
+						sx = x;
+						sy = y;
+					}
+					out.push({ x, y });
+				}
+				break;
+			case 'H':
+				for (const v of n) {
+					x = rel ? x + v : v;
+					out.push({ x, y });
+				}
+				break;
+			case 'V':
+				for (const v of n) {
+					y = rel ? y + v : v;
+					out.push({ x, y });
+				}
+				break;
+			default:
+				x = sx;
+				y = sy;
+		}
+	}
+	return out;
+}

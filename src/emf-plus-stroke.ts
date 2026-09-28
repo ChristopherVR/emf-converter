@@ -11,7 +11,9 @@
  * a wider one as the outline GDI+'s widener builds (joins, caps, dash
  * pattern and DashCap, compound bands, Inset alignment:
  * `emf-plus-widen.ts`), scan-converted by GDI+'s fill rules
- * (`emf-plus-raster.ts`); under `gdiAntialias: true` Canvas strokes it. In
+ * (`emf-plus-raster.ts`); under `gdiAntialias: true` Canvas strokes it (a
+ * pen with custom caps, which Canvas cannot stroke, fills GDI+'s outline
+ * with the caps instead, in world space). In
  * every raster mode the colour of each device pixel comes from the very
  * brush sampler a fill uses, so a texture or gradient pen shows its brush
  * exactly as GDI+ paints it, unfiltered. SVG output keeps a vector stroke
@@ -197,19 +199,27 @@ export function strokePlusGeometry(
 			if (mode !== 'canvas' && size && strokeGdiplus(rCtx, pen, nib, sampler, buildPath, device, size, mode, closedFigure)) {
 				return;
 			}
-			const miter = Math.max(1, ctx.miterLimit || 10);
-			const margin = (pen.width * scale * miter) / 2 + 2;
-			const box = size ? deviceBounds(points, device, size, margin) : null;
+			// Custom caps are not a Canvas stroke: the mask is GDI+'s whole
+			// outline (shortened line and caps), in world space, filled nonzero.
+			const outline = hasCustomCap(pen) ? penOutlineWorld(rCtx, pen, nib, buildPath, closedFigure) : null;
+			let box: { x: number; y: number; w: number; h: number } | null = null;
+			if (size && outline) {
+				box = deviceBounds(outline.flat(), device, size, 2);
+			} else if (size) {
+				const miter = Math.max(1, ctx.miterLimit || 10);
+				const margin = (pen.width * scale * miter) / 2 + 2;
+				box = deviceBounds(points, device, size, margin);
+			}
 			if (size && !box) {
 				return; // Entirely off the surface.
 			}
-			if (
-				box &&
-				paintBrushThroughMask(
-					rCtx,
-					sampler,
-					box,
-					(c) => {
+			const drawMask = outline
+				? (c: CanvasContext): void => {
+						// Left current for the hit test.
+						traceOutline(c, outline);
+						c.fill('nonzero');
+					}
+				: (c: CanvasContext): void => {
 						applyPlusPenStyle(c, pen, widthScale);
 						stroke(c);
 						// Leave the geometry current for the aliased hit test,
@@ -219,11 +229,11 @@ export function strokePlusGeometry(
 						if (nib) {
 							c.transform(nib[0], nib[1], nib[2], nib[3], 0, 0);
 						}
-					},
-					mode,
-					(c, x, y) => c.isPointInStroke(x, y) && (!inset || c.isPointInPath(x, y)),
-				)
-			) {
+					};
+			const hitTest = outline
+				? (c: CanvasContext, x: number, y: number): boolean => c.isPointInPath(x, y, 'nonzero')
+				: (c: CanvasContext, x: number, y: number): boolean => c.isPointInStroke(x, y) && (!inset || c.isPointInPath(x, y));
+			if (box && paintBrushThroughMask(rCtx, sampler, box, drawMask, mode, hitTest)) {
 				return;
 			}
 		}
@@ -484,14 +494,62 @@ function customCapOutline(
 }
 
 /**
+ * The outline GDI+ fills for a pen, in world space: {@link customCapOutline}
+ * for a custom-capped pen, otherwise the widened outline. It is built in
+ * the pen's frame ({@link penFrame}; pen space under a nib transform) and
+ * mapped back to world space, so filling it nonzero under the world
+ * transform keeps it a single exact shape and a gradient or pattern paint
+ * laid out in world space. Returns `null` when the geometry cannot be
+ * recorded or a matrix is singular.
+ */
+function penOutlineWorld(
+	rCtx: EmfPlusReplayCtx,
+	pen: EmfPlusPen,
+	nib: TransformMatrix | null,
+	buildPath: (c: CanvasContext) => void,
+	closedFigure: boolean,
+): Array<Array<{ x: number; y: number }>> | null {
+	const device = plusWorldMatrix(rCtx);
+	const frame = penFrame(device, nib);
+	const deviceInv = invertAffine(device);
+	if (!frame || !deviceInv || !(frame.unit > 0)) {
+		return null;
+	}
+	let figures: DeviceFigure[];
+	try {
+		figures = recordDeviceFigures(buildPath, frame.record);
+	} catch {
+		return null;
+	}
+	if (closedFigure) {
+		figures = figures.map((f) => ({ ...f, closed: true }));
+	}
+	const width = (pen.width || 1) * frame.unit;
+	const devicePen = framePen(pen, frame.unit);
+	const outline = hasCustomCap(pen) ? customCapOutline(figures, width, devicePen, pen) : widenFigures(figures, devicePen);
+	const m = mulMatrix(deviceInv, frame.toDevice);
+	return outline.map((poly) => poly.map((p) => ({ x: m[0] * p.x + m[2] * p.y + m[4], y: m[1] * p.x + m[3] * p.y + m[5] })));
+}
+
+/** Issues `outline`'s polygons as one path (`beginPath()` included), each closed. */
+function traceOutline(c: CanvasContext, outline: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>): void {
+	c.beginPath();
+	for (const poly of outline) {
+		poly.forEach((p, i) => {
+			if (i === 0) {
+				c.moveTo(p.x, p.y);
+			} else {
+				c.lineTo(p.x, p.y);
+			}
+		});
+		c.closePath();
+	}
+}
+
+/**
  * Strokes a pen as a vector fill (SVG output and `gdiAntialias: true`) of
- * the outline GDI+ fills: {@link customCapOutline} for a custom-capped pen,
- * otherwise the widened outline. It is built in the pen's frame
- * ({@link penFrame}; pen space under a nib transform), mapped back to world
- * space and filled nonzero with `paint` under the world transform, so it
- * stays a single exact shape and a gradient or pattern paint stays laid out
- * in world space. Returns `false` when the geometry cannot be recorded or a
- * matrix is singular.
+ * {@link penOutlineWorld}, filled nonzero with `paint` under the world
+ * transform. Returns `false` when the outline cannot be built.
  */
 function fillPenOutline(
 	rCtx: EmfPlusReplayCtx,
@@ -501,43 +559,16 @@ function fillPenOutline(
 	buildPath: (c: CanvasContext) => void,
 	closedFigure: boolean,
 ): boolean {
-	const device = plusWorldMatrix(rCtx);
-	const frame = penFrame(device, nib);
-	const deviceInv = invertAffine(device);
-	if (!frame || !deviceInv || !(frame.unit > 0)) {
+	const outline = penOutlineWorld(rCtx, pen, nib, buildPath, closedFigure);
+	if (!outline) {
 		return false;
 	}
-	let figures: DeviceFigure[];
-	try {
-		figures = recordDeviceFigures(buildPath, frame.record);
-	} catch {
-		return false;
-	}
-	if (closedFigure) {
-		figures = figures.map((f) => ({ ...f, closed: true }));
-	}
-	const width = (pen.width || 1) * frame.unit;
-	const devicePen = framePen(pen, frame.unit);
-	const outline = hasCustomCap(pen) ? customCapOutline(figures, width, devicePen, pen) : widenFigures(figures, devicePen);
-	const toWorld = mulMatrix(deviceInv, frame.toDevice);
 	const { ctx } = rCtx;
 	ctx.save();
 	try {
 		ctx.fillStyle = paint;
 		applyPlusWorldTransform(rCtx);
-		ctx.beginPath();
-		for (const poly of outline) {
-			poly.forEach((p, i) => {
-				const x = toWorld[0] * p.x + toWorld[2] * p.y + toWorld[4];
-				const y = toWorld[1] * p.x + toWorld[3] * p.y + toWorld[5];
-				if (i === 0) {
-					ctx.moveTo(x, y);
-				} else {
-					ctx.lineTo(x, y);
-				}
-			});
-			ctx.closePath();
-		}
+		traceOutline(ctx, outline);
 		ctx.fill('nonzero');
 	} finally {
 		ctx.restore();
