@@ -21,6 +21,12 @@
  * - An embedded metafile is replayed record by record straight into the
  *   destination (see {@link drawNestedMetafile}), so it stays vector.
  *
+ * An image effect (`emf-plus-image-effects.ts`, DrawImagePoints flag E) is
+ * applied to the bitmap's decoded pixels before any of this, so SVG output
+ * then embeds the effected pixels rather than the original bytes. When the
+ * pixels are not available (a browser-native image in SVG output without a
+ * decoder) the image is drawn without the effect.
+ *
  * A draw this module cannot resolve (no decoder was available ahead of
  * time) returns `false`, and the caller keeps the older deferred path.
  *
@@ -30,6 +36,7 @@
 import { canvasDrawImage, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { decodeBmpFile, payloadSize, sniffImageMime } from './emf-image-payload';
 import { mulMatrix } from './emf-plus-brush-gradient';
+import { applyImageEffect, type EmfPlusImageEffect } from './emf-plus-image-effects';
 import { MAX_NESTED_METAFILE_DEPTH } from './emf-plus-image-predecode';
 import { resampleImage } from './emf-plus-image-resample';
 import { plusWorldMatrix } from './emf-plus-state-handlers';
@@ -129,9 +136,20 @@ export function svgImagePayload(img: EmfPlusImage, bitmap: DecodedBitmap | null)
 /**
  * Embeds a bitmap into an SVG context at the current paint position and
  * clip (and mirrors it onto the hidden raster, when there is one).
+ * `pixelsOnly` embeds `bitmap`'s pixels even for a browser-native image
+ * (they carry an image effect the original bytes lack).
  */
-function paintBitmapSvg(svg: SvgContext, img: EmfPlusImage, bitmap: DecodedBitmap | null, draw: DeferredImageDraw): boolean {
-	const payload = svgImagePayload(img, bitmap);
+function paintBitmapSvg(
+	svg: SvgContext,
+	img: EmfPlusImage,
+	bitmap: DecodedBitmap | null,
+	draw: DeferredImageDraw,
+	pixelsOnly = false,
+): boolean {
+	const payload: ImagePayload | null =
+		pixelsOnly && bitmap
+			? { kind: 'rgba', data: bitmap.rgba, width: bitmap.width, height: bitmap.height }
+			: svgImagePayload(img, bitmap);
 	if (!payload) {
 		return false;
 	}
@@ -269,23 +287,49 @@ function drawNestedMetafile(
 }
 
 /**
- * Paints an EMF+ image draw now, in record order (see the module doc).
- * Returns `false`, having drawn nothing, when the image's content is not
- * available synchronously; the caller then defers the draw.
+ * The bitmap's pixels with `effect` applied: the pre-decoded pixels, else a
+ * BMP decoded in pure JavaScript. `null` when there are no pixels to work
+ * on or the effect cannot be applied (the image is then drawn without it).
+ */
+function effectedBitmap(img: EmfPlusImage, bitmap: DecodedBitmap | null, effect: EmfPlusImageEffect): DecodedBitmap | null {
+	let src: { rgba: Uint8ClampedArray; width: number; height: number } | null = bitmap;
+	if (!src && img.data) {
+		const bmp = decodeBmpFile(img.data.slice(0) as ArrayBuffer);
+		if (bmp && bmp.kind === 'rgba') {
+			src = { rgba: bmp.data, width: bmp.width, height: bmp.height };
+		}
+	}
+	if (!src) {
+		return null;
+	}
+	const rgba = applyImageEffect(src.rgba, src.width, src.height, effect);
+	return rgba ? { kind: 'bitmap', width: src.width, height: src.height, rgba } : null;
+}
+
+/**
+ * Paints an EMF+ image draw now, in record order (see the module doc),
+ * with `effect` applied to a bitmap's pixels when it is given and they are
+ * available. Returns `false`, having drawn nothing, when the image's
+ * content is not available synchronously; the caller then defers the draw.
  */
 export function drawEmfPlusImageNow(
 	rCtx: EmfPlusReplayCtx,
 	img: EmfPlusImage,
 	draw: DeferredImageDraw,
 	source?: ImageDrawSource,
+	effect: EmfPlusImageEffect | null = null,
 ): boolean {
 	const cached = img.cacheKey !== undefined ? rCtx.imageCache?.get(img.cacheKey) : undefined;
 	if (img.type === 2) {
 		return drawNestedMetafile(rCtx, img, cached, source);
 	}
-	const bitmap = cached && cached.kind === 'bitmap' ? cached : null;
+	let bitmap = cached && cached.kind === 'bitmap' ? cached : null;
+	const effected = effect ? effectedBitmap(img, bitmap, effect) : null;
+	if (effected) {
+		bitmap = effected;
+	}
 	if (isSvgContext(rCtx.ctx)) {
-		return paintBitmapSvg(rCtx.ctx, img, bitmap, draw);
+		return paintBitmapSvg(rCtx.ctx, img, bitmap, draw, effected !== null);
 	}
 	return bitmap ? paintBitmapRaster(rCtx.ctx, bitmap, draw) : false;
 }

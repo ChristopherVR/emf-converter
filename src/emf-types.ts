@@ -12,6 +12,7 @@
 import type { Canvas as NodeCanvas, SKRSContext2D } from '@napi-rs/canvas';
 
 import type { ClipRegion } from './emf-clip-region';
+import type { EmfPlusImageEffect } from './emf-plus-image-effects';
 
 // ---------------------------------------------------------------------------
 // Shared type aliases
@@ -894,8 +895,12 @@ export interface EmfPlusGraphicsExt {
 	textContrast?: number;
 	/** True after a well-formed `EmfPlusMultiFormatStart`: GDI+ then plays no further EMF+ record. */
 	multiFormatSkip?: boolean;
-	/** The image effect of the last `EmfPlusSerializableObject`, applied by the next DrawImagePoints with flag E. */
-	pendingEffect?: unknown;
+	/**
+	 * The image effect of the last `EmfPlusSerializableObject` (`null` for an
+	 * unknown or malformed one), applied by the next DrawImagePoints with
+	 * flag E, which consumes it.
+	 */
+	pendingEffect?: EmfPlusImageEffect | null;
 }
 
 /**

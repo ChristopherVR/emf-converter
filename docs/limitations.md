@@ -6,7 +6,9 @@ Output is compared with images rendered by Windows. The exact per-fixture bounds
 
 - `EMR_SETCOLORADJUSTMENT` is read but not applied.
 - The `HALFTONE` stretch mode is not bit-exact.
-- EMF+ image effects (`SerializableObject`: blur, sharpen, color matrix and similar) are not applied. The image is drawn without the effect.
+- EMF+ image effects (`SerializableObject`) are applied to the image's pixels before it is drawn. Color matrix and lookup table effects follow GDI+'s definitions. MS-EMFPLUS does not specify the algorithms for the others (blur, sharpen, brightness/contrast, levels, color balance, color curves, hue/saturation/lightness, tint, red-eye), so those use approximations that have not been compared with GDI+ output.
+- A blur with `expandEdge` keeps the image's size instead of growing it.
+- An effect is skipped when the image's pixels are not available, for example a PNG or JPEG in SVG output without an image decoder.
 
 ## Pen transforms
 

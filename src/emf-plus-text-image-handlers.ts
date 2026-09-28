@@ -17,6 +17,7 @@ import {
 import { emfLog, emfWarn } from './emf-logging';
 import { mulMatrix } from './emf-plus-brush-gradient';
 import { drawEmfPlusImageNow } from './emf-plus-draw-image';
+import { DRAWIMAGE_EFFECT_FLAG, type EmfPlusImageEffect } from './emf-plus-image-effects';
 import {
 	compositeBrushCoverage,
 	cssColorToArgb,
@@ -134,7 +135,8 @@ function imageResampleSpec(
  * ahead of replay, queues it for `processDeferredImages` (reserving its
  * SVG slot here so SVG output keeps its z-order either way). `toWorld`
  * maps the record's source rectangle (image pixels, at `dataOff + 8`) to
- * world coordinates.
+ * world coordinates. `effect` is an image effect to apply to the bitmap
+ * first; a deferred draw is painted without it.
  */
 function drawOrDeferImage(
 	rCtx: EmfPlusReplayCtx,
@@ -145,6 +147,7 @@ function drawOrDeferImage(
 	dw: number,
 	dh: number,
 	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
+	effect: EmfPlusImageEffect | null = null,
 ): void {
 	if (!imgObj.data) {
 		return;
@@ -169,7 +172,7 @@ function drawOrDeferImage(
 		srcH: view.getFloat32(dataOff + 20, true),
 		toWorld,
 	};
-	if (drawEmfPlusImageNow(rCtx, imgObj, draw, source)) {
+	if (drawEmfPlusImageNow(rCtx, imgObj, draw, source, effect)) {
 		emfLog('DrawImage: painted in record order');
 		return;
 	}
@@ -687,6 +690,12 @@ export function handleEmfPlusTextImageRecord(
 				const imgObj = objectTable.get(imgId);
 				const count = view.getUint32(dataOff + 24, true);
 				const ptOff = dataOff + 28;
+				// Flag E applies the effect of the preceding SerializableObject,
+				// which the draw consumes.
+				const effect = (recFlags & DRAWIMAGE_EFFECT_FLAG) !== 0 ? (rCtx.ext?.pendingEffect ?? null) : null;
+				if (rCtx.ext) {
+					rCtx.ext.pendingEffect = null;
+				}
 				if (count >= 3 && imgObj && imgObj.kind === 'plus-image' && imgObj.data) {
 					// Absolute (flag C: 16-bit) or relative (flag P) points.
 					const pts = readPlusPoints(view, ptOff, dataOff + recDataSize, 3, recFlags);
@@ -716,7 +725,7 @@ export function handleEmfPlusTextImageRecord(
 						const c = (p3x - p1x) / sh;
 						const d = (p3y - p1y) / sh;
 						return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
-					});
+					}, effect);
 				} else {
 					const hasData = imgObj && imgObj.kind === 'plus-image' && imgObj.data;
 					emfWarn(

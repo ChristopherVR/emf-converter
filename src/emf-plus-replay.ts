@@ -14,6 +14,7 @@ import {
 	EMFPLUS_MULTIFORMATSTART,
 	EMFPLUS_MULTIFORMATSECTION,
 	EMFPLUS_MULTIFORMATEND,
+	EMFPLUS_SERIALIZABLEOBJECT,
 	MAX_RECORDS_EMFPLUS_DEFAULT,
 } from './emf-constants';
 import { argbToRgba } from './emf-color-helpers';
@@ -21,6 +22,7 @@ import { emfLog } from './emf-logging';
 import { createContinuationAccumulator, feedEmfPlusObjectRecord } from './emf-plus-continuation';
 import { handleEmfPlusCurveRecord } from './emf-plus-curve-handlers';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
+import { parseSerializableObject } from './emf-plus-image-effects';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
 import { handleEmfPlusStateRecord } from './emf-plus-state-handlers';
 import { handleEmfPlusTextImageRecord } from './emf-plus-text-image-handlers';
@@ -236,6 +238,13 @@ export function replayEmfPlusRecords(
 			// Without a preceding MultiFormatStart these do nothing in GDI+.
 			case EMFPLUS_MULTIFORMATSECTION:
 			case EMFPLUS_MULTIFORMATEND:
+				break;
+
+			// An image effect for the next DrawImagePoints with flag E
+			// (`emf-plus-image-effects.ts`); an unknown or malformed effect
+			// replaces any earlier one with none.
+			case EMFPLUS_SERIALIZABLEOBJECT:
+				(rCtx.ext ?? (rCtx.ext = {})).pendingEffect = parseSerializableObject(view, dataOff, recDataSize);
 				break;
 
 			case EMFPLUS_CLEAR: {
