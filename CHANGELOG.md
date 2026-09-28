@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.3.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.1) - 2026-09-28
+
+### Build & CI
+
+- Generate Windows reference fixtures on a Windows runner ([6301668](https://github.com/ChristopherVR/emf-converter/commit/6301668b13b4527598ce7081b1e85176b67407bb))
+
 ## [4.3.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.0) - 2026-09-28
 
 ### Features
