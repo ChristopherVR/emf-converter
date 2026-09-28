@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"ignoreDeprecations": "6.0",
+		"target": "ES2020",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"noEmit": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"lib": ["ES2020", "DOM", "DOM.Iterable"],
+		"types": ["node"]
+	},
+	"include": [".vitepress/**/*.ts", ".vitepress/**/*.mts", ".vitepress/**/*.vue"],
+	"exclude": [".vitepress/cache", ".vitepress/dist"]
+}
