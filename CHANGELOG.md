@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.3.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.4) - 2026-09-28
+
+### Documentation
+
+- List outstanding work ([e941743](https://github.com/ChristopherVR/emf-converter/commit/e941743b3583649ea7c9bb7ecc541a658530814a))
+
 ## [4.3.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.3) - 2026-09-28
 
 ### Bug Fixes
