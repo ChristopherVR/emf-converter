@@ -26,7 +26,7 @@
  * What is not exact: closed figures and capped ends differ from GDI+ by
  * one antialiasing sample along some edges (GDI+'s internal outline
  * vertices round differently from the ones `Widen` reports), and GDI+'s
- * anchor caps are drawn as their base shape.
+ * anchor caps other than ArrowAnchor are drawn as their base shape.
  *
  * @module emf-plus-widen
  */
@@ -52,6 +52,13 @@ export interface DevicePen {
 	dash: number[] | null;
 	/** Dash offset in device pixels. */
 	dashOffset: number;
+	/**
+	 * Linear map `[a, b, c, d]` under which dash lengths are measured: a
+	 * segment `v` counts as `|M v|` long. Omitted: its own length. A pen
+	 * with its own transform is widened in pen space but dashed along the
+	 * path in world space (see `emf-plus-stroke.ts`).
+	 */
+	dashMetric?: readonly [number, number, number, number];
 	/** Compound array (pairs of fractions of the width, ascending), or `null`. */
 	compound: number[] | null;
 	/** PenAlignment Inset: a closed figure's stroke lies wholly inside it. */
@@ -260,7 +267,10 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt
 	for (let i = 0; i + 1 < path.length; i++) {
 		const a = path[i];
 		const b = path[i + 1];
-		let segLen = Math.hypot(b.x - a.x, b.y - a.y);
+		const m = pen.dashMetric;
+		const vx = b.x - a.x;
+		const vy = b.y - a.y;
+		let segLen = m ? Math.hypot(m[0] * vx + m[2] * vy, m[1] * vx + m[3] * vy) : Math.hypot(vx, vy);
 		let t0 = 0;
 		while (segLen - t0 > remaining + 1e-9) {
 			t0 += remaining;
@@ -287,6 +297,37 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt
 		out.push({ pts: cur, first: curFirst, last: true });
 	}
 	return out.filter((d) => d.pts.length > 1);
+}
+
+/** GDI+ `LineCapArrowAnchor`. */
+const ARROW_ANCHOR = 0x14;
+
+/**
+ * The ArrowAnchor at the start (or `atEnd`) of the open polyline `pp` of a
+ * pen `half` wide on each side, shortening `pp` to the arrow's base in
+ * place: a triangle with its tip on the line's end point and sides at 30
+ * degrees to the line, `4w / sqrt(3)` long for a pen `w` wide (so `2w`
+ * deep and `4w / sqrt(3)` across; measured on `pen-custom-id`).
+ */
+function arrowAnchor(pp: Pt[], atEnd: boolean, half: number): Pt[] {
+	const w = 2 * half;
+	const tip = atEnd ? pp[pp.length - 1] : pp[0];
+	const next = atEnd ? pp[pp.length - 2] : pp[1];
+	const len = Math.hypot(next.x - tip.x, next.y - tip.y);
+	// Unit vector from the tip back along the line, and its normal.
+	const ux = (next.x - tip.x) / len;
+	const uy = (next.y - tip.y) / len;
+	const depth = 2 * w;
+	const across = (2 * w) / Math.sqrt(3);
+	const base = { x: tip.x + ux * depth, y: tip.y + uy * depth };
+	if (len > depth) {
+		if (atEnd) {
+			pp[pp.length - 1] = base;
+		} else {
+			pp[0] = base;
+		}
+	}
+	return [tip, { x: base.x - uy * across, y: base.y + ux * across }, { x: base.x + uy * across, y: base.y - ux * across }];
 }
 
 /** Shortest straight part of a dash (GDI+ keeps a zero-length dash's direction for its caps). */
@@ -351,6 +392,20 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 			if (pp.length < 2) {
 				continue;
 			}
+			// ArrowAnchor ends: the line stops at the arrow's base and the arrow is its own polygon.
+			const arrows: Pt[][] = [];
+			let startCapOverride: number | null = null;
+			let endCapOverride: number | null = null;
+			if (!pieceClosed && !(pen.dash && closed)) {
+				if (piece.first && pen.startCap === ARROW_ANCHOR) {
+					arrows.push(arrowAnchor(pp, false, h));
+					startCapOverride = 0;
+				}
+				if (piece.last && pen.endCap === ARROW_ANCHOR) {
+					arrows.push(arrowAnchor(pp, true, h));
+					endCapOverride = 0;
+				}
+			}
 			for (const [o1, o2] of bands) {
 				if (pieceClosed) {
 					polys.push(sidePoints(pp, true, o2, pen));
@@ -361,13 +416,19 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 				const right = sidePoints(pp, false, o1, pen).reverse();
 				const fEnd = frame(pp[pp.length - 2], pp[pp.length - 1]);
 				const f0 = frame(pp[1], pp[0]); // outward at the start (reversed direction)
-				const endCap = piece.last && !(pen.dash && closed) ? pen.endCap : pen.dashCap;
-				const startCap = piece.first && !(pen.dash && closed) ? pen.startCap : pen.dashCap;
+				const endCap = endCapOverride ?? (piece.last && !(pen.dash && closed) ? pen.endCap : pen.dashCap);
+				const startCap = startCapOverride ?? (piece.first && !(pen.dash && closed) ? pen.startCap : pen.dashCap);
 				const capEnd = capPoints(pp[pp.length - 1], fEnd, o1, o2, endCap, h);
 				// At the start the outward frame is reversed, so its left normal is the
 				// line's right: the band runs from -o1 (the line's o1 side) to -o2.
 				const capStart = capPoints(pp[0], f0, -o2, -o1, startCap, h);
-				polys.push([...left.slice(0, -1), ...capEnd, ...right.slice(1, -1), ...capStart]);
+				const poly = [...left.slice(0, -1), ...capEnd, ...right.slice(1, -1), ...capStart];
+				polys.push(poly);
+				// Same winding as the band, so the nonzero union keeps the overlap.
+				const sign = Math.sign(signedArea(poly));
+				for (const arrow of arrows) {
+					polys.push(Math.sign(signedArea(arrow)) === sign ? arrow : arrow.slice().reverse());
+				}
 			}
 		}
 	}

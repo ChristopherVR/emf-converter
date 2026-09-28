@@ -12,7 +12,7 @@ Output is compared with images rendered by Windows. The exact per-fixture bounds
 
 ## Pen transforms
 
-Non-uniform and skewed EMF+ pen transforms are drawn with the transformed (elliptical or sheared) pen shape. Unlike uniform transforms, they have not yet been compared with Windows output. A pen transform that cannot be inverted is ignored.
+EMF+ pen transforms (uniform, non-uniform and skewed) match GDI+ exactly on the 17 pen-transform fixtures. That includes dashes, which GDI+ lays out along the path in world space at the untransformed pen width. The fixtures include dashes only under a non-uniform scale. Dashes under a uniform scale follow the same rule but have not been checked. A pen transform that cannot be inverted is ignored. Of the anchor caps, only `ArrowAnchor` is drawn with its real shape. The others are drawn as their base cap.
 
 ## Text
 

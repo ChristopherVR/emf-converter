@@ -82,7 +82,7 @@ describe('pen geometry', () => {
 		expect(ctx.lineWidth).toBe(6);
 	});
 
-	it('applies a pen-local uniform scale to its stroke width and dash lengths', () => {
+	it('applies a pen-local uniform scale to its stroke width but not its dash lengths', () => {
 		const calls: string[] = [];
 		const ctx = new Proxy({} as Record<string, unknown>, {
 			get: (t, p) => p in t ? t[p as string] : (...a: unknown[]) => calls.push(`${String(p)}(${a.join(',')})`),
@@ -94,7 +94,10 @@ describe('pen geometry', () => {
 			transform: [3, 0, 0, 3, 17, -9],
 		}, (c) => c.moveTo(0, 0), null);
 		expect(ctx.lineWidth).toBe(6);
-		expect(calls).toContain('setLineDash(18,6)');
+		// GDI+ lays the dashes out in the untransformed width (2): 6 on, 2 off.
+		const dash = calls.find((c) => c.startsWith('setLineDash('))!.slice(12, -1).split(',').map(Number);
+		expect(dash[0]).toBeCloseTo(6, 9);
+		expect(dash[1]).toBeCloseTo(2, 9);
 	});
 
 	it('matches native GDI+ pen-transform pixels for a scaled, rotated, translated pen', async () => {
@@ -233,9 +236,9 @@ describe('nonuniform and skewed pen transforms', () => {
 		expect(run(flat, 'col', 35)).toBeCloseTo(8, 0);
 	});
 
-	it('scales dash lengths in pen space under a nonuniform nib', async () => {
-		// Dash 3 on, 1 off in pen widths (2): 8 pen-space units per period,
-		// which pen space stretches to 32 world pixels along x.
+	it('lays dashes out in world space under a nonuniform nib, as GDI+ does', async () => {
+		// Dash 3 on, 1 off in pen widths (2): 8 world pixels per period along
+		// the path whatever the (4, 1) nib does to the pen (pen-scale4x1-dash).
 		const pen: EmfPlusPen = { ...scaled, dashStyle: 1 };
 		const ink = await strokeOnCanvas(pen, [(c) => {
 			c.moveTo(0, 50);
@@ -247,7 +250,7 @@ describe('nonuniform and skewed pen transforms', () => {
 				starts.push(x);
 			}
 		}
-		expect(starts).toEqual([32, 64, 96]);
+		expect(starts).toEqual([8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96]);
 	});
 
 	it('writes an SVG stroke under world x nib with the unchanged path', async () => {

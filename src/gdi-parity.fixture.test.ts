@@ -925,6 +925,37 @@ const HALFTONE_CASES: ParityCase[] = [
 	adjusted('emfrec-halftone-checker-1p37x-ca', 0), // measured 0%
 ];
 
+/**
+ * EMF+ pens with their own transform (`Pen.Transform`,
+ * `scripts/gdi-fixtures/PenTransformProbe.cs`), against GDI+'s playback of
+ * the recorded metafile: uniform scale, rotation and translation (a
+ * similarity folds into the width), a zero-width pen (one pixel under any
+ * transform), an ArrowAnchor start cap, a (4, 1) scale and a [1 0 1 1]
+ * skew widened in pen space, aliased and antialiased, and dashes laid out
+ * along the path in world space. All pixel-exact; before, the dashed
+ * (4, 1) cases were 0.742% (aliased) and 1.299% (antialiased) off (dashes
+ * 4x too long) and the ArrowAnchor 0.103% (drawn as a triangle cap).
+ */
+const PEN_TRANSFORM_CASES: ParityCase[] = [
+	'id',
+	'custom-id',
+	'translate',
+	'rotate45',
+	'scale3',
+	'scale3-rotate45-translate',
+	'zero-scale3',
+	'scale4x1',
+	'scale4x1-aa',
+	'scale4x1-diagonal',
+	'scale4x1-dash',
+	'scale4x1-dash-aa',
+	'zero-scale4x1',
+	'skew',
+	'skew-aa',
+	'skew-horizontal',
+	'skew-diagonal',
+].map((c) => exact(`pen-${c}`));
+
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
 		it.each(ROP3_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
@@ -1098,6 +1129,7 @@ describe('GDI ground-truth parity', () => {
 		['EMF+ drawing under each SmoothingMode', SMOOTHING_CASES],
 		['EMF+ records and objects (curves, regions, containers, hatches, compositing, terminal-server, MultiFormat)', EMF_PLUS_RECORD_CASES],
 		['HALFTONE StretchBlt with and without EMR_SETCOLORADJUSTMENT', HALFTONE_CASES],
+		['EMF+ pens with a pen transform', PEN_TRANSFORM_CASES],
 	];
 	for (const [title, cases] of groups) {
 		describe(title, () => {
@@ -1142,6 +1174,7 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 		...EMF_PLUS_RECORD_CASES,
 		...EMF_RECORD_CASES,
 		...HALFTONE_CASES,
+		...PEN_TRANSFORM_CASES,
 	];
 	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
 		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
