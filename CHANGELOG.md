@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.3.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.2) - 2026-09-28
+
+### Bug Fixes
+
+- Build GDI paths the way Windows' GetPath reports them ([97d0381](https://github.com/ChristopherVR/emf-converter/commit/97d0381feb29112978f31fae8515a6a450042568))
+- Mirror META_SETDIBTODEV's destination under LAYOUT_RTL ([a9bdd2b](https://github.com/ChristopherVR/emf-converter/commit/a9bdd2b576b181dbf7823d2b07e08b1d499529d0))
+
+### Testing
+
+- Check GDI path geometry against Wine's Windows-verified data ([1a0eb09](https://github.com/ChristopherVR/emf-converter/commit/1a0eb09908a36f345160bb7ee3eaaae0fc0550f3))
+
 ## [4.3.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.1) - 2026-09-28
 
 ### Build & CI
