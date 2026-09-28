@@ -14,7 +14,7 @@ Windows metafiles are recorded GDI and GDI+ drawing calls, commonly embedded in 
 | **EMF**  | Enhanced Metafile (32-bit GDI) | Bounds-based scaling    |
 | **EMF+** | GDI+ extension embedded in EMF | World transform matrix  |
 
-<samp>**[▶️ Live demo](https://christophervr.github.io/emf-converter/)** · **[📦 npm](https://www.npmjs.com/package/emf-converter)**</samp>
+[Documentation and live demo](https://christophervr.github.io/emf-converter/) · [npm](https://www.npmjs.com/package/emf-converter)
 
 ---
 
@@ -27,11 +27,11 @@ Windows metafiles are recorded GDI and GDI+ drawing calls, commonly embedded in 
 - **Complete WMF playback**: bitmaps, clipping, regions, mapping modes, palettes, flood fills, and embedded EMF comments, played as Windows' `PlayMetaFile` plays them.
 - Many correctness fixes found by the new fixtures (see the changelog).
 
-## Demo
+## Documentation and demo
 
-Drop an `.emf` or `.wmf` file into the browser demo to see the PNG or SVG output, download it, or copy it as a TSX component:
+The documentation site at **https://christophervr.github.io/emf-converter/** includes a live demo: drop an `.emf` or `.wmf` file to see the PNG or SVG output, download it, or copy it as a TSX component.
 
-**https://christophervr.github.io/emf-converter/**
+The site is built with VitePress from the `docs/` directory. Run it locally with `bun run docs:dev`.
 
 ## Install
 
