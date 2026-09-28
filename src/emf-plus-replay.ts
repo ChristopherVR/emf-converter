@@ -195,6 +195,10 @@ export function replayEmfPlusRecords(
 
 		const dataOff = offset + 12;
 
+		// EMF records are played again only right after an EmfPlusGetDC;
+		// any other EMF+ record ends that run.
+		s.gdiPassthrough = recType === EMFPLUS_GETDC;
+
 		// After a well-formed MultiFormatStart GDI+ plays no further EMF+
 		// record, MultiFormatSection and MultiFormatEnd included (their
 		// dispatch sits behind the same switch), so the rest of the file is
@@ -206,6 +210,9 @@ export function replayEmfPlusRecords(
 
 		switch (recType) {
 			case EMFPLUS_HEADER: {
+				// Flags bit 0 (EmfPlusDual): the EMF records repeat the picture
+				// for readers without EMF+ support (see replayEmfRecords).
+				s.dualMode = (recFlags & 0x0001) !== 0;
 				if (recDataSize >= 16) {
 					const dpiX = view.getFloat32(dataOff + 8, true);
 					const dpiY = view.getFloat32(dataOff + 12, true);

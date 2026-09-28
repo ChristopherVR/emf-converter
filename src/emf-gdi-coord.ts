@@ -34,9 +34,8 @@ export function gmx(r: EmfGdiReplayCtx, x: number): number {
 	const wt = r.state.worldTransform;
 	const px = wt[0] * x + wt[4];
 	if (r.useMappingMode) {
-		return (
-			((px - r.windowOrg.x) / (r.windowExt.cx || 1)) * (r.viewportExt.cx || 1) + r.viewportOrg.x
-		);
+		const dx = ((px - r.windowOrg.x) / (r.windowExt.cx || 1)) * (r.viewportExt.cx || 1) + r.viewportOrg.x;
+		return r.deviceToCanvas ? (dx - r.bounds.left) * r.sx : dx;
 	}
 	return (px - r.bounds.left) * r.sx;
 }
@@ -46,9 +45,8 @@ export function gmy(r: EmfGdiReplayCtx, y: number): number {
 	const wt = r.state.worldTransform;
 	const py = wt[3] * y + wt[5];
 	if (r.useMappingMode) {
-		return (
-			((py - r.windowOrg.y) / (r.windowExt.cy || 1)) * (r.viewportExt.cy || 1) + r.viewportOrg.y
-		);
+		const dy = ((py - r.windowOrg.y) / (r.windowExt.cy || 1)) * (r.viewportExt.cy || 1) + r.viewportOrg.y;
+		return r.deviceToCanvas ? (dy - r.bounds.top) * r.sy : dy;
 	}
 	return (py - r.bounds.top) * r.sy;
 }
@@ -57,7 +55,7 @@ export function gmy(r: EmfGdiReplayCtx, y: number): number {
 export function gmw(r: EmfGdiReplayCtx, w: number): number {
 	const pw = r.state.worldTransform[0] * w;
 	if (r.useMappingMode) {
-		return (pw / (r.windowExt.cx || 1)) * (r.viewportExt.cx || 1);
+		return (pw / (r.windowExt.cx || 1)) * (r.viewportExt.cx || 1) * (r.deviceToCanvas ? r.sx : 1);
 	}
 	return pw * r.sx;
 }
@@ -66,9 +64,19 @@ export function gmw(r: EmfGdiReplayCtx, w: number): number {
 export function gmh(r: EmfGdiReplayCtx, h: number): number {
 	const ph = r.state.worldTransform[3] * h;
 	if (r.useMappingMode) {
-		return (ph / (r.windowExt.cy || 1)) * (r.viewportExt.cy || 1);
+		return (ph / (r.windowExt.cy || 1)) * (r.viewportExt.cy || 1) * (r.deviceToCanvas ? r.sy : 1);
 	}
 	return ph * r.sy;
+}
+
+/** Canvas pixels per device pixel along x (window/viewport output in device units, see `deviceToCanvas`). */
+export function gdiDevicePixelX(r: EmfGdiReplayCtx): number {
+	return !r.useMappingMode || r.deviceToCanvas ? r.sx : 1;
+}
+
+/** Canvas pixels per device pixel along y. */
+export function gdiDevicePixelY(r: EmfGdiReplayCtx): number {
+	return !r.useMappingMode || r.deviceToCanvas ? r.sy : 1;
 }
 
 /** Switch to window/viewport mapping mode. */
@@ -98,13 +106,14 @@ export function gdiDeviceMatrix(r: EmfGdiReplayCtx): TransformMatrix {
 	if (r.useMappingMode) {
 		const kx = (r.viewportExt.cx || 1) / (r.windowExt.cx || 1);
 		const ky = (r.viewportExt.cy || 1) / (r.windowExt.cy || 1);
+		const [cx, cy, ox, oy] = r.deviceToCanvas ? [r.sx, r.sy, r.bounds.left, r.bounds.top] : [1, 1, 0, 0];
 		return [
-			wt[0] * kx,
-			wt[1] * ky,
-			wt[2] * kx,
-			wt[3] * ky,
-			(wt[4] - r.windowOrg.x) * kx + r.viewportOrg.x,
-			(wt[5] - r.windowOrg.y) * ky + r.viewportOrg.y,
+			wt[0] * kx * cx,
+			wt[1] * ky * cy,
+			wt[2] * kx * cx,
+			wt[3] * ky * cy,
+			((wt[4] - r.windowOrg.x) * kx + r.viewportOrg.x - ox) * cx,
+			((wt[5] - r.windowOrg.y) * ky + r.viewportOrg.y - oy) * cy,
 		];
 	}
 	const sx = r.sx || 1;

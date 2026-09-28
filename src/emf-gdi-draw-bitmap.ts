@@ -23,7 +23,7 @@ import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } f
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
+import { gdiDevicePixelX, gdiDevicePixelY, gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
 import { paletteEntries } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
 import { HALFTONE, stretchGdi } from './emf-gdi-stretch';
@@ -533,8 +533,8 @@ export function paintParallelogram(
  * right of Canvas's `[x+w, x)`. Shift by one device pixel to match.
  */
 function alignMirroredDest(rCtx: EmfGdiReplayCtx, req: BlitRequest): BlitRequest {
-	const pxX = rCtx.useMappingMode ? 1 : rCtx.sx;
-	const pxY = rCtx.useMappingMode ? 1 : rCtx.sy;
+	const pxX = gdiDevicePixelX(rCtx);
+	const pxY = gdiDevicePixelY(rCtx);
 	return {
 		...req,
 		dx: req.dw < 0 ? req.dx + pxX : req.dx,

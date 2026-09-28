@@ -51,7 +51,7 @@ import {
 	EMR_TRANSPARENTBLT,
 } from './emf-constants';
 import { realizeBrush } from './emf-gdi-brush-pattern';
-import { gmh, gmw, gmx, gmy } from './emf-gdi-coord';
+import { gdiDevicePixelX, gdiDevicePixelY, gmh, gmw, gmx, gmy } from './emf-gdi-coord';
 import { paintParallelogram, patternOperand } from './emf-gdi-draw-bitmap';
 import { paletteEntries, resolveColorRefRgb } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
@@ -206,10 +206,10 @@ function axisMap(
 	const dh = gmh(rCtx, cyDest);
 	// A mirrored extent covers the pixels from its anchor inward (as StretchBlt).
 	if (dw < 0) {
-		dx += rCtx.useMappingMode ? 1 : rCtx.sx;
+		dx += gdiDevicePixelX(rCtx);
 	}
 	if (dh < 0) {
-		dy += rCtx.useMappingMode ? 1 : rCtx.sy;
+		dy += gdiDevicePixelY(rCtx);
 	}
 	const W = Math.round(Math.abs(dw));
 	const H = Math.round(Math.abs(dh));

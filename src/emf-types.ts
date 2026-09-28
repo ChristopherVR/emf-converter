@@ -979,6 +979,18 @@ export interface EmfPlusState {
 	ext?: EmfPlusGraphicsExt;
 	/** `EmfConvertOptions.gdiAntialias`, for nested metafile replays. */
 	gdiAntialias?: boolean;
+	/**
+	 * True once an `EmfPlusHeader` with the `EmfPlusDual` flag (record flags
+	 * bit 0) has been played: the classic EMF records then duplicate the
+	 * EMF+ picture for EMF-only readers, and an EMF+ reader skips them.
+	 */
+	dualMode?: boolean;
+	/**
+	 * True while the last EMF+ record played was `EmfPlusGetDC`: the EMF
+	 * records that follow are part of the picture (drawn through an HDC) and
+	 * are played, dual mode or not, until the next EMF+ record.
+	 */
+	gdiPassthrough?: boolean;
 }
 
 /**
@@ -1188,6 +1200,13 @@ export interface EmfGdiReplayCtx {
 	viewportExt: { cx: number; cy: number };
 	/** When true, use window/viewport mapping instead of simple bounds-based scaling. */
 	useMappingMode: boolean;
+	/**
+	 * When true, the window/viewport mapping yields device units (as in an
+	 * EMF), which are then placed on the canvas by the same bounds mapping
+	 * the no-mapping-mode path uses: `(device - bounds.left/top) * sx/sy`.
+	 * When false or absent the viewport is already in canvas pixels (WMF).
+	 */
+	deviceToCanvas?: boolean;
 	/**
 	 * Tracks how many extra `ctx.save()` calls were made for clipping rects,
 	 * so they can be unwound before a state save/restore.
