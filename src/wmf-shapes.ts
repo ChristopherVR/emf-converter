@@ -10,9 +10,11 @@
  *     in by one device pixel: the box excludes its right/bottom edge, in
  *     device space, whatever the mapping (see {@link compatBox} for the
  *     null-pen and `PS_INSIDEFRAME` boxes);
- *   - arcs run in the arc direction as seen in DEVICE space (a mirroring
- *     mapping does not reverse them), and their radials are measured about
- *     the centre of the box as given, not of the box it shrank.
+ *   - arcs, and the paths of Rectangle, RoundRect and Ellipse, run in the
+ *     arc direction as seen in DEVICE space (a mirroring mapping does not
+ *     reverse them), and arc radials are measured on the box as given (its
+ *     centre and half axes), not on the box it shrank;
+ *   - a RoundRect's corner ellipse is a whole even number of device pixels.
  * (An EMF records the same calls already converted to `GM_ADVANCED`'s
  * inclusive logical boxes, so the EMF handlers cannot be reused as-is.)
  *
@@ -27,7 +29,7 @@ import { realizeBrush } from './emf-gdi-brush-pattern';
 import { flushRasterLayer } from './emf-gdi-raster-layer';
 import { isExactRop2Bitwise } from './emf-rop2-exact';
 import type { CanvasContext } from './emf-types';
-import { axisBox, type FixBox } from './gdi-raster';
+import { axisBox, type FixBox, type GdiRasterPath } from './gdi-raster';
 import type { WmfPlayer } from './wmf-player';
 
 /** `PS_NULL`. */
@@ -155,7 +157,7 @@ export function wmfRectangle(p: WmfPlayer, l: number, t: number, r: number, b: n
 			c.beginPath();
 			c.rect(cr.x, cr.y, cr.w, cr.h);
 		},
-		raster: () => rectRasterPath(fixBoxOf(box)),
+		raster: () => rectRasterPath(fixBoxOf(box), clockwiseOf(p)),
 		rectangle: true,
 		fill: true,
 		stroke: true,
@@ -163,21 +165,83 @@ export function wmfRectangle(p: WmfPlayer, l: number, t: number, r: number, b: n
 	});
 }
 
+/** The device FIX extents of a compatible-mode RoundRect's corner ellipse (logical `w` x `h`). */
+function compatCorner(p: WmfPlayer, w: number, h: number): [number, number] {
+	const m = gdiDeviceMatrix(p.rCtx);
+	const cw = Math.round(Math.abs(w * m[0]) * 16);
+	const ch = Math.round(Math.abs(h * m[3]) * 16);
+	// The corner ellipse is a whole even number of device pixels on each
+	// axis, so its half axes are whole pixels. Under a wide pen its size is
+	// rounded down to that (measured: `wmf-shapes`); otherwise it is rounded
+	// to whole pixels first and then down to an even number (Windows'
+	// `GetPath`, Wine `gdi32/tests/path.c`, `test_roundrect` and
+	// `test_all_functions`: an odd corner size puts each corner half a pixel
+	// further in; `wmf-shapes-scaled` rules out rounding a fractional size
+	// down).
+	const ux = 16 * p.kx;
+	const uy = 16 * p.ky;
+	if (!penIsNull(p) && !penIsCosmetic(p.rCtx)) {
+		return [Math.round(Math.floor(cw / (2 * ux)) * 2 * ux), Math.round(Math.floor(ch / (2 * uy)) * 2 * uy)];
+	}
+	return [Math.round(Math.floor(Math.round(cw / ux) / 2) * 2 * ux), Math.round(Math.floor(Math.round(ch / uy) / 2) * 2 * uy)];
+}
+
+/**
+ * The GDI paths of the compatible-mode box shapes, as `GetPath` would hold
+ * them after the same call in a `GM_COMPATIBLE` path bracket (`null` when
+ * GDI draws nothing: a box that is empty once its right/bottom edge is
+ * excluded). The shape functions below paint exactly these.
+ */
+export const wmfShapePath = {
+	rectangle(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
+		const box = compatBox(p, l, t, r, b);
+		return box.x1 < box.x0 || box.y1 < box.y0 ? null : rectRasterPath(fixBoxOf(box), clockwiseOf(p));
+	},
+	roundRect(p: WmfPlayer, l: number, t: number, r: number, b: number, w: number, h: number): GdiRasterPath | null {
+		const box = compatBox(p, l, t, r, b, { curved: true });
+		if (box.x1 < box.x0 || box.y1 < box.y0) {
+			return null;
+		}
+		const [cw, ch] = compatCorner(p, w, h);
+		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0);
+	},
+	ellipse(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
+		const box = compatBox(p, l, t, r, b, { curved: true });
+		return box.x1 < box.x0 || box.y1 < box.y0 ? null : ellipseRasterPath(fixBoxOf(box), clockwiseOf(p));
+	},
+	/**
+	 * Arc, Chord, Pie, or (`kind` `'arcto'`, from the current position
+	 * `from`) ArcTo, appended to `path`; returns the arc's end point.
+	 */
+	arc(
+		p: WmfPlayer,
+		kind: ArcKind,
+		l: number,
+		t: number,
+		r: number,
+		b: number,
+		xs: number,
+		ys: number,
+		xe: number,
+		ye: number,
+		path: GdiRasterPath,
+		from?: [number, number],
+	): [number, number] | null {
+		const geom = compatArc(p, kind, l, t, r, b, xs, ys, xe, ye);
+		if (!geom) {
+			return null;
+		}
+		return arcRasterPath(fixBoxOf(geom.box), geom.s, geom.e, p.rCtx.state.arcDirection === 2, kind, from, path).end;
+	},
+};
+
 /** `META_ROUNDRECT`: `w`, `h` are the corner ellipse's logical width and height. */
 export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: number, w: number, h: number): void {
 	const box = compatBox(p, l, t, r, b, { curved: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
-	const m = gdiDeviceMatrix(p.rCtx);
-	let cw = Math.round(Math.abs(w * m[0]) * 16);
-	let ch = Math.round(Math.abs(h * m[3]) * 16);
-	if (!penIsNull(p) && !penIsCosmetic(p.rCtx)) {
-		// Under a wide pen the corner ellipse is a whole even number of
-		// pixels on each axis, rounded down (measured: `wmf-shapes`).
-		cw = Math.floor(cw / 32) * 32;
-		ch = Math.floor(ch / 32) * 32;
-	}
+	const [cw, ch] = compatCorner(p, w, h);
 	const cr = canvasRect(box);
 	paintGdiShape(p.rCtx, {
 		build: (c: CanvasContext) => {
@@ -202,7 +266,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 			c.ellipse(cr.x + ex, cr.y + ey, ex, ey, 0, 2 * q, 3 * q);
 			c.closePath();
 		},
-		raster: () => roundRectRasterPath(fixBoxOf(box), cw, ch),
+		raster: () => roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0),
 		roundPen: true,
 		fill: true,
 		stroke: true,
@@ -221,11 +285,48 @@ export function wmfEllipse(p: WmfPlayer, l: number, t: number, r: number, b: num
 			c.beginPath();
 			c.ellipse(cr.x + cr.w / 2, cr.y + cr.h / 2, cr.w / 2, cr.h / 2, 0, 0, Math.PI * 2);
 		},
-		raster: () => ellipseRasterPath(fixBoxOf(box)),
+		raster: () => ellipseRasterPath(fixBoxOf(box), clockwiseOf(p)),
 		roundPen: true,
 		fill: true,
 		stroke: true,
 	});
+}
+
+/**
+ * A compatible-mode arc's device box and radial points (`null` when the
+ * box is empty). GDI measures the radials' angles on the box as given, not
+ * on the box it shrank: about its centre (measured, `wmf-shapes`) and
+ * against its half axes (Windows' `GetPath`, Wine `gdi32/tests/path.c`,
+ * `test_arcto` and `test_all_functions`: a radial through the given box's
+ * corner is at exactly 45 degrees).
+ */
+function compatArc(
+	p: WmfPlayer,
+	kind: ArcKind,
+	l: number,
+	t: number,
+	r: number,
+	b: number,
+	xs: number,
+	ys: number,
+	xe: number,
+	ye: number,
+): { box: CompatBox; s: [number, number]; e: [number, number] } | null {
+	const box = compatBox(p, l, t, r, b, { curved: kind === 'chord' || kind === 'pie' });
+	if (box.x1 < box.x0 || box.y1 < box.y0) {
+		return null;
+	}
+	// The radials' angles are those on the box as given (its own centre and
+	// half axes): carry each radial point onto the box drawn, which keeps
+	// that angle for the arc code, which measures on the box it builds.
+	const raw = compatBox(p, l, t, r, b, { exclusive: false });
+	const onBox = (v: number, r0: number, r1: number, b0: number, b1: number): number =>
+		(b0 + b1) / 2 + (r1 !== r0 ? ((v - (r0 + r1) / 2) * (b1 - b0)) / (r1 - r0) : v - (r0 + r1) / 2);
+	const radial = (x: number, y: number): [number, number] => {
+		const [fx, fy] = fixPoint(p.rCtx, x, y);
+		return [onBox(fx, raw.x0, raw.x1, box.x0, box.x1), onBox(fy, raw.y0, raw.y1, box.y0, box.y1)];
+	};
+	return { box, s: radial(xs, ys), e: radial(xe, ye) };
 }
 
 /** `META_ARC` / `META_CHORD` / `META_PIE`: the box, then the start and end radial points. */
@@ -241,19 +342,11 @@ export function wmfArcFamily(
 	xe: number,
 	ye: number,
 ): void {
-	const box = compatBox(p, l, t, r, b, { curved: kind !== 'arc' });
-	if (box.x1 < box.x0 || box.y1 < box.y0) {
+	const geom = compatArc(p, kind, l, t, r, b, xs, ys, xe, ye);
+	if (!geom) {
 		return;
 	}
-	// GDI measures the radials' angles about the centre of the box as given,
-	// not of the box it shrank: move them with the centre.
-	const raw = compatBox(p, l, t, r, b, { exclusive: false });
-	const rdx = (box.x0 + box.x1 - raw.x0 - raw.x1) / 2;
-	const rdy = (box.y0 + box.y1 - raw.y0 - raw.y1) / 2;
-	const s0 = fixPoint(p.rCtx, xs, ys);
-	const e0 = fixPoint(p.rCtx, xe, ye);
-	const s: [number, number] = [s0[0] + rdx, s0[1] + rdy];
-	const e: [number, number] = [e0[0] + rdx, e0[1] + rdy];
+	const { box, s, e } = geom;
 	const clockwise = p.rCtx.state.arcDirection === 2;
 	const cr = canvasRect(box);
 	const cx = cr.x + cr.w / 2;
@@ -278,6 +371,11 @@ export function wmfArcFamily(
 		fill,
 		stroke: true,
 	});
+}
+
+/** True under `AD_CLOCKWISE` (the box shapes' paths then run clockwise in device space). */
+function clockwiseOf(p: WmfPlayer): boolean {
+	return p.rCtx.state.arcDirection === 2;
 }
 
 /** True when the selected pen draws nothing (`PS_NULL`). */

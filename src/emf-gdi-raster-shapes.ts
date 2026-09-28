@@ -89,9 +89,23 @@ function boxCorners(box: FixBox): number[] {
 	return [ax + exx, ay + exy, ax, ay, ax + eyx, ay + eyy, ax + exx + eyx, ay + exy + eyy];
 }
 
-/** GDI's Rectangle path: one closed figure. */
-export function rectRasterPath(box: FixBox): GdiRasterPath {
-	const c = boxCorners(box);
+/**
+ * `box` reflected top to bottom: its logical top edge becomes its bottom.
+ * GDI builds a Rectangle or RoundRect under `AD_CLOCKWISE` as the
+ * counter-clockwise path of this box (Windows' `GetPath`, Wine
+ * `gdi32/tests/path.c`, `test_rectangle` and `test_roundrect`).
+ */
+function flipBox(box: FixBox): FixBox {
+	return { ax: box.ax + box.eyx, ay: box.ay + box.eyy, exx: box.exx, exy: box.exy, eyx: -box.eyx, eyy: -box.eyy };
+}
+
+/**
+ * GDI's Rectangle path: one closed figure, from the (logical) top right
+ * corner towards the top left, or with `clockwise` (`AD_CLOCKWISE`) from
+ * the bottom right towards the bottom left.
+ */
+export function rectRasterPath(box: FixBox, clockwise = false): GdiRasterPath {
+	const c = boxCorners(clockwise ? flipBox(box) : box);
 	const path = new GdiRasterPath();
 	path.moveTo(c[0], c[1]);
 	path.lineTo(c[2], c[3]);
@@ -101,10 +115,10 @@ export function rectRasterPath(box: FixBox): GdiRasterPath {
 	return path;
 }
 
-/** GDI's Ellipse path (four Beziers, flattened). */
-export function ellipseRasterPath(box: FixBox): GdiRasterPath {
+/** GDI's Ellipse path (four Beziers, flattened), clockwise under `AD_CLOCKWISE`. */
+export function ellipseRasterPath(box: FixBox, clockwise = false): GdiRasterPath {
 	const path = new GdiRasterPath();
-	path.addBeziers(ellipseBeziersBox(box), true);
+	path.addBeziers(ellipseBeziersBox(box, clockwise), true);
 	path.closeFigure();
 	return path;
 }
@@ -144,14 +158,25 @@ function boxFrame(box: FixBox): { l: number; t: number; r: number; b: number } {
 	return { l: 0, t: 0, r: w, b: h };
 }
 
-/** GDI's RoundRect path; `cw`/`ch` are the corner ellipse's device extents (FIX). */
-export function roundRectRasterPath(box: FixBox, cw: number, ch: number): GdiRasterPath {
+/**
+ * GDI's RoundRect path; `cw`/`ch` are the corner ellipse's device extents
+ * (FIX). With `clockwise` (`AD_CLOCKWISE`) the counter-clockwise path is
+ * reflected top to bottom, so it starts at the lower end of the right edge.
+ * `rectangle` (the call's logical corner width or height is 0) gives the
+ * Rectangle path instead; a corner that is merely under a pixel keeps its
+ * (degenerate) Beziers (Windows' `GetPath`, Wine `gdi32/tests/path.c`,
+ * `test_roundrect`).
+ */
+export function roundRectRasterPath(box: FixBox, cw: number, ch: number, clockwise = false, rectangle = false): GdiRasterPath {
+	if (rectangle) {
+		return rectRasterPath(box, clockwise);
+	}
 	const f = boxFrame(box);
 	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch);
 	const map = frameMapper(box, f.l, f.t, f.r - f.l, f.b - f.t);
 	const pts: number[] = [];
 	for (let i = 0; i < q.length; i += 2) {
-		pts.push(...map(q[i], q[i + 1]));
+		pts.push(...map(q[i], clockwise ? f.t + f.b - q[i + 1] : q[i + 1]));
 	}
 	const path = new GdiRasterPath();
 	for (let c = 0; c < 4; c++) {
@@ -215,7 +240,7 @@ export function arcRasterPath(
 		pts.push(...map(bz[i], bz[i + 1]));
 	}
 	if (kind === 'arcto' && from) {
-		path.lineTo(from[0], from[1]);
+		path.continueAt(from[0], from[1]);
 		path.addBeziers(pts, false);
 	} else {
 		path.addBeziers(pts, true);

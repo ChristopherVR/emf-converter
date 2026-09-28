@@ -92,7 +92,7 @@ describe('SVG output without any canvas backend', () => {
 		['wmf-palette', 0],
 		['wmf-legacy', 0],
 		['wmf-pixels', 0.0001],
-		['wmf-shapes', 0.001],
+		['wmf-shapes', 0.0007],
 	] as const)('plays WMF %s into SVG exactly as Windows (the pure-JS raster mirror of the SVG)', async (name, max) => {
 		const { replayToSvgContext } = await import('./emf-converter');
 		const { SoftwareRasterContext } = await import('./software-raster');

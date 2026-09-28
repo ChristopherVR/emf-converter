@@ -739,21 +739,21 @@ const SMOOTHING_CASES: ParityCase[] = [
  * pen corners of RoundRect/Ellipse, one arc end pixel, and in the 0.96
  * scale case PS_INSIDEFRAME boxes one pixel short), `wmf-layout-rtl`
  * (mirrored lines rasterised after mirroring rather than before),
- * `wmf-nonplaceable*`/`wmf-pixels*` (single pixels of the same arc and
+ * `wmf-nonplaceable-viewport`/`wmf-pixels*` (single pixels of the same arc and
  * wide-pen machinery), `wmf-embedded-emf` (the EMF path's own wide-pen
  * residual).
  */
 const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', tolerance: 0, maxMismatch });
 
 const WMF_RECORD_CASES: ParityCase[] = [
-	wmf('wmf-shapes', 0.001), // measured 0.073%
-	wmf('wmf-shapes-twips', 0.001), // measured 0.073%
-	wmf('wmf-shapes-scaled', 0.006), // measured 0.484%
+	wmf('wmf-shapes', 0.0007), // measured 0.050%
+	wmf('wmf-shapes-twips', 0.0007), // measured 0.050%
+	wmf('wmf-shapes-scaled', 0.0055), // measured 0.475%
 	wmf('wmf-map-anisotropic'),
 	wmf('wmf-map-isotropic'),
 	wmf('wmf-map-text'),
 	wmf('wmf-map-metric'),
-	wmf('wmf-nonplaceable', 0.0001), // measured 0.002%
+	wmf('wmf-nonplaceable'),
 	wmf('wmf-nonplaceable-viewport', 0.0003), // measured 0.020%
 	wmf('wmf-placeable-origin'),
 	wmf('wmf-clip'),

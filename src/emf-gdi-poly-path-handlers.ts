@@ -42,7 +42,7 @@ import { emptyClipShape, rectsClipShape, type ClipShape } from './emf-clip-regio
 import { gdiCombineClip, RGN_MODE_OPS } from './emf-gdi-clip-records';
 import { gmapPoint } from './emf-gdi-coord';
 import { gdiPathRecorder, replayGdiPathCmds, type GdiPathCmd } from './emf-gdi-path-record';
-import { currentFix } from './emf-gdi-draw-shapes';
+import { continueFigure, currentFix } from './emf-gdi-draw-shapes';
 import { fixPoint, penIsCosmetic, penWidenOptions } from './emf-gdi-raster-shapes';
 import { paintGdiShape } from './emf-gdi-shape-paint';
 import {
@@ -139,9 +139,12 @@ function handlePoly(
 	};
 
 	if (inPath) {
+		if (isTo) {
+			continueFigure(rCtx);
+		}
 		build(gdiPathRecorder(rCtx));
 		rCtx.rasterPath ??= new GdiRasterPath();
-		buildRaster(rCtx.rasterPath, isTo && rCtx.rasterPath.figures.length === 0 ? currentFix(rCtx) : null);
+		buildRaster(rCtx.rasterPath, null);
 	} else {
 		const from = isTo ? currentFix(rCtx) : null;
 		const start = isTo ? gmapPoint(rCtx, state.curX, state.curY) : null;
@@ -165,10 +168,13 @@ function handlePoly(
 		});
 	}
 
-	if (count > 0) {
+	// Only the *To records move the current position (Polyline, Polygon and
+	// PolyBezier neither use nor update it).
+	if (isTo && count > 0) {
 		const [x, y] = readPt(count - 1);
 		state.curX = x;
 		state.curY = y;
+		rCtx.curFix = undefined;
 	}
 }
 
@@ -309,9 +315,11 @@ function handlePolyDraw(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, 
 
 	const startsWithMove = (typeAt(0) & ~PT_CLOSEFIGURE) === PT_MOVETO;
 	if (inPath) {
+		if (!startsWithMove) {
+			continueFigure(rCtx);
+		}
 		rCtx.rasterPath ??= new GdiRasterPath();
-		const fresh = rCtx.rasterPath.figures.length === 0;
-		walk(gdiPathRecorder(rCtx), rCtx.rasterPath, !startsWithMove && fresh ? currentFix(rCtx) : null, null);
+		walk(gdiPathRecorder(rCtx), rCtx.rasterPath, null, null);
 	} else {
 		const from = startsWithMove ? null : currentFix(rCtx);
 		const fromPx = startsWithMove ? null : gmapPoint(rCtx, state.curX, state.curY);
