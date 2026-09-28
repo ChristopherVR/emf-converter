@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.3.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.5) - 2026-09-28
+
+### Bug Fixes
+
+- Match GDI+ image effect algorithms to Windows output ([df5fe59](https://github.com/ChristopherVR/emf-converter/commit/df5fe5994d279a79f976b46c3073742b10738e96))
+- Record Windows effect fixtures with the right EmfType and update outstanding work ([6d716d6](https://github.com/ChristopherVR/emf-converter/commit/6d716d688af4874d1f1e70afd1a2420d8dee2092))
+
+### Testing
+
+- Add Windows GDI+ image effect fixtures ([b3c0890](https://github.com/ChristopherVR/emf-converter/commit/b3c0890e17f8d6b40ebf5f5d72013745474ad661))
+
 ## [4.3.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.4) - 2026-09-28
 
 ### Documentation
