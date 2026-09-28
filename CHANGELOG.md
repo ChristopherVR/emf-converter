@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.3.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.0) - 2026-09-28
+
+### Features
+
+- Apply EMR_SETCOLORADJUSTMENT to HALFTONE blits and box-filter HALFTONE ([9a59d5d](https://github.com/ChristopherVR/emf-converter/commit/9a59d5dd8a5ddfff9d5eb8014a5810630801a05c))
+
 ## [4.2.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.2.1) - 2026-09-28
 
 ### Bug Fixes
