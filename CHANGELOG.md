@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.2.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.2.0) - 2026-09-28
+
+### Features
+
+- Support nonuniform and skewed EMF+ pen transforms ([0ae5c6b](https://github.com/ChristopherVR/emf-converter/commit/0ae5c6b2e1ac09bd5f0803a32b04a5c2728d3d8e))
+- Apply EMF+ image effects to DrawImage ([2f21d93](https://github.com/ChristopherVR/emf-converter/commit/2f21d93d7ad43fb7266c408a14ef546f050ca3f2))
+
+### Bug Fixes
+
+- Skip the EMF fallback of dual-mode EMF+ files and keep the bounds origin under a mapping mode ([f5d892a](https://github.com/ChristopherVR/emf-converter/commit/f5d892ac39059f3914d5ae5cecc41c61c781b7ea))
+
+### Documentation
+
+- Replace the demo page with a VitePress site ([3e6506f](https://github.com/ChristopherVR/emf-converter/commit/3e6506fd8497686d4ba052333e7ed41769e7f868))
+- Sync the pen transform limitation with the README ([faf9bc4](https://github.com/ChristopherVR/emf-converter/commit/faf9bc4c456b570135979a90315c94a9d7c7fecf))
+
 ## [4.1.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.1.0) - 2026-09-27
 
 ### Features
