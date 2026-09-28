@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.3.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.3) - 2026-09-28
+
+### Bug Fixes
+
+- Match Windows' HALFTONE resampling and refit the colour adjustment ([2780238](https://github.com/ChristopherVR/emf-converter/commit/27802382e053dea0d842cab562ab0e9e983b7c1c))
+- Lay out EMF+ pen-transform dashes in world space and draw ArrowAnchor ([ce21dde](https://github.com/ChristopherVR/emf-converter/commit/ce21dde749b7ff67f4f6906bc9ceb4fabd5c2a6e))
+
+### Testing
+
+- Add Windows HALFTONE and pen transform fixtures ([bd7cff2](https://github.com/ChristopherVR/emf-converter/commit/bd7cff266f31c211044b3d1a937bf2a0fd5304cd))
+
 ## [4.3.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.2) - 2026-09-28
 
 ### Bug Fixes
