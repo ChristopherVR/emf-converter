@@ -128,6 +128,178 @@ describe('pen geometry', () => {
 	});
 });
 
+describe('nonuniform and skewed pen transforms', () => {
+	/** Strokes each path with `pen` in black on a white 100 x 100 canvas; returns each pixel's ink (0 to 1). */
+	async function strokeOnCanvas(
+		pen: EmfPlusPen,
+		paths: Array<(c: CanvasContext) => void>,
+		extra: Partial<EmfPlusReplayCtx> = {},
+	): Promise<(x: number, y: number) => number> {
+		const { createCanvas } = await import('@napi-rs/canvas');
+		const canvas = createCanvas(100, 100);
+		const ctx = canvas.getContext('2d') as unknown as CanvasContext;
+		ctx.fillStyle = '#fff';
+		ctx.fillRect(0, 0, 100, 100);
+		const rCtx = {
+			ctx,
+			worldTransform: [1, 0, 0, 1, 0, 0],
+			pageUnit: 2,
+			pageScale: 1,
+			dpiScale: 1,
+			objectTable: new Map(),
+			...extra,
+		} as unknown as EmfPlusReplayCtx;
+		for (const path of paths) {
+			strokePlusGeometry(rCtx, pen, path, null);
+		}
+		const data = ctx.getImageData!(0, 0, 100, 100).data;
+		return (x, y) => 1 - data[(y * 100 + x) * 4] / 255;
+	}
+
+	/** Total ink across column (or row) `at`: the stroke's thickness there, in pixels. */
+	function run(ink: (x: number, y: number) => number, axis: 'col' | 'row', at: number): number {
+		let n = 0;
+		for (let i = 0; i < 100; i++) {
+			n += axis === 'col' ? ink(at, i) : ink(i, at);
+		}
+		return n;
+	}
+
+	const horizontal = (c: CanvasContext): void => {
+		c.moveTo(10, 20);
+		c.lineTo(60, 20);
+	};
+	const vertical = (c: CanvasContext): void => {
+		c.moveTo(50, 40);
+		c.lineTo(50, 90);
+	};
+	const scaled: EmfPlusPen = { kind: 'plus-pen', color: '#000', width: 2, dashStyle: 0, transform: [4, 0, 0, 1, 0, 0] };
+
+	for (const [label, extra] of [
+		['aliased GDI+ raster', {}],
+		['antialiased GDI+ raster', { antiAlias: true }],
+		['Canvas stroke', { gdiAntialias: true }],
+	] as Array<[string, Partial<EmfPlusReplayCtx>]>) {
+		it(`widens a scale(4, 1) nib only horizontally (${label})`, async () => {
+			const ink = await strokeOnCanvas(scaled, [horizontal, vertical], extra);
+			// The nib is 8 wide and 2 tall: a horizontal line stays 2 pixels
+			// thick, a vertical one of the same pen is 4 times as wide.
+			const across = run(ink, 'col', 30);
+			const along = run(ink, 'row', 65);
+			expect(across).toBeCloseTo(2, 0);
+			expect(along).toBeCloseTo(8, 0);
+			expect(along / across).toBeCloseTo(4, 0);
+			// The path itself does not move: both strokes stay centred on it.
+			let cx = 0;
+			for (let x = 0; x < 100; x++) {
+				cx += x * ink(x, 65);
+			}
+			expect(Math.abs(cx / along + 0.5 - 50)).toBeLessThanOrEqual(0.5);
+		});
+	}
+
+	it('shears the nib of a skewed pen, slanting a flat line end', async () => {
+		// x' = x + y: the round nib becomes an ellipse sheared along x, so a
+		// vertical line is sqrt(2) times as wide, and its flat cap (square to
+		// the path in pen space) runs along (2, 1) in world space: the right
+		// edge of the stroke reaches 4 pixels further down than the left.
+		const pen: EmfPlusPen = { kind: 'plus-pen', color: '#000', width: 8, dashStyle: 0, transform: [1, 0, 1, 1, 0, 0] };
+		const ink = await strokeOnCanvas(pen, [(c) => {
+			c.moveTo(50, 20);
+			c.lineTo(50, 80);
+		}]);
+		const dark = (x: number, y: number): boolean => ink(x, y) > 0.5;
+		expect(Math.abs(run(ink, 'row', 50) - 8 * Math.SQRT2)).toBeLessThanOrEqual(1);
+		const bottom = (x: number): number => {
+			let y = 99;
+			while (y > 0 && !dark(x, y)) {
+				y--;
+			}
+			return y;
+		};
+		const top = (x: number): number => {
+			let y = 0;
+			while (y < 99 && !dark(x, y)) {
+				y++;
+			}
+			return y;
+		};
+		expect(Math.abs(bottom(54) - bottom(46) - 4)).toBeLessThanOrEqual(1);
+		expect(Math.abs(top(54) - top(46) - 4)).toBeLessThanOrEqual(1);
+		// A horizontal line keeps the nib's vertical extent: 8 pixels.
+		const flat = await strokeOnCanvas(pen, [horizontal]);
+		expect(run(flat, 'col', 35)).toBeCloseTo(8, 0);
+	});
+
+	it('scales dash lengths in pen space under a nonuniform nib', async () => {
+		// Dash 3 on, 1 off in pen widths (2): 8 pen-space units per period,
+		// which pen space stretches to 32 world pixels along x.
+		const pen: EmfPlusPen = { ...scaled, dashStyle: 1 };
+		const ink = await strokeOnCanvas(pen, [(c) => {
+			c.moveTo(0, 50);
+			c.lineTo(100, 50);
+		}], { gdiAntialias: true });
+		const starts: number[] = [];
+		for (let x = 1; x < 100; x++) {
+			if (ink(x, 50) > 0.5 && !(ink(x - 1, 50) > 0.5)) {
+				starts.push(x);
+			}
+		}
+		expect(starts).toEqual([32, 64, 96]);
+	});
+
+	it('writes an SVG stroke under world x nib with the unchanged path', async () => {
+		const { SvgContext } = await import('./svg-context');
+		const ctx = new SvgContext(100, 100);
+		const rCtx = { ctx, worldTransform: [1, 0, 0, 1, 0, 0], pageUnit: 2, pageScale: 1, dpiScale: 1, objectTable: new Map() } as unknown as EmfPlusReplayCtx;
+		strokePlusGeometry(rCtx, scaled, vertical, null);
+		const tree = await ctx.toTree();
+		const paths: Array<Record<string, string>> = [];
+		const walk = (n: { tag: string; attrs?: Record<string, string>; children?: unknown[] }): void => {
+			if (n.tag === 'path' && n.attrs?.stroke) {
+				paths.push(n.attrs);
+			}
+			(n.children as (typeof n)[] | undefined)?.forEach(walk);
+		};
+		walk(tree as never);
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toMatchObject({ transform: 'matrix(4 0 0 1 0 0)', 'stroke-width': '2', d: 'M12.5 40l0 50' });
+	});
+
+	it('fills the widened outline for a gradient pen in SVG, keeping the paint in world space', async () => {
+		const { SvgContext } = await import('./svg-context');
+		const ctx = new SvgContext(100, 100);
+		const rCtx = { ctx, worldTransform: [1, 0, 0, 1, 0, 0], pageUnit: 2, pageScale: 1, dpiScale: 1, objectTable: new Map() } as unknown as EmfPlusReplayCtx;
+		const gradient = ctx.createLinearGradient(0, 0, 100, 0);
+		gradient.addColorStop(0, '#000');
+		gradient.addColorStop(1, '#f00');
+		const fill = { kind: 'plus-brush', color: '#000' } as unknown as NonNullable<EmfPlusPen['brush']>;
+		const pen: EmfPlusPen = { ...scaled, brush: fill };
+		const spy = vi.spyOn(await import('./emf-plus-state-handlers'), 'brushPaint').mockReturnValue(gradient as unknown as CanvasGradient);
+		try {
+			strokePlusGeometry(rCtx, pen, vertical, null);
+		} finally {
+			spy.mockRestore();
+		}
+		const tree = await ctx.toTree();
+		const found: Array<Record<string, string>> = [];
+		const walk = (n: { tag: string; attrs?: Record<string, string>; children?: unknown[] }): void => {
+			if (n.tag === 'path' && n.attrs) {
+				found.push(n.attrs);
+			}
+			(n.children as (typeof n)[] | undefined)?.forEach(walk);
+		};
+		walk(tree as never);
+		const outline = found.find((a) => a.fill?.startsWith('url('));
+		expect(outline).toBeDefined();
+		expect(outline!.stroke).toBeUndefined();
+		expect(outline!.transform).toBeUndefined();
+		// The outline spans the nib's 8-pixel width about x = 50.
+		const xs = [...outline!.d.matchAll(/M([\d.]+)/g)].map((m) => Number(m[1]));
+		expect(Math.min(...xs)).toBeGreaterThanOrEqual(45.9);
+	});
+});
+
 describe('writeTextureColor (GDI+ texture brush sampling)', () => {
 	// 2x1 texture: black, white.
 	const tex = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]);

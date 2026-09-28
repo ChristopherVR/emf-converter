@@ -643,7 +643,12 @@ export interface EmfPlusPen {
 	 */
 	customStartCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
 	customEndCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
-	/** Pen transform (`PenDataTransform`), applied to the pen's width and shape. */
+	/**
+	 * Pen transform (`PenDataTransform`): maps the pen's nib (its round
+	 * cross-section) in world space, before the world transform; its linear
+	 * part scales, skews or rotates the nib and its translation has no effect
+	 * (see `emf-plus-stroke.ts`).
+	 */
 	transform?: TransformMatrix | null;
 	/**
 	 * The pen's brush: a solid colour is also in {@link color}; a texture or
