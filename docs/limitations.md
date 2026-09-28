@@ -10,7 +10,7 @@ Output is compared with images rendered by Windows. The exact per-fixture bounds
 
 ## Pen transforms
 
-EMF+ pen transforms support uniform scaling with rotation and translation. Non-uniform scaling and skew are not supported.
+Non-uniform and skewed EMF+ pen transforms are drawn with the transformed (elliptical or sheared) pen shape. Unlike uniform transforms, they have not yet been compared with Windows output. A pen transform that cannot be inverted is ignored.
 
 ## Text
 
