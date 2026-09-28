@@ -102,11 +102,11 @@ describe('colorAdjustmentMapper', () => {
 		expect(adjust({ flags: CA_NEGATIVE }, 0x10c0f0)).toBe(0xef3f0f);
 	});
 
-	it('raises each channel to its own gamma', () => {
-		const [r, g, b] = channels(adjust({ redGamma: 20000, greenGamma: 5000, blueGamma: 10000 }, 0x808080));
-		expect(r).toBe(Math.round(255 * (128 / 255) ** 2));
-		expect(g).toBe(Math.round(255 * (128 / 255) ** 0.5));
-		expect(b).toBe(128);
+	it('treats the gammas as the source encoding: alone they change nothing', () => {
+		expect(adjust({ redGamma: 20000, greenGamma: 5000, blueGamma: 10000 }, 0x808080)).toBe(0x808080);
+		// With contrast they decide where the channel sits on the L* curve.
+		const [r, g] = channels(adjust({ redGamma: 25000, contrast: 30 }, 0x808080));
+		expect(r).toBeLessThan(g);
 	});
 
 	it('stretches the reference black and white to the full range', () => {
@@ -116,33 +116,51 @@ describe('colorAdjustmentMapper', () => {
 		expect(adjust(ca, 0x808080)).toBe(0x808080);
 	});
 
-	it('scales grey about mid-grey for contrast and shifts it for brightness', () => {
+	it('scales L* about 50 for contrast and shifts it for brightness', () => {
+		// L* 50 is linear 0.184 (0x2f): contrast pivots there.
+		expect(adjust({ contrast: 100 }, 0x2f2f2f)).toBe(0x2f2f2f);
 		expect(adjust({ contrast: 100 }, 0xc0c0c0)).toBe(0xffffff);
-		expect(adjust({ contrast: -100 }, 0x303030)).toBe(0x808080);
-		expect(adjust({ brightness: 50 }, 0x404040)).toBe(0xa6a6a6); // + 0.4
-		expect(adjust({ brightness: -100 }, 0xcccccc)).toBe(0x000000);
+		expect(channels(adjust({ contrast: 100 }, 0x202020))[0]).toBeLessThan(0x20);
+		expect(channels(adjust({ contrast: -100 }, 0x101010))[0]).toBeGreaterThan(0x10);
+		expect(channels(adjust({ contrast: -100 }, 0xe0e0e0))[0]).toBeLessThan(0xe0);
+		expect(adjust({ brightness: 100 }, 0x000000)).toBe(0x8a8a8a); // L* 78.5
+		expect(adjust({ brightness: -100 }, 0xcccccc)).toBe(0x040404);
 	});
 
-	it('scales the colour differences for colorfulness, keeping luma', () => {
-		const grey = adjust({ colorfulness: -100 }, 0xff0000);
-		const [r, g, b] = channels(grey);
-		expect(r).toBe(g);
-		expect(g).toBe(b);
-		expect(r).toBe(Math.round(0.299 * 255));
+	it('matches the Windows grey ramp of the halftone fixtures within three levels', () => {
+		// emfrec-halftone-ramp-2x-ca: Windows' colour for each of the 32
+		// quantisation levels of a grey ramp (gamma 1.5, reference black /
+		// white 400 / 9600, contrast 30, brightness -20).
+		const ca = { redGamma: 15000, greenGamma: 15000, blueGamma: 15000, referenceBlack: 400, referenceWhite: 9600, contrast: 30, brightness: -20, colorfulness: 40, redGreenTint: 20 };
+		const windows = [0, 0, 0, 0, 0, 0, 0, 11, 21, 31, 43, 54, 68, 81, 95, 109, 125, 140, 155, 171, 189, 206, 223, 240, 255];
+		windows.forEach((w, n) => {
+			const v = Math.round((n * 255) / 31);
+			const [r, g, b] = channels(adjust(ca, v * 0x010101));
+			expect(r).toBe(g);
+			expect(g).toBe(b);
+			expect(Math.abs(r - w)).toBeLessThanOrEqual(3);
+		});
+	});
+
+	it('scales the chromaticity for colorfulness, keeping luminance', () => {
+		// -100: grey of the same luminance (BT.709 Y of red is 0.2126).
+		expect(adjust({ colorfulness: -100 }, 0xff0000)).toBe(0x363636);
 		const vivid = channels(adjust({ colorfulness: 50 }, 0xa06060));
 		expect(vivid[0]).toBeGreaterThan(0xa0);
 		expect(vivid[1]).toBeLessThan(0x60);
 		// Grey has no colour to scale.
 		expect(adjust({ colorfulness: 100 }, 0x606060)).toBe(0x606060);
+		// A dark saturated blue comes out bright, as on Windows (0000a3 for this input level).
+		expect(channels(adjust({ colorfulness: 40 }, 0x000021))[2]).toBeGreaterThan(0x40);
 	});
 
-	it('tints towards red for a positive RedGreenTint and towards green for a negative one', () => {
-		const red = channels(adjust({ redGreenTint: 50 }, 0x808080));
-		const green = channels(adjust({ redGreenTint: -50 }, 0x808080));
-		expect(red[0]).toBeGreaterThan(0x80);
-		expect(red[1]).toBeLessThan(0x80);
-		expect(green[0]).toBeLessThan(0x80);
-		expect(green[1]).toBeGreaterThan(0x80);
+	it('turns the hue for RedGreenTint, leaving grey alone', () => {
+		const warm = channels(adjust({ redGreenTint: 50 }, 0x20a040));
+		const cool = channels(adjust({ redGreenTint: -50 }, 0x20a040));
+		// A positive tint moves green towards red (Windows: 00ff00 -> 25ff00 at tint 20).
+		expect(warm[0]).toBeGreaterThan(cool[0]);
+		expect(warm[2]).toBeLessThan(cool[2]);
+		expect(adjust({ redGreenTint: 50 }, 0x808080)).toBe(0x808080);
 	});
 
 	it('lifts dark tones under CA_LOG_FILTER, keeping black and white', () => {
@@ -153,7 +171,7 @@ describe('colorAdjustmentMapper', () => {
 
 	it('approximates the Windows output of the emfrec-coloradjustment fixture', () => {
 		// Windows' (dithered, averaged) results for the fixture's pure source
-		// colours; the approximation is within 68 per channel (mostly far less).
+		// colours; the approximation is within 72 per channel (mostly far less).
 		const windows: Array<[number, number]> = [
 			[0xf0d010, 0x0022ff],
 			[0x9020b0, 0x98ff00],

@@ -23,7 +23,7 @@ import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } f
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { applyColorAdjustment } from './emf-gdi-color-adjust';
+import { applyColorAdjustment, colorAdjustRgb } from './emf-gdi-color-adjust';
 import { gdiDevicePixelX, gdiDevicePixelY, gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
 import { paletteEntries } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
@@ -99,7 +99,7 @@ export function patternOperand(rCtx: EmfGdiReplayCtx, brush: RealizedBrush): Rop
  * source extent mirrors the image on that axis, as GDI's StretchBlt does;
  * both negative cancel out. Every stretch mode resamples in JavaScript (see
  * `emf-gdi-stretch.ts`): the non-HALFTONE modes exactly like GDI, HALFTONE
- * with an area-averaging box filter.
+ * like Windows' halftone engine, which also applies the colour adjustment.
  */
 function drawSourceMapped(
 	target: CanvasContext,
@@ -113,7 +113,7 @@ function drawSourceMapped(
 	const dTop = Math.min(req.dy, req.dy + req.dh) - offsetY;
 	const px =
 		mode === HALFTONE
-			? stretchHalftone(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh)
+			? stretchHalftone(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, decoded.adjust)
 			: stretchGdi(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, mode);
 	if (px.width === 0 || px.height === 0) {
 		return;
@@ -132,14 +132,17 @@ function drawSourceMapped(
 /** A decoded source DIB (top-down RGBA pixels). */
 interface DecodedSource {
 	pixels: ImageData;
+	/** The DC's colour adjustment, for a HALFTONE StretchBlt / StretchDIBits. */
+	adjust?: (rgb: Int32Array) => void;
 }
 
 /**
  * Decodes the record's source DIB, resolving the source rect's origin. The
  * source of a StretchBlt / StretchDIBits (`req.stretch`) under the HALFTONE
- * stretch mode gets the DC's colour adjustment first
- * (`emf-gdi-color-adjust.ts`); BitBlt never goes through the halftone
- * engine, so it does not.
+ * stretch mode carries the DC's colour adjustment (`adjust`,
+ * `emf-gdi-color-adjust.ts`), which the halftone stretch applies to the
+ * source between its despeckle filter and resampling; BitBlt never goes
+ * through the halftone engine, so it has none.
  */
 function decodeSource(
 	rCtx: EmfGdiReplayCtx,
@@ -158,15 +161,14 @@ function decodeSource(
 	if (!image) {
 		return null;
 	}
-	if (req.stretch && rCtx.state.stretchBltMode === HALFTONE) {
-		applyColorAdjustment(image, rCtx.state.colorAdjustment);
-	}
+	const ca = rCtx.state.colorAdjustment;
+	const adjust = req.stretch && rCtx.state.stretchBltMode === HALFTONE && ca ? (rgb: Int32Array): void => colorAdjustRgb(rgb, ca) : undefined;
 	let { sy } = req;
 	if (req.dibOrigin === 'bottom-left' && rCtx.view.getInt32(req.source.bmi + 8, true) > 0) {
 		sy = image.height - sy - req.sh;
 	}
 	return {
-		decoded: { pixels: image },
+		decoded: { pixels: image, adjust },
 		req: { ...req, sy },
 	};
 }
@@ -408,6 +410,10 @@ function executeRotatedBlit(
 			return;
 		}
 		src = decoded.decoded.pixels;
+		if (decoded.decoded.adjust) {
+			// Sampled texel by texel, not through the halftone stretch.
+			applyColorAdjustment(src, rCtx.state.colorAdjustment);
+		}
 		srcX = decoded.req.sx;
 		srcY = decoded.req.sy;
 	}

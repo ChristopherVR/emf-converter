@@ -883,20 +883,46 @@ const EMF_RECORD_CASES: ParityCase[] = [
 ];
 
 /**
- * HALFTONE StretchBlt (`emfrec-coloradjustment*`): a 20x16 bitmap enlarged
- * 3x and reduced to 13x11, without and with an EMR_SETCOLORADJUSTMENT
- * (negative, gammas 2.0 / 1.5 / 2.5, contrast 40, brightness -30,
- * colorfulness 50, tint 20). The integer enlargement is exact (Windows
- * replicates pixels, as the box filter does); the residual is the
- * reduction, where Windows' halftone engine uses a narrower kernel and its
- * own colour mapping, and, with the adjustment, Windows' unpublished
- * adjustment formulas and dithering (see `emf-gdi-color-adjust.ts`).
- * Before the box filter and the adjustment: 7.716% (tolerance 0) and
- * 24.375% (tolerance 24).
+ * HALFTONE StretchBlt (`emf-gdi-stretch.ts`, `emf-gdi-color-adjust.ts`).
+ * `emfrec-coloradjustment*`: a 20x16 bitmap enlarged 3x and reduced to
+ * 13x11, without and with an EMR_SETCOLORADJUSTMENT (negative, gammas
+ * 2.0 / 1.5 / 2.5, contrast 40, brightness -30, colorfulness 50, tint 20).
+ * `emfrec-halftone-*`: a 64x32 grey/red/green/blue ramp and a 32x32
+ * checkerboard (1-pixel black/white over 2-pixel red/blue) at 2x, 0.5x and
+ * 1.37x, plain and under SetColorAdjustment (`-ca`: gamma 1.5, reference
+ * black / white 400 / 9600, contrast 30, brightness -20, colorfulness 40,
+ * tint 20).
+ *
+ * Without an adjustment every case is pixel-exact: nearest-pixel
+ * enlargement after Windows' despeckle filter, 16.16 fixed-point area
+ * averages rounded half up and then sharpened on reduction. Before (a
+ * box filter both ways; mismatch at tolerance 0): checker 2x 46.868%,
+ * 0.5x 27.527%, 1.37x 45.125%, ramp 0.5x 16.377%, 1.37x 35.353%,
+ * coloradjustment-off 1.048%; ramp 2x was already exact.
+ *
+ * With an adjustment the residual is Windows' unpublished colour model
+ * (fitted here in CIE L* and u'v') and its ordered dither over 32 levels
+ * per channel, which is not reproduced (mismatch at tolerance 24; before:
+ * checker 2x 63.486%, 0.5x 8.387%, 1.37x 49.762%, ramp 2x 50.126%, 0.5x
+ * 25.217%, 1.37x 43.622%, coloradjustment 6.644%).
  */
+const halftone = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
+const adjusted = (name: string, maxMismatch: number): ParityCase => ({ name, ext: 'emf', tolerance: 24, maxMismatch });
 const HALFTONE_CASES: ParityCase[] = [
-	{ name: 'emfrec-coloradjustment-off', ext: 'emf', tolerance: 0, maxMismatch: 0.015 }, // measured 1.048%
-	{ name: 'emfrec-coloradjustment', ext: 'emf', tolerance: 24, maxMismatch: 0.08 }, // measured 6.644%
+	halftone('emfrec-coloradjustment-off'), // measured 0% (1.048% before)
+	adjusted('emfrec-coloradjustment', 0.08), // measured 7.886% (6.644% before; mean channel error 2.48 -> 2.15)
+	halftone('emfrec-halftone-ramp-2x'),
+	halftone('emfrec-halftone-ramp-0p5x'),
+	halftone('emfrec-halftone-ramp-1p37x'),
+	halftone('emfrec-halftone-checker-2x'),
+	halftone('emfrec-halftone-checker-0p5x'),
+	halftone('emfrec-halftone-checker-1p37x'),
+	adjusted('emfrec-halftone-ramp-2x-ca', 0.17), // measured 15.132%
+	adjusted('emfrec-halftone-ramp-0p5x-ca', 0.105), // measured 9.275%
+	adjusted('emfrec-halftone-ramp-1p37x-ca', 0.15), // measured 13.140%
+	adjusted('emfrec-halftone-checker-2x-ca', 0), // measured 0%
+	adjusted('emfrec-halftone-checker-0p5x-ca', 0.06), // measured 5.054%
+	adjusted('emfrec-halftone-checker-1p37x-ca', 0), // measured 0%
 ];
 
 describe('GDI ground-truth parity', () => {
