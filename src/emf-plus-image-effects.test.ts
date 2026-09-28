@@ -12,10 +12,11 @@ import {
 import {
 	applyImageEffect,
 	applyImageEffectToRect,
-	boxRadiiForSigma,
+	blurKernel,
 	CurveAdjustment,
 	CurveChannel,
 	parseSerializableObject,
+	sharpenGain,
 	type EmfPlusImageEffect,
 } from './emf-plus-image-effects';
 import { decodePng } from './png-decoder';
@@ -103,16 +104,23 @@ describe('BrightnessContrast', () => {
 		]);
 	});
 
+	it('adds half the brightness before the contrast gain and half after', () => {
+		// Gain 100 / 60: (34 + 15 - 127.5) * 5 / 3 + 127.5 + 15 = 11.67 -> 12; 128 -> 168.33 -> 168.
+		expect(reds(apply(greyRow(34, 128), { kind: 'brightnessContrast', brightness: 30, contrast: 40 }))).toEqual([12, 168]);
+	});
+
 	it('leaves alpha alone', () => {
 		expect(apply(px([100, 100, 100, 77]), { kind: 'brightnessContrast', brightness: 10, contrast: 0 })[3]).toBe(77);
 	});
 });
 
 describe('ColorBalance', () => {
-	it('pushes each channel toward 255 or 0 by the given percentage', () => {
+	it('scales each channel by 1 + t / 100', () => {
 		const effect: EmfPlusImageEffect = { kind: 'colorBalance', cyanRed: 50, magentaGreen: -50, yellowBlue: 0 };
-		// Red 100 + 155 * 0.5 = 177.5 -> 178; green 100 * 0.5 = 50.
-		expect(apply(px([100, 100, 100, 255]), effect)).toEqual([178, 50, 100, 255]);
+		expect(apply(px([100, 100, 100, 255]), effect)).toEqual([150, 50, 100, 255]);
+		expect(apply(px([200, 16, 0, 255]), { kind: 'colorBalance', cyanRed: 60, magentaGreen: 60, yellowBlue: 60 })).toEqual([
+			255, 26, 0, 255,
+		]);
 	});
 });
 
@@ -124,37 +132,35 @@ describe('ColorCurve', () => {
 		intensity,
 	});
 
-	it('WhiteSaturation maps [0, t] onto [0, 255]', () => {
-		// 64 * 255 / 128 = 127.5 -> 128.
-		expect(reds(apply(greyRow(64, 200), curve(CurveAdjustment.WhiteSaturation, 128)))).toEqual([128, 255]);
+	it('WhiteSaturation maps [0, t] onto [0, 255] through the 23-point spline', () => {
+		// The spline through x * 255 / 128 dips a little below the line at 64 (127.5 -> 127).
+		expect(reds(apply(greyRow(64, 200), curve(CurveAdjustment.WhiteSaturation, 128)))).toEqual([127, 255]);
 	});
 
 	it('BlackSaturation maps [t, 255] onto [0, 255], on the chosen channel only', () => {
-		// (192 - 128) * 255 / 127 = 128.5 -> 129; green and blue untouched.
 		expect(apply(px([192, 192, 192, 255], [64, 0, 0, 255]), curve(CurveAdjustment.BlackSaturation, 128, CurveChannel.Red), 2)).toEqual(
 			[129, 192, 192, 255, 0, 0, 0, 255],
 		);
 	});
 
-	it('Exposure scales by 1 + t / 255 and Density by 1 - t / 255', () => {
-		expect(reds(apply(greyRow(100), curve(CurveAdjustment.Exposure, 255)))).toEqual([200]);
-		expect(reds(apply(greyRow(100), curve(CurveAdjustment.Density, 255)))).toEqual([0]);
-		expect(reds(apply(greyRow(100), curve(CurveAdjustment.Density, -51)))).toEqual([120]);
+	it('Exposure and Density both add t', () => {
+		expect(reds(apply(greyRow(0, 100, 200, 255), curve(CurveAdjustment.Exposure, 64)))).toEqual([64, 164, 255, 255]);
+		expect(reds(apply(greyRow(0, 100, 200), curve(CurveAdjustment.Density, -64)))).toEqual([0, 36, 136]);
 	});
 
-	it('Midtone is a gamma curve fixing black and white', () => {
-		// 255 * (64 / 255) ^ 0.5 = 127.75 -> 128.
-		expect(reds(apply(greyRow(0, 64, 255), curve(CurveAdjustment.Midtone, 100)))).toEqual([0, 128, 255]);
+	it('Midtone is a gamma curve fixing black and white (exponent 0.5 at +50, 2 at -50)', () => {
+		expect(reds(apply(greyRow(0, 64, 255), curve(CurveAdjustment.Midtone, 50)))).toEqual([0, 128, 255]);
+		expect(reds(apply(greyRow(0, 64, 255), curve(CurveAdjustment.Midtone, -50)))).toEqual([0, 16, 255]);
 	});
 
 	it('Highlight moves only values above 128, Shadow only values below', () => {
-		// The bump peaks mid-range: 191.5 is sin(pi/2), + 0.32 * 50 = 16.
-		expect(reds(apply(greyRow(64, 128, 191, 255), curve(CurveAdjustment.Highlight, 50)))).toEqual([64, 128, 207, 255]);
-		expect(reds(apply(greyRow(0, 64, 200), curve(CurveAdjustment.Shadow, -50)))).toEqual([0, 48, 200]);
+		expect(reds(apply(greyRow(64, 128, 191, 255), curve(CurveAdjustment.Highlight, 50)))).toEqual([64, 128, 225, 255]);
+		expect(reds(apply(greyRow(0, 64, 128, 200), curve(CurveAdjustment.Shadow, -50)))).toEqual([0, 30, 128, 200]);
 	});
 
-	it('Contrast matches BrightnessContrast', () => {
-		expect(reds(apply(greyRow(100), curve(CurveAdjustment.Contrast, 50)))).toEqual([73]);
+	it('Contrast is an S-curve about mid-grey, half as strong at 25 as at 50', () => {
+		expect(reds(apply(greyRow(0, 64, 128, 191, 255), curve(CurveAdjustment.Contrast, 50)))).toEqual([0, 27, 129, 228, 255]);
+		expect(reds(apply(greyRow(64, 191), curve(CurveAdjustment.Contrast, 25)))).toEqual([46, 209]);
 	});
 
 	it('is not applied for an unknown adjustment or channel', () => {
@@ -164,11 +170,17 @@ describe('ColorCurve', () => {
 });
 
 describe('Levels', () => {
-	it('stretches [shadow%, highlight%] onto [0, 255]', () => {
-		// White point 127.5: 64 -> 128.0, 200 -> 255.
-		expect(reds(apply(greyRow(64, 200), { kind: 'levels', highlight: 50, midtone: 0, shadow: 0 }))).toEqual([128, 255]);
-		// Black point 51: 51 -> 0, 153 -> 127.5 -> 128.
-		expect(reds(apply(greyRow(51, 153), { kind: 'levels', highlight: 100, midtone: 0, shadow: 20 }))).toEqual([0, 128]);
+	it('stretches [shadow%, highlight%] onto [0, 255], rounding halves down', () => {
+		// White point 127.5: 64 -> 128.0, 200 -> 255, 2 -> 4.
+		expect(reds(apply(greyRow(64, 200, 2), { kind: 'levels', highlight: 50, midtone: 0, shadow: 0 }))).toEqual([128, 255, 4]);
+		// Black point 51: 51 -> 0, 153 -> 127.5 -> 127.
+		expect(reds(apply(greyRow(51, 153), { kind: 'levels', highlight: 100, midtone: 0, shadow: 20 }))).toEqual([0, 127]);
+	});
+
+	it('raises to 1 / (1 + m / 50) for a positive midtone and 1 - m / 50 for a negative one', () => {
+		// 255 * (64 / 255) ^ 0.5 = 127.75 -> 128; 255 * (128 / 255) ^ 1.6 = 84.6 -> 85.
+		expect(reds(apply(greyRow(64, 128), { kind: 'levels', highlight: 100, midtone: 50, shadow: 0 }))).toEqual([128, 181]);
+		expect(reds(apply(greyRow(128), { kind: 'levels', highlight: 100, midtone: -30, shadow: 0 }))).toEqual([85]);
 	});
 
 	it('is the identity at its defaults', () => {
@@ -185,94 +197,129 @@ describe('HueSaturationLightness', () => {
 		lightness,
 	});
 
-	it('rotates hue counter-clockwise (red to green at +120)', () => {
-		expect(apply(px([255, 0, 0, 255]), hsl(120, 0, 0))).toEqual([0, 255, 0, 255]);
-		expect(apply(px([255, 0, 0, 255]), hsl(-120, 0, 0))).toEqual([0, 0, 255, 255]);
+	it('rotates hue counter-clockwise (red to green at +120), in integer HSL (full red has lightness 127)', () => {
+		expect(apply(px([255, 0, 0, 255]), hsl(120, 0, 0))).toEqual([0, 254, 0, 255]);
+		expect(apply(px([255, 0, 0, 255]), hsl(-120, 0, 0))).toEqual([0, 0, 254, 255]);
 	});
 
-	it('removes saturation at -100 and pushes lightness to white at +100', () => {
-		expect(apply(px([255, 0, 0, 255]), hsl(0, -100, 0))).toEqual([128, 128, 128, 255]);
+	it('removes saturation at -100 and moves lightness by 2.55 t levels', () => {
+		expect(apply(px([255, 0, 0, 255]), hsl(0, -100, 0))).toEqual([127, 127, 127, 255]);
 		expect(apply(px([255, 0, 0, 255]), hsl(0, 0, 100))).toEqual([255, 255, 255, 255]);
-		// Lightness -50 halves L: red at L 0.5 -> L 0.25 = (128, 0, 0).
-		expect(apply(px([255, 0, 0, 255]), hsl(0, 0, -50))).toEqual([128, 0, 0, 255]);
+		// Lightness 127 - 127.5 rounds to 0: black.
+		expect(apply(px([255, 0, 0, 255]), hsl(0, 0, -50))).toEqual([0, 0, 0, 255]);
+		// 0 + 127.5 and 128 + 127.5 round up.
+		expect(apply(px([0, 0, 0, 255], [128, 128, 128, 255]), hsl(0, 0, 50), 2)).toEqual([128, 128, 128, 255, 255, 255, 255, 255]);
+	});
+
+	it('scales saturation, keeping lightness', () => {
+		// Lightness 143, saturation 95 / 223 * 1.6: the minimum 66.7 rounds to 67, the maximum 286 - 67.
+		expect(apply(px([191, 96, 96, 255]), hsl(0, 60, 0))).toEqual([219, 67, 67, 255]);
+		// Lightness 16: the maximum 16 * (1 + 95 / 223) = 22.8 truncates to 22, the minimum 32 - 22.
+		expect(apply(px([191, 96, 96, 255]), hsl(0, 0, -50))).toEqual([22, 10, 10, 255]);
 	});
 });
 
 describe('Tint', () => {
-	it('adds the chroma of the hue, keeping luma', () => {
-		// Red chroma: (1, 0, 0) - 0.299 = (0.701, -0.299, -0.299) * 255.
-		expect(apply(px([128, 128, 128, 255]), { kind: 'tint', hue: 0, amount: 100 })).toEqual([255, 52, 52, 255]);
-		// Half the amount: 128 + 89.38 = 217.38, 128 - 38.12 = 89.88.
-		expect(apply(px([128, 128, 128, 255]), { kind: 'tint', hue: 0, amount: 50 })).toEqual([217, 90, 90, 255]);
+	const tint = (hue: number, amount: number): EmfPlusImageEffect => ({ kind: 'tint', hue, amount });
+
+	it('moves toward the luma plus the tint chroma scaled by the largest channel', () => {
+		// Grey 128, red: 128 + 128 * 0.985 * (0.7874, -0.2126, -0.2126) = (227.3, 101.2, 101.2).
+		expect(apply(px([128, 128, 128, 255]), tint(0, 100))).toEqual([227, 101, 101, 255]);
+		// Half the amount: half way there.
+		expect(apply(px([128, 128, 128, 255]), tint(0, 50))).toEqual([178, 115, 115, 255]);
 	});
 
-	it('adds the complementary colour for a negative amount', () => {
-		expect(apply(px([128, 128, 128, 255]), { kind: 'tint', hue: 0, amount: -50 })).toEqual([39, 166, 166, 255]);
+	it('replaces other hues by the tint hue at full amount, keeping their luma', () => {
+		// Red 200: luma 42.5 plus 200 * 0.985 * green's chroma (0.2848) on green, the rest negative.
+		expect(apply(px([200, 0, 0, 255]), tint(120, 100))).toEqual([0, 99, 0, 255]);
+		expect(apply(px([0, 0, 200, 255]), tint(120, 100))).toEqual([0, 71, 0, 255]);
+	});
+
+	it('strengthens the complementary colour for a negative amount', () => {
+		// Yellow at -50 makes grey bluer and pushes red away from yellow (blue rises).
+		expect(apply(px([128, 128, 128, 255]), tint(60, -50))).toEqual([123, 123, 186, 255]);
+		expect(apply(px([200, 0, 0, 255]), tint(60, -50))).toEqual([255, 0, 70, 255]);
+	});
+
+	it('leaves alpha alone and is the identity at amount 0', () => {
+		expect(apply(px([10, 20, 30, 77]), tint(0, 0))).toEqual([10, 20, 30, 77]);
 	});
 });
 
 describe('RedEyeCorrection', () => {
-	it('replaces a dominant red with the mean of green and blue inside the areas only', () => {
-		const src = px([200, 50, 60, 255], [50, 200, 60, 255], [200, 50, 60, 255]);
-		const effect: EmfPlusImageEffect = { kind: 'redEyeCorrection', areas: [{ left: 0, top: 0, right: 2, bottom: 1 }] };
-		expect(apply(src, effect, 3)).toEqual([55, 50, 60, 255, 50, 200, 60, 255, 200, 50, 60, 255]);
+	it('replaces a strong red with the mean of green and blue inside the areas only, leaving skin tones', () => {
+		const src = px([200, 50, 60, 255], [50, 200, 60, 255], [200, 50, 60, 255], [216, 168, 136, 255]);
+		const effect: EmfPlusImageEffect = { kind: 'redEyeCorrection', areas: [{ left: 0, top: 0, right: 2, bottom: 1 }, { left: 3, top: 0, right: 4, bottom: 1 }] };
+		expect(apply(src, effect, 4)).toEqual([55, 50, 60, 255, 50, 200, 60, 255, 200, 50, 60, 255, 216, 168, 136, 255]);
 	});
 });
 
 describe('Blur and Sharpen', () => {
-	// Standard deviation radius / 2 = sqrt(2 / 3): exactly one box of radius 1.
-	const oneBox = 2 * Math.sqrt(2 / 3);
-
-	it('splits sigma^2 over three boxes of radius k (variance k (k + 1) / 3)', () => {
-		expect(boxRadiiForSigma(0)).toEqual([0, 0, 0]);
-		expect(boxRadiiForSigma(Math.sqrt(2 / 3))).toEqual([1, 0, 0]);
-		expect(boxRadiiForSigma(Math.sqrt(2))).toEqual([1, 1, 1]);
-		expect(boxRadiiForSigma(Math.sqrt(5))).toEqual([2, 2, 1]);
+	it('uses a Gaussian of radius / 1.98 truncated at ceil(radius) taps', () => {
+		expect(Array.from(blurKernel(0))).toEqual([1]);
+		const k = Array.from(blurKernel(1));
+		expect(k).toHaveLength(3);
+		expect(k[0]).toBeCloseTo(0.1099, 4);
+		expect(k[1]).toBeCloseTo(0.7802, 4);
+		expect(blurKernel(2.5)).toHaveLength(7);
+		expect(Array.from(blurKernel(10)).reduce((a, b) => a + b)).toBeCloseTo(1, 12);
 	});
 
-	it('blurs an impulse into its box neighbours', () => {
-		expect(reds(apply(greyRow(0, 0, 255, 0, 0), { kind: 'blur', radius: oneBox, expandEdge: false }))).toEqual([
-			0, 85, 85, 85, 0,
+	it('blurs along rows, reflecting at the ends', () => {
+		expect(reds(apply(greyRow(255, 255, 0, 255, 255), { kind: 'blur', radius: 1, expandEdge: false }))).toEqual([
+			255, 227, 56, 227, 255,
+		]);
+		// An impulse at the left end is reflected: 0.78 * 255 + 2 * 0.11 * 0 on pixel 0.
+		expect(reds(apply(greyRow(0, 255, 255), { kind: 'blur', radius: 1, expandEdge: false }))).toEqual([56, 227, 255]);
+	});
+
+	it('blurs down the columns in the top row only', () => {
+		// Two columns of alternating rows: the top row mixes with the (reflected) row below, the others do not.
+		const src = greyRow(0, 0, 255, 255, 0, 0);
+		expect(reds(apply(src, { kind: 'blur', radius: 1, expandEdge: false }, 2, 3))).toEqual([56, 56, 255, 255, 0, 0]);
+	});
+
+	it('blurs straight colour and alpha independently', () => {
+		// The hidden red of a transparent pixel spreads, as it does in GDI+.
+		const out = apply(px([255, 0, 0, 0], [0, 0, 255, 255], [0, 0, 255, 255]), { kind: 'blur', radius: 1, expandEdge: false });
+		expect(out.slice(0, 8)).toEqual([199, 0, 56, 56, 28, 0, 227, 227]);
+	});
+
+	it('sharpens along rows with an unsharp mask against the 8-bit blur', () => {
+		// Gain 2 at radius 3, amount 100.
+		expect(sharpenGain(3, 100)).toBe(2);
+		expect(sharpenGain(1, 50)).toBeCloseTo(1 / 3, 12);
+		expect(sharpenGain(6, 30)).toBeCloseTo(5 / 32, 12);
+		expect(reds(apply(greyRow(64, 64, 64, 192, 192, 192), { kind: 'sharpen', radius: 3, amount: 100 }))).toEqual([
+			44, 26, 0, 255, 230, 212,
 		]);
 	});
 
-	it('keeps a uniform image and does not bleed transparent colour', () => {
-		const uniform = greyRow(90, 90, 90, 90);
-		expect(apply(uniform, { kind: 'blur', radius: 5, expandEdge: true })).toEqual(Array.from(uniform));
-		// A transparent red pixel next to opaque blue: the blur spreads alpha
-		// ((0 + 0 + 255) / 3 with the edge clamped), never the hidden red.
-		const out = apply(px([255, 0, 0, 0], [0, 0, 255, 255], [0, 0, 255, 255]), {
-			kind: 'blur',
-			radius: oneBox,
-			expandEdge: false,
-		});
-		expect(out.slice(0, 4)).toEqual([0, 0, 255, 85]);
-	});
-
-	it('sharpens with an unsharp mask', () => {
-		// Pixel 2: blur (64 + 64 + 192) / 3 = 106.67, 64 - 42.67 = 21.33 -> 21;
-		// pixel 3: blur 149.33, 192 + 42.67 = 234.67 -> 235.
-		expect(reds(apply(greyRow(64, 64, 64, 192, 192, 192), { kind: 'sharpen', radius: oneBox, amount: 100 }))).toEqual([
-			64, 64, 21, 235, 192, 192,
-		]);
+	it('raises alpha to the largest colour channel when sharpening', () => {
+		expect(apply(px([48, 80, 208, 128]), { kind: 'sharpen', radius: 2, amount: 0 })).toEqual([48, 80, 208, 208]);
 	});
 });
 
 describe('applyImageEffectToRect', () => {
-	const oneBox = 2 * Math.sqrt(2 / 3);
-	const blur = (expandEdge: boolean, radius = oneBox): EmfPlusImageEffect => ({ kind: 'blur', radius, expandEdge });
+	const blur = (expandEdge: boolean, radius = 1): EmfPlusImageEffect => ({ kind: 'blur', radius, expandEdge });
 	const rect = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
 
 	it('effects only the source rectangle, so pixels outside it do not bleed in', () => {
 		const src = greyRow(255, 0, 0, 0, 0);
 		// The whole image: the bright pixel spreads into pixel 1.
-		expect(reds(apply(src, blur(false)))[1]).toBe(85);
-		const region = applyImageEffectToRect(src, 5, 1, blur(false), rect(1, 0, 4, 1))!;
-		expect([region.x, region.y, region.width, region.height, region.pad]).toEqual([1, 0, 4, 1, 0]);
-		expect(reds(Array.from(region.rgba))).toEqual([0, 0, 0, 0]);
-		const sharpen: EmfPlusImageEffect = { kind: 'sharpen', radius: oneBox, amount: 100 };
+		expect(reds(apply(src, blur(false)))[1]).toBe(28);
+		const region = applyImageEffectToRect(src, 5, 1, blur(false), rect(1, 0, 3, 1))!;
+		expect([region.x, region.y, region.width, region.height]).toEqual([1, 0, 3, 1]);
+		expect(reds(Array.from(region.rgba))).toEqual([0, 0, 0]);
+		const sharpen: EmfPlusImageEffect = { kind: 'sharpen', radius: 1, amount: 100 };
 		const sharpened = applyImageEffectToRect(greyRow(255, 64, 64, 64), 4, 1, sharpen, rect(1, 0, 3, 1))!;
 		expect(reds(Array.from(sharpened.rgba))).toEqual([64, 64, 64]);
+	});
+
+	it('reads one column and row past the rectangle, as GDI+ does', () => {
+		// The rectangle is pixels 0..1; pixel 2 is still read (it darkens pixel 1), pixel 3 is not.
+		const region = applyImageEffectToRect(greyRow(255, 255, 0, 0), 4, 1, blur(false), rect(0, 0, 2, 1))!;
+		expect([region.width, reds(Array.from(region.rgba))]).toEqual([2, [255, 227]]);
 	});
 
 	it('rounds a fractional rectangle outward and clamps it to the image', () => {
@@ -282,22 +329,16 @@ describe('applyImageEffectToRect', () => {
 		expect(applyImageEffectToRect(greyRow(1, 2), 2, 1, blur(false), rect(5, 0, 2, 1))).toBeNull();
 	});
 
-	it('grows an expandEdge blur by the radius on every side, blurring transparency in', () => {
+	it('blurs transparency in at the edges for expandEdge, but keeps the rectangle', () => {
 		const src = px(...new Array(9).fill([200, 100, 50, 255]));
 		const plain = applyImageEffectToRect(src, 3, 3, blur(false, 2), rect(0, 0, 3, 3))!;
-		expect([plain.width, plain.height, plain.pad]).toEqual([3, 3, 0]);
 		expect(Array.from(plain.rgba)).toEqual(Array.from(src));
-		const grown = applyImageEffectToRect(src, 3, 3, blur(true, 1.5), rect(0, 0, 3, 3))!;
-		expect([grown.x, grown.y, grown.width, grown.height, grown.pad]).toEqual([-2, -2, 7, 7, 2]);
-		const at = (x: number, y: number): number[] => Array.from(grown.rgba.slice((y * 7 + x) * 4, (y * 7 + x) * 4 + 4));
-		// The halo beyond the original pixels is partly opaque, in the image's own colour.
-		const halo = at(1, 3);
-		expect(halo[3]).toBeGreaterThan(0);
-		expect(halo[3]).toBeLessThan(255);
-		expect(halo.slice(0, 3)).toEqual([200, 100, 50]);
-		// Alpha falls off away from the image.
-		expect(at(0, 3)[3]).toBeLessThan(halo[3]);
-		expect(at(3, 3)[3]).toBeGreaterThan(halo[3]);
+		const grown = applyImageEffectToRect(src, 3, 3, blur(true, 1), rect(0, 0, 3, 3))!;
+		expect([grown.x, grown.y, grown.width, grown.height]).toEqual([0, 0, 3, 3]);
+		// Every channel fades together toward the transparent edge (straight colour is blurred too).
+		const edge = Array.from(grown.rgba.slice(0, 4));
+		expect(edge).toEqual([178, 89, 45, 227]);
+		expect(Array.from(grown.rgba.slice(4, 8))).toEqual([200, 100, 50, 255]);
 	});
 
 	it('moves red-eye areas into the cropped region', () => {
@@ -413,23 +454,23 @@ describe('DrawImagePoints with a blur effect', () => {
 	const pixel = (img: { width: number; data: Uint8ClampedArray }, x: number, y: number): number[] =>
 		Array.from(img.data.slice((y * img.width + x) * 4, (y * img.width + x) * 4 + 4));
 
-	it('extends an expandEdge blur beyond the image in PNG output, and keeps it inside otherwise', async () => {
+	it('draws no halo for an expandEdge blur in PNG output: the edges fade instead', async () => {
 		const plain = await renderPixels(fixtureBuffer(FIXTURE));
 		const grown = await renderPixels(withEffect(FIXTURE, blurObject(4, true)));
 		const kept = await renderPixels(withEffect(FIXTURE, blurObject(4, false)));
-		// Three device pixels left of the image (the halo reaches 4 * 2.6).
-		expect(pixel(plain, 1, 22)).toEqual([255, 255, 255, 255]);
-		expect(pixel(grown, 1, 22)).not.toEqual(pixel(plain, 1, 22));
-		expect(pixel(kept, 1, 22)).toEqual(pixel(plain, 1, 22));
-		// Beyond the halo nothing changes.
-		expect(pixel(grown, 1, 60)).toEqual(pixel(plain, 1, 60));
-		// The original pixels stay in place: away from the edges both blurs agree.
+		// Outside the image nothing is drawn, expanded or not (GDI+ draws no halo).
 		for (const [x, y] of [
-			[28, 20],
-			[32, 24],
+			[1, 22],
+			[2, 10],
+			[1, 60],
 		]) {
-			pixel(grown, x, y).forEach((v, c) => expect(Math.abs(v - pixel(kept, x, y)[c])).toBeLessThanOrEqual(2));
+			expect(pixel(grown, x, y)).toEqual(pixel(plain, x, y));
+			expect(pixel(kept, x, y)).toEqual(pixel(plain, x, y));
 		}
+		// At the image's left edge the expanded blur mixes in transparency, so it differs from the plain blur.
+		expect(pixel(grown, 5, 22)).not.toEqual(pixel(kept, 5, 22));
+		// Away from the left and right edges the rows blur alike.
+		pixel(grown, 30, 22).forEach((v, c) => expect(Math.abs(v - pixel(kept, 30, 22)[c])).toBeLessThanOrEqual(2));
 		let inside = 0;
 		for (let y = 5; y < 41; y++) {
 			for (let x = 5; x < 55; x++) {
@@ -441,14 +482,15 @@ describe('DrawImagePoints with a blur effect', () => {
 		expect(inside).toBeGreaterThan(0);
 	});
 
-	it('embeds the grown bitmap in SVG output', async () => {
+	it('embeds the effected bitmap at the image size in SVG output', async () => {
 		const [grown] = await svgImages((await convertMetafileToSvg(withEffect(FIXTURE, blurObject(4, true))))!);
 		const [kept] = await svgImages((await convertMetafileToSvg(withEffect(FIXTURE, blurObject(4, false))))!);
-		expect([grown.width, grown.height]).toEqual([28, 24]);
+		expect([grown.width, grown.height]).toEqual([20, 16]);
 		expect([kept.width, kept.height]).toEqual([20, 16]);
-		// The halo row and column are partly transparent.
-		expect(grown.data[(2 * 28 + 2) * 4 + 3]).toBeGreaterThan(0);
-		expect(grown.data[(2 * 28 + 2) * 4 + 3]).toBeLessThan(255);
+		// The expanded blur's edge column is partly transparent; the plain blur's is opaque.
+		expect(grown.data[(8 * 20 + 0) * 4 + 3]).toBeGreaterThan(0);
+		expect(grown.data[(8 * 20 + 0) * 4 + 3]).toBeLessThan(255);
+		expect(kept.data[(8 * 20 + 0) * 4 + 3]).toBe(255);
 	});
 
 	it('blurs only the source rectangle', async () => {
@@ -457,13 +499,17 @@ describe('DrawImagePoints with a blur effect', () => {
 			(await convertMetafileToSvg(withEffect(FIXTURE, blurObject(4, false), true, [0, 0, 10, 16])))!,
 		);
 		expect([cropped.width, cropped.height]).toEqual([10, 16]);
-		// The expected pixels: the left 10 columns cut out first, then blurred.
-		const left = new Uint8ClampedArray(10 * 16 * 4);
+		// The expected pixels: the left 10 columns plus the one GDI+ also reads cut out, blurred, then cut to 10.
+		const left = new Uint8ClampedArray(11 * 16 * 4);
 		for (let y = 0; y < 16; y++) {
-			left.set(original.data.subarray(y * 20 * 4, (y * 20 + 10) * 4), y * 10 * 4);
+			left.set(original.data.subarray(y * 20 * 4, (y * 20 + 11) * 4), y * 11 * 4);
 		}
-		const expected = applyImageEffect(left, 10, 16, { kind: 'blur', radius: 4, expandEdge: false })!;
-		expect(Array.from(cropped.data)).toEqual(Array.from(expected));
+		const blurred = applyImageEffect(left, 11, 16, { kind: 'blur', radius: 4, expandEdge: false })!;
+		const expected: number[] = [];
+		for (let y = 0; y < 16; y++) {
+			expected.push(...blurred.slice(y * 11 * 4, (y * 11 + 10) * 4));
+		}
+		expect(Array.from(cropped.data)).toEqual(expected);
 		// Blurring the whole image would have pulled the right half into column 9.
 		const whole = applyImageEffect(original.data, 20, 16, { kind: 'blur', radius: 4, expandEdge: false })!;
 		const column9 = (d: Uint8ClampedArray, w: number): number[] =>

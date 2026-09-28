@@ -10,24 +10,30 @@
  * resampled onto the destination, so every output path (PNG, SVG and the
  * SVG raster mirror) sees the same effected pixels.
  *
- * MS-EMFPLUS specifies each effect's parameters but not its algorithm, and
- * the GDI+ implementation has not been measured for this module, so:
+ * MS-EMFPLUS specifies each effect's parameters but not its algorithm. The
+ * algorithms here are measured against GDI+ itself: when GDI+ records a
+ * `DrawImage` with an effect it also writes the bitmap it effected, drawn
+ * by a plain `DrawImagePoints` right after the effect draw (see
+ * `scripts/gdi-fixtures`, `plus-effect-*`), so every source pixel has
+ * GDI+'s own result next to it (`emf-plus-image-effects.fixture.test.ts`).
+ * Against those bitmaps:
  *
- * - `ColorMatrix` and `ColorLookupTable` follow the GDI+ `ColorMatrix` /
- *   lookup-table definitions exactly (up to rounding).
- * - `ColorCurve` WhiteSaturation / BlackSaturation and `Levels` highlight /
- *   shadow follow the linear mappings the GDI+ documentation describes.
- * - Everything else (brightness, contrast, colour balance, the other curve
- *   adjustments, hue/saturation/lightness, tint, blur, sharpen, red-eye) is
- *   a reasonable formula matching the documented direction and range of
- *   each parameter; parity with GDI+ is unverified.
+ * - `ColorMatrix`, `ColorLookupTable`, `BrightnessContrast`, `ColorBalance`,
+ *   `Levels` and `Sharpen` are exact.
+ * - `Blur` is within one level (float rounding). GDI+ blurs rows only, plus
+ *   the top row down its columns ({@link applyBlur}).
+ * - `ColorCurve` is a natural cubic spline through 23 control points
+ *   ({@link curveAdjustmentLut}): exact for Exposure, Density, Midtone and
+ *   BlackSaturation, within one level for the rest.
+ * - `HueSaturationLightness` works in GDI+'s integer HSL; GDI+'s hue
+ *   rounding is only partly reproduced, so a hue rotation is a few levels
+ *   off on some colours.
+ * - `Tint` is within two levels on nearly every pixel.
+ * - `RedEyeCorrection` remains an approximation.
  *
  * All operations take straight (un-premultiplied) top-down RGBA and return
  * a new buffer; the input is never modified. A draw applies the effect to
- * its source rectangle only ({@link applyImageEffectToRect}), so pixels
- * outside it never bleed in, and a blur with `expandEdge` grows that
- * rectangle by the blur radius on every side, as GDI+'s
- * `Bitmap::ApplyEffect` grows the bitmap.
+ * its source rectangle only ({@link applyImageEffectToRect}).
  *
  * @module emf-plus-image-effects
  */
@@ -106,11 +112,19 @@ export function readGuid(view: DataView, off: number): string {
 
 const clamp = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
 
+/** Size of a ColorCurveParams object (three 32-bit values). */
+const COLOR_CURVE_PARAMS_SIZE = 12;
+
 /**
  * Parses an `EmfPlusSerializableObject` record's data (ObjectGUID, a 32-bit
  * BufferSize, then the parameter object). Returns `null` for an unknown
  * GUID or a truncated buffer. Parameters are clamped to their documented
  * ranges.
+ *
+ * GDI+ serialises a ColorCurve effect under the ColorLookupTable GUID
+ * (with its own 12-byte ColorCurveParams). Its own playback then fails to
+ * read the effect and draws the image without it, so such an object is
+ * rejected here too (`null`), and the draw is plain, as on Windows.
  */
 export function parseSerializableObject(view: DataView, dataOff: number, dataSize: number): EmfPlusImageEffect | null {
 	if (dataSize < 20) {
@@ -138,7 +152,7 @@ export function parseSerializableObject(view: DataView, dataOff: number, dataSiz
 				? { kind, cyanRed: i32(0, -100, 100), magentaGreen: i32(1, -100, 100), yellowBlue: i32(2, -100, 100) }
 				: null;
 		case 'colorCurve':
-			return need(12)
+			return need(COLOR_CURVE_PARAMS_SIZE)
 				? {
 						kind,
 						adjustment: view.getInt32(p, true),
@@ -202,98 +216,159 @@ export function parseSerializableObject(view: DataView, dataOff: number, dataSiz
 // Per-channel tone curves
 // ---------------------------------------------------------------------------
 
-/** A 256-entry curve built from `f`, rounded and clamped to 0..255. */
-function buildLut(f: (v: number) => number): Uint8Array {
+/** Rounds halves down (`2.5` to `2`), as GDI+'s Levels table does. */
+const roundHalfDown = (v: number): number => Math.ceil(v - 0.5);
+
+/** A 256-entry curve built from `f`, rounded (`round`, default half up) and clamped to 0..255. */
+function buildLut(f: (v: number) => number, round: (v: number) => number = Math.round): Uint8Array {
 	const lut = new Uint8Array(256);
 	for (let v = 0; v < 256; v++) {
-		lut[v] = clamp(Math.round(f(v)), 0, 255);
+		lut[v] = clamp(round(f(v)), 0, 255);
 	}
 	return lut;
 }
 
 /**
- * Contrast about mid-grey: a gain of `(100 + c) / 100` below zero (-100
- * flattens to grey) and `100 / (100 - c)` above (100 thresholds at 50%).
+ * The midtone exponent GDI+'s Levels and ColorCurve Midtone use: `1 - t / 50`
+ * darkening (t < 0, 2 at -50) and its reciprocal `1 / (1 + t / 50)`
+ * lightening (0.5 at 50).
  */
-function contrastCurve(c: number): (v: number) => number {
-	const gain = c >= 100 ? 1e6 : c >= 0 ? 100 / (100 - c) : (100 + c) / 100;
-	return (v) => (v - 127.5) * gain + 127.5;
-}
-
-/** Pushes a channel toward 255 (`t > 0`) or toward 0 (`t < 0`) by the fraction `|t| / 100`. */
-function balanceCurve(t: number): (v: number) => number {
-	const f = t / 100;
-	return (v) => (f >= 0 ? v + (255 - v) * f : v * (1 + f));
-}
-
-/** Midtone gamma: positive lightens (exponent `2^(-t/100)`, 0.5 at 100), negative darkens. */
-function midtoneCurve(t: number): (v: number) => number {
-	const gamma = 2 ** (-t / 100);
-	return (v) => 255 * (v / 255) ** gamma;
+function midtoneGamma(t: number): number {
+	return t >= 0 ? 1 / (1 + t / 50) : 1 - t / 50;
 }
 
 /**
- * The tone curve of a `ColorCurve` adjustment (MS-EMFPLUS 2.1.1.7):
+ * Brightness/contrast (MS-EMFPLUS 2.2.3.2): contrast is a gain about 127.5,
+ * `100 / (100 - c)` for c > 0 and `(100 + c) / 100` for c < 0; brightness is
+ * added half before the gain and half after, so it is scaled by
+ * `(1 + gain) / 2`.
+ */
+export function brightnessContrastLut(brightness: number, contrast: number): Uint8Array {
+	const gain = contrast >= 100 ? 1e6 : contrast >= 0 ? 100 / (100 - contrast) : (100 + contrast) / 100;
+	const half = brightness / 2;
+	return buildLut((v) => (v + half - 127.5) * gain + 127.5 + half);
+}
+
+/** Colour balance (MS-EMFPLUS 2.2.3.3): each channel scaled by `1 + t / 100`. */
+function balanceLut(t: number): Uint8Array {
+	return buildLut((v) => v * (1 + t / 100));
+}
+
+/**
+ * Natural cubic spline through `ys` at x = k * 255 / (ys.length - 1),
+ * sampled at 0..255, rounded and clamped. GDI+ builds every ColorCurve
+ * table this way, from 23 control points.
+ */
+function splineLut(ys: number[]): Uint8Array {
+	const n = ys.length;
+	const h = 255 / (n - 1);
+	// Second derivatives M (natural ends: M[0] = M[n-1] = 0), uniform spacing.
+	const m = new Float64Array(n);
+	const c = new Float64Array(n);
+	const d = new Float64Array(n);
+	for (let i = 1; i < n - 1; i++) {
+		const rhs = (6 * (ys[i + 1] - 2 * ys[i] + ys[i - 1])) / (h * h);
+		const den = 4 - c[i - 1];
+		c[i] = 1 / den;
+		d[i] = (rhs - d[i - 1]) / den;
+	}
+	for (let i = n - 2; i >= 1; i--) {
+		m[i] = d[i] - c[i] * m[i + 1];
+	}
+	return buildLut((v) => {
+		const i = Math.min(n - 2, Math.floor(v / h));
+		const b = (v - i * h) / h;
+		const a = 1 - b;
+		return a * ys[i] + b * ys[i + 1] + (((a * a * a - a) * m[i] + (b * b * b - b) * m[i + 1]) * h * h) / 6;
+	});
+}
+
+/** Control points of the ColorCurve splines: x = k * 255 / 22. */
+const CURVE_POINTS = 23;
+const CURVE_X = Array.from({ length: CURVE_POINTS }, (_, k) => (k * 255) / (CURVE_POINTS - 1));
+
+/**
+ * GDI+'s control-point values for Contrast, Highlight and Shadow at
+ * intensity +50 and -50 (`+` / `-`), measured from GDI+'s own tables. Other
+ * intensities scale each point's displacement from the diagonal by
+ * `|t| / 50`.
+ */
+const CURVE_TABLES: Record<string, number[]> = {
+	'contrast+': [0, 3.8, 8, 12.2, 17.4, 23.5, 31.1, 40.2, 53, 70.2, 94.5, 127.5, 160.5, 184.8, 202, 214.8, 223.9, 231.5, 237.6, 242.8, 247, 251.2, 255],
+	'contrast-': [0, 33.1, 57.2, 74.7, 87.2, 96.6, 103.9, 109.8, 115.3, 119.6, 123.7, 127.5, 131.3, 135.4, 139.7, 145.2, 151.1, 158.4, 167.8, 180.3, 197.8, 221.9, 255],
+	'highlight+': [0, 11.6, 23.2, 34.8, 46.4, 58, 69.6, 81.1, 92.7, 104.3, 116, 127.6, 142.3, 160.6, 186.4, 208, 220.6, 229.4, 236.2, 242, 246.6, 251, 255],
+	'highlight-': [0, 11.6, 23.2, 34.8, 46.4, 58, 69.5, 81.1, 92.7, 104.4, 115.9, 127.5, 136.7, 144.9, 151.4, 157.1, 161.8, 167.2, 174.3, 185.3, 200.9, 223.7, 255],
+	'shadow+': [0, 31.3, 54, 70, 82.5, 92.3, 99.5, 104.8, 109.5, 115, 121.3, 127.7, 139.2, 150.6, 162.3, 173.8, 185.5, 197, 208.6, 220.2, 231.8, 243.4, 255],
+	'shadow-': [0, 4, 8.4, 13, 18.7, 25.7, 34.4, 45, 58.4, 80, 105.8, 127.5, 139.2, 150.7, 162.3, 173.9, 185.4, 197, 208.6, 220.2, 231.8, 243.4, 255],
+};
+
+/**
+ * The tone curve of a `ColorCurve` adjustment (MS-EMFPLUS 2.1.1.7): a
+ * natural cubic spline through 23 control points (see {@link splineLut}),
+ * each clamped to 0..255:
  *
- * - Exposure (-255..255): multiplies by `1 + t / 255`; Density (-255..255)
- *   is the same with the sign flipped (more density, darker).
- * - Contrast (-100..100): as BrightnessContrast's contrast.
- * - Highlight / Shadow (-100..100): a half-sine bump of up to `0.32 * t`
- *   levels over the channel values above / below 128, leaving the rest.
- * - Midtone (-100..100): a gamma curve, positive lightening.
- * - WhiteSaturation (0..255): `[0, t]` maps linearly onto `[0, 255]`, as
- *   the GDI+ documentation defines it; BlackSaturation: `[t, 255]` does.
+ * - Exposure and Density (-255..255): `x + t` (both brighten for t > 0;
+ *   Exposure rounds x to a whole level first, halves down).
+ * - Contrast, Highlight, Shadow (-100..100): GDI+'s measured points at
+ *   +/-50 ({@link CURVE_TABLES}), the displacement scaled by `|t| / 50`.
+ * - Midtone (-100..100): `255 (x / 255)^gamma` ({@link midtoneGamma}).
+ * - WhiteSaturation (0..255): `[0, t]` stretched onto `[0, 255]`;
+ *   BlackSaturation: `[t, 255]` onto `[0, 255]`.
  *
  * Returns `null` for an unknown adjustment.
  */
 export function curveAdjustmentLut(adjustment: number, intensity: number): Uint8Array | null {
 	const t = intensity;
+	let ys: number[];
 	switch (adjustment) {
 		case CurveAdjustment.Exposure:
-			return buildLut((v) => v * (1 + t / 255));
+			// Exposure offsets the control point's x rounded to a whole level (halves down).
+			ys = CURVE_X.map((x) => roundHalfDown(x) + t);
+			break;
 		case CurveAdjustment.Density:
-			return buildLut((v) => v * (1 - t / 255));
+			ys = CURVE_X.map((x) => x + t);
+			break;
 		case CurveAdjustment.Contrast:
-			return buildLut(contrastCurve(clamp(t, -100, 100)));
 		case CurveAdjustment.Highlight:
 		case CurveAdjustment.Shadow: {
-			const high = adjustment === CurveAdjustment.Highlight;
-			const amp = clamp(t, -100, 100) * 0.32;
-			return buildLut((v) => {
-				const inside = high ? v > 128 : v < 128;
-				if (!inside) {
-					return v;
-				}
-				const u = high ? (v - 128) / 127 : v / 128;
-				return v + amp * Math.sin(Math.PI * u);
-			});
+			const c = clamp(t, -100, 100);
+			const name = ['contrast', 'highlight', 'shadow'][adjustment - CurveAdjustment.Contrast] + (c >= 0 ? '+' : '-');
+			const table = CURVE_TABLES[name];
+			ys = CURVE_X.map((x, k) => x + (Math.abs(c) / 50) * (table[k] - x));
+			break;
 		}
-		case CurveAdjustment.Midtone:
-			return buildLut(midtoneCurve(clamp(t, -100, 100)));
+		case CurveAdjustment.Midtone: {
+			const g = midtoneGamma(clamp(t, -100, 100));
+			ys = CURVE_X.map((x) => 255 * (x / 255) ** g);
+			break;
+		}
 		case CurveAdjustment.WhiteSaturation: {
 			const w = Math.max(1, clamp(t, 0, 255));
-			return buildLut((v) => (v * 255) / w);
+			ys = CURVE_X.map((x) => (x * 255) / w);
+			break;
 		}
 		case CurveAdjustment.BlackSaturation: {
 			const b = Math.min(254, clamp(t, 0, 255));
-			return buildLut((v) => ((v - b) * 255) / (255 - b));
+			ys = CURVE_X.map((x) => ((x - b) * 255) / (255 - b));
+			break;
 		}
 		default:
 			return null;
 	}
+	return splineLut(ys.map((y) => clamp(y, 0, 255)));
 }
 
 /**
- * Levels (MS-EMFPLUS 2.2.3.8): channel values at or above `highlight`% of
- * full intensity become 255 and those at or below `shadow`% become 0, the
- * range between stretched linearly (the GDI+ documentation's definition),
- * then a midtone gamma (positive lightens).
+ * Levels (MS-EMFPLUS 2.2.3.8): channel values at or below `shadow`% of full
+ * intensity become 0 and those at or above `highlight`% become 255, the
+ * range between stretched linearly and raised to the midtone exponent
+ * ({@link midtoneGamma}); halves round down.
  */
 export function levelsLut(highlight: number, midtone: number, shadow: number): Uint8Array {
 	const black = (shadow / 100) * 255;
 	const white = Math.max(black + 1, (highlight / 100) * 255);
-	const gamma = midtoneCurve(midtone);
-	return buildLut((v) => gamma(clamp((v - black) / (white - black), 0, 1) * 255));
+	const gamma = midtoneGamma(midtone);
+	return buildLut((v) => 255 * clamp((v - black) / (white - black), 0, 1) ** gamma, roundHalfDown);
 }
 
 /** Applies per-channel LUTs (`null` leaves that channel) to straight RGBA. */
@@ -339,28 +414,6 @@ export function applyColorMatrix(src: Uint8ClampedArray, m: number[]): Uint8Clam
 	return out;
 }
 
-/** RGB (0..1) to HSL: hue in degrees [0, 360), saturation and lightness 0..1. */
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-	const max = Math.max(r, g, b);
-	const min = Math.min(r, g, b);
-	const l = (max + min) / 2;
-	const d = max - min;
-	if (d === 0) {
-		return [0, 0, l];
-	}
-	const s = d / (1 - Math.abs(2 * l - 1));
-	let h: number;
-	if (max === r) {
-		h = ((g - b) / d) % 6;
-	} else if (max === g) {
-		h = (b - r) / d + 2;
-	} else {
-		h = (r - g) / d + 4;
-	}
-	h *= 60;
-	return [h < 0 ? h + 360 : h, s, l];
-}
-
 /** HSL to RGB (0..1). */
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 	const c = (1 - Math.abs(2 * l - 1)) * s;
@@ -372,12 +425,44 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 	return [r + m, g + m, b + m];
 }
 
+/** GDI+'s hue units: 43 per 60-degree sextant, 258 for the whole circle. */
+const HUE_SEXTANT = 43;
+const HUE_CIRCLE = 6 * HUE_SEXTANT;
+
 /**
- * Hue/saturation/lightness (MS-EMFPLUS 2.2.3.7): the hue rotates by `hue`
- * degrees (positive counter-clockwise, red toward yellow); saturation and
- * lightness move toward 1 (positive) or 0 (negative) by `|t| / 100` of the
- * way. At -100 saturation the image is grey; at +/-100 lightness, white or
- * black.
+ * GDI+'s integer hue of an RGB colour whose channels are not all equal
+ * (measured): 43 units per sextant, the position in the sextant
+ * `floor(43 x / (max - min))` counted up from red (0), green (87) or blue
+ * (172) toward the next primary, or down from 86, 171 or 256 toward the
+ * previous one.
+ */
+function gdipHue(r: number, g: number, b: number): number {
+	const max = Math.max(r, g, b);
+	const d = max - Math.min(r, g, b);
+	const f = (x: number): number => Math.floor((x * HUE_SEXTANT) / d);
+	if (max === r && g >= b) {
+		return f(g - b);
+	}
+	if (max === g) {
+		return b >= r ? 87 + f(b - r) : 86 - f(r - b);
+	}
+	if (max === b && b !== r) {
+		return r >= g ? 172 + f(r - g) : 171 - f(g - r);
+	}
+	const t = f(b - g);
+	return (256 - t - (t >= 40 ? 1 : 0)) % 256;
+}
+
+/**
+ * Hue/saturation/lightness (MS-EMFPLUS 2.2.3.7) in GDI+'s integer HSL
+ * (measured): lightness is `(max + min) >> 1` (a full-intensity colour tops
+ * out at 254) plus `2.55 * lightness` levels; saturation, the usual HSL
+ * saturation, is scaled by `1 + saturation / 100`; the hue ({@link gdipHue})
+ * rotates by `hue * 258 / 360` units (positive: red toward yellow). The
+ * colour is rebuilt from the rounded HSL maximum and minimum, the middle
+ * channel truncated. Lightness and saturation match GDI+ exactly; hue is
+ * within a level or two on most colours but GDI+ rounds some hues
+ * differently (a few levels near sextant boundaries).
  */
 export function applyHueSaturationLightness(
 	src: Uint8ClampedArray,
@@ -386,44 +471,84 @@ export function applyHueSaturationLightness(
 	lightness: number,
 ): Uint8ClampedArray {
 	const out = new Uint8ClampedArray(src);
-	const push = (v: number, t: number): number => (t >= 0 ? v + (1 - v) * (t / 100) : v * (1 + t / 100));
+	const shift = Math.round((hue * HUE_CIRCLE) / 360);
+	const sMul = 1 + saturation / 100;
 	for (let i = 0; i < src.length; i += 4) {
-		const [h, s, l] = rgbToHsl(src[i] / 255, src[i + 1] / 255, src[i + 2] / 255);
-		const [r, g, b] = hslToRgb(h + hue, push(s, saturation), push(l, lightness));
-		out[i] = Math.round(r * 255);
-		out[i + 1] = Math.round(g * 255);
-		out[i + 2] = Math.round(b * 255);
+		const r = src[i];
+		const g = src[i + 1];
+		const b = src[i + 2];
+		const max = Math.max(r, g, b);
+		const min = Math.min(r, g, b);
+		const l = clamp(Math.round((((max + min) >> 1) * 100 + 255 * lightness) / 100), 0, 255);
+		if (max === min) {
+			out[i] = out[i + 1] = out[i + 2] = l;
+			continue;
+		}
+		const sum = max + min;
+		const s = clamp(((max - min) / (sum <= 255 ? sum : 510 - sum)) * sMul, 0, 1);
+		const hi = l <= 127 ? l * (1 + s) : l + s * (255 - l);
+		const m1 = l <= 127 ? 2 * l - Math.trunc(hi) : Math.round(2 * l - hi);
+		const m2 = 2 * l - m1;
+		const q = (((gdipHue(r, g, b) + shift) % HUE_CIRCLE) + HUE_CIRCLE) % HUE_CIRCLE;
+		const sextant = Math.min(5, Math.floor(q / HUE_SEXTANT));
+		const f = (q - sextant * HUE_SEXTANT) / HUE_SEXTANT;
+		const up = Math.trunc(m1 + (m2 - m1) * f);
+		const down = Math.trunc(m1 + (m2 - m1) * (1 - f));
+		const [nr, ng, nb] = [
+			[m2, up, m1],
+			[down, m2, m1],
+			[m1, m2, up],
+			[m1, down, m2],
+			[up, m1, m2],
+			[m2, m1, down],
+		][sextant];
+		out[i] = nr;
+		out[i + 1] = ng;
+		out[i + 2] = nb;
 	}
 	return out;
 }
 
-/** Rec. 601 luma weights. */
-const LUMA = [0.299, 0.587, 0.114] as const;
+/** Rec. 709 luma weights, which GDI+'s Tint uses. */
+const LUMA_709 = [0.2126, 0.7152, 0.0722] as const;
+
+/** Measured scale of the tint colour's chroma (GDI+'s is about 1.5% short of the exact colour's). */
+const TINT_CHROMA_SCALE = 0.985;
 
 /**
- * Tint (MS-EMFPLUS 2.2.3.11): adds `amount / 100` of the chroma of the
- * fully saturated colour at `hue` degrees (0 red, 120 green, -120 blue),
- * that colour minus its own luma, so the luma of each pixel is unchanged.
- * A negative amount adds the complementary colour.
+ * Tint (MS-EMFPLUS 2.2.3.11), measured: each pixel moves `amount / 100` of
+ * the way toward its own Rec. 709 luma plus the chroma of the fully
+ * saturated colour at `hue` degrees (0 red, 120 green, -120 blue; GDI+'s
+ * documentation counts from blue, but its red and blue are swapped) scaled
+ * by the pixel's largest channel. A negative amount extrapolates away from
+ * it, strengthening the complementary colour. Within one level of GDI+ on
+ * most pixels; the chroma scale is a fit.
  */
 export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): Uint8ClampedArray {
 	const tint = hslToRgb(hue, 1, 0.5);
-	const y = tint[0] * LUMA[0] + tint[1] * LUMA[1] + tint[2] * LUMA[2];
-	const k = (amount / 100) * 255;
-	const add = tint.map((c) => (c - y) * k);
+	const ty = tint[0] * LUMA_709[0] + tint[1] * LUMA_709[1] + tint[2] * LUMA_709[2];
+	const chroma = tint.map((c) => (c - ty) * TINT_CHROMA_SCALE);
+	const a = amount / 100;
 	const out = new Uint8ClampedArray(src);
 	for (let i = 0; i < src.length; i += 4) {
-		out[i] = Math.round(src[i] + add[0]);
-		out[i + 1] = Math.round(src[i + 1] + add[1]);
-		out[i + 2] = Math.round(src[i + 2] + add[2]);
+		const r = src[i];
+		const g = src[i + 1];
+		const b = src[i + 2];
+		const y = r * LUMA_709[0] + g * LUMA_709[1] + b * LUMA_709[2];
+		const v = Math.max(r, g, b);
+		out[i] = Math.round((1 - a) * r + a * (y + v * chroma[0]));
+		out[i + 1] = Math.round((1 - a) * g + a * (y + v * chroma[1]));
+		out[i + 2] = Math.round((1 - a) * b + a * (y + v * chroma[2]));
 	}
 	return out;
 }
 
 /**
- * Red-eye correction (MS-EMFPLUS 2.2.3.9): inside each area, a pixel whose
- * red exceeds both green and blue gets red replaced by the mean of green
- * and blue.
+ * Red-eye correction (MS-EMFPLUS 2.2.3.9), an approximation: inside each
+ * area, a strongly red pixel (red at least twice both green and blue) gets
+ * its red replaced by the mean of green and blue. GDI+ detects and repaints
+ * whole pupils (a textured dark grey), which is not reproduced; skin and
+ * other moderately red pixels are left alone, as GDI+ leaves them.
  */
 export function applyRedEyeCorrection(
 	src: Uint8ClampedArray,
@@ -443,7 +568,7 @@ export function applyRedEyeCorrection(
 				const r = out[i];
 				const g = out[i + 1];
 				const b = out[i + 2];
-				if (r > g && r > b) {
+				if (r >= 2 * g && r >= 2 * b && r > 64) {
 					out[i] = Math.round((g + b) / 2);
 				}
 			}
@@ -457,101 +582,127 @@ export function applyRedEyeCorrection(
 // ---------------------------------------------------------------------------
 
 /**
- * Radii of three successive box filters whose combined (discrete) variance
- * is as close as possible to `sigma^2`: a box of radius k has variance
- * `k (k + 1) / 3`.
+ * GDI+'s blur kernel for `radius`: a Gaussian of standard deviation
+ * `radius / 1.98` truncated at `ceil(radius)` taps on each side and
+ * normalised (measured; `[0.110, 0.780, 0.110]` at radius 1).
  */
-export function boxRadiiForSigma(sigma: number): [number, number, number] {
-	const target = sigma * sigma;
-	let k = 0;
-	while ((k + 1) * (k + 2) <= target) {
-		k++;
+export function blurKernel(radius: number): Float64Array {
+	const taps = Math.ceil(radius);
+	const k = new Float64Array(2 * taps + 1);
+	if (taps === 0) {
+		k[0] = 1;
+		return k;
 	}
-	const v = (n: number): number => (n * (n + 1)) / 3;
-	let best = 0;
-	for (let m = 1; m <= 3; m++) {
-		if (Math.abs((3 - m) * v(k) + m * v(k + 1) - target) < Math.abs((3 - best) * v(k) + best * v(k + 1) - target)) {
-			best = m;
-		}
+	const sigma = radius / 1.98;
+	let sum = 0;
+	for (let i = -taps; i <= taps; i++) {
+		const w = Math.exp(-(i * i) / (2 * sigma * sigma));
+		k[i + taps] = w;
+		sum += w;
 	}
-	return [0, 1, 2].map((i) => (i < best ? k + 1 : k)) as [number, number, number];
+	for (let i = 0; i < k.length; i++) {
+		k[i] /= sum;
+	}
+	return k;
 }
 
-/** One box-filter pass of radius `r` along rows (`horizontal`) or columns, edges clamped. */
-function boxPass(src: Float64Array, w: number, h: number, r: number, horizontal: boolean): Float64Array {
-	if (r <= 0) {
-		return src;
+/** Index `p` reflected into `[0, n)` about the end pixels (`-1` reads 1, `n` reads `n - 2`). */
+function mirror(p: number, n: number): number {
+	if (n === 1) {
+		return 0;
 	}
-	const out = new Float64Array(src.length);
-	const lines = horizontal ? h : w;
-	const len = horizontal ? w : h;
-	const step = horizontal ? 4 : w * 4;
-	const norm = 1 / (2 * r + 1);
-	for (let line = 0; line < lines; line++) {
-		const base = horizontal ? line * w * 4 : line * 4;
-		for (let c = 0; c < 4; c++) {
-			const at = (p: number): number => src[base + clamp(p, 0, len - 1) * step + c];
-			let sum = 0;
-			for (let p = -r; p <= r; p++) {
-				sum += at(p);
+	while (p < 0 || p >= n) {
+		p = p < 0 ? -p : 2 * (n - 1) - p;
+	}
+	return p;
+}
+
+/**
+ * GDI+'s blur of a `w` x `h` straight RGBA buffer: every channel (alpha
+ * included, colour not premultiplied) convolved along each row with
+ * {@link blurKernel}, rows reflected at their ends; then only row
+ * `vRow` is also convolved down its column (rows reflected at the buffer's
+ * top and bottom, or read as transparent when `vZeroAbove`). This is what
+ * GDI+ does: it never blurs vertically beyond that one row. Returns floats.
+ */
+function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false): Float64Array {
+	const k = blurKernel(radius);
+	const taps = (k.length - 1) / 2;
+	const out = new Float64Array(w * h * 4);
+	for (let y = 0; y < h; y++) {
+		const row = y * w * 4;
+		for (let x = 0; x < w; x++) {
+			let s0 = 0;
+			let s1 = 0;
+			let s2 = 0;
+			let s3 = 0;
+			for (let j = -taps; j <= taps; j++) {
+				const p = row + mirror(x + j, w) * 4;
+				const kw = k[j + taps];
+				s0 += kw * src[p];
+				s1 += kw * src[p + 1];
+				s2 += kw * src[p + 2];
+				s3 += kw * src[p + 3];
 			}
-			for (let p = 0; p < len; p++) {
-				out[base + p * step + c] = sum * norm;
-				sum += at(p + r + 1) - at(p - r);
+			const o = row + x * 4;
+			out[o] = s0;
+			out[o + 1] = s1;
+			out[o + 2] = s2;
+			out[o + 3] = s3;
+		}
+	}
+	if (taps > 0 && vRow >= 0 && vRow < h) {
+		const col = new Float64Array(w * 4);
+		for (let j = -taps; j <= taps; j++) {
+			const yy = vRow + j;
+			if (vZeroAbove && yy < vRow) {
+				continue;
+			}
+			const base = mirror(yy, h) * w * 4;
+			for (let i = 0; i < w * 4; i++) {
+				col[i] += k[j + taps] * out[base + i];
 			}
 		}
+		out.set(col, vRow * w * 4);
 	}
 	return out;
 }
 
 /**
- * Gaussian blur of straight RGBA with standard deviation `radius / 2`
- * (approximated by three box passes per axis), done on premultiplied
- * colour so transparent pixels do not bleed their colour, edges clamped.
- * Returns straight RGBA as floats.
- */
-function blurFloat(src: Uint8ClampedArray, w: number, h: number, radius: number): Float64Array {
-	let buf: Float64Array = new Float64Array(src.length);
-	for (let i = 0; i < src.length; i += 4) {
-		const a = src[i + 3] / 255;
-		buf[i] = src[i] * a;
-		buf[i + 1] = src[i + 1] * a;
-		buf[i + 2] = src[i + 2] * a;
-		buf[i + 3] = src[i + 3];
-	}
-	for (const r of boxRadiiForSigma(radius / 2)) {
-		buf = boxPass(buf, w, h, r, true);
-		buf = boxPass(buf, w, h, r, false);
-	}
-	for (let i = 0; i < buf.length; i += 4) {
-		const a = buf[i + 3] / 255;
-		for (let c = 0; c < 3; c++) {
-			buf[i + c] = a > 0 ? buf[i + c] / a : 0;
-		}
-	}
-	return buf;
-}
-
-/**
- * Blur (MS-EMFPLUS 2.2.3.1): a Gaussian of standard deviation
- * `radius / 2` (see {@link blurFloat}), edges clamped. This keeps the
- * image's size; `expandEdge` (growing the bitmap by the radius) is handled
- * by {@link applyImageEffectToRect}, which pads the pixels with transparency
- * first.
+ * Blur (MS-EMFPLUS 2.2.3.1) as GDI+ applies it to a `w` x `h` buffer (see
+ * {@link gdipBlur}): rows blurred with a Gaussian of `radius / 1.98`, the
+ * top row also blurred down its column, results rounded. `expandEdge` is
+ * handled by {@link applyImageEffectToRect}.
  */
 export function applyBlur(src: Uint8ClampedArray, w: number, h: number, radius: number): Uint8ClampedArray {
-	const blurred = blurFloat(src, w, h, radius);
-	const out = new Uint8ClampedArray(src.length);
-	for (let i = 0; i < src.length; i++) {
-		out[i] = Math.round(blurred[i]);
+	return Uint8ClampedArray.from(gdipBlur(src, w, h, radius), Math.round);
+}
+
+/** Exponent of the gain's fall-off beyond radius 3, fitted so radius 6 gives 25/48 per unit amount. */
+const SHARPEN_FALLOFF = Math.log2(96 / 25);
+
+/**
+ * The unsharp-mask gain GDI+ uses for `amount` (0..100) at `radius`,
+ * measured: `amount / 100 * 2 radius / 3` up to radius 3 (1/3 at radius 1,
+ * amount 50; 2 at radius 3, amount 100). Beyond radius 3 it falls off; the
+ * one measured point (5/32 at radius 6, amount 30) fixes the fall-off
+ * `amount / 100 * 2 (3 / radius)^1.94`, which is a fit, not GDI+'s formula.
+ */
+export function sharpenGain(radius: number, amount: number): number {
+	const x = amount / 100;
+	if (radius <= 3) {
+		return (x * 2 * radius) / 3;
 	}
-	return out;
+	return x * 2 * (3 / radius) ** SHARPEN_FALLOFF;
 }
 
 /**
- * Sharpen (MS-EMFPLUS 2.2.3.10): an unsharp mask, each colour channel
- * `v + amount / 100 * (v - blur(v))` with the blur of {@link applyBlur}
- * at `radius`; alpha is kept.
+ * Sharpen (MS-EMFPLUS 2.2.3.10): an unsharp mask along rows,
+ * `v + gain * (v - round(blur(v)))` with GDI+'s row blur at `radius` (see
+ * {@link gdipBlur}, the blur rounded to 8 bits first) and the gain of
+ * {@link sharpenGain}. Alpha is raised to the largest colour channel, as
+ * GDI+ does (it treats the straight colour as premultiplied and restores
+ * `colour <= alpha`), so a translucent pixel comes out more opaque.
  */
 export function applySharpen(
 	src: Uint8ClampedArray,
@@ -560,13 +711,14 @@ export function applySharpen(
 	radius: number,
 	amount: number,
 ): Uint8ClampedArray {
-	const blurred = blurFloat(src, w, h, radius);
-	const k = amount / 100;
+	const blurred = gdipBlur(src, w, h, radius);
+	const gain = sharpenGain(radius, amount);
 	const out = new Uint8ClampedArray(src);
 	for (let i = 0; i < src.length; i += 4) {
 		for (let c = 0; c < 3; c++) {
-			out[i + c] = Math.round(src[i + c] + k * (src[i + c] - blurred[i + c]));
+			out[i + c] = Math.round(src[i + c] + gain * (src[i + c] - Math.round(blurred[i + c])));
 		}
+		out[i + 3] = Math.max(src[i + 3], out[i], out[i + 1], out[i + 2]);
 	}
 	return out;
 }
@@ -595,16 +747,15 @@ export function applyImageEffect(
 		case 'sharpen':
 			return applySharpen(rgba, width, height, effect.radius, effect.amount);
 		case 'brightnessContrast': {
-			const contrast = contrastCurve(effect.contrast);
-			const lut = buildLut((v) => contrast(v) + effect.brightness);
+			const lut = brightnessContrastLut(effect.brightness, effect.contrast);
 			return applyLuts(rgba, lut, lut, lut);
 		}
 		case 'colorBalance':
 			return applyLuts(
 				rgba,
-				buildLut(balanceCurve(effect.cyanRed)),
-				buildLut(balanceCurve(effect.magentaGreen)),
-				buildLut(balanceCurve(effect.yellowBlue)),
+				balanceLut(effect.cyanRed),
+				balanceLut(effect.magentaGreen),
+				balanceLut(effect.yellowBlue),
 			);
 		case 'colorCurve': {
 			const lut = curveAdjustmentLut(effect.adjustment, effect.intensity);
@@ -635,13 +786,75 @@ export function applyImageEffect(
 /** Pixels an effect produced, placed in the source image's pixel coordinates. */
 export interface EffectedRegion {
 	rgba: Uint8ClampedArray;
-	/** The top-left of `rgba` in source image pixels (negative when the region grew past the image). */
+	/** The top-left of `rgba` in source image pixels. */
 	x: number;
 	y: number;
 	width: number;
 	height: number;
-	/** Transparent padding added on every side before the effect (an expanded blur's radius), else 0. */
-	pad: number;
+}
+
+/** Copies the `w` x `h` block at (`sx`, `sy`) of a `width`-wide image into a new `bw`-wide buffer at (`dx`, `dy`). */
+function copyBlock(
+	src: Uint8ClampedArray,
+	width: number,
+	sx: number,
+	sy: number,
+	w: number,
+	h: number,
+	dst: Uint8ClampedArray,
+	bw: number,
+	dx: number,
+	dy: number,
+): void {
+	for (let y = 0; y < h; y++) {
+		const from = ((sy + y) * width + sx) * 4;
+		dst.set(src.subarray(from, from + w * 4), ((dy + y) * bw + dx) * 4);
+	}
+}
+
+/**
+ * An expanded blur (`expandEdge`) of the region [x0, x1) x [y0, y1) of the
+ * image, cropped back to that region. GDI+ blurs a buffer grown by the
+ * kernel's reach on every side, transparent where it has no pixels: when
+ * the grown rectangle stays inside the image only the region's own pixels
+ * are copied in (the rest transparent) and the one vertically blurred row
+ * is the region's top row; when it reaches past the image, every image
+ * pixel inside it is copied and that row is the buffer's (transparent) top.
+ */
+function expandedBlur(
+	rgba: Uint8ClampedArray,
+	width: number,
+	height: number,
+	radius: number,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+): Uint8ClampedArray {
+	const r = Math.ceil(radius);
+	const bw = x1 - x0 + 2 * r;
+	const bh = y1 - y0 + 2 * r;
+	const buf = new Uint8ClampedArray(bw * bh * 4);
+	const inside = x0 - r >= 0 && y0 - r >= 0 && x1 + r <= width && y1 + r <= height;
+	if (inside) {
+		copyBlock(rgba, width, x0, y0, x1 - x0, y1 - y0, buf, bw, r, r);
+	} else {
+		const gx0 = Math.max(0, x0 - r);
+		const gy0 = Math.max(0, y0 - r);
+		const gx1 = Math.min(width, x1 + r);
+		const gy1 = Math.min(height, y1 + r);
+		copyBlock(rgba, width, gx0, gy0, gx1 - gx0, gy1 - gy0, buf, bw, gx0 - (x0 - r), gy0 - (y0 - r));
+	}
+	const blurred = gdipBlur(buf, bw, bh, radius, inside ? r : 0, inside);
+	const w = x1 - x0;
+	const out = new Uint8ClampedArray(w * (y1 - y0) * 4);
+	for (let y = 0; y < y1 - y0; y++) {
+		const from = ((y + r) * bw + r) * 4;
+		for (let i = 0; i < w * 4; i++) {
+			out[y * w * 4 + i] = Math.round(blurred[from + i]);
+		}
+	}
+	return out;
 }
 
 /**
@@ -649,14 +862,15 @@ export interface EffectedRegion {
  * source rectangle `src` (image pixels, possibly fractional) covers, the way
  * GDI+'s `DrawImage(image, srcRect, xform, effect, ...)` does:
  *
- * - the rectangle is rounded outward and clamped to the image, and only
- *   those pixels are handed to the effect, so a blur or sharpen never reads
- *   pixels outside it (its own edges are clamped);
- * - a blur with `expandEdge` gets `ceil(radius)` transparent pixels of
- *   padding on every side first, so the blurred halo extends beyond the
- *   rectangle (`Bitmap::ApplyEffect` grows the bitmap by the radius);
- * - red-eye areas, given in image pixels, are moved into the cropped
- *   region's coordinates.
+ * - the effect sees the rectangle rounded outward plus one more column and
+ *   row (GDI+'s own bounds), clamped to the image; a blur or sharpen reads
+ *   nothing outside it and reflects at its edges; the result is the
+ *   rectangle rounded outward, without that extra column and row;
+ * - a blur with `expandEdge` blurs transparency in from beyond the edges
+ *   (see {@link expandedBlur}), but the result is still only the region:
+ *   GDI+ draws no halo outside the source rectangle;
+ * - red-eye areas, given in image pixels, are moved into the region's
+ *   coordinates.
  *
  * `src` of `null` applies the effect to the whole image, unexpanded.
  * Returns `null` when the rectangle misses the image or the effect cannot
@@ -679,39 +893,45 @@ export function applyImageEffectToRect(
 	if (src) {
 		x0 = clamp(Math.floor(src.x), 0, width);
 		y0 = clamp(Math.floor(src.y), 0, height);
-		x1 = clamp(Math.ceil(src.x + src.w), 0, width);
-		y1 = clamp(Math.ceil(src.y + src.h), 0, height);
-		if (x1 <= x0 || y1 <= y0) {
+		x1 = clamp(Math.ceil(src.x + src.w) + 1, 0, width);
+		y1 = clamp(Math.ceil(src.y + src.h) + 1, 0, height);
+		if (x1 <= x0 || y1 <= y0 || src.x + src.w <= x0 || src.y + src.h <= y0) {
 			return null;
 		}
 	}
-	const pad = src && effect.kind === 'blur' && effect.expandEdge ? Math.ceil(effect.radius) : 0;
-	const cw = x1 - x0;
-	const ch = y1 - y0;
-	const w = cw + 2 * pad;
-	const h = ch + 2 * pad;
-	let region = rgba;
-	if (w !== width || h !== height || x0 !== 0 || y0 !== 0) {
-		region = new Uint8ClampedArray(w * h * 4);
-		for (let y = 0; y < ch; y++) {
-			const from = ((y0 + y) * width + x0) * 4;
-			region.set(rgba.subarray(from, from + cw * 4), ((pad + y) * w + pad) * 4);
+	const w = x1 - x0;
+	const h = y1 - y0;
+	// The part a draw shows: the rectangle rounded outward, without the extra column and row.
+	const shownWidth = src ? Math.min(w, Math.ceil(src.x + src.w) - x0) : w;
+	const shownHeight = src ? Math.min(h, Math.ceil(src.y + src.h) - y0) : h;
+	const result = (out: Uint8ClampedArray): EffectedRegion => {
+		if (shownWidth === w && shownHeight === h) {
+			return { rgba: out, x: x0, y: y0, width: w, height: h };
 		}
+		const shown = new Uint8ClampedArray(shownWidth * shownHeight * 4);
+		copyBlock(out, w, 0, 0, shownWidth, shownHeight, shown, shownWidth, 0, 0);
+		return { rgba: shown, x: x0, y: y0, width: shownWidth, height: shownHeight };
+	};
+	if (src && effect.kind === 'blur' && effect.expandEdge) {
+		return result(expandedBlur(rgba, width, height, effect.radius, x0, y0, x1, y1));
 	}
-	const ox = x0 - pad;
-	const oy = y0 - pad;
+	let region = rgba;
+	if (w !== width || h !== height) {
+		region = new Uint8ClampedArray(w * h * 4);
+		copyBlock(rgba, width, x0, y0, w, h, region, w, 0, 0);
+	}
 	const local: EmfPlusImageEffect =
 		effect.kind === 'redEyeCorrection'
 			? {
 					kind: effect.kind,
 					areas: effect.areas.map((a) => ({
-						left: a.left - ox,
-						top: a.top - oy,
-						right: a.right - ox,
-						bottom: a.bottom - oy,
+						left: a.left - x0,
+						top: a.top - y0,
+						right: a.right - x0,
+						bottom: a.bottom - y0,
 					})),
 				}
 			: effect;
 	const out = applyImageEffect(region, w, h, local);
-	return out ? { rgba: out, x: ox, y: oy, width: w, height: h, pad } : null;
+	return out ? result(out) : null;
 }

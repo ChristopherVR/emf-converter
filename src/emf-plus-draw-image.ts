@@ -292,12 +292,10 @@ function drawNestedMetafile(
  * The bitmap's pixels with `effect` applied, and `draw` re-targeted at
  * them. The pixels are the pre-decoded ones, else a BMP decoded in pure
  * JavaScript. When the draw's source rectangle is in pixels, only that
- * rectangle is effected (see `applyImageEffectToRect`), and a blur with
- * `expandEdge` grows it by the radius on every side: the source rectangle
- * grows with it under the same source-to-destination mapping, so the
- * original pixels land where they would without the effect and the halo
- * extends outward. `null` when there are no pixels to work on or the
- * effect cannot be applied (the image is then drawn without it).
+ * rectangle is effected (see `applyImageEffectToRect`) and drawn through
+ * the same source-to-destination mapping; an `expandEdge` blur's halo is
+ * not drawn, as GDI+ draws none. `null` when there are no pixels to work on
+ * or the effect cannot be applied (the image is then drawn without it).
  */
 function effectedDraw(
 	img: EmfPlusImage,
@@ -340,11 +338,10 @@ function effectedDraw(
 	}
 	// Source coordinates in the effected region: image pixel (x, y) is
 	// region pixel (x - region.x, y - region.y).
-	const grow = region.pad;
-	const srcX = rect.srcX - grow - region.x;
-	const srcY = rect.srcY - grow - region.y;
-	const srcW = rect.srcW + 2 * grow;
-	const srcH = rect.srcH + 2 * grow;
+	const srcX = rect.srcX - region.x;
+	const srcY = rect.srcY - region.y;
+	const srcW = rect.srcW;
+	const srcH = rect.srcH;
 	const shift: TransformMatrix = [1, 0, 0, 1, region.x, region.y];
 	const toWorld = mulMatrix(rect.toWorld(rect.srcX, rect.srcY, rect.srcW, rect.srcH), shift);
 	return {

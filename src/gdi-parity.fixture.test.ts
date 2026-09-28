@@ -955,6 +955,97 @@ const PEN_TRANSFORM_CASES: ParityCase[] = [
 	'skew-horizontal',
 	'skew-diagonal',
 ].map((c) => exact(`pen-${c}`));
+ * EMF+ image effects (`plus-effect-*`, GDI+ 1.1 `GdipDrawImageFX`
+ * recorded EmfPlusOnly and played back by GDI+; see
+ * `emf-plus-image-effects.ts`). GDI+ records each effect draw followed by
+ * a plain draw of the bitmap it effected, so what Windows paints is the
+ * effect draw overlaid by that bitmap: the effect's own pixels show only
+ * where the bitmap is translucent (the half-transparent bar of the alpha
+ * test image, an expanded blur's faded edges). There the converter now
+ * matches: an expanded blur draws no halo beyond the source rectangle
+ * (28.2% of pixels off before on blur-r10-expand), and a ColorCurve, which
+ * GDI+ records under the ColorLookupTable GUID, is drawn without the
+ * effect, as GDI+'s playback does. `emf-plus-image-effects.fixture.test.ts`
+ * measures the effect algorithms themselves against the recorded bitmaps.
+ * Comments give the share of pixels off at tolerance 0 before and now.
+ */
+const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
+	exact('plus-effect-blur-r1'), // 0.102% before (0.051% beyond 8 levels)
+	levelExact('plus-effect-blur-r10'), // 1.633% before (1.358% beyond 8 levels), 0.038% one level off now
+	levelExact('plus-effect-blur-r10-expand'), // 28.235% before (17.602% beyond 8 levels), 0.051% one level off now
+	levelExact('plus-effect-blur-r2p5'), // 0.561% before (0.395% beyond 8 levels), 0.013% one level off now
+	levelExact('plus-effect-blur-r3'), // 0.682% before (0.446% beyond 8 levels), 0.013% one level off now
+	levelExact('plus-effect-blur-r3-expand'), // 8.323% before (4.619% beyond 8 levels), 0.013% one level off now
+	// Residual along one edge of the rotated draw, where the effect draw shows through the recorded bitmap's faded edge.
+	{ name: 'plus-effect-blur-r3-rotate30', ext: 'emf', tolerance: 8, maxMismatch: 0.0025 }, // 2.555% before, 0.218% now
+	levelExact('plus-effect-blur-r3-scale2'), // 5.696% before (0.045% beyond 8 levels), 5.539% one level off now
+	exact('plus-effect-blur-r4-subrect'),
+	levelExact('plus-effect-blur-r4-subrect-expand'), // 4.884% before (2.448% beyond 8 levels), 0.023% one level off now
+	exact('plus-effect-brightnesscontrast-b0-c100'),
+	exact('plus-effect-brightnesscontrast-b0-c50'),
+	exact('plus-effect-brightnesscontrast-b0-cn100'),
+	exact('plus-effect-brightnesscontrast-b0-cn50'),
+	levelExact('plus-effect-brightnesscontrast-b30-c40'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-brightnesscontrast-b50-c0'),
+	exact('plus-effect-brightnesscontrast-bn80-c0'),
+	exact('plus-effect-colorbalance-cr0-mg0-yb80'), // 0.153% before
+	exact('plus-effect-colorbalance-cr0-mgn40-yb0'),
+	levelExact('plus-effect-colorbalance-cr100-mg100-yb100'), // 0.153% before (0.153% beyond 8 levels), 0.153% one level off now
+	exact('plus-effect-colorbalance-cr60-mg0-yb0'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-colorbalance-crn100-mg50-ybn20'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-colorcurve-blacksat-60'),
+	exact('plus-effect-colorcurve-contrast-50'),
+	exact('plus-effect-colorcurve-contrast-50-blue'),
+	exact('plus-effect-colorcurve-contrast-n50'),
+	exact('plus-effect-colorcurve-density-64'),
+	exact('plus-effect-colorcurve-density-n64'),
+	exact('plus-effect-colorcurve-exposure-64'),
+	exact('plus-effect-colorcurve-exposure-64-red'),
+	exact('plus-effect-colorcurve-exposure-n64'),
+	exact('plus-effect-colorcurve-highlight-50'),
+	exact('plus-effect-colorcurve-highlight-n50'),
+	exact('plus-effect-colorcurve-midtone-50'),
+	exact('plus-effect-colorcurve-midtone-n50'),
+	exact('plus-effect-colorcurve-midtone-n50-green'),
+	exact('plus-effect-colorcurve-shadow-50'),
+	exact('plus-effect-colorcurve-shadow-n50'),
+	exact('plus-effect-colorcurve-whitesat-200'),
+	exact('plus-effect-colorlut-alpha'),
+	levelExact('plus-effect-colorlut-mixed'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-colorlut-posterize'),
+	exact('plus-effect-colormatrix-alpha-half'),
+	exact('plus-effect-colormatrix-grayscale'),
+	exact('plus-effect-colormatrix-invert'),
+	levelExact('plus-effect-colormatrix-sepia'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-colormatrix-swap-translate'),
+	exact('plus-effect-hsl-h0-s0-l50'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-hsl-h0-s0-ln50'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-hsl-h0-s60-l0'), // 0.153% before
+	exact('plus-effect-hsl-h0-sn100-l0'),
+	exact('plus-effect-hsl-h180-s0-l0'), // 0.153% before
+	levelExact('plus-effect-hsl-h30-sn30-l20'), // 0.153% before (0.153% beyond 8 levels), 0.153% one level off now
+	exact('plus-effect-hsl-h90-s0-l0'), // 0.153% before
+	exact('plus-effect-hsl-hn120-s0-l0'), // 0.153% before
+	exact('plus-effect-levels-h100-m0-s20'),
+	levelExact('plus-effect-levels-h100-m50-s0'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-levels-h100-mn50-s0'), // 0.153% before
+	exact('plus-effect-levels-h80-m0-s0'),
+	levelExact('plus-effect-levels-h90-mn30-s10'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-none-identity'),
+	exact('plus-effect-redeye-both'),
+	exact('plus-effect-redeye-left'),
+	exact('plus-effect-redeye-whole'),
+	exact('plus-effect-sharpen-r0p5-a100'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-sharpen-r1-a50'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-sharpen-r2-a0'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-sharpen-r3-a100'), // 0.128% before (0.115% beyond 8 levels)
+	levelExact('plus-effect-sharpen-r6-a30'), // 0.153% before (0.121% beyond 8 levels), 0.026% one level off now
+	exact('plus-effect-tint-h0-a50'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-tint-h120-a100'), // 0.153% before (0.153% beyond 8 levels)
+	exact('plus-effect-tint-h180-a100'), // 0.153% before (0.153% beyond 8 levels)
+	levelExact('plus-effect-tint-h60-an50'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-tint-hn90-a30'), // 0.153% before (0.153% beyond 8 levels)
+];
 
 describe('GDI ground-truth parity', () => {
 	describe('ROP3 raster operations', () => {
@@ -1130,6 +1221,7 @@ describe('GDI ground-truth parity', () => {
 		['EMF+ records and objects (curves, regions, containers, hatches, compositing, terminal-server, MultiFormat)', EMF_PLUS_RECORD_CASES],
 		['HALFTONE StretchBlt with and without EMR_SETCOLORADJUSTMENT', HALFTONE_CASES],
 		['EMF+ pens with a pen transform', PEN_TRANSFORM_CASES],
+		['EMF+ DrawImage with GDI+ image effects', EMF_PLUS_EFFECT_CASES],
 	];
 	for (const [title, cases] of groups) {
 		describe(title, () => {
@@ -1175,6 +1267,7 @@ describe('GDI ground-truth parity through the pure-JavaScript rasteriser (no can
 		...EMF_RECORD_CASES,
 		...HALFTONE_CASES,
 		...PEN_TRANSFORM_CASES,
+		...EMF_PLUS_EFFECT_CASES,
 	];
 	it.each(cases.map((c) => [`${c.name}${c.options ? ' (gdiAntialias: false)' : ''}`, c] as const))('%s', async (_name, c) => {
 		const diff = await compareFixture(c.name, c.ext, c.tolerance, c.options);
