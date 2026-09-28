@@ -955,8 +955,11 @@ const PEN_TRANSFORM_CASES: ParityCase[] = [
 	'skew-horizontal',
 	'skew-diagonal',
 ].map((c) => exact(`pen-${c}`));
+
+/**
  * EMF+ image effects (`plus-effect-*`, GDI+ 1.1 `GdipDrawImageFX`
- * recorded EmfPlusOnly and played back by GDI+; see
+ * recorded EmfPlusDual (the generator asked for EmfPlusOnly with a wrong
+ * EmfType value, since fixed) and played back by GDI+; see
  * `emf-plus-image-effects.ts`). GDI+ records each effect draw followed by
  * a plain draw of the bitmap it effected, so what Windows paints is the
  * effect draw overlaid by that bitmap: the effect's own pixels show only

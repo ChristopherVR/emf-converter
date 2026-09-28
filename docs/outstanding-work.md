@@ -6,13 +6,21 @@ Windows reference images come from `scripts/gdi-fixtures`. The **Windows fixture
 
 ## EMF+ image effects
 
-- **In progress:** fitting the effects to Windows output. Run `36493404899` generated 74 GDI+ effect fixtures (`plus-effect-*`) on the `windows-fixtures/36493404899` branch. They are not on `main` yet.
-  - Only the color matrix and color lookup table effects are known to be exact.
-  - Blur, sharpen, brightness/contrast, levels, color balance, color curve, hue/saturation/lightness, tint and red-eye still use approximations.
-- **Failed case:** one of the 75 generated cases failed during generation. Find it in the run log and fix it in `GdiFixtures.cs`.
-- **Unverified parameter size:** the red-eye effect's parameter size used by the generator is unverified.
+The 74 GDI+ effect fixtures (`plus-effect-*`) are in the parity test. `src/emf-plus-image-effects.fixture.test.ts` also checks the effect algorithms against the effected bitmaps that GDI+ records into each fixture.
+
+- **Not exact yet:**
+  - HSL hue rotation reproduces GDI+'s integer hue rounding only partly (up to 11 levels off).
+  - Tint is within 2 levels.
+  - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
+  - The blur has a 0.22% residual along one edge of the rotated draw (`plus-effect-blur-r3-rotate30`).
+- **Fitted to a single data point:**
+  - tint's chroma scale;
+  - sharpen's gain beyond radius 3;
+  - the ColorCurve contrast, highlight and shadow control points (measured at ±50 only, scaled linearly for other intensities).
+- **Re-run the effect fixtures.** The generator's metafile type constants were wrong, so the 74 cases were recorded as EmfPlusDual instead of EmfPlusOnly, and `plus-effect-blur-r3-dual` failed. The constants are fixed in `GdiFixtures.cs`. Re-run the `emfplus-effects` group to get EmfPlusOnly recordings and the dual case.
+- **Red-eye parameter size:** the red-eye parameter size used by the generator is unverified.
 - **Undecoded formats:** effects are skipped for JPEG, GIF and TIFF images when no canvas backend is available to decode them.
-- **Source rectangle not in pixels:** the effect is applied to the whole image, without cropping or `expandEdge` growth.
+- **Source rectangle not in pixels:** the effect is applied to the whole image.
 - **Deferred draws:** a `DrawImage` deferred until after replay is painted without its effect.
 
 ## GDI color adjustment and HALFTONE

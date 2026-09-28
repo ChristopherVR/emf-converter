@@ -5462,7 +5462,7 @@ public static class GdiFixtures
 	static readonly Guid FxColorCurve = new Guid("DD6A0022-58E4-4a67-9D9B-D48EB881A53D");
 	static readonly Guid FxPngEncoder = new Guid("557CF406-1A04-11D3-9A73-0000F81EF32E");
 
-	const int FxArgb32 = 0x0026200A, FxUnitPixel = 2, FxEmfPlusOnly = 5, FxEmfPlusDual = 6;
+	const int FxArgb32 = 0x0026200A, FxUnitPixel = 2, FxEmfPlusOnly = 4, FxEmfPlusDual = 5; // GDI+ EmfType: EmfTypeEmfOnly 3, EmfTypeEmfPlusOnly 4, EmfTypeEmfPlusDual 5
 	const int FxBackdrop = unchecked((int)0xFFE0E8F0);
 
 	public delegate void FxDraw(IntPtr graphics);
