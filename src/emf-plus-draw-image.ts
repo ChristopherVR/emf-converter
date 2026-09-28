@@ -22,10 +22,12 @@
  *   destination (see {@link drawNestedMetafile}), so it stays vector.
  *
  * An image effect (`emf-plus-image-effects.ts`, DrawImagePoints flag E) is
- * applied to the bitmap's decoded pixels before any of this, so SVG output
- * then embeds the effected pixels rather than the original bytes. When the
- * pixels are not available (a browser-native image in SVG output without a
- * decoder) the image is drawn without the effect.
+ * applied to the source rectangle's decoded pixels before any of this (an
+ * expanded blur growing it, see {@link effectedDraw}), so SVG output then
+ * embeds the effected pixels rather than the original bytes. When the
+ * pixels are not available (an image the environment cannot decode, such
+ * as a JPEG without a canvas backend) the image is drawn without the
+ * effect.
  *
  * A draw this module cannot resolve (no decoder was available ahead of
  * time) returns `false`, and the caller keeps the older deferred path.
@@ -36,7 +38,7 @@
 import { canvasDrawImage, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { decodeBmpFile, payloadSize, sniffImageMime } from './emf-image-payload';
 import { mulMatrix } from './emf-plus-brush-gradient';
-import { applyImageEffect, type EmfPlusImageEffect } from './emf-plus-image-effects';
+import { applyImageEffectToRect, type EmfPlusImageEffect } from './emf-plus-image-effects';
 import { MAX_NESTED_METAFILE_DEPTH } from './emf-plus-image-predecode';
 import { resampleImage } from './emf-plus-image-resample';
 import { plusWorldMatrix } from './emf-plus-state-handlers';
@@ -287,11 +289,23 @@ function drawNestedMetafile(
 }
 
 /**
- * The bitmap's pixels with `effect` applied: the pre-decoded pixels, else a
- * BMP decoded in pure JavaScript. `null` when there are no pixels to work
- * on or the effect cannot be applied (the image is then drawn without it).
+ * The bitmap's pixels with `effect` applied, and `draw` re-targeted at
+ * them. The pixels are the pre-decoded ones, else a BMP decoded in pure
+ * JavaScript. When the draw's source rectangle is in pixels, only that
+ * rectangle is effected (see `applyImageEffectToRect`), and a blur with
+ * `expandEdge` grows it by the radius on every side: the source rectangle
+ * grows with it under the same source-to-destination mapping, so the
+ * original pixels land where they would without the effect and the halo
+ * extends outward. `null` when there are no pixels to work on or the
+ * effect cannot be applied (the image is then drawn without it).
  */
-function effectedBitmap(img: EmfPlusImage, bitmap: DecodedBitmap | null, effect: EmfPlusImageEffect): DecodedBitmap | null {
+function effectedDraw(
+	img: EmfPlusImage,
+	bitmap: DecodedBitmap | null,
+	effect: EmfPlusImageEffect,
+	draw: DeferredImageDraw,
+	source: ImageDrawSource | undefined,
+): { bitmap: DecodedBitmap; draw: DeferredImageDraw } | null {
 	let src: { rgba: Uint8ClampedArray; width: number; height: number } | null = bitmap;
 	if (!src && img.data) {
 		const bmp = decodeBmpFile(img.data.slice(0) as ArrayBuffer);
@@ -302,8 +316,57 @@ function effectedBitmap(img: EmfPlusImage, bitmap: DecodedBitmap | null, effect:
 	if (!src) {
 		return null;
 	}
-	const rgba = applyImageEffect(src.rgba, src.width, src.height, effect);
-	return rgba ? { kind: 'bitmap', width: src.width, height: src.height, rgba } : null;
+	const rect =
+		source &&
+		source.unit === UNIT_PIXEL &&
+		source.srcW > 0 &&
+		source.srcH > 0 &&
+		[source.srcX, source.srcY, source.srcW, source.srcH].every(Number.isFinite)
+			? source
+			: null;
+	const region = applyImageEffectToRect(
+		src.rgba,
+		src.width,
+		src.height,
+		effect,
+		rect && { x: rect.srcX, y: rect.srcY, w: rect.srcW, h: rect.srcH },
+	);
+	if (!region) {
+		return null;
+	}
+	const out: DecodedBitmap = { kind: 'bitmap', width: region.width, height: region.height, rgba: region.rgba };
+	if (!rect) {
+		return { bitmap: out, draw };
+	}
+	// Source coordinates in the effected region: image pixel (x, y) is
+	// region pixel (x - region.x, y - region.y).
+	const grow = region.pad;
+	const srcX = rect.srcX - grow - region.x;
+	const srcY = rect.srcY - grow - region.y;
+	const srcW = rect.srcW + 2 * grow;
+	const srcH = rect.srcH + 2 * grow;
+	const shift: TransformMatrix = [1, 0, 0, 1, region.x, region.y];
+	const toWorld = mulMatrix(rect.toWorld(rect.srcX, rect.srcY, rect.srcW, rect.srcH), shift);
+	return {
+		bitmap: out,
+		draw: {
+			...draw,
+			// The Canvas fallback scales the whole effected bitmap.
+			transform: mulMatrix(draw.transform, toWorld),
+			dx: 0,
+			dy: 0,
+			dw: region.width,
+			dh: region.height,
+			resample: draw.resample && {
+				...draw.resample,
+				srcX,
+				srcY,
+				srcW,
+				srcH,
+				toDevice: mulMatrix(draw.resample.toDevice, shift),
+			},
+		},
+	};
 }
 
 /**
@@ -323,13 +386,15 @@ export function drawEmfPlusImageNow(
 	if (img.type === 2) {
 		return drawNestedMetafile(rCtx, img, cached, source);
 	}
-	let bitmap = cached && cached.kind === 'bitmap' ? cached : null;
-	const effected = effect ? effectedBitmap(img, bitmap, effect) : null;
+	const bitmap = cached && cached.kind === 'bitmap' ? cached : null;
+	const effected = effect ? effectedDraw(img, bitmap, effect, draw, source) : null;
 	if (effected) {
-		bitmap = effected;
+		return isSvgContext(rCtx.ctx)
+			? paintBitmapSvg(rCtx.ctx, img, effected.bitmap, effected.draw, true)
+			: paintBitmapRaster(rCtx.ctx, effected.bitmap, effected.draw);
 	}
 	if (isSvgContext(rCtx.ctx)) {
-		return paintBitmapSvg(rCtx.ctx, img, bitmap, draw, effected !== null);
+		return paintBitmapSvg(rCtx.ctx, img, bitmap, draw);
 	}
 	return bitmap ? paintBitmapRaster(rCtx.ctx, bitmap, draw) : false;
 }

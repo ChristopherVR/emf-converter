@@ -1,15 +1,20 @@
-import { readFileSync } from 'node:fs';
-
 import { describe, it, expect } from 'vitest';
 
-import { fixturePath } from './__fixtures__/gdi-parity-harness';
-import { EMFPLUS_DRAWIMAGEPOINTS, EMFPLUS_SERIALIZABLEOBJECT, EMFPLUS_SIGNATURE, EMR_COMMENT } from './emf-constants';
+import {
+	blurObject,
+	COLOR_MATRIX_GUID,
+	colorMatrixObject,
+	fixtureBuffer,
+	serializableObject,
+	TINT_GUID,
+	withEffect,
+} from './__fixtures__/emf-plus-effect-records';
 import {
 	applyImageEffect,
+	applyImageEffectToRect,
 	boxRadiiForSigma,
 	CurveAdjustment,
 	CurveChannel,
-	DRAWIMAGE_EFFECT_FLAG,
 	parseSerializableObject,
 	type EmfPlusImageEffect,
 } from './emf-plus-image-effects';
@@ -253,30 +258,59 @@ describe('Blur and Sharpen', () => {
 	});
 });
 
+describe('applyImageEffectToRect', () => {
+	const oneBox = 2 * Math.sqrt(2 / 3);
+	const blur = (expandEdge: boolean, radius = oneBox): EmfPlusImageEffect => ({ kind: 'blur', radius, expandEdge });
+	const rect = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
+
+	it('effects only the source rectangle, so pixels outside it do not bleed in', () => {
+		const src = greyRow(255, 0, 0, 0, 0);
+		// The whole image: the bright pixel spreads into pixel 1.
+		expect(reds(apply(src, blur(false)))[1]).toBe(85);
+		const region = applyImageEffectToRect(src, 5, 1, blur(false), rect(1, 0, 4, 1))!;
+		expect([region.x, region.y, region.width, region.height, region.pad]).toEqual([1, 0, 4, 1, 0]);
+		expect(reds(Array.from(region.rgba))).toEqual([0, 0, 0, 0]);
+		const sharpen: EmfPlusImageEffect = { kind: 'sharpen', radius: oneBox, amount: 100 };
+		const sharpened = applyImageEffectToRect(greyRow(255, 64, 64, 64), 4, 1, sharpen, rect(1, 0, 3, 1))!;
+		expect(reds(Array.from(sharpened.rgba))).toEqual([64, 64, 64]);
+	});
+
+	it('rounds a fractional rectangle outward and clamps it to the image', () => {
+		const region = applyImageEffectToRect(greyRow(1, 2, 3, 4), 4, 1, blur(false, 0), rect(0.5, -3, 1.2, 9))!;
+		expect([region.x, region.y, region.width, region.height]).toEqual([0, 0, 2, 1]);
+		expect(reds(Array.from(region.rgba))).toEqual([1, 2]);
+		expect(applyImageEffectToRect(greyRow(1, 2), 2, 1, blur(false), rect(5, 0, 2, 1))).toBeNull();
+	});
+
+	it('grows an expandEdge blur by the radius on every side, blurring transparency in', () => {
+		const src = px(...new Array(9).fill([200, 100, 50, 255]));
+		const plain = applyImageEffectToRect(src, 3, 3, blur(false, 2), rect(0, 0, 3, 3))!;
+		expect([plain.width, plain.height, plain.pad]).toEqual([3, 3, 0]);
+		expect(Array.from(plain.rgba)).toEqual(Array.from(src));
+		const grown = applyImageEffectToRect(src, 3, 3, blur(true, 1.5), rect(0, 0, 3, 3))!;
+		expect([grown.x, grown.y, grown.width, grown.height, grown.pad]).toEqual([-2, -2, 7, 7, 2]);
+		const at = (x: number, y: number): number[] => Array.from(grown.rgba.slice((y * 7 + x) * 4, (y * 7 + x) * 4 + 4));
+		// The halo beyond the original pixels is partly opaque, in the image's own colour.
+		const halo = at(1, 3);
+		expect(halo[3]).toBeGreaterThan(0);
+		expect(halo[3]).toBeLessThan(255);
+		expect(halo.slice(0, 3)).toEqual([200, 100, 50]);
+		// Alpha falls off away from the image.
+		expect(at(0, 3)[3]).toBeLessThan(halo[3]);
+		expect(at(3, 3)[3]).toBeGreaterThan(halo[3]);
+	});
+
+	it('moves red-eye areas into the cropped region', () => {
+		const red = [200, 20, 20, 255];
+		const effect: EmfPlusImageEffect = { kind: 'redEyeCorrection', areas: [{ left: 2, top: 0, right: 3, bottom: 1 }] };
+		const region = applyImageEffectToRect(px(red, red, red), 3, 1, effect, rect(1, 0, 2, 1))!;
+		expect(reds(Array.from(region.rgba))).toEqual([200, 20]);
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Record parsing
 // ---------------------------------------------------------------------------
-
-const COLOR_MATRIX_GUID = [
-	0x15, 0x26, 0x8f, 0x71, 0x33, 0x79, 0xe3, 0x40, 0xa5, 0x11, 0x5f, 0x68, 0xfe, 0x14, 0xdd, 0x74,
-];
-const TINT_GUID = [0x00, 0xaf, 0x77, 0x10, 0x48, 0x28, 0x41, 0x44, 0x94, 0x89, 0x44, 0xad, 0x4c, 0x2d, 0x7a, 0x2c];
-
-/** An EmfPlusSerializableObject record's data: GUID, BufferSize, buffer. */
-function serializableObject(guid: number[], buffer: Uint8Array): Uint8Array {
-	const out = new Uint8Array(20 + buffer.length);
-	out.set(guid, 0);
-	new DataView(out.buffer).setUint32(16, buffer.length, true);
-	out.set(buffer, 20);
-	return out;
-}
-
-function colorMatrixObject(m: number[]): Uint8Array {
-	const buf = new Uint8Array(100);
-	const v = new DataView(buf.buffer);
-	m.forEach((x, i) => v.setFloat32(4 * i, x, true));
-	return serializableObject(COLOR_MATRIX_GUID, buf);
-}
 
 describe('parseSerializableObject', () => {
 	it('reads a ColorMatrix effect', () => {
@@ -311,45 +345,6 @@ describe('parseSerializableObject', () => {
 // DrawImagePoints with flag E
 // ---------------------------------------------------------------------------
 
-/**
- * Rewrites a fixture so that a SerializableObject record carrying `effect`
- * precedes its first DrawImagePoints record, which gets flag E.
- */
-function withEffect(name: string, effect: Uint8Array, flagE = true): ArrayBuffer {
-	const src = new Uint8Array(readFileSync(fixturePath(name)));
-	const v = new DataView(src.buffer, src.byteOffset, src.byteLength);
-	const inserted = 12 + effect.length;
-	for (let off = 0; off + 8 <= src.length; ) {
-		const size = v.getUint32(off + 4, true);
-		if (v.getUint32(off, true) === EMR_COMMENT && v.getUint32(off + 12, true) === EMFPLUS_SIGNATURE) {
-			const end = off + 12 + v.getUint32(off + 8, true);
-			for (let p = off + 16; p + 12 <= end; p += v.getUint32(p + 4, true)) {
-				if (v.getUint16(p, true) !== EMFPLUS_DRAWIMAGEPOINTS) {
-					continue;
-				}
-				const out = new Uint8Array(src.length + inserted);
-				out.set(src.subarray(0, p), 0);
-				out.set(src.subarray(p), p + inserted);
-				const o = new DataView(out.buffer);
-				o.setUint16(p, EMFPLUS_SERIALIZABLEOBJECT, true);
-				o.setUint16(p + 2, 0, true);
-				o.setUint32(p + 4, inserted, true);
-				o.setUint32(p + 8, effect.length, true);
-				out.set(effect, p + 12);
-				if (flagE) {
-					o.setUint16(p + inserted + 2, o.getUint16(p + inserted + 2, true) | DRAWIMAGE_EFFECT_FLAG, true);
-				}
-				o.setUint32(off + 4, size + inserted, true);
-				o.setUint32(off + 8, v.getUint32(off + 8, true) + inserted, true);
-				o.setUint32(48, out.length, true);
-				return out.buffer;
-			}
-		}
-		off += size;
-	}
-	throw new Error(`${name}: no DrawImagePoints record`);
-}
-
 async function renderPixels(bytes: ArrayBuffer): Promise<{ width: number; height: number; data: Uint8ClampedArray }> {
 	const url = await convertMetafileToDataUrl(bytes, { dpiScale: 1 });
 	expect(url).not.toBeNull();
@@ -364,10 +359,7 @@ async function svgImages(svg: string): Promise<{ width: number; height: number; 
 
 describe('DrawImagePoints with an image effect', () => {
 	const FIXTURE = 'gpx-image-rotated-bilinear.emf';
-	const fixture = (): ArrayBuffer => {
-		const b = readFileSync(fixturePath(FIXTURE));
-		return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
-	};
+	const fixture = (): ArrayBuffer => fixtureBuffer(FIXTURE);
 
 	it('applies a red/blue swap ColorMatrix to the drawn pixels (PNG)', async () => {
 		const plain = await renderPixels(fixture());
@@ -412,5 +404,70 @@ describe('DrawImagePoints with an image effect', () => {
 				a.data[i + 3],
 			]);
 		}
+	});
+});
+
+describe('DrawImagePoints with a blur effect', () => {
+	// Draw 1 maps the 20x16 image onto (4, 4)-(56, 41.6): 2.6 device pixels per image pixel.
+	const FIXTURE = 'gpx-image-nearestneighbor.emf';
+	const pixel = (img: { width: number; data: Uint8ClampedArray }, x: number, y: number): number[] =>
+		Array.from(img.data.slice((y * img.width + x) * 4, (y * img.width + x) * 4 + 4));
+
+	it('extends an expandEdge blur beyond the image in PNG output, and keeps it inside otherwise', async () => {
+		const plain = await renderPixels(fixtureBuffer(FIXTURE));
+		const grown = await renderPixels(withEffect(FIXTURE, blurObject(4, true)));
+		const kept = await renderPixels(withEffect(FIXTURE, blurObject(4, false)));
+		// Three device pixels left of the image (the halo reaches 4 * 2.6).
+		expect(pixel(plain, 1, 22)).toEqual([255, 255, 255, 255]);
+		expect(pixel(grown, 1, 22)).not.toEqual(pixel(plain, 1, 22));
+		expect(pixel(kept, 1, 22)).toEqual(pixel(plain, 1, 22));
+		// Beyond the halo nothing changes.
+		expect(pixel(grown, 1, 60)).toEqual(pixel(plain, 1, 60));
+		// The original pixels stay in place: away from the edges both blurs agree.
+		for (const [x, y] of [
+			[28, 20],
+			[32, 24],
+		]) {
+			pixel(grown, x, y).forEach((v, c) => expect(Math.abs(v - pixel(kept, x, y)[c])).toBeLessThanOrEqual(2));
+		}
+		let inside = 0;
+		for (let y = 5; y < 41; y++) {
+			for (let x = 5; x < 55; x++) {
+				if (pixel(kept, x, y).join() !== pixel(plain, x, y).join()) {
+					inside++;
+				}
+			}
+		}
+		expect(inside).toBeGreaterThan(0);
+	});
+
+	it('embeds the grown bitmap in SVG output', async () => {
+		const [grown] = await svgImages((await convertMetafileToSvg(withEffect(FIXTURE, blurObject(4, true))))!);
+		const [kept] = await svgImages((await convertMetafileToSvg(withEffect(FIXTURE, blurObject(4, false))))!);
+		expect([grown.width, grown.height]).toEqual([28, 24]);
+		expect([kept.width, kept.height]).toEqual([20, 16]);
+		// The halo row and column are partly transparent.
+		expect(grown.data[(2 * 28 + 2) * 4 + 3]).toBeGreaterThan(0);
+		expect(grown.data[(2 * 28 + 2) * 4 + 3]).toBeLessThan(255);
+	});
+
+	it('blurs only the source rectangle', async () => {
+		const [original] = await svgImages((await convertMetafileToSvg(fixtureBuffer(FIXTURE)))!);
+		const [cropped] = await svgImages(
+			(await convertMetafileToSvg(withEffect(FIXTURE, blurObject(4, false), true, [0, 0, 10, 16])))!,
+		);
+		expect([cropped.width, cropped.height]).toEqual([10, 16]);
+		// The expected pixels: the left 10 columns cut out first, then blurred.
+		const left = new Uint8ClampedArray(10 * 16 * 4);
+		for (let y = 0; y < 16; y++) {
+			left.set(original.data.subarray(y * 20 * 4, (y * 20 + 10) * 4), y * 10 * 4);
+		}
+		const expected = applyImageEffect(left, 10, 16, { kind: 'blur', radius: 4, expandEdge: false })!;
+		expect(Array.from(cropped.data)).toEqual(Array.from(expected));
+		// Blurring the whole image would have pulled the right half into column 9.
+		const whole = applyImageEffect(original.data, 20, 16, { kind: 'blur', radius: 4, expandEdge: false })!;
+		const column9 = (d: Uint8ClampedArray, w: number): number[] =>
+			Array.from({ length: 16 }, (_, y) => Array.from(d.slice((y * w + 9) * 4, (y * w + 9) * 4 + 4))).flat();
+		expect(column9(cropped.data, 10)).not.toEqual(column9(whole, 20));
 	});
 });

@@ -21,8 +21,10 @@
  * The replay pass then finds each drawn image in
  * `EmfPlusReplayCtx.imageCache` by the object's `cacheKey`. A miss (no image
  * decoder in this environment, or an undecodable format) keeps the old
- * deferred path, and SVG output never needs the decoded pixels of a
- * browser-native image (it embeds the original PNG/JPEG bytes).
+ * deferred path. SVG output embeds a browser-native image's original
+ * PNG/JPEG bytes and needs its decoded pixels only for an image effect;
+ * without a canvas backend a PNG is still decoded here (by the built-in
+ * `png-decoder.ts`), a JPEG is not.
  *
  * @module emf-plus-image-predecode
  */

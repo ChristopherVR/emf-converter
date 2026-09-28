@@ -23,8 +23,11 @@
  *   each parameter; parity with GDI+ is unverified.
  *
  * All operations take straight (un-premultiplied) top-down RGBA and return
- * a new buffer; the input is never modified. The effect is applied to the
- * whole bitmap, not only the draw's source rectangle.
+ * a new buffer; the input is never modified. A draw applies the effect to
+ * its source rectangle only ({@link applyImageEffectToRect}), so pixels
+ * outside it never bleed in, and a blur with `expandEdge` grows that
+ * rectangle by the blur radius on every side, as GDI+'s
+ * `Bitmap::ApplyEffect` grows the bitmap.
  *
  * @module emf-plus-image-effects
  */
@@ -531,10 +534,10 @@ function blurFloat(src: Uint8ClampedArray, w: number, h: number, radius: number)
 
 /**
  * Blur (MS-EMFPLUS 2.2.3.1): a Gaussian of standard deviation
- * `radius / 2` (see {@link blurFloat}). GDI+ grows the bitmap by the radius
- * when `expandEdge` is set; here the image keeps its size either way (the
- * destination mapping of the draw is fixed), so the blur is clipped to the
- * image, as GDI+ does without `expandEdge`.
+ * `radius / 2` (see {@link blurFloat}), edges clamped. This keeps the
+ * image's size; `expandEdge` (growing the bitmap by the radius) is handled
+ * by {@link applyImageEffectToRect}, which pads the pixels with transparency
+ * first.
  */
 export function applyBlur(src: Uint8ClampedArray, w: number, h: number, radius: number): Uint8ClampedArray {
 	const blurred = blurFloat(src, w, h, radius);
@@ -627,4 +630,88 @@ export function applyImageEffect(
 		case 'tint':
 			return applyTint(rgba, effect.hue, effect.amount);
 	}
+}
+
+/** Pixels an effect produced, placed in the source image's pixel coordinates. */
+export interface EffectedRegion {
+	rgba: Uint8ClampedArray;
+	/** The top-left of `rgba` in source image pixels (negative when the region grew past the image). */
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** Transparent padding added on every side before the effect (an expanded blur's radius), else 0. */
+	pad: number;
+}
+
+/**
+ * Applies `effect` to the part of a `width` x `height` image that a draw's
+ * source rectangle `src` (image pixels, possibly fractional) covers, the way
+ * GDI+'s `DrawImage(image, srcRect, xform, effect, ...)` does:
+ *
+ * - the rectangle is rounded outward and clamped to the image, and only
+ *   those pixels are handed to the effect, so a blur or sharpen never reads
+ *   pixels outside it (its own edges are clamped);
+ * - a blur with `expandEdge` gets `ceil(radius)` transparent pixels of
+ *   padding on every side first, so the blurred halo extends beyond the
+ *   rectangle (`Bitmap::ApplyEffect` grows the bitmap by the radius);
+ * - red-eye areas, given in image pixels, are moved into the cropped
+ *   region's coordinates.
+ *
+ * `src` of `null` applies the effect to the whole image, unexpanded.
+ * Returns `null` when the rectangle misses the image or the effect cannot
+ * be applied.
+ */
+export function applyImageEffectToRect(
+	rgba: Uint8ClampedArray,
+	width: number,
+	height: number,
+	effect: EmfPlusImageEffect,
+	src: { x: number; y: number; w: number; h: number } | null,
+): EffectedRegion | null {
+	if (width <= 0 || height <= 0 || rgba.length !== width * height * 4) {
+		return null;
+	}
+	let x0 = 0;
+	let y0 = 0;
+	let x1 = width;
+	let y1 = height;
+	if (src) {
+		x0 = clamp(Math.floor(src.x), 0, width);
+		y0 = clamp(Math.floor(src.y), 0, height);
+		x1 = clamp(Math.ceil(src.x + src.w), 0, width);
+		y1 = clamp(Math.ceil(src.y + src.h), 0, height);
+		if (x1 <= x0 || y1 <= y0) {
+			return null;
+		}
+	}
+	const pad = src && effect.kind === 'blur' && effect.expandEdge ? Math.ceil(effect.radius) : 0;
+	const cw = x1 - x0;
+	const ch = y1 - y0;
+	const w = cw + 2 * pad;
+	const h = ch + 2 * pad;
+	let region = rgba;
+	if (w !== width || h !== height || x0 !== 0 || y0 !== 0) {
+		region = new Uint8ClampedArray(w * h * 4);
+		for (let y = 0; y < ch; y++) {
+			const from = ((y0 + y) * width + x0) * 4;
+			region.set(rgba.subarray(from, from + cw * 4), ((pad + y) * w + pad) * 4);
+		}
+	}
+	const ox = x0 - pad;
+	const oy = y0 - pad;
+	const local: EmfPlusImageEffect =
+		effect.kind === 'redEyeCorrection'
+			? {
+					kind: effect.kind,
+					areas: effect.areas.map((a) => ({
+						left: a.left - ox,
+						top: a.top - oy,
+						right: a.right - ox,
+						bottom: a.bottom - oy,
+					})),
+				}
+			: effect;
+	const out = applyImageEffect(region, w, h, local);
+	return out ? { rgba: out, x: ox, y: oy, width: w, height: h, pad } : null;
 }
