@@ -291,7 +291,10 @@ export function penIsWidened(rCtx: EmfGdiReplayCtx): boolean {
 export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boolean; roundPen?: boolean } = {}): WidenOptions {
 	const { state } = rCtx;
 	const flags = state.penFlags ?? state.penStyle;
-	const widthPx = penDeviceWidth(rCtx);
+	const matrix = gdiDeviceMatrix(rCtx);
+	const widthPx = opts.rectangle && rCtx.wholeDevicePixels && (flags & 0xf) === 6
+		? state.penWidth * Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2]))
+		: penDeviceWidth(rCtx);
 	const capBits = flags & 0xf00;
 	const joinBits = flags & 0xf000;
 	const dashes = state.penExtended ? geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1)) : null;
@@ -374,6 +377,17 @@ export interface RasterPaintOptions {
 	roundPen?: boolean;
 }
 
+/** Applies RTL's pixel-centre reflection to non-box WMF geometry. */
+export function layoutRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, boxShape = false): GdiRasterPath {
+	if (!rCtx.wmfLayoutRtl || boxShape) return path;
+	// RTL reflects device pixels about width - 1, while its logical mapping
+	// uses width - x. Compatible boxes already account for the excluded edge.
+	const shift = Math.round(16 * (rCtx.wholeDevicePixels?.[0] ?? 1));
+	const reflected = new GdiRasterPath();
+	reflected.figures = path.figures.map((figure) => ({ ...figure, pts: figure.pts.map((v, i) => i % 2 === 0 ? v - shift : v) }));
+	return reflected;
+}
+
 /**
  * Fills and/or strokes `path` with the current brush and pen, exactly as
  * GDI rasterises it, then combines through the active `SetROP2` mode. The
@@ -384,11 +398,13 @@ export interface RasterPaintOptions {
  * caller.
  */
 export function paintRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, opts: RasterPaintOptions): boolean {
+	path = layoutRasterPath(rCtx, path, opts.rectangle || opts.roundPen);
 	const { ctx, state } = rCtx;
 	if (opts.fill) {
 		const paint = brushPaint(rCtx);
 		if (paint) {
-			const spans = fillPathSpans(opts.fillPath ?? path, !!opts.winding);
+			const fillPath = opts.fillPath ? layoutRasterPath(rCtx, opts.fillPath, opts.rectangle || opts.roundPen) : path;
+			const spans = fillPathSpans(fillPath, !!opts.winding);
 			paintSpansDeferred(rCtx, spans, paint, state.rop2);
 		}
 	}

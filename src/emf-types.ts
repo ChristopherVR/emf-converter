@@ -1170,6 +1170,8 @@ export interface EmfPlusReplayCtx {
  * flags such as `inPath` and `clipSaveDepth`.
  */
 export interface EmfGdiReplayCtx {
+	/** WMF layout reflects the playback device horizontally. */
+	wmfLayoutRtl?: boolean;
 	/** Target canvas 2D rendering context. */
 	ctx: CanvasContext;
 	/** DataView over the raw EMF file bytes. */

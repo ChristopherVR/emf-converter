@@ -66,6 +66,25 @@ public static class ImageEffectProbe
 				byte[] balance = new byte[12]; Buffer.BlockCopy(balances[i], 0, balance, 0, 12);
 				Case(dir, "balance-" + i, "537e597d-251e-48da-9664-29ca496b70f8", balance);
 			}
+			int[][] levels = { new int[] { 70, 0, 0 }, new int[] { 100, 40, 0 }, new int[] { 100, -40, 0 }, new int[] { 100, 0, 30 }, new int[] { 70, 40, 30 } };
+			for (int i = 0; i < levels.Length; i++) {
+				byte[] parameters = new byte[12]; Buffer.BlockCopy(levels[i], 0, parameters, 0, 12);
+				Case(dir, "levels-" + i, "99c354ec-2a31-4f3a-8c34-17a803b33a25", parameters);
+			}
+			for (int curve = 0; curve < 8; curve++) {
+				byte[] parameters = new byte[12]; Buffer.BlockCopy(new int[] { curve, 0, 40 }, 0, parameters, 0, 12);
+				Case(dir, "curve-" + curve, "dd6a0022-58e4-4a67-9d9b-d48eb881a53d", parameters);
+			}
+			int[][] contrasts = { new int[] { 30, 50 }, new int[] { -73, -1 }, new int[] { 0, 1 }, new int[] { 0, 100 }, new int[] { -73, 100 } };
+			for (int i = 0; i < contrasts.Length; i++) {
+				byte[] parameters = new byte[8]; Buffer.BlockCopy(contrasts[i], 0, parameters, 0, 8);
+				Case(dir, "contrast-" + i, "d3a1dbe1-8ec4-4c17-9f4c-ea97ad1c343d", parameters);
+			}
+			int[][] tints = { new int[] { 0, 50 }, new int[] { 0, -50 }, new int[] { 120, 50 }, new int[] { -120, -50 }, new int[] { 0, 100 }, new int[] { 45, 0 } };
+			for (int i = 0; i < tints.Length; i++) {
+				byte[] parameters = new byte[8]; Buffer.BlockCopy(tints[i], 0, parameters, 0, 8);
+				Case(dir, "tint-" + i, "1077af00-2848-4441-9489-44ad4c2d7a2c", parameters);
+			}
 		}
 	}
 	public static void BalanceSweep(string dir)
@@ -91,5 +110,37 @@ public static class ImageEffectProbe
 			for (int level = 0; level < 256; level++) lookup[offset++] = pixels[level * 4];
 		}
 		File.WriteAllText(Path.Combine(dir, "effect-contrast-sweep.json"), "{\"brightness\":[-255,-73,-1,0,1,30,255],\"contrast\":[-100,-99,-50,-1,0,1,50,99,100],\"expected\":\"" + Convert.ToBase64String(lookup) + "\"}");
+	}
+	public static void CurveSweep(string dir)
+	{
+		using (var init = new Bitmap(1, 1)) for (int curve = 0; curve < 8; curve++) {
+			int min = curve < 2 ? -255 : curve < 6 ? -100 : curve == 6 ? 1 : 0;
+			int max = curve == 7 ? 254 : curve < 2 || curve >= 6 ? 255 : 100;
+			byte[] lookup = new byte[(max - min + 1) * 256];
+			for (int value = min; value <= max; value++) {
+				byte[] parameters = new byte[12]; Buffer.BlockCopy(new int[] { curve, 0, value }, 0, parameters, 0, 12);
+				byte[] pixels;
+				try { pixels = Case(dir, "curve-sweep", "dd6a0022-58e4-4a67-9d9b-d48eb881a53d", parameters, true); }
+				catch (Exception e) { throw new Exception("curve " + curve + " value " + value, e); }
+				for (int level = 0; level < 256; level++) lookup[(value - min) * 256 + level] = pixels[level * 4];
+			}
+			File.WriteAllBytes(Path.Combine(dir, "curve-" + curve + ".bin"), lookup);
+		}
+	}
+	public static void LevelsSweep(string dir)
+	{
+		int[][] settings = new int[1010][];
+		int[][] initial = { new int[] { 100, 0, 0 }, new int[] { 70, 0, 0 }, new int[] { 100, 40, 0 }, new int[] { 100, -40, 0 }, new int[] { 100, 0, 30 }, new int[] { 70, 40, 30 }, new int[] { 93, 17, 4 }, new int[] { 0, 0, 0 }, new int[] { 100, 100, 100 }, new int[] { 20, -67, 30 } };
+		Array.Copy(initial, settings, initial.Length);
+		Random random = new Random(321);
+		for (int i = initial.Length; i < settings.Length; i++) settings[i] = new int[] { random.Next(101), random.Next(201) - 100, random.Next(101) };
+		byte[] lookup = new byte[settings.Length * 256];
+		using (var init = new Bitmap(1, 1)) for (int i = 0; i < settings.Length; i++) {
+			byte[] parameters = new byte[12]; Buffer.BlockCopy(settings[i], 0, parameters, 0, 12);
+			byte[] pixels = Case(dir, "levels-sweep", "99c354ec-2a31-4f3a-8c34-17a803b33a25", parameters, true);
+			for (int level = 0; level < 256; level++) lookup[i * 256 + level] = pixels[level * 4];
+		}
+		File.WriteAllBytes(Path.Combine(dir, "levels-sweep.bin"), lookup);
+		using (var writer = new StreamWriter(Path.Combine(dir, "levels-settings.csv"))) foreach (int[] setting in settings) writer.WriteLine(setting[0] + "," + setting[1] + "," + setting[2]);
 	}
 }

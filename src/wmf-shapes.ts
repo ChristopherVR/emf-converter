@@ -5,7 +5,8 @@
  * `emf-gdi-shape-paint.ts`), but with the geometry GDI builds when it plays
  * a WMF, which it always does in the `GM_COMPATIBLE` graphics mode:
  *   - every point lands on a whole device pixel (`fixPoint` rounds to them
- *     under `rCtx.wholeDevicePixels`), and so does the pen width;
+ *     under `rCtx.wholeDevicePixels`), and so does the pen width except
+ *     for Rectangle's fractional `PS_INSIDEFRAME` fitting;
  *   - the box's corners are ordered and its right and bottom edges pulled
  *     in by one device pixel: the box excludes its right/bottom edge, in
  *     device space, whatever the mapping (see {@link compatBox} for the
@@ -62,6 +63,8 @@ interface CompatBoxOptions {
  *   - a `PS_INSIDEFRAME` pen wider than a pixel moves the left/top edge in
  *     by half its width (rounded down) and the right/bottom edge by half
  *     of one less, so the whole stroke lies inside the box.
+ *     Rectangle fits the unrounded half-width symmetrically at FIX
+ *     precision instead (measured across fractional-width sweeps).
  */
 export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: number, opts: CompatBoxOptions = {}): CompatBox {
 	const exclusive = opts.exclusive !== false;
@@ -87,6 +90,19 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 	if ((p.rCtx.state.penStyle & 0x0f) === PS_INSIDEFRAME) {
 		const w = Math.round(penDeviceWidth(p.rCtx) / p.kx);
 		if (w > 1) {
+			const matrix = gdiDeviceMatrix(p.rCtx);
+			const rawWidth = p.rCtx.state.penWidth * Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2])) / p.kx;
+			// Rectangle fits the actual half-width on both sides of the
+			// inclusive box at FIX precision, even in compatible mode.
+			if (!opts.curved) {
+				box.x1 += Math.round(ux);
+				box.y1 += Math.round(uy);
+				box.x0 += Math.round(rawWidth * ux / 2);
+				box.y0 += Math.round(rawWidth * uy / 2);
+				box.x1 -= Math.round(rawWidth * ux / 2);
+				box.y1 -= Math.round(rawWidth * uy / 2);
+				return box;
+			}
 			box.x0 += Math.round(Math.floor(w / 2) * ux);
 			box.y0 += Math.round(Math.floor(w / 2) * uy);
 			box.x1 -= Math.round(Math.floor((w - 1) / 2) * ux);

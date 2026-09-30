@@ -5,10 +5,18 @@
 #
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself.
-param([string]$Which = 'all')
+param([string]$Which = 'all', [string]$OutDir = '')
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $out = Join-Path $here '..\..\src\__fixtures__\gdi'
+if ($Which -eq 'image-effect-tables') {
+    if (!$OutDir) { throw 'Pass a temporary output directory for the native tables' }
+    Add-Type -Path (Join-Path $here 'ImageEffectProbe.cs') -ReferencedAssemblies System.Drawing
+    $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $OutDir)).Path
+    [ImageEffectProbe]::CurveSweep($destination)
+    [ImageEffectProbe]::LevelsSweep($destination)
+    return
+}
 if ($Which -eq 'image-effects') {
     Add-Type -Path (Join-Path $here 'ImageEffectProbe.cs') -ReferencedAssemblies System.Drawing
     $destination = (Resolve-Path -LiteralPath $out).Path

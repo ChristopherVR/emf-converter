@@ -737,8 +737,7 @@ const SMOOTHING_CASES: ParityCase[] = [
  * embedded EMF. Before this replay (the old canvas-only WMF path) these
  * measured 4.9% to 100% of pixels off. The residuals: `wmf-shapes*` (wide
  * pen corners of RoundRect/Ellipse, one arc end pixel, and in the 0.96
- * scale case PS_INSIDEFRAME boxes one pixel short), `wmf-layout-rtl`
- * (mirrored lines rasterised after mirroring rather than before),
+ * scale case curved PS_INSIDEFRAME boxes one pixel short),
  * `wmf-nonplaceable*`/`wmf-pixels*` (single pixels of the same arc and
  * wide-pen machinery), `wmf-embedded-emf` (the EMF path's own wide-pen
  * residual).
@@ -748,7 +747,10 @@ const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', 
 const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-shapes', 0.001), // measured 0.073%
 	wmf('wmf-shapes-twips', 0.001), // measured 0.073%
-	wmf('wmf-shapes-scaled', 0.006), // measured 0.484%
+	wmf('wmf-shapes-scaled', 0.003), // measured 0.274%
+	wmf('wmf-insideframe-subpixel'),
+	wmf('wmf-insideframe-fractional', 0.004), // measured 0.385%: 6.5/7.5 px pen boundaries
+	wmf('wmf-insideframe-wide-subpixel', 0.004), // measured 0.385%: the same half-width ties
 	wmf('wmf-map-anisotropic'),
 	wmf('wmf-map-isotropic'),
 	wmf('wmf-map-text'),
@@ -770,7 +772,8 @@ const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-pixels-twips', 0.0001), // measured 0.007%
 	wmf('wmf-objects'),
 	wmf('wmf-escapes'),
-	wmf('wmf-layout-rtl', 0.003), // measured 0.235%
+	wmf('wmf-layout-rtl'),
+	wmf('wmf-layout-rtl-lines'),
 	wmf('wmf-embedded-emf', 0.001), // measured 0.072%
 ];
 

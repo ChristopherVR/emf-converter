@@ -2791,6 +2791,24 @@ public static class GdiFixtures
 
 	static void WmfShapeCases()
 	{
+		WmfPlayCase("wmf-insideframe-fractional", 400, 160, WmfRecord(delegate (IntPtr hdc) {
+			for (int i = 0; i < 20; i++) {
+				int x = (i % 10) * 400 + 50, y = (i / 10) * 800 + 100;
+				WithObjects(hdc, CreatePen(6, (i + 1) * 5, Rgb(16, 16, 96)), CreateSolidBrush(Palette[2]), delegate { Rectangle(hdc, x, y, x + 300, y + 600); });
+			}
+		}), new int[] { 0, 0, 4000, 1600 }, 960);
+		WmfPlayCase("wmf-insideframe-subpixel", 400, 160, WmfRecord(delegate (IntPtr hdc) {
+			for (int i = 0; i < 20; i++) {
+				int x = (i % 10) * 400 + 50, y = (i / 10) * 800 + 100;
+				WithObjects(hdc, CreatePen(6, i + 10, Rgb(16, 16, 96)), CreateSolidBrush(Palette[2]), delegate { Rectangle(hdc, x, y, x + 300, y + 600); });
+			}
+		}), new int[] { 0, 0, 4000, 1600 }, 960);
+		WmfPlayCase("wmf-insideframe-wide-subpixel", 400, 160, WmfRecord(delegate (IntPtr hdc) {
+			for (int i = 0; i < 20; i++) {
+				int x = (i % 10) * 400 + 50, y = (i / 10) * 800 + 100;
+				WithObjects(hdc, CreatePen(6, i + 61, Rgb(16, 16, 96)), CreateSolidBrush(Palette[2]), delegate { Rectangle(hdc, x, y, x + 300, y + 600); });
+			}
+		}), new int[] { 0, 0, 4000, 1600 }, 960);
 		int w = 380, h = 252;
 		WmfPixelCase("wmf-shapes", w, h, delegate (IntPtr hdc) { WmfShapeSheet(hdc, 1); });
 		// Twips (1440 per inch): every coordinate and pen width 15x, bounds 15x.
@@ -3425,6 +3443,23 @@ public static class GdiFixtures
 			WithObjects(hdc, CreatePen(0, 0, 0), CreateSolidBrush(Palette[3]), delegate { Rectangle(hdc, 70, 44, 100, 56); });
 			WmfApi.SetLayout(hdc, 0);
 			WmfProbe(hdc, 100, 20, 1, Palette[4]);
+		});
+		WmfPixelCase("wmf-layout-rtl-lines", 340, 160, delegate (IntPtr hdc)
+		{
+			WmfApi.SetLayout(hdc, 1);
+			int[] dx = { 20, 20, 20, 0, -20, -20, -20, 0 };
+			int[] dy = { 0, 20, -20, 20, 0, 20, -20, -20 };
+			for (int row = 0; row < 2; row++) {
+				int oy = row * 80;
+				WithObjects(hdc, CreatePen(0, row == 0 ? 0 : 5, Rgb(16, 16, 96)), CreateSolidBrush(Palette[2]), delegate {
+					Polygon(hdc, new[] { P(4, oy + 4), P(64, oy + 8), P(24, oy + 24) }, 3);
+					for (int i = 0; i < 8; i++) {
+						int x = 24 + i * 40;
+						MoveToEx(hdc, x, oy + 50, IntPtr.Zero);
+						LineTo(hdc, x + dx[i], oy + 50 + dy[i]);
+					}
+				});
+			}
 		});
 	}
 

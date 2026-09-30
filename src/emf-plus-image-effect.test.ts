@@ -1,4 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { inflateSync } from 'node:zlib';
+import { nativeCurveLookup } from './emf-plus-image-curves';
 import { describe, expect, it } from 'vitest';
 import { applyImageEffect, parseImageEffect } from './emf-plus-image-effect';
 import { replayEmfPlusRecords } from './emf-plus-replay';
@@ -24,7 +27,7 @@ function nativeCase(name: string) {
 }
 
 describe('EMF+ image effects', () => {
-	it.each(['matrix-swap', 'matrix-mix', 'lookup', 'balance-0', 'balance-1', 'balance-2', 'balance-3', 'balance-4'])('matches native GDI+ %s pixels', (name) => {
+	it.each(['matrix-swap', 'matrix-mix', 'lookup', 'balance-0', 'balance-1', 'balance-2', 'balance-3', 'balance-4', ...Array.from({ length: 8 }, (_, i) => `curve-${i}`), ...Array.from({ length: 5 }, (_, i) => `levels-${i}`)])('matches native GDI+ %s pixels', (name) => {
 		const { view, source, expected } = nativeCase(name);
 		const original = source.slice();
 		const effect = parseImageEffect(view, 0, view.byteLength)!;
@@ -36,6 +39,49 @@ describe('EMF+ image effects', () => {
 		expect(Math.max(...differences)).toBeLessThanOrEqual(name === 'matrix-mix' ? 1 : 0);
 		expect(differences.filter(Boolean)).toHaveLength(name === 'matrix-mix' ? 21 : 0);
 		expect(source).toEqual(original);
+	});
+	it('preserves every Windows colour-curve lookup across the complete parameter ranges', () => {
+		const hashes = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-curve-hashes.json', import.meta.url), 'utf8'));
+		for (let curve = 0; curve < 8; curve++) {
+			const min = curve < 2 ? -255 : curve < 6 ? -100 : curve === 6 ? 1 : 0;
+			const max = curve === 7 ? 254 : curve < 2 || curve === 6 ? 255 : 100;
+			const hash = createHash('sha256');
+			for (let intensity = min; intensity <= max; intensity++) hash.update(nativeCurveLookup(curve, intensity));
+			expect(hash.digest('hex')).toBe(hashes[curve]);
+		}
+	});
+	it('selects curve channels and rejects invalid adjustment parameters', () => {
+		const { view, source } = nativeCase('curve-0');
+		for (let channel = 1; channel <= 3; channel++) {
+			view.setUint32(24, channel, true);
+			const pixels = applyImageEffect(source, parseImageEffect(view, 0, view.byteLength)!);
+			for (let o = 0; o < source.length; o += 4) for (let ch = 0; ch < 4; ch++) {
+				if (ch !== channel - 1) expect(pixels[o + ch]).toBe(source[o + ch]);
+			}
+		}
+		view.setUint32(20, 8, true);
+		expect(parseImageEffect(view, 0, view.byteLength)).toBeNull();
+		view.setUint32(20, 6, true); view.setInt32(28, 0, true);
+		expect(parseImageEffect(view, 0, view.byteLength)).toBeNull();
+		view.setUint32(20, 7, true); view.setInt32(28, 255, true);
+		expect(parseImageEffect(view, 0, view.byteLength)).toBeNull();
+	});
+	it('matches 1,010 mixed levels settings, endpoints and inversions against Windows', () => {
+		const fixture = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-levels-sweep.json', import.meta.url), 'utf8')) as { settings: number[][]; expected: string };
+		const expected = inflateSync(Buffer.from(fixture.expected, 'base64'));
+		const { view } = nativeCase('levels-0');
+		let differences = 0;
+		fixture.settings.forEach((setting, i) => {
+			setting.forEach((value, ch) => view.setInt32(20 + ch * 4, value, true));
+			const effect = parseImageEffect(view, 0, view.byteLength)!;
+			expect(effect.kind).toBe('lookup');
+			for (let value = 0; value < 256; value++) {
+				const diff = Math.abs(effect.values[value] - expected[i * 256 + value]);
+				expect(diff).toBeLessThanOrEqual(1);
+				if (diff) differences++;
+			}
+		});
+		expect(differences).toBe(1);
 	});
 	it('rejects truncated and nonfinite parameters', () => {
 		const { view } = nativeCase('matrix-swap');

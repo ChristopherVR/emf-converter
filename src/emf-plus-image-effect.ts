@@ -2,9 +2,20 @@
  * MS-EMFPLUS 2.3.5.2, 2.2.3.5 and 2.2.3.6; Windows probes live in
  * scripts/gdi-fixtures/ImageEffectProbe.cs.
  */
+import { nativeCurveLookup } from './emf-plus-image-curves';
+
 export type ImageEffect =
 	| { kind: 'matrix'; values: number[] }
 	| { kind: 'lookup'; values: Uint8Array };
+
+/** A channel lookup, retaining the source alpha and unselected colours. */
+function channelLookup(transform: (value: number) => number, channel = 0): ImageEffect {
+	const values = new Uint8Array(1024);
+	for (let ch = 0; ch < 4; ch++) for (let value = 0; value < 256; value++) {
+		values[ch * 256 + value] = ch < 3 && (channel === 0 || channel === 3 - ch) ? Math.min(255, Math.max(0, Math.round(transform(value)))) : value;
+	}
+	return { kind: 'lookup', values };
+}
 
 /** Reads the GUID and bounded parameter block; unsupported/malformed effects clear the previous effect. */
 export function parseImageEffect(view: DataView, off: number, size: number): ImageEffect | null {
@@ -33,6 +44,36 @@ export function parseImageEffect(view: DataView, off: number, size: number): Ima
 		}
 		for (let value = 0; value < 256; value++) values[768 + value] = value;
 		return { kind: 'lookup', values };
+	}
+	if (guid === 'dd6a002258e44a679d9bd48eb881a53d' && count === 12) {
+		const curve = view.getUint32(off + 20, true);
+		const channel = view.getUint32(off + 24, true);
+		const intensity = view.getInt32(off + 28, true);
+		const min = curve < 2 ? -255 : curve < 6 ? -100 : curve === 6 ? 1 : 0;
+		const max = curve === 7 ? 254 : curve < 2 || curve === 6 ? 255 : 100;
+		if (curve > 7 || channel > 3 || intensity < min || intensity > max) return null;
+		const lookup = nativeCurveLookup(curve, intensity);
+		return channelLookup((value) => lookup[value], channel);
+	}
+	if (guid === '99c354ec2a314f3a8c3417a803b33a25' && count === 12) {
+		const highlight = view.getInt32(off + 20, true);
+		const midtone = view.getInt32(off + 24, true);
+		const shadow = view.getInt32(off + 28, true);
+		if (highlight < 0 || highlight > 100 || midtone < -100 || midtone > 100 || shadow < 0 || shadow > 100) return null;
+		// GDI+ interpolates gamma on successively halved slider intervals:
+		// 0/50/75/87.5/... correspond to gamma 1/2/3/4/..., capped at 10.
+		let gamma = 1, low = 0, high = 50;
+		while (Math.abs(midtone) >= high && high < 100) {
+			gamma++; low = high; high = (high + 100) / 2;
+		}
+		gamma = Math.abs(midtone) === 100 ? 10 : Math.min(10, gamma + (Math.abs(midtone) - low) / (high - low));
+		const exponent = Math.fround(midtone < 0 ? gamma : 1 / gamma);
+		const base = shadow * 255 / 100 - (highlight === shadow && shadow < 50 ? 1 : 0);
+		const span = highlight === shadow ? 1 : (highlight - shadow) * 255 / 100;
+		return channelLookup((value) => {
+			const level = Math.min(1, Math.max(0, (value - base) / span));
+			return 255 * (highlight >= shadow ? level ** exponent : 1 - (1 - level) ** exponent);
+		});
 	}
 	return null;
 }

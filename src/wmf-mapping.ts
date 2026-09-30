@@ -182,6 +182,7 @@ export function scaleViewportExt(m: WmfMapping, xNum: number, xDen: number, yNum
  * mirrored across a device `mirrorWidth` pixels wide under `LAYOUT_RTL`.
  */
 export function applyWmfMapping(rCtx: EmfGdiReplayCtx, m: WmfMapping, kx: number, ky: number, mirrorWidth = 0): void {
+	rCtx.wmfLayoutRtl = mirrorWidth > 0;
 	rCtx.useMappingMode = true;
 	rCtx.windowOrg = { x: m.winOrg.x, y: m.winOrg.y };
 	rCtx.windowExt = { cx: m.winExt.cx || 1, cy: m.winExt.cy || 1 };

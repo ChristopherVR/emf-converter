@@ -73,7 +73,7 @@ import { hatchBit, realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import { gdiDeviceMatrix, hasWorldRotation } from './emf-gdi-coord';
 import { paintSpansDeferred } from './emf-gdi-raster-paint';
 import { flushRasterLayer } from './emf-gdi-raster-layer';
-import { brushPaint, paintRasterPath, penIsCosmetic, penIsWidened } from './emf-gdi-raster-shapes';
+import { brushPaint, layoutRasterPath, paintRasterPath, penIsCosmetic, penIsWidened } from './emf-gdi-raster-shapes';
 import {
 	isExactRop2Bitwise,
 	measurePathBox,
@@ -545,7 +545,8 @@ export function paintGdiShape(rCtx: EmfGdiReplayCtx, shape: GdiShape): void {
 		if (aliased || tile || bitwise) {
 			const paint = brushPaint(rCtx);
 			if (paint) {
-				let spans = fillPathSpans(getPath(), fillRule === 'nonzero');
+				const fillPath = layoutRasterPath(rCtx, getPath(), shape.rectangle || shape.roundPen);
+				let spans = fillPathSpans(fillPath, fillRule === 'nonzero');
 				if (shape.axisRect && shape.stroke && cosmetic) {
 					spans = withoutOutline(spans, getPath());
 				}
