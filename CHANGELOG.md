@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.1) - 2026-09-30
+
+### Bug Fixes
+
+- Ship browser entry without optional Node imports ([69d7f8c](https://github.com/ChristopherVR/emf-converter/commit/69d7f8cc76209b6b143f0212932cddb25969b0c6))
+
 ## [4.4.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.0) - 2026-09-30
 
 ### Features
