@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.11](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.11) - 2026-09-30
+
+### Bug Fixes
+
+- Quantize native Tint hues and preserve probe alpha ([f2c883e](https://github.com/ChristopherVR/emf-converter/commit/f2c883e19d229d37944038d623f46c474ec3191d))
+
 ## [4.4.10](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.10) - 2026-09-30
 
 ### Bug Fixes
