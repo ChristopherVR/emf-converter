@@ -5372,6 +5372,102 @@ public static class GdiFixtures
 	}
 
 	/** Isolated colour-adjustment controls and the StretchDIBits HALFTONE path. */
+	static void ErIlluminantCharts()
+	{
+		var colours = new List<int>();
+		foreach(int v in new[]{0,16,32,64,96,128,160,192,224,255}) colours.Add(Rgb(v,v,v));
+		foreach(int v in new[]{16,32,64,128,192,255}) {colours.Add(Rgb(v,0,0));colours.Add(Rgb(0,v,0));colours.Add(Rgb(0,0,v));}
+		foreach(int r in new[]{0,32,64,128,192,255}) foreach(int g in new[]{0,32,64,128,192,255}) foreach(int b in new[]{0,32,64,128,192,255}) colours.Add(Rgb(r,g,b));
+		var random = new Random(7301);
+		while(colours.Count<256)colours.Add(Rgb(random.Next(256),random.Next(256),random.Next(256)));
+		var json = new StringBuilder("[");
+		foreach(int colour in colours) {if(json.Length>1)json.Append(',');json.Append(((colour&255)<<16)|(colour&0xff00)|((colour>>16)&255));}
+		File.WriteAllText(Path.Combine(outDir,"illuminant-chart-colours.json"),json.Append("]").ToString());
+		IntPtr screen=GetDC(IntPtr.Zero);
+		try {
+			for(int illum=0;illum<=8;illum++) {
+				int selected=illum;
+				GdiCase("emfrec-ca-illuminant-chart-"+illum,138,138,delegate(IntPtr hdc){
+					Stripes(hdc,138,138);
+					var ca=new byte[24];BitConverter.GetBytes((ushort)24).CopyTo(ca,0);BitConverter.GetBytes((ushort)selected).CopyTo(ca,4);
+					for(int i=6;i<=10;i+=2)BitConverter.GetBytes((ushort)10000).CopyTo(ca,i);BitConverter.GetBytes((ushort)10000).CopyTo(ca,14);
+					if(!ErApi.SetColorAdjustment(hdc,ca))throw new Exception("SetColorAdjustment illuminant chart");
+					SetStretchBltMode(hdc,4);SetBrushOrgEx(hdc,0,0,IntPtr.Zero);
+					using(var src=new Dib(screen,64,64)){
+						for(int i=0;i<256;i++)Fill(src.Dc,i%16*4,i/16*4,i%16*4+4,i/16*4+4,colours[i]);
+						StretchBlt(hdc,5,5,128,128,src.Dc,0,0,64,64,0x00CC0020);
+					}
+				});
+			}
+		} finally {ReleaseDC(IntPtr.Zero,screen);}
+	}
+	static void ErDitherCharts()
+	{
+		IntPtr screen=GetDC(IntPtr.Zero);
+		try {
+			foreach(int[] placement in new[]{new[]{5,5,0,0},new[]{6,7,0,0},new[]{5,5,3,2}}) {
+				int[] p=placement;
+				GdiCase("emfrec-ca-dither-"+p[0]+"-"+p[1]+"-"+p[2]+"-"+p[3],140,140,delegate(IntPtr hdc){
+					Stripes(hdc,140,140);
+					var ca=new byte[24];BitConverter.GetBytes((ushort)24).CopyTo(ca,0);BitConverter.GetBytes((ushort)3).CopyTo(ca,4);
+					for(int i=6;i<=10;i+=2)BitConverter.GetBytes((ushort)10000).CopyTo(ca,i);BitConverter.GetBytes((ushort)10000).CopyTo(ca,14);
+					if(!ErApi.SetColorAdjustment(hdc,ca))throw new Exception("SetColorAdjustment dither chart");
+					SetStretchBltMode(hdc,4);SetBrushOrgEx(hdc,p[2],p[3],IntPtr.Zero);
+					using(var src=new Dib(screen,64,64)){
+						for(int i=0;i<256;i++)Fill(src.Dc,i%16*4,i/16*4,i%16*4+4,i/16*4+4,Rgb(i,i,i));
+						StretchBlt(hdc,p[0],p[1],128,128,src.Dc,0,0,64,64,0x00CC0020);
+					}
+				});
+			}
+		} finally {ReleaseDC(IntPtr.Zero,screen);}
+	}
+	static void ErIlluminantTables()
+	{
+		IntPtr screen=GetDC(IntPtr.Zero);
+		try {
+			using(var src=new Dib(screen,256,256)) using(var dst=new Dib(screen,522,522)) {
+				for(int i=0;i<256;i++)Fill(src.Dc,i%16*16,i/16*16,i%16*16+16,i/16*16+16,Rgb(i,i,i));
+				var ca=new byte[24];BitConverter.GetBytes((ushort)24).CopyTo(ca,0);BitConverter.GetBytes((ushort)3).CopyTo(ca,4);
+				for(int i=6;i<=10;i+=2)BitConverter.GetBytes((ushort)10000).CopyTo(ca,i);BitConverter.GetBytes((ushort)10000).CopyTo(ca,14);
+				if(!ErApi.SetColorAdjustment(dst.Dc,ca))throw new Exception("SetColorAdjustment quantizer");
+				SetStretchBltMode(dst.Dc,4);SetBrushOrgEx(dst.Dc,0,0,IntPtr.Zero);
+				StretchBlt(dst.Dc,5,5,512,512,src.Dc,0,0,256,256,0x00CC0020);GdiFlush();
+				var pixels=new byte[dst.W*dst.H*4];Marshal.Copy(dst.Bits,pixels,0,pixels.Length);
+				var table=new byte[256*64];
+				for(int v=0;v<256;v++)for(int y=0;y<8;y++)for(int x=0;x<8;x++) {
+					int sx=v%16*16+4+x,sy=v/16*16+4+y,o=((5+sy*2)*dst.W+5+sx*2)*4;
+					table[v*64+((sy+5)%8)*8+(sx+5)%8]=(byte)Math.Round(pixels[o]*31.0/255);
+				}
+				File.WriteAllBytes(Path.Combine(outDir,"halftone-dither-grey-samples.bin"),table);
+			}
+			using(var src=new Dib(screen,2048,4096)) using(var dst=new Dib(screen,4106,8202)) {
+				var source=new byte[src.W*src.H*4];
+				for(int r=0;r<32;r++)for(int g=0;g<32;g++)for(int b=0;b<32;b++) {
+					int index=(r*32+g)*32+b,left=index%128*16,top=index/128*16;
+					for(int y=0;y<16;y++)for(int x=0;x<16;x++) {
+						int o=((top+y)*src.W+left+x)*4;source[o]=(byte)(b*255/31);source[o+1]=(byte)(g*255/31);source[o+2]=(byte)(r*255/31);
+					}
+				}
+				Marshal.Copy(source,0,src.Bits,source.Length);
+				foreach(int illum in new[]{1,2,3,4,5,7,8}) {
+					var ca=new byte[24];BitConverter.GetBytes((ushort)24).CopyTo(ca,0);BitConverter.GetBytes((ushort)illum).CopyTo(ca,4);
+					for(int i=6;i<=10;i+=2)BitConverter.GetBytes((ushort)10000).CopyTo(ca,i);BitConverter.GetBytes((ushort)10000).CopyTo(ca,14);
+					if(!ErApi.SetColorAdjustment(dst.Dc,ca))throw new Exception("SetColorAdjustment colour cube");
+					SetStretchBltMode(dst.Dc,4);SetBrushOrgEx(dst.Dc,0,0,IntPtr.Zero);
+					StretchBlt(dst.Dc,5,5,4096,8192,src.Dc,0,0,2048,4096,0x00CC0020);GdiFlush();
+					var pixels=new byte[dst.W*dst.H*4];Marshal.Copy(dst.Bits,pixels,0,pixels.Length);
+					var table=new byte[32768*3];
+					for(int i=0;i<32768;i++) {
+						int x=5+(i%128*16+11)*2,y=5+(i/128*16+11)*2,o=(y*dst.W+x)*4;
+						table[i*3]=pixels[o+2];table[i*3+1]=pixels[o+1];table[i*3+2]=pixels[o];
+					}
+					File.WriteAllBytes(Path.Combine(outDir,"illuminant-colour-samples-"+illum+".bin"),table);
+				}
+			}
+		}finally{ReleaseDC(IntPtr.Zero,screen);}
+	}
+
+	/** Isolated colour-adjustment controls and the StretchDIBits HALFTONE path. */
 	static void ErColorAdjustmentControls()
 	{
 		GdiCase("emfrec-ca-control-log-ramp", 528, 48, delegate (IntPtr hdc) {
@@ -6041,6 +6137,9 @@ public static class GdiFixtures
 		if (which == "all" || which == "halftone") { ErHalftoneCases(); }
 		if (which == "all" || which == "halftone-mixed") { ErHalftoneCases(true); }
 		if (which == "all" || which == "color-adjustment-controls") { ErColorAdjustmentControls(); }
+		if (which == "all" || which == "illuminant-charts") { ErIlluminantCharts(); }
+		if (which == "all" || which == "halftone-dither") { ErDitherCharts(); }
+		if (which == "illuminant-tables") { ErIlluminantTables(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 	}
 }

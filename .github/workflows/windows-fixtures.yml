@@ -14,7 +14,10 @@ on:
           Comma-separated case groups for generate.ps1: all, rop, gradient, text,
           pattern, rotation, rop2, image, rotation-affine, text-extra, gdi-raster,
           emfplus-records, gdiplus-extra, wmf-records, emf-records, halftone,
-          emfplus-effects, pen-transform
+          emfplus-effects, pen-transform, halftone-mixed,
+          color-adjustment-controls, illuminant-charts, halftone-dither;
+          standalone: path-probe, wide-path-probe, image-codecs,
+          image-effects, image-effect-sharpen, illuminant-tables
         required: true
         default: emfplus-effects,halftone,pen-transform
         type: string

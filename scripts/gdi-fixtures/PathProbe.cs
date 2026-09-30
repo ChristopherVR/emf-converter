@@ -6,6 +6,12 @@ using System.Text;
 public static class PathProbe
 {
 	[StructLayout(LayoutKind.Sequential)] struct Point { public int X, Y; }
+	[StructLayout(LayoutKind.Sequential)] struct LogBrush {public uint Style,Colour;public IntPtr Hatch;}
+	[DllImport("gdi32.dll")] static extern IntPtr ExtCreatePen(uint style,uint width,ref LogBrush brush,uint count,IntPtr dashes);
+	[DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc,IntPtr obj);
+	[DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+	[DllImport("gdi32.dll")] static extern bool Polyline(IntPtr dc,Point[] points,int count);
+	[DllImport("gdi32.dll")] static extern bool WidenPath(IntPtr dc);
 	[DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
 	[DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
 	[DllImport("gdi32.dll")] static extern bool BeginPath(IntPtr dc);
@@ -48,5 +54,27 @@ public static class PathProbe
 			for(int i=0;i<n;i++){if(i>0)json.Append(',');json.Append(points[i].X).Append(',').Append(points[i].Y).Append(',').Append(types[i]);}
 			File.WriteAllText(Path.Combine(dir,"roundrect-path-fix.json"),json.Append(']').ToString());
 		} finally { DeleteDC(dc); }
+	}
+	public static void Wide(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(4147);var json=new StringBuilder("[");
+		try {
+			foreach(int width in new[]{2,5,7,8,12,16,32,64})for(int cap=0;cap<3;cap++)for(int join=0;join<3;join++)for(int sample=0;sample<(join==2?57:16);sample++) {
+				SetMapMode(dc,1);
+				var p=new Point[3];for(int i=0;i<3;i++){p[i].X=random.Next(20,161);p[i].Y=random.Next(20,161);}
+				if(sample>=16){p[0].X=20;p[0].Y=100;p[1].X=100;p[1].Y=100;p[2].X=20;p[2].Y=101+sample-16;}
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|cap*0x100|join*0x1000),(uint)width,ref brush,0,IntPtr.Zero);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");IntPtr old=SelectObject(dc,pen);
+				try {
+					if(!BeginPath(dc)||!Polyline(dc,p,3)||!EndPath(dc)||!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,8);SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+					int n=GetPath(dc,null,null,0);if(n<0)throw new Exception("GetPath widened path failed");
+					var points=new Point[n];var types=new byte[n];GetPath(dc,points,types,n);
+					if(json.Length>1)json.Append(',');json.Append("{\"width\":").Append(width).Append(",\"cap\":").Append(cap).Append(",\"join\":").Append(join).Append(",\"source\":[");
+					for(int i=0;i<3;i++){if(i>0)json.Append(',');json.Append(p[i].X*16).Append(',').Append(p[i].Y*16);}json.Append("],\"expected\":[");
+					for(int i=0;i<n;i++){if(i>0)json.Append(',');json.Append(points[i].X).Append(',').Append(points[i].Y).Append(',').Append(types[i]);}json.Append("]}");
+				}finally{SelectObject(dc,old);DeleteObject(pen);}
+			}
+			File.WriteAllText(Path.Combine(dir,"wide-path-fix.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
 	}
 }

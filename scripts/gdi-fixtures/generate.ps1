@@ -17,14 +17,25 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $out = Join-Path $here '..\..\src\__fixtures__\gdi'
 $outDir = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $out)).Path
+$generationStarted = [DateTime]::UtcNow
+function Complete-Fixtures {
+    param([string]$Directory = $outDir)
+    $files = @(Get-ChildItem -LiteralPath $Directory -File | Where-Object {
+        $_.LastWriteTimeUtc -ge $generationStarted -and $_.Name -notlike 'environment-*.json'
+    } | ForEach-Object { $_.FullName })
+    $name = 'environment-' + ($Which -replace '[^a-zA-Z0-9-]', '-') + '.json'
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $Directory $name) -Groups $Which -Files $files
+}
 if ($Which -eq 'image-codecs') {
     Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing
     [CodecProbe]::Run($outDir)
+    Complete-Fixtures
     return
 }
-if ($Which -eq 'path-probe') {
+if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    [PathProbe]::Run($outDir)
+    if ($Which -eq 'wide-path-probe') { [PathProbe]::Wide($outDir) } else { [PathProbe]::Run($outDir) }
+    Complete-Fixtures
     return
 }
 if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-tables' -or $Which -eq 'image-effects') {
@@ -38,16 +49,18 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-tables' -or $
         $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $TablesDir)).Path
         [ImageEffectProbe]::CurveSweep($destination)
         [ImageEffectProbe]::LevelsSweep($destination)
+        Complete-Fixtures -Directory $destination
     } else {
         [ImageEffectProbe]::Run($outDir)
         [ImageEffectProbe]::BalanceSweep($outDir)
     }
+    if ($Which -ne 'image-effect-tables') { Complete-Fixtures }
     return
 }
 
 $known = @('all', 'rop', 'gradient', 'text', 'pattern', 'rotation', 'rop2', 'image', 'rotation-affine',
 	'text-extra', 'gdi-raster', 'emfplus-records', 'gdiplus-extra', 'wmf-records', 'emf-records',
-	'halftone', 'halftone-mixed', 'color-adjustment-controls', 'emfplus-effects', 'pen-transform')
+	'halftone', 'halftone-mixed', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'emfplus-effects', 'pen-transform')
 $groups = @($Which -split '[,\s]+' | Where-Object { $_ })
 if ($groups.Count -eq 0) { $groups = @('all') }
 foreach ($g in $groups) {
@@ -69,3 +82,4 @@ if ($groups -contains 'all' -or $groups -contains 'pen-transform') {
 	[PenTransformProbe]::Run($outDir)
 }
 Write-Host "Fixtures written to $outDir"
+Complete-Fixtures

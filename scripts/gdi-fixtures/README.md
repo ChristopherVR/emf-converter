@@ -18,6 +18,17 @@ replay each metafile through the converter and compare against the PNG.
 `gdiplus-extra`, `wmf-records`, `emf-records`, `halftone`, `emfplus-effects`
 and `pen-transform`; `all` runs every one.
 
+Additional diagnostic groups:
+
+- `wide-path-probe`: 2,136 native `WidenPath` outlines at 1/16-pixel precision, widths 2–64, all cap/join styles and near reversals. `wide-path-fix.json` contains source FIX coordinates and native `[x,y,type]` triples. The round-cap/round-join cases have exact fill regressions.
+- `illuminant-charts`: nine EMF/PNG pairs for 256 grey, primary and mixed colours, with the input colours in `illuminant-chart-colours.json` (packed RGB).
+- `halftone-dither`: 256 grey levels at three destination/brush origins.
+- `illuminant-tables`: large raw native samples, excluded from `all`. `halftone-dither-grey-samples.bin` contains 256 × 64 bytes, indexed by grey level then `(sourceY + 5) % 8`, `(sourceX + 5) % 8`; bytes are the nearest output index on the 32-level channel scale. `illuminant-colour-samples-N.bin` contains 32³ RGB triples, indexed by `(r * 32 + g) * 32 + b`, for inputs `floor(channel * 255 / 31)`, sampled at source cell offset (11,11). These captures are specific to the probe layout: using them as universal conversion tables fails independent chart comparisons.
+
+These standalone probe modes must be invoked separately from comma-separated drawing groups: `path-probe`, `wide-path-probe`, `image-codecs`, `image-effects`, `image-effect-sharpen`, `image-effect-tables`.
+
+Every generator run also writes `environment-<groups>.json`. It records SHA-256 hashes of the generated references, installed system/user font files and native drawing libraries, plus Windows version, screen DPI and runner image. Compare manifests before accepting regenerated text fixtures; older captures have no recoverable environment manifest. Temporary image-effect tables keep their manifest in the requested temporary directory.
+
 - `halftone`: `emfrec-halftone-{ramp,checker}-{2x,0p5x,1p37x}[-ca]`, HALFTONE
   `StretchBlt` of a gray/RGB ramp and a checkerboard, each plain and under
   `SetColorAdjustment` (`-ca`).

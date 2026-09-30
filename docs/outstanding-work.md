@@ -32,23 +32,24 @@ Sharpen strength now uses the native rational amount curve, quantized to 1/64 wi
 - **Mixed-axis stretching:** eight native `halftone-mixed` cases now cover ramp/checker enlargement on one axis and reduction on the other, with and without colour adjustment. Interpolation and directional sharpening reduce the unadjusted mismatch from 22.3–47.1% to 3.5–23.6% at zero tolerance. Colour and edge differences remain; the horizontal ramp enlargement is within one level everywhere.
 - **Enlargement pre-smoothing:** the rule that smooths isolated pixels before an enlargement was inferred from checkerboard fixtures. It is not a known algorithm, so test it on more inputs.
 
+Native `illuminant-charts` now capture 256 greys, primaries and mixed colours for all nine illuminant settings. `halftone-dither` captures all 256 grey levels at three destination/brush origins. The larger `illuminant-tables` probe records raw grey-phase and colour-cube samples; those samples do not generalize to the smaller charts as lookup tables. A universal dither or illuminant transform remains unresolved.
+
 ## GDI path geometry
 
 RoundRect controls now match native `GetPath` captures without exceptions. The compatible-mode cases also match at 1/16-pixel precision, including mirrored viewports and clockwise paths; `path-probe` regenerates both captures.
-- **Existing residuals with no ground truth yet:**
-  - `WidenPath` inner join triangles;
-  - wide round joins;
-  - WMF `PS_INSIDEFRAME` curved boxes.
+- Native `wide-path-probe` now covers 2,136 three-point paths with 2–64 px pens, all cap/join combinations and near reversals. All 128 round-cap/round-join fills match exactly in the regression test. Mixed cap/join styles still have half-pixel perpendicular and arc-end inclusion differences; near-reversal miter limits also need work.
+- WMF `PS_INSIDEFRAME` curved boxes still need native captures.
 
   Rectangular inside-frame native sweeps now cover 0.5–10 px widths. The narrow subpixel sweep is exact; wider half-pixel widths retain 0.39% mismatches.
 
-  Wine's tests do not cover these. New Windows fixture cases are needed.
 
 ## Text
 
 - **Unresolved differences:** glyph-edge differences and the `PolyTextOut` C1 control glyph difference have no fix yet.
-- **Fonts in fixtures:** text fixtures generated on the Windows runner may differ from the original captures, because the runner's fonts can differ. Pin fonts before adding text cases to the workflow.
+- **Fonts in fixtures:** text fixtures generated on the Windows runner may differ from the original captures, because the runner's fonts can differ. New captures include font hashes and native library versions. The original text captures lack that provenance; matching their font environment remains unresolved.
 
 ## Tooling
 
 - **Regenerating existing groups:** running existing fixture groups on the Windows runner can change their PNGs, because the runner's OS, fonts and DPI can differ. Compare before replacing committed fixtures.
+
+Every new generator run writes an `environment-<groups>.json` manifest associating reference hashes with Windows/native-library versions, screen DPI and installed font hashes. This makes subsequent environment changes detectable; it cannot recover the environment of earlier captures.
