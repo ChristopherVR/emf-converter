@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.13](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.13) - 2026-09-30
+
+### Bug Fixes
+
+- Reproduce native expanded blur cropping and reduction ([0cb49f9](https://github.com/ChristopherVR/emf-converter/commit/0cb49f981db18e9e9b516ed28118bff50223b4c1))
+
 ## [4.4.12](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.12) - 2026-09-30
 
 ### Testing
