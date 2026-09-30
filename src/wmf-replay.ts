@@ -176,7 +176,7 @@ export function createWmfPlayer(
 	canvasH: number,
 	replayOptions: ReplayOptions = {},
 ): WmfPlayer {
-	const playback = wmfPlayback(view, header);
+	const playback = wmfPlayback(view, header, replayOptions.wmfReferenceDpi);
 	const kx = canvasW / playback.width;
 	const ky = canvasH / playback.height;
 	const state: DrawState = { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap };

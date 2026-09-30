@@ -145,12 +145,14 @@ function drawOrDeferImage(
 	dw: number,
 	dh: number,
 	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
+	effect?: import('./emf-plus-image-effect').ImageEffect,
 ): void {
 	if (!imgObj.data) {
 		return;
 	}
 	const isMetafile = imgObj.type === 2;
 	const draw: DeferredImageDraw = {
+		effect,
 		imageData: imgObj.data,
 		dx,
 		dy,
@@ -682,6 +684,7 @@ export function handleEmfPlusTextImageRecord(
 		}
 
 		case EMFPLUS_DRAWIMAGEPOINTS: {
+			const effect = recFlags & 0x2000 ? rCtx.ext?.pendingEffect ?? undefined : undefined;
 			if (recDataSize >= 28) {
 				const imgId = recFlags & 0xff;
 				const imgObj = objectTable.get(imgId);
@@ -716,7 +719,7 @@ export function handleEmfPlusTextImageRecord(
 						const c = (p3x - p1x) / sh;
 						const d = (p3y - p1y) / sh;
 						return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
-					});
+					}, effect);
 				} else {
 					const hasData = imgObj && imgObj.kind === 'plus-image' && imgObj.data;
 					emfWarn(

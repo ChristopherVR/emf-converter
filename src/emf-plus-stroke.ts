@@ -144,6 +144,11 @@ export function strokePlusGeometry(
 	// pen. Fold that scale into the pen so both the Canvas and widened/raster
 	// routes see it. Translation has no effect on centered pen geometry.
 	pen = applySimilarityPenTransform(pen);
+	// An affine pen is an ellipse in world space. Widen the unchanged path
+	// in pen space, then map its outline back; translation never moves it.
+	if (pen?.transform) {
+		if (strokeAffinePen(rCtx, pen, buildPath, closedFigure)) return;
+	}
 	const inset = !!pen && pen.alignment === 1 && closedFigure;
 	const widthScale = inset ? 2 : 1;
 	/** Strokes on `c` (transform already set), clipped to the figure for an inset pen. */
@@ -228,6 +233,77 @@ function applySimilarityPenTransform(pen: EmfPlusPen | null): EmfPlusPen | null 
 	}
 	// Native GDI+ does not scale a zero-width pen's minimum width.
 	return { ...pen, width: pen.width === 0 ? 1 : pen.width * sx, transform: null };
+}
+
+/** Affine pen outline shared by raster, Canvas and SVG output. */
+function strokeAffinePen(
+	rCtx: EmfPlusReplayCtx,
+	pen: EmfPlusPen,
+	buildPath: (c: CanvasContext) => void,
+	closedFigure: boolean,
+): boolean {
+	const [a, b, c, d] = pen.transform!;
+	const det = a * d - b * c;
+	if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return true;
+	// A hairline is a device minimum, not a transformed ellipse.
+	if (pen.width === 0) {
+		strokePlusGeometry(rCtx, { ...pen, transform: null }, buildPath, null, closedFigure);
+		return true;
+	}
+	let figures: DeviceFigure[];
+	try {
+		figures = recordDeviceFigures(buildPath, [d / det, -b / det, -c / det, a / det, 0, 0]);
+	} catch {
+		return false;
+	}
+	if (closedFigure) figures = figures.map((f) => ({ ...f, closed: true }));
+	const dash = penDashArray(pen);
+	const geometry: DevicePen = {
+		half: pen.width / 2, join: pen.lineJoin ?? 0,
+		miterLimit: pen.miterLimit && pen.miterLimit >= 1 ? pen.miterLimit : 10,
+		startCap: pen.startCap ?? 0, endCap: pen.endCap ?? 0, dashCap: pen.dashCap ?? 0,
+		dash: dash.length ? dash : null, dashOffset: (pen.dashOffset ?? 0) * pen.width,
+		compound: pen.compound ?? null, inset: pen.alignment === 1,
+	};
+	const outline = hasCustomCap(pen)
+		? customCapOutline(figures, pen.width, geometry, pen)
+		: widenFigures(figures, geometry);
+	const world = outline.map((poly) => poly.map((p) => ({ x: a * p.x + c * p.y, y: b * p.x + d * p.y })));
+	const device = plusWorldMatrix(rCtx);
+	const mode = plusRasterMode(rCtx);
+	const size = surfaceSize(rCtx.ctx);
+	if (mode !== 'canvas' && size) {
+		const sampler = pen.brush ? brushSampler(rCtx, pen.brush) : null;
+		const color = cssColorToArgb(pen.color);
+		const paint = sampler ?? (color === null ? null : solidSampler(color));
+		if (paint) {
+			const fix = world.map((poly) => poly.flatMap((p) => [
+				toPlusFix(device[0] * p.x + device[2] * p.y + device[4]),
+				toPlusFix(device[1] * p.x + device[3] * p.y + device[5]),
+			]));
+			const box = figuresBox(fix, size);
+			if (!box) return true;
+			if (box.w * box.h <= 16_000_000) {
+				const coverage = rasterizePlusFill(fix, false, mode === 'gdiplus-aa', isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), box);
+				if (compositeBrushCoverage(rCtx, paint, box, coverage, 1, true)) return true;
+			}
+		}
+	}
+	const { ctx } = rCtx;
+	ctx.save();
+	try {
+		applyPlusWorldTransform(rCtx);
+		ctx.fillStyle = pen.brush ? brushPaint(rCtx, pen.brush) : pen.color;
+		ctx.beginPath();
+		for (const poly of world) {
+			poly.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+			ctx.closePath();
+		}
+		ctx.fill('nonzero');
+	} finally {
+		ctx.restore();
+	}
+	return true;
 }
 
 /**

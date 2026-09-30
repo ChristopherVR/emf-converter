@@ -1,3 +1,5 @@
+import { JOHAB_ROWS, OEM437_HIGH } from './emf-ansi-tables';
+
 /** Windows-1252 mapping used by the EMF/WMF ANSI text records. */
 const CP1252_HIGH = [
 	0x20ac, 0x81, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x8d, 0x017d, 0x8f,
@@ -23,6 +25,23 @@ const CHARSET_ENCODING: Record<number, string> = {
 export function decodeAnsiRecord(bytes: readonly number[], charSet: number): { codes: number[]; byteLengths: number[] } {
 	if (charSet === 2) {
 		return { codes: [...bytes], byteLengths: bytes.map(() => 1) };
+	}
+	if (charSet === 255) {
+		return { codes: bytes.map((b) => b < 128 ? b : OEM437_HIGH.charCodeAt(b - 128)), byteLengths: bytes.map(() => 1) };
+	}
+	if (charSet === 130) {
+		const codes: number[] = [];
+		const byteLengths: number[] = [];
+		for (let i = 0; i < bytes.length; i++) {
+			const lead = bytes[i];
+			const row = JOHAB_ROWS[lead];
+			const code = row && i + 1 < bytes.length ? row.charCodeAt(bytes[i + 1]) : 0xfffd;
+			const count = lead < 128 || code === 0xfffd ? 1 : 2;
+			codes.push(lead < 128 ? lead : code);
+			byteLengths.push(count);
+			i += count - 1;
+		}
+		return { codes, byteLengths };
 	}
 	const label = CHARSET_ENCODING[charSet] ?? 'windows-1252';
 	try {

@@ -20,6 +20,8 @@
  * @module emf-converter
  */
 
+import { applyImageEffect } from './emf-plus-image-effect';
+import { encodePng } from './png-encoder';
 import {
 	canvasDrawImage,
 	canvasGetImageData,
@@ -59,6 +61,8 @@ import { replayWmfRecords } from './wmf-replay';
  * Configuration options for EMF/WMF conversion.
  */
 export interface EmfConvertOptions {
+	/** WMF playback-device pixels per inch; defaults to 96 on each axis. */
+	wmfReferenceDpi?: number | { x: number; y: number };
 	/** Maximum output width in pixels. */
 	maxWidth?: number;
 	/** Maximum output height in pixels. */
@@ -321,14 +325,15 @@ async function replayMetafile(
 			emfLog('replayMetafile: invalid WMF dimensions');
 			return null;
 		}
-		// The picture's size on the 96 dpi reference device (wmf-mapping.ts).
-		const playback = wmfPlayback(view, header);
+		// The picture's size on the configured reference device (wmf-mapping.ts).
+		const playback = wmfPlayback(view, header, opts.wmfReferenceDpi);
 		const surface = createSurface(playback.width, playback.height);
 		if (!surface) {
 			return null;
 		}
 		surface.ctx.save();
 		replayWmfRecords(view, surface.ctx, header, surface.width, surface.height, {
+			wmfReferenceDpi: opts.wmfReferenceDpi,
 			maxRecords: opts.maxRecords,
 			fontFamilyMap: opts.fontFamilyMap,
 			gdiAntialias: opts.gdiAntialias,
@@ -447,6 +452,13 @@ async function processDeferredImages(
 				const ia = new Uint8Array(bytes);
 				for (let i = 0; i < byteString.length; i++) {
 					ia[i] = byteString.charCodeAt(i);
+				}
+			}
+			if (img.effect && !img.isMetafile) {
+				const pixels = await decodeToRgba(bytes);
+				if (pixels) {
+					bytes = toPlainBuffer((await encodePng(applyImageEffect(pixels.data, img.effect), pixels.width, pixels.height)).buffer);
+					mime = 'image/png';
 				}
 			}
 			const decoded = await decodeDeferredImageBytes(bytes, mime);
@@ -631,7 +643,11 @@ async function processDeferredImagesSvg(
 	for (let idx = 0; idx < deferredImages.length; idx++) {
 		const img = deferredImages[idx];
 		try {
-			const bytes = toPlainBuffer(img.imageData);
+			let bytes = toPlainBuffer(img.imageData);
+			if (img.effect && !img.isMetafile) {
+				const pixels = await decodeToRgba(bytes);
+				if (pixels) bytes = toPlainBuffer((await encodePng(applyImageEffect(pixels.data, img.effect), pixels.width, pixels.height)).buffer);
+			}
 			let payload: ImagePayload | null = null;
 			if (img.isMetafile) {
 				if (recursionDepth >= MAX_METAFILE_RECURSION) {

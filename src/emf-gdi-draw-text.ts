@@ -144,6 +144,7 @@ function paintRun(
 	y: number,
 	align: HAlign,
 	fontScale: number,
+	dyDevice: number[] | null = null,
 ): void {
 	const totalWidth = dxDevice ? totalGlyphAdvance(dxDevice) : ctx.measureText(text).width;
 	const runStartX = dxDevice ? startX + alignmentStartOffset(totalWidth, align) : startX;
@@ -159,10 +160,11 @@ function paintRun(
 	ctx.fillStyle = state.textColor;
 	if (dxDevice) {
 		const offsets = cumulativeGlyphOffsets(dxDevice);
+		const yOffsets = dyDevice ? cumulativeGlyphOffsets(dyDevice) : null;
 		const prevAlign = ctx.textAlign;
 		ctx.textAlign = 'left';
 		for (let i = 0; i < text.length && i < offsets.length; i++) {
-			ctx.fillText(text[i], runStartX + offsets[i], y);
+			ctx.fillText(text[i], runStartX + offsets[i], y + (yOffsets?.[i] ?? 0));
 		}
 		ctx.textAlign = prevAlign;
 	} else {
@@ -184,8 +186,9 @@ function handleExtTextOutW(
 	if (recSize < 76) {
 		return true;
 	}
-	const refX = view.getInt32(dataOff + 28, true);
-	const refY = view.getInt32(dataOff + 32, true);
+	const updateCP = (state.textAlign & 0x01) !== 0;
+	const refX = updateCP ? state.curX : view.getInt32(dataOff + 28, true);
+	const refY = updateCP ? state.curY : view.getInt32(dataOff + 32, true);
 	const nChars = view.getUint32(dataOff + 36, true);
 	const offString = view.getUint32(dataOff + 40, true);
 	const viewEnd = Math.min(view.byteLength, offset + recSize);
@@ -226,6 +229,8 @@ function handleExtTextOutW(
 	const pdy = (view.getUint32(dataOff + 44, true) & ETO_PDY) !== 0;
 	const dxRaw = readDxArray(view, offset, dataOff, pdy ? nChars * 2 : nChars, viewEnd);
 	const dxLogical = dxRaw && pdy ? dxRaw.filter((_, i) => i % 2 === 0) : dxRaw;
+	const dyLogical = dxRaw && pdy ? dxRaw.filter((_, i) => i % 2 === 1) : null;
+	const dyDevice = dyLogical ? dyLogical.map((v) => m ? v * fontScale : gmh(rCtx, v)) : null;
 	let dxDevice = dxLogical ? dxLogical.map((v) => (advanceScale !== null ? v * advanceScale : gmw(rCtx, v))) : null;
 	if (!dxDevice && state.textJustification && !pdy) {
 		const units = text.split('');
@@ -256,16 +261,24 @@ function handleExtTextOutW(
 		if (escapement !== 0) {
 			ctx.rotate(escapement);
 		}
-		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale);
+		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale, dyDevice);
 		ctx.restore();
 	} else if (escapement !== 0) {
 		ctx.save();
 		ctx.translate(basePoint.x, basePoint.y);
 		ctx.rotate(escapement);
-		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale);
+		paintRun(ctx, state, text, dxDevice, 0, 0, align, fontScale, dyDevice);
 		ctx.restore();
 	} else {
-		paintRun(ctx, state, text, dxDevice, basePoint.x, basePoint.y, align, fontScale);
+		paintRun(ctx, state, text, dxDevice, basePoint.x, basePoint.y, align, fontScale, dyDevice);
+	}
+	if (updateCP) {
+		const scale = advanceScale ?? gmw(rCtx, 1);
+		const total = dxDevice && scale ? totalGlyphAdvance(dxDevice) / scale : scale ? ctx.measureText(text).width / scale : 0;
+		const advance = align === 'center' ? 0 : align === 'right' ? -total : total;
+		const down = align !== 'center' && dyLogical ? totalGlyphAdvance(dyLogical) : 0;
+		state.curX += advance * Math.cos(escapement) - down * Math.sin(escapement);
+		state.curY += advance * Math.sin(escapement) + down * Math.cos(escapement);
 	}
 	return true;
 }

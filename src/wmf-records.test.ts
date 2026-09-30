@@ -27,8 +27,11 @@ import {
 	type WmfMapping,
 } from './wmf-mapping';
 import { DEFAULT_PALETTE, resolveColorRef } from './wmf-objects';
-import { replayWmfRecords } from './wmf-replay';
-import { ansiToCode } from './wmf-text';
+import { createWmfPlayer, replayWmfRecords } from './wmf-replay';
+import { ansiToCode, wmfExtTextOut } from './wmf-text';
+import { convertMetafileToSvg } from './emf-converter';
+import { SvgContext } from './svg-context';
+import { svgTreeToString } from './svg-tree';
 
 // ---------------------------------------------------------------------------
 // WMF builder
@@ -36,6 +39,25 @@ import { ansiToCode } from './wmf-text';
 
 /** One record: its function number and 16-bit parameters in file order (or raw bytes). */
 type Rec = [number, number[] | Uint8Array];
+
+describe('WMF reference device density', () => {
+	it('sizes placeable output and physical map modes using both device axes', async () => {
+		const buffer = buildWmf([], [0, 0, 96, 96]);
+		const view = new DataView(buffer);
+		const playback = wmfPlayback(view, parseWmfHeader(view)!, { x: 120, y: 144 });
+		expect([playback.width, playback.height]).toEqual([120, 144]);
+		setMapMode(playback.mapping, MM_TWIPS);
+		expect(playback.mapping.winExt).toEqual({ cx: 1440, cy: 1440 });
+		expect(playback.mapping.vpExt).toEqual({ cx: 120, cy: -144 });
+		const svg = await convertMetafileToSvg(buffer, { wmfReferenceDpi: { x: 120, y: 144 } });
+		expect(svg).toContain('width="120"');
+		expect(svg).toContain('height="144"');
+	});
+	it.each([0, -1, NaN, Infinity])('defaults invalid density %s to 96 dpi', (dpi) => {
+		const view = new DataView(buildWmf([], [0, 0, 96, 96]));
+		expect(wmfPlayback(view, parseWmfHeader(view)!, dpi)).toMatchObject({ width: 96, height: 96 });
+	});
+});
 
 /** Builds a WMF (placeable when `bounds` is given) from records; META_EOF is appended. */
 function buildWmf(records: Rec[], bounds?: [number, number, number, number], inch = 96): ArrayBuffer {
@@ -353,6 +375,27 @@ describe('wmf-emf-bridge', () => {
 });
 
 describe('wmf-text', () => {
+	it('decodes a multibyte Johab run and sums byte advances per character', async () => {
+		const buffer = buildWmf([], [0, 0, 100, 50]);
+		const view = new DataView(buffer);
+		const ctx = new SvgContext(100, 50);
+		const p = createWmfPlayer(view, ctx, parseWmfHeader(view)!, 100, 50);
+		p.rCtx.state.fontDetails = { ...p.rCtx.state.fontDetails!, charSet: 130 };
+		const record = new DataView(new ArrayBuffer(18));
+		record.setInt16(0, 20, true);
+		record.setInt16(2, 10, true);
+		record.setInt16(4, 3, true);
+		new Uint8Array(record.buffer).set([0x88, 0x61, 0x41, 0], 8); // 가A
+		record.setInt16(12, 7, true);
+		record.setInt16(14, 8, true);
+		record.setInt16(16, 9, true);
+		p.view = record;
+		wmfExtTextOut(p, 0, 18);
+		const markup = svgTreeToString(await ctx.toTree());
+		expect(markup).toContain('가');
+		expect(markup).toContain('>A<');
+		expect(markup).toContain('x="25"');
+	});
 	it('decodes ANSI bytes as Windows-1252, symbol fonts byte for byte', () => {
 		expect(ansiToCode(0x41, 0)).toBe(0x41);
 		expect(ansiToCode(0x80, 0)).toBe(0x20ac);

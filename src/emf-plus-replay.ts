@@ -5,6 +5,7 @@
  * dispatches to the appropriate handler modules.
  */
 
+import { parseImageEffect } from './emf-plus-image-effect';
 import {
 	EMFPLUS_HEADER,
 	EMFPLUS_ENDOFFILE,
@@ -205,6 +206,9 @@ export function replayEmfPlusRecords(
 		}
 
 		switch (recType) {
+			case 0x4038: // EmfPlusSerializableObject
+				(rCtx.ext ?? (rCtx.ext = {})).pendingEffect = recDataSize <= recSize - 12 ? parseImageEffect(view, dataOff, recDataSize) : null;
+				break;
 			case EMFPLUS_HEADER: {
 				if (recDataSize >= 16) {
 					const dpiX = view.getFloat32(dataOff + 8, true);

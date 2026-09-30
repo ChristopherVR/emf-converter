@@ -7,7 +7,7 @@
  *
  * A WMF string is ANSI: each byte is decoded the way GDI decodes it for the
  * selected font's character set (`SYMBOL_CHARSET` bytes index the font's
- * symbol range directly, every other charset here reads as Windows-1252).
+ * symbol range directly; multibyte encodings preserve their byte advances).
  *
  * The DC's character extra (`META_SETTEXTCHAREXTRA`) and justification
  * (`META_SETTEXTJUSTIFICATION`) apply to a call without its own Dx array:
@@ -20,7 +20,7 @@
  */
 
 import { EMR_EXTTEXTOUTW } from './emf-constants';
-import { ansiToCode } from './emf-ansi';
+import { decodeAnsiRecord } from './emf-ansi';
 import { gdiDeviceMatrix } from './emf-gdi-coord';
 import { flushRasterLayer } from './emf-gdi-raster-layer';
 import { deviceLogFont, drawGdiTextCall, ETO_CLIPPED, ETO_OPAQUE } from './gdi-text-render';
@@ -117,12 +117,17 @@ function drawWithFontEngine(p: WmfPlayer, call: WmfTextCall, codes: number[], dx
 /** Plays the call: the font engine when it can, else `EMR_EXTTEXTOUTW` through the EMF handler. */
 function playText(p: WmfPlayer, call: WmfTextCall): void {
 	const charSet = p.rCtx.state.fontDetails?.charSet ?? 1;
-	const codes = call.bytes.map((b) => ansiToCode(b, charSet));
+	const { codes, byteLengths } = decodeAnsiRecord(call.bytes, charSet);
 	const n = codes.length;
 	if (n === 0) {
 		return;
 	}
-	const dx = call.dx ?? spacedDx(p, codes);
+	let byteOffset = 0;
+	const dx = call.dx ? byteLengths.map((count) => {
+		let advance = 0;
+		for (let i = 0; i < count; i++) advance += call.dx![byteOffset++] ?? 0;
+		return advance;
+	}) : spacedDx(p, codes);
 	if (drawWithFontEngine(p, call, codes, dx)) {
 		return;
 	}

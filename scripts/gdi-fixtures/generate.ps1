@@ -9,6 +9,14 @@ param([string]$Which = 'all')
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $out = Join-Path $here '..\..\src\__fixtures__\gdi'
+if ($Which -eq 'image-effects') {
+    Add-Type -Path (Join-Path $here 'ImageEffectProbe.cs') -ReferencedAssemblies System.Drawing
+    $destination = (Resolve-Path -LiteralPath $out).Path
+    [ImageEffectProbe]::Run($destination)
+    [ImageEffectProbe]::BalanceSweep($destination)
+    Write-Host "Image effect fixtures written to $out"
+    return
+}
 $src = Get-Content -Raw (Join-Path $here 'GdiFixtures.cs')
 Add-Type -TypeDefinition $src -ReferencedAssemblies System.Drawing
 [GdiFixtures]::Run((Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $out)).Path, $Which)

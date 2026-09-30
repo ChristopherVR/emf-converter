@@ -32,6 +32,7 @@ import { decodeBmpFile, payloadSize, sniffImageMime } from './emf-image-payload'
 import { mulMatrix } from './emf-plus-brush-gradient';
 import { MAX_NESTED_METAFILE_DEPTH } from './emf-plus-image-predecode';
 import { resampleImage } from './emf-plus-image-resample';
+import { applyImageEffect } from './emf-plus-image-effect';
 import { plusWorldMatrix } from './emf-plus-state-handlers';
 import { isSvgContext } from './svg-context';
 import type { ImagePayload, SvgContext } from './svg-context';
@@ -131,7 +132,9 @@ export function svgImagePayload(img: EmfPlusImage, bitmap: DecodedBitmap | null)
  * clip (and mirrors it onto the hidden raster, when there is one).
  */
 function paintBitmapSvg(svg: SvgContext, img: EmfPlusImage, bitmap: DecodedBitmap | null, draw: DeferredImageDraw): boolean {
-	const payload = svgImagePayload(img, bitmap);
+	const payload: ImagePayload | null = draw.effect && bitmap
+		? { kind: 'rgba', data: bitmap.rgba, width: bitmap.width, height: bitmap.height }
+		: svgImagePayload(img, bitmap);
 	if (!payload) {
 		return false;
 	}
@@ -283,7 +286,8 @@ export function drawEmfPlusImageNow(
 	if (img.type === 2) {
 		return drawNestedMetafile(rCtx, img, cached, source);
 	}
-	const bitmap = cached && cached.kind === 'bitmap' ? cached : null;
+	let bitmap = cached && cached.kind === 'bitmap' ? cached : null;
+	if (bitmap && draw.effect) bitmap = { ...bitmap, rgba: applyImageEffect(bitmap.rgba, draw.effect) };
 	if (isSvgContext(rCtx.ctx)) {
 		return paintBitmapSvg(rCtx.ctx, img, bitmap, draw);
 	}

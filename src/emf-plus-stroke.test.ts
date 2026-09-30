@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { decodePng } from './png-decoder';
+import { ensureNodeCanvasModule } from './emf-canvas-helpers';
 
 import { writeTextureColor } from './emf-plus-brush-texture';
 import { aliasedSampleShift, cssColorToArgb, isPlusAliased, plusRasterMode, solidSampler } from './emf-plus-exact-fill';
@@ -125,6 +128,30 @@ describe('pen geometry', () => {
 		const rCtx = { ctx, worldTransform: [1, 0, 0, 1, 0, 0], pageUnit: 2, pageScale: 1, dpiScale: 1, objectTable: new Map() } as unknown as EmfPlusReplayCtx;
 		strokePlusGeometry(rCtx, { kind: 'plus-pen', color: '#000', width: 0, dashStyle: 0, transform: [3, 0, 0, 3, 0, 0] }, (c) => c.moveTo(0, 0), null);
 		expect(ctx.lineWidth).toBe(1);
+	});
+
+	it.each([
+		['scale-x', [3, 0, 0, 1, 0, 0]],
+		['scale-y', [1, 0, 0, 3, 0, 0]],
+		['skew-x', [1, 0, 2, 1, 0, 0]],
+		['skew-y', [1, 2, 0, 1, 0, 0]],
+		['scale-x-aa', [3, 0, 0, 1, 0, 0]],
+		['scale-y-aa', [1, 0, 0, 3, 0, 0]],
+		['skew-x-aa', [1, 0, 2, 1, 0, 0]],
+		['skew-y-aa', [1, 2, 0, 1, 0, 0]],
+	] as const)('matches every native GDI+ pixel for an affine %s pen', async (name, transform) => {
+		await ensureNodeCanvasModule();
+		const { createCanvas } = await import('@napi-rs/canvas');
+		const ctx = createCanvas(80, 64).getContext('2d') as unknown as CanvasContext;
+		ctx.fillStyle = '#fff';
+		ctx.fillRect(0, 0, 80, 64);
+		const rCtx = { ctx, antiAlias: name.endsWith('-aa'), gdiAntialias: false, worldTransform: [1, 0, 0, 1, 0, 0], pageUnit: 2, pageScale: 1, dpiScale: 1, objectTable: new Map() } as unknown as EmfPlusReplayCtx;
+		strokePlusGeometry(rCtx, {
+			kind: 'plus-pen', color: '#000000', width: 4, dashStyle: 0,
+			transform: [...transform],
+		}, (c) => { c.moveTo(12, 30); c.lineTo(68, 30); }, null);
+		const expected = (await decodePng(new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/pen-${name}.png`, import.meta.url)))))!;
+		expect(Array.from(ctx.getImageData!(0, 0, 80, 64).data)).toEqual(Array.from(expected.data));
 	});
 });
 

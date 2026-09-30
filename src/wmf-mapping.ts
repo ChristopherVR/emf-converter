@@ -10,7 +10,7 @@
  * logical rectangle and the viewport on the surface.
  *   - A placeable (Aldus) file names that rectangle: its header bounds, at
  *     `inch` logical units per inch, so the surface is
- *     `bounds * 96 / inch` pixels (the 96 dpi reference device).
+ *     `bounds * dpi / inch` pixels (96 dpi by default).
  *   - A non-placeable file is played as a `CF_METAFILEPICT` player plays
  *     it: the viewport is the file's own window extent in pixels (one
  *     logical unit per pixel), or the viewport extent it sets itself in
@@ -23,7 +23,7 @@
  *
  * The metric map modes (`MM_LOMETRIC` .. `MM_TWIPS`) are defined by GDI
  * through the device's physical size (`HORZSIZE`/`HORZRES`); the converter's
- * device is the 96 dpi reference device, 25.4 mm to 96 pixels.
+ * device defaults to 96 dpi; `wmfReferenceDpi` supplies another density.
  *
  * @module wmf-mapping
  */
@@ -52,6 +52,8 @@ const DEVICE_DPI = 96;
 
 /** The mapping state of a DC (device units are playback-device pixels). */
 export interface WmfMapping {
+	/** Optional physical playback-device density; absent means 96 dpi. */
+	dpi?: { x: number; y: number };
 	mode: number;
 	winOrg: { x: number; y: number };
 	winExt: { cx: number; cy: number };
@@ -62,6 +64,7 @@ export interface WmfMapping {
 /** An independent copy of `m` (for `META_SAVEDC`). */
 export function cloneMapping(m: WmfMapping): WmfMapping {
 	return {
+		...(m.dpi ? { dpi: { ...m.dpi } } : {}),
 		mode: m.mode,
 		winOrg: { ...m.winOrg },
 		winExt: { ...m.winExt },
@@ -89,8 +92,8 @@ function fixIsotropic(m: WmfMapping): void {
 	if (m.mode !== MM_ISOTROPIC || !m.winExt.cx || !m.winExt.cy) {
 		return;
 	}
-	const xdim = Math.abs(m.vpExt.cx / m.winExt.cx);
-	const ydim = Math.abs(m.vpExt.cy / m.winExt.cy);
+	const xdim = Math.abs(m.vpExt.cx / m.winExt.cx) / (m.dpi?.x ?? DEVICE_DPI);
+	const ydim = Math.abs(m.vpExt.cy / m.winExt.cy) / (m.dpi?.y ?? DEVICE_DPI);
 	if (xdim > ydim) {
 		const min = m.vpExt.cx >= 0 ? 1 : -1;
 		m.vpExt.cx = Math.floor((m.vpExt.cx * ydim) / xdim + 0.5) || min;
@@ -111,7 +114,7 @@ export function setMapMode(m: WmfMapping, mode: number): void {
 		m.vpExt = { cx: 1, cy: 1 };
 	} else if (units !== undefined && (mode !== MM_ISOTROPIC || m.mode !== MM_ISOTROPIC)) {
 		m.winExt = { cx: units, cy: units };
-		m.vpExt = { cx: DEVICE_DPI, cy: -DEVICE_DPI };
+		m.vpExt = { cx: m.dpi?.x ?? DEVICE_DPI, cy: -(m.dpi?.y ?? DEVICE_DPI) };
 	}
 	m.mode = mode;
 }
@@ -238,17 +241,21 @@ function scanMappingRecords(view: DataView, start: number): {
  * module doc). A header without the `placeable` flag (a hand-built one)
  * counts as placeable when it names bounds.
  */
-export function wmfPlayback(view: DataView, header: WmfHeader): WmfPlayback {
+export function wmfPlayback(view: DataView, header: WmfHeader, referenceDpi?: number | { x: number; y: number }): WmfPlayback {
+	const valid = (v: number | undefined): number => typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : DEVICE_DPI;
+	const dpi = { x: valid(typeof referenceDpi === 'number' ? referenceDpi : referenceDpi?.x), y: valid(typeof referenceDpi === 'number' ? referenceDpi : referenceDpi?.y) };
+	const density = referenceDpi === undefined ? {} : { dpi };
 	const bw = header.boundsRight - header.boundsLeft;
 	const bh = header.boundsBottom - header.boundsTop;
 	if (header.placeable !== false) {
 		const inch = header.unitsPerInch > 0 ? header.unitsPerInch : DEVICE_DPI;
-		const width = Math.max(1, Math.round((Math.abs(bw) * DEVICE_DPI) / inch));
-		const height = Math.max(1, Math.round((Math.abs(bh) * DEVICE_DPI) / inch));
+		const width = Math.max(1, Math.round((Math.abs(bw) * dpi.x) / inch));
+		const height = Math.max(1, Math.round((Math.abs(bh) * dpi.y) / inch));
 		return {
 			width,
 			height,
 			mapping: {
+				...density,
 				mode: MM_ANISOTROPIC,
 				winOrg: { x: header.boundsLeft, y: header.boundsTop },
 				winExt: { cx: bw || 1, cy: bh || 1 },
@@ -268,6 +275,7 @@ export function wmfPlayback(view: DataView, header: WmfHeader): WmfPlayback {
 		width: w,
 		height: h,
 		mapping: {
+			...density,
 			mode: MM_ANISOTROPIC,
 			winOrg: { x: 0, y: 0 },
 			winExt: { cx: w, cy: h },

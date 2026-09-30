@@ -354,6 +354,8 @@ export function cloneState(s: DrawState): DrawState {
  * built-in safety defaults.
  */
 export interface ReplayOptions {
+	/** Playback-device resolution for WMF physical map modes (default 96 dpi). */
+	wmfReferenceDpi?: number | { x: number; y: number };
 	/** Record cap for the GDI/WMF stream (default {@link MAX_RECORDS_DEFAULT}). */
 	maxRecords?: number;
 	/** Record cap for the EMF+ stream (default {@link MAX_RECORDS_EMFPLUS_DEFAULT}). */
@@ -785,6 +787,8 @@ export type EmfPlusObject =
  * processed sequentially in {@link processDeferredImages}.
  */
 export interface DeferredImageDraw {
+	/** Image effect explicitly requested by DrawImagePoints flag E. */
+	effect?: import('./emf-plus-image-effect').ImageEffect;
 	/** Raw image bytes (PNG/BMP/EMF/WMF). */
 	imageData: ArrayBuffer | SharedArrayBuffer;
 	/** Destination X in logical coordinates. */
@@ -890,7 +894,7 @@ export interface EmfPlusGraphicsExt {
 	/** True after a well-formed `EmfPlusMultiFormatStart`: GDI+ then plays no further EMF+ record. */
 	multiFormatSkip?: boolean;
 	/** The image effect of the last `EmfPlusSerializableObject`, applied by the next DrawImagePoints with flag E. */
-	pendingEffect?: unknown;
+	pendingEffect?: import('./emf-plus-image-effect').ImageEffect | null;
 }
 
 /**

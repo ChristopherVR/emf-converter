@@ -129,6 +129,29 @@ describe('emf-gdi-draw-text-bitmap', () => {
 			expect(calls[0][0]).toBe('あ');
 		});
 
+		it.each([
+			[0x19, 0, 40, 24], // TA_LEFT
+			[0x1b, -15, -20, 24], // TA_RIGHT
+			[0x1f, -7.5, 10, 20], // TA_CENTER
+		])('places ETO_PDY glyphs and updates the current position with alignment %s', (alignment, shift, cpX, cpY) => {
+			const rCtx = makeRCtx();
+			rCtx.state.textAlign = alignment; // TA_BASELINE | TA_UPDATECP
+			rCtx.state.curX = 10;
+			rCtx.state.curY = 20;
+			rCtx.view.setInt32(36, 200, true); // ignored with TA_UPDATECP
+			rCtx.view.setUint32(44, 3, true);
+			rCtx.view.setUint32(48, 76, true);
+			rCtx.view.setUint32(52, 0x2000, true);
+			rCtx.view.setUint32(72, 84, true);
+			for (const [i, ch] of [...'ABC'].entries()) rCtx.view.setUint16(76 + i * 2, ch.charCodeAt(0), true);
+			[8, -4, 10, 6, 12, 2].forEach((v, i) => rCtx.view.setInt32(84 + i * 4, v, true));
+			handleEmfGdiTextBitmapRecord(rCtx, EMR_EXTTEXTOUTW, 0, 8, 108);
+			expect(rCtx.ctx.fillText).toHaveBeenNthCalledWith(1, 'A', 5 + shift, 10);
+			expect(rCtx.ctx.fillText).toHaveBeenNthCalledWith(2, 'B', 9 + shift, 8);
+			expect(rCtx.ctx.fillText).toHaveBeenNthCalledWith(3, 'C', 14 + shift, 11);
+			expect([rCtx.state.curX, rCtx.state.curY]).toEqual([cpX, cpY]);
+		});
+
 		it.each([EMR_POLYTEXTOUTA, EMR_POLYTEXTOUTW])('draws strings from poly text record %s', (type) => {
 			const rCtx = makeRCtx();
 			const d = 8, entry = d + 32, str = 80;
