@@ -280,8 +280,10 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
  *   footprint in 16.16 fixed point ({@link halftoneAxis}), rounded half
  *   up, and the reduced image is then sharpened ({@link halftoneSharpen}),
  *   which is what turns `#F0D010` next to a darker stripe into `#F7DD03`.
- * - Reducing one axis while enlarging the other combines the two samplings
- *   without either filter (no Windows reference for that case).
+ * - Mixed-axis stretching uses linear interpolation on the enlarging axis,
+ *   area averages on the reducing axis and sharpening along that axis only.
+ *   The native ramp/checker captures still retain colour and edge differences;
+ *   this branch is approximate (bounds in the parity tests).
  *
  * Pixels outside `src` read as black.
  */
@@ -325,6 +327,7 @@ export function stretchHalftone(
 	}
 	const enlarging = W >= SW && H >= SH && (W > SW || H > SH);
 	const reducing = W < SW && H < SH;
+	const mixed = (W > SW && H < SH) || (W < SW && H > SH);
 	if (enlarging) {
 		halftoneDespeckle(rect, SW, SH);
 	}
@@ -333,6 +336,18 @@ export function stretchHalftone(
 	}
 	const cols = halftoneAxis(0, SW, W, flipX);
 	const rows = halftoneAxis(0, SH, H, flipY);
+	if (mixed) {
+		const linear = (taps: HalftoneTaps[], src: number, dst: number, reverse: boolean) => {
+			if (dst <= src) return;
+			for (let i = 0; i < dst; i++) {
+				const position = Math.max(0, Math.min(src - 1, (i + 0.5) * src / dst - 0.5));
+				const left = Math.floor(position), fraction = position - left;
+				const at = (k: number) => reverse ? src - 1 - k : k;
+				taps[i] = [[at(left), 1 - fraction], [at(Math.min(src - 1, left + 1)), fraction]];
+			}
+		};
+		linear(cols, SW, W, flipX); linear(rows, SH, H, flipY);
+	}
 	const out = new Int32Array(W * H * 3);
 	for (let y = 0; y < H; y++) {
 		const ys = rows[y];
@@ -353,14 +368,30 @@ export function stretchHalftone(
 				}
 			}
 			const o = (y * W + x) * 3;
-			// Rounded half up: floor(sum / total + 1/2).
-			out[o] = Math.floor((2 * r + total) / (2 * total));
-			out[o + 1] = Math.floor((2 * g + total) / (2 * total));
-			out[o + 2] = Math.floor((2 * b + total) / (2 * total));
+			// Uniform-axis averages round half up; mixed-axis averages round ties down.
+			out[o] = mixed ? Math.ceil(r / total - 0.5) : Math.floor((2 * r + total) / (2 * total));
+			out[o + 1] = mixed ? Math.ceil(g / total - 0.5) : Math.floor((2 * g + total) / (2 * total));
+			out[o + 2] = mixed ? Math.ceil(b / total - 0.5) : Math.floor((2 * b + total) / (2 * total));
 		}
 	}
 	if (reducing) {
 		halftoneSharpen(out, W, H);
+	}
+	if (mixed) {
+		const source = out.slice();
+		const at = (x: number, y: number, c: number) =>
+			source[(Math.max(0, Math.min(H - 1, y)) * W + Math.max(0, Math.min(W - 1, x))) * 3 + c];
+		for (let y = 0; y < H; y++) {
+			for (let x = 0; x < W; x++) {
+				for (let c = 0; c < 3; c++) {
+					const v = at(x, y, c);
+					const sum = W < SW
+						? at(x - 1, y, c) + at(x + 1, y, c)
+						: at(x, y - 1, c) + at(x, y + 1, c);
+					out[(y * W + x) * 3 + c] = Math.max(0, Math.min(255, v + Math.floor((2 * v - sum) / 4)));
+				}
+			}
+		}
 	}
 	for (let i = 0, o = 0; i < W * H; i++, o += 3) {
 		data[i * 4] = out[o];

@@ -5372,7 +5372,7 @@ public static class GdiFixtures
 	}
 
 	/** HALFTONE StretchBlt of a ramp and a checkerboard at 2x, 0.5x and 1.37x, each plain and under SetColorAdjustment. */
-	static void ErHalftoneCases()
+	static void ErHalftoneCases(bool mixed = false)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);
 		// No flags, device-default illuminant, gamma 1.5 on every channel, a
@@ -5409,15 +5409,15 @@ public static class GdiFixtures
 			if (y < 16) { return ((x + y) % 2 == 0) ? 0xFF000000u : 0xFFFFFFFFu; }
 			return ((x / 2 + y / 2) % 2 == 0) ? 0xFFE03020u : 0xFF3050D0u;
 		};
-		string[] scaleNames = { "2x", "0p5x", "1p37x" };
-		double[] scales = { 2, 0.5, 1.37 };
+		string[] scaleNames = mixed ? new[] { "2x-0p5y", "0p5x-2y" } : new[] { "2x", "0p5x", "1p37x" };
+		double[] scales = mixed ? new[] { 2.0, 0.5 } : new[] { 2.0, 0.5, 1.37 };
 		foreach (string kind in new[] { "ramp", "checker" })
 		{
 			int sw = kind == "ramp" ? 64 : 32, sh = 32;
 			Func<int, int, uint> pix = kind == "ramp" ? ramp : checker;
 			for (int si = 0; si < scales.Length; si++)
 			{
-				int dw = (int)Math.Round(sw * scales[si]), dh = (int)Math.Round(sh * scales[si]);
+				int dw = (int)Math.Round(sw * scales[si]), dh = (int)Math.Round(sh * (mixed ? scales[1 - si] : scales[si]));
 				int w = dw + 16, h = dh + 16;
 				foreach (bool on in new[] { false, true })
 				{
@@ -5988,6 +5988,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "wmf-records") { WmfRecordCases(); }
 		if (which == "all" || which == "emf-records") { EmfRecordCases(); }
 		if (which == "all" || which == "halftone") { ErHalftoneCases(); }
+		if (which == "all" || which == "halftone-mixed") { ErHalftoneCases(true); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 	}
 }

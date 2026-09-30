@@ -22,6 +22,17 @@ export function decodeImageCodecFallback(bytes: Uint8Array): Pixels | null {
 			if (!f || !validSize(f.image.descriptor.width, f.image.descriptor.height)) return null;
 			const frame = decompressFrame(f, gif.gct, true);
 			const data = new Uint8ClampedArray(width * height * 4);
+			// GDI+ fills the logical screen around an offset first frame. With
+			// transparency it uses that palette entry (including its RGB), otherwise
+			// the global background colour. Later animation frames are not selected.
+			const transparent = frame.transparentIndex !== undefined;
+			const background = transparent ? frame.colorTable[frame.transparentIndex] : gif.gct?.[gif.lsd.backgroundColorIndex];
+			if (background) {
+				for (let i = 0; i < data.length; i += 4) {
+					data[i] = background[0]; data[i + 1] = background[1]; data[i + 2] = background[2];
+					data[i + 3] = transparent ? 0 : 255;
+				}
+			}
 			const { top, left, width: fw, height: fh } = frame.dims;
 			for (let y = 0; y < fh && top + y < height; y++) {
 				const n = Math.min(fw, width - left);

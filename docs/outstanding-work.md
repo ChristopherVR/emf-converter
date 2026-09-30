@@ -18,7 +18,7 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
   - tint's chroma scale;
   - sharpen's gain beyond radius 3;
 
-- **JPEG chroma reconstruction:** the bundled fallback decoder differs from Windows by up to 19 levels on the ramp fixture. GIF and TIFF match that native fixture exactly; add broader compressed and multiframe coverage.
+- **JPEG chroma reconstruction:** the bundled fallback decoder differs from Windows by up to 19 levels on the ramp fixture. GIF and TIFF match native references exactly, including offset opaque/transparent animated GIF frames with global/local palettes and different background and transparency indices, LZW-compressed TIFF, and multipage TIFF. Further TIFF compression variants remain useful coverage.
 
 ## GDI color adjustment and HALFTONE
 
@@ -30,8 +30,8 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
   - the log filter;
   - the illuminant (ignored);
   - gamma-only adjustment;
-  - `StretchDIBits` under HALFTONE;
-  - a stretch that enlarges one axis and reduces the other.
+  - `StretchDIBits` under HALFTONE.
+- **Mixed-axis stretching:** eight native `halftone-mixed` cases now cover ramp/checker enlargement on one axis and reduction on the other, with and without colour adjustment. Interpolation and directional sharpening reduce the unadjusted mismatch from 22.3–47.1% to 3.5–23.6% at zero tolerance. Colour and edge differences remain; the horizontal ramp enlargement is within one level everywhere.
 - **Enlargement pre-smoothing:** the rule that smooths isolated pixels before an enlargement was inferred from checkerboard fixtures. It is not a known algorithm, so test it on more inputs.
 
 ## GDI path geometry

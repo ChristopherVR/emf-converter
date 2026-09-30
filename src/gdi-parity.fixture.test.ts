@@ -920,6 +920,16 @@ const HALFTONE_CASES: ParityCase[] = [
 	halftone('emfrec-halftone-checker-2x'),
 	halftone('emfrec-halftone-checker-0p5x'),
 	halftone('emfrec-halftone-checker-1p37x'),
+	// Mixed-axis sampling now follows the measured interpolation and sharpening
+	// directions. Keep explicit bounds for the remaining colour/edge differences.
+	halftone('emfrec-halftone-ramp-2x-0p5y', 0.036), // 3.522%, max 1 level (before 47.136%)
+	halftone('emfrec-halftone-ramp-0p5x-2y', 0.178), // 17.698% (before 22.297%)
+	halftone('emfrec-halftone-checker-2x-0p5y', 0.237), // 23.629% (before 43.207%)
+	halftone('emfrec-halftone-checker-0p5x-2y', 0.226), // 22.498% (before 42.349%)
+	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.113),
+	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.155),
+	adjusted('emfrec-halftone-checker-2x-0p5y-ca', 0.140),
+	adjusted('emfrec-halftone-checker-0p5x-2y-ca', 0.131),
 	adjusted('emfrec-halftone-ramp-2x-ca', 0.17), // measured 15.132%
 	adjusted('emfrec-halftone-ramp-0p5x-ca', 0.105), // measured 9.275%
 	adjusted('emfrec-halftone-ramp-1p37x-ca', 0.15), // measured 13.140%

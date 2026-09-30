@@ -94,5 +94,5 @@ bun scripts/gdi-fixtures/generate-image-curves.ts .scratch/tables
 
 `image-effects` generates the direct pixel-effect probes and color-balance
 sweep. `emfplus-effects` records metafiles for playback parity.
-`image-codecs` generates the native JPEG, GIF and TIFF decoder references.
+`image-codecs` generates the native JPEG, GIF and TIFF decoder references, including offset animated GIF frames (opaque and transparent, with global/local palettes and different background/transparency indices), LZW-compressed TIFF and multipage TIFF. `CodecProbe.Extended()` regenerates only these additional cases. `halftone-mixed` captures mixed-axis ramp/checker stretches with and without colour adjustment without regenerating the original uniform-axis cases.
 `path-probe` captures native `GetPath` coordinates for the RoundRect sequence.

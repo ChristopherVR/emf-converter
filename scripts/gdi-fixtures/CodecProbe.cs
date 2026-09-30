@@ -6,6 +6,69 @@ using System.IO;
 
 public static class CodecProbe
 {
+	static void Reference(string path)
+	{
+		using (var decoded = Image.FromFile(path))
+			decoded.Save(Path.ChangeExtension(path, ".png"), ImageFormat.Png);
+	}
+	static void GifFrame(BinaryWriter writer, bool transparent, int transparentIndex, int left, int top, int width, int height, byte[] pixels, bool localPalette = false)
+	{
+		writer.Write(new byte[] { 0x21, 0xf9, 4, (byte)(transparent ? 1 : 0), 1, 0, (byte)transparentIndex, 0, 0x2c });
+		writer.Write((ushort)left); writer.Write((ushort)top);
+		writer.Write((ushort)width); writer.Write((ushort)height); writer.Write((byte)(localPalette ? 0x81 : 0));
+		if (localPalette) writer.Write(new byte[] { 255, 255, 0, 0, 0, 0, 0, 255, 255, 255, 0, 255 });
+		// Clear before each pixel keeps every LZW code three bits wide.
+		var codes = new System.Collections.Generic.List<int>();
+		foreach (byte pixel in pixels) { codes.Add(4); codes.Add(pixel); }
+		codes.Add(5);
+		byte[] data = new byte[(codes.Count * 3 + 7) / 8];
+		for (int i = 0; i < codes.Count; i++) for (int bit = 0; bit < 3; bit++)
+			if ((codes[i] & (1 << bit)) != 0) data[(i * 3 + bit) / 8] |= (byte)(1 << ((i * 3 + bit) % 8));
+		writer.Write((byte)2); writer.Write((byte)data.Length); writer.Write(data); writer.Write((byte)0);
+	}
+	static void OffsetGif(string dir, bool transparent, int background, int transparentIndex, bool localPalette = false)
+	{
+		string path = Path.Combine(dir, "codec-gif-offset-" + (transparent ? "transparent" : "opaque") + (background != 0 ? "-background" : "") + (transparentIndex != 0 ? "-index" : "") + (localPalette ? "-local" : "") + ".bin");
+		using (var writer = new BinaryWriter(File.Create(path))) {
+			writer.Write(System.Text.Encoding.ASCII.GetBytes("GIF89a"));
+			writer.Write((ushort)4); writer.Write((ushort)3);
+			writer.Write(new byte[] { 0x81, (byte)background, 0, 0, 0, 255, 255, 0, 0, 0, 255, 0, 255, 255, 255 });
+			GifFrame(writer, transparent, transparentIndex, 1, 1, 2, 2, new byte[] { 0, 1, 2, 3 }, localPalette);
+			GifFrame(writer, false, 0, 0, 0, 4, 3, new byte[] { 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2 });
+			writer.Write((byte)0x3b);
+		}
+		Reference(path);
+	}
+	public static void Extended(string dir)
+	{
+		OffsetGif(dir, false, 0, 0); OffsetGif(dir, true, 0, 0);
+		OffsetGif(dir, true, 3, 0); OffsetGif(dir, true, 0, 1);
+		OffsetGif(dir, false, 3, 0);
+		OffsetGif(dir, false, 3, 0, true); OffsetGif(dir, true, 3, 0, true);
+		ImageCodecInfo codec = Array.Find(ImageCodecInfo.GetImageEncoders(), c => c.FormatID == ImageFormat.Tiff.Guid);
+		using (var first = new Bitmap(16, 16)) using (var second = new Bitmap(16, 16)) {
+			for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+				first.SetPixel(x, y, Color.FromArgb(255, x * 17, y * 17, 255 - x * 17));
+				second.SetPixel(x, y, Color.Lime);
+			}
+			string compressed = Path.Combine(dir, "codec-tiff-lzw.bin");
+			using (var parameters = new EncoderParameters(1)) {
+				parameters.Param[0] = new EncoderParameter(Encoder.Compression, (long)EncoderValue.CompressionLZW);
+				first.Save(compressed, codec, parameters);
+			}
+			Reference(compressed);
+			string multiple = Path.Combine(dir, "codec-tiff-multipage.bin");
+			using (var parameters = new EncoderParameters(1)) {
+				parameters.Param[0] = new EncoderParameter(Encoder.SaveFlag, (long)EncoderValue.MultiFrame);
+				first.Save(multiple, codec, parameters);
+				parameters.Param[0] = new EncoderParameter(Encoder.SaveFlag, (long)EncoderValue.FrameDimensionPage);
+				first.SaveAdd(second, parameters);
+				parameters.Param[0] = new EncoderParameter(Encoder.SaveFlag, (long)EncoderValue.Flush);
+				first.SaveAdd(parameters);
+			}
+			Reference(multiple);
+		}
+	}
 	public static void Run(string dir)
 	{
 		using (var bitmap = new Bitmap(16, 16))
@@ -22,5 +85,6 @@ public static class CodecProbe
 					decoded.Save(Path.Combine(dir, "codec-" + names[i] + ".png"), ImageFormat.Png);
 			}
 		}
+		Extended(dir);
 	}
 }
