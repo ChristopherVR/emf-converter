@@ -17,31 +17,32 @@ public static class ImageEffectProbe
 	[DllImport("gdiplus.dll")] static extern int GdipDisposeImage(IntPtr bitmap);
 	[DllImport("gdiplus.dll")] static extern int GdipBitmapApplyEffect(IntPtr bitmap, IntPtr effect, IntPtr roi, bool useAux, IntPtr aux, IntPtr auxSize);
 	static void Check(int status) { if (status != 0) throw new Exception("GDI+ status " + status); }
-	static byte[] Pixels(IntPtr bitmap)
+	static byte[] Pixels(IntPtr bitmap, int width = 16, int height = 16)
 	{
-		byte[] data = new byte[16 * 16 * 4];
-		for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+		byte[] data = new byte[width * height * 4];
+		for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
 			int argb; Check(GdipBitmapGetPixel(bitmap, x, y, out argb));
-			int o = (y * 16 + x) * 4;
+			int o = (y * width + x) * 4;
 			data[o] = (byte)(argb >> 16); data[o + 1] = (byte)(argb >> 8); data[o + 2] = (byte)argb; data[o + 3] = (byte)(argb >> 24);
 		}
 		return data;
 	}
-	static byte[] Case(string dir, string name, string guid, byte[] parameters, bool ramp = false)
+	static byte[] Case(string dir, string name, string guid, byte[] parameters, bool ramp = false, bool impulse = false, int width = 16, int height = 16)
 	{
 		IntPtr bitmap = IntPtr.Zero, effect = IntPtr.Zero;
 		try {
-			Check(GdipCreateBitmapFromScan0(16, 16, 0, 0x26200a, IntPtr.Zero, out bitmap));
-			for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) {
+			Check(GdipCreateBitmapFromScan0(width, height, 0, 0x26200a, IntPtr.Zero, out bitmap));
+			for (int y = 0; y < height; y++) for (int x = 0; x < width; x++) {
 				int a = ramp || y < 8 ? 255 : new int[] { 0, 64, 128, 200 }[x % 4];
-				int rgb = ramp ? (y * 16 + x) * 0x010101 : ((x * 17) << 16) | ((y * 17) << 8) | ((x * 31 + y * 13) & 255);
+				int rgb = ramp ? ((y * width + x) & 255) * 0x010101 : ((x * 17) << 16) | ((y * 17) << 8) | ((x * 31 + y * 13) & 255);
+				if (impulse) rgb = (x == 0 ? 0xff0000 : 0) | (x == width/2-1 ? 0xff00 : 0) | (x == width-1 ? 0xff : 0);
 				Check(GdipBitmapSetPixel(bitmap, x, y, (a << 24) | rgb));
 			}
-			byte[] source = Pixels(bitmap);
+			byte[] source = Pixels(bitmap, width, height);
 			Check(GdipCreateEffect(new Guid(guid), out effect));
 			Check(GdipSetEffectParameters(effect, parameters, (uint)parameters.Length));
 			Check(GdipBitmapApplyEffect(bitmap, effect, IntPtr.Zero, false, IntPtr.Zero, IntPtr.Zero));
-			byte[] expected = Pixels(bitmap);
+			byte[] expected = Pixels(bitmap, width, height);
 			if (!ramp) File.WriteAllText(Path.Combine(dir, "effect-" + name + ".json"), "{\"guid\":\"" + guid + "\",\"parameters\":\"" + Convert.ToBase64String(parameters) + "\",\"source\":\"" + Convert.ToBase64String(source) + "\",\"expected\":\"" + Convert.ToBase64String(expected) + "\"}");
 			return expected;
 		} finally {
@@ -142,5 +143,56 @@ public static class ImageEffectProbe
 		}
 		File.WriteAllBytes(Path.Combine(dir, "levels-sweep.bin"), lookup);
 		using (var writer = new StreamWriter(Path.Combine(dir, "levels-settings.csv"))) foreach (int[] setting in settings) writer.WriteLine(setting[0] + "," + setting[1] + "," + setting[2]);
+	}
+	public static void SharpenSweep(string dir)
+	{
+		float[] radii = { .25f, .5f, 1, 1.5f, 2, 2.5f, 3, 3.5f, 4, 5, 6, 7, 8, 10, 16, 32, 64, 128, 255 };
+		float[] amounts = { 0, 10, 30, 50, 100 };
+		var json = new System.Text.StringBuilder("{\"radii\":[");
+		foreach (float r in radii) { if (json[json.Length-1] != '[') json.Append(','); json.Append(r.ToString(System.Globalization.CultureInfo.InvariantCulture)); }
+		json.Append("],\"amounts\":[0,10,30,50,100],\"blur\":[");
+		using (var init = new Bitmap(1, 1)) {
+			foreach (float r in radii) {
+				byte[] parameters = new byte[8]; Buffer.BlockCopy(new float[] {r,0},0,parameters,0,8);
+				if (json[json.Length-1] != '[') json.Append(',');
+				json.Append('"').Append(Convert.ToBase64String(Case(dir,"blur-probe","633c80a4-1843-482b-9ef2-be2834c5fdd4",parameters,true))).Append('"');
+			}
+			json.Append("],\"impulseBlur\":[");
+			foreach (float r in radii) {
+				byte[] parameters = new byte[8]; Buffer.BlockCopy(new float[] {r,0},0,parameters,0,8);
+				if (json[json.Length-1] != '[') json.Append(',');
+				json.Append('"').Append(Convert.ToBase64String(Case(dir,"blur-impulse","633c80a4-1843-482b-9ef2-be2834c5fdd4",parameters,true,true))).Append('"');
+			}
+			json.Append("],\"expected\":[");
+			foreach (float r in radii) foreach (float a in amounts) {
+				byte[] parameters = new byte[8]; Buffer.BlockCopy(new float[] {r,a},0,parameters,0,8);
+				if (json[json.Length-1] != '[') json.Append(',');
+				json.Append('"').Append(Convert.ToBase64String(Case(dir,"sharpen-probe","63cbf3ee-c526-402c-8f71-62c540bf5142",parameters,true))).Append('"');
+			}
+		}
+		File.WriteAllText(Path.Combine(dir,"effect-sharpen-sweep.json"),json.Append("]}").ToString());
+	}
+	public static void SharpenAmounts(string dir)
+	{
+		byte[] pixels = new byte[101 * 1024];
+		using (var init = new Bitmap(1, 1)) for (int a=0; a<=100; a++) {
+			byte[] parameters = new byte[8]; Buffer.BlockCopy(new float[] {32,a},0,parameters,0,8);
+			Buffer.BlockCopy(Case(dir,"sharpen-amount","63cbf3ee-c526-402c-8f71-62c540bf5142",parameters,true),0,pixels,a*1024,1024);
+		}
+		File.WriteAllText(Path.Combine(dir,"effect-sharpen-amounts.json"),"{\"radius\":32,\"expected\":\""+Convert.ToBase64String(pixels)+"\"}");
+	}
+	public static void BlurDimensions(string dir)
+	{
+		int[][] sizes = {new int[]{2,3},new int[]{8,16},new int[]{16,8},new int[]{32,16},new int[]{16,32},new int[]{32,32},new int[]{64,64}};
+		float[] radii = {1,3,8,10,16,24,32,64};
+		var json = new System.Text.StringBuilder("[");
+		using (var init = new Bitmap(1,1)) foreach(int[] size in sizes) foreach(float radius in radii) {
+			if(json.Length>1)json.Append(',');
+			byte[] parameters = new byte[8]; Buffer.BlockCopy(new float[]{radius,0},0,parameters,0,8);
+			json.Append("{\"width\":").Append(size[0]).Append(",\"height\":").Append(size[1]).Append(",\"radius\":").Append(radius).Append(",\"ramp\":\"")
+			.Append(Convert.ToBase64String(Case(dir,"blur-dimensions","633c80a4-1843-482b-9ef2-be2834c5fdd4",parameters,true,false,size[0],size[1])))
+			.Append("\",\"impulse\":\"").Append(Convert.ToBase64String(Case(dir,"blur-dimensions","633c80a4-1843-482b-9ef2-be2834c5fdd4",parameters,true,true,size[0],size[1]))).Append("\"}");
+		}
+		File.WriteAllText(Path.Combine(dir,"effect-blur-dimensions.json"),json.Append("]").ToString());
 	}
 }

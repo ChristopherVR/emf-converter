@@ -10,8 +10,8 @@
  * Windows' paths. Wine's own check (`ok_path`) allows each coordinate to be
  * off by 2 (the arrays were printed from one Windows machine; the fudge
  * covers other versions), while point counts and types must be exact. The
- * check here is exact throughout, except for the few points listed in
- * `OFF_BY_ONE`, which may be one unit off.
+ * check here is exact throughout. A fresh native capture also verifies
+ * compatible RoundRect controls at 1/16-pixel precision.
  *
  * Each case replays the same calls with the same DC state: the shapes go
  * through the EMF record handlers inside an `EMR_BEGINPATH` bracket (GDI's
@@ -25,6 +25,7 @@
 
 import { describe, it, expect } from 'vitest';
 import nativeRoundrectPath from './__fixtures__/gdi/roundrect-path.json';
+import nativeRoundrectFixPath from './__fixtures__/gdi/roundrect-path-fix.json';
 
 import {
 	EMR_ANGLEARC,
@@ -290,11 +291,11 @@ class PathDc {
 	 * The path as `GetPath` returns it under `MM_TEXT` (device = logical):
 	 * flat `[x, y, type, ...]` triples.
 	 */
-	getPath(): number[] {
+	getPath(scale = 1): number[] {
 		const { pts, types } = this.path.getPath;
 		const out: number[] = [];
 		for (let i = 0; i < types.length; i++) {
-			out.push(Math.round(pts[2 * i] / 16), Math.round(pts[2 * i + 1] / 16), types[i]);
+			out.push(Math.round(pts[2 * i] / 16 * scale), Math.round(pts[2 * i + 1] / 16 * scale), types[i]);
 		}
 		return out;
 	}
@@ -316,11 +317,10 @@ function typeName(t: number): string {
 }
 
 /**
- * Point-by-point comparison: the entries whose type or coordinates differ
- * (by more than one unit at the indices in `offByOne`), or that one path
- * has and the other lacks.
+ * Point-by-point comparison: entries whose type or coordinates differ,
+ * or that one path has and the other lacks.
  */
-function comparePath(actual: number[], expected: number[], offByOne: Set<number>): string[] {
+function comparePath(actual: number[], expected: number[]): string[] {
 	const mismatches: string[] = [];
 	const show = (p: number[]) => (p.length === 3 ? `${typeName(p[2])}(${p[0]},${p[1]})` : 'nothing');
 	const n = Math.max(actual.length, expected.length) / 3;
@@ -328,7 +328,7 @@ function comparePath(actual: number[], expected: number[], offByOne: Set<number>
 		const a = actual.slice(3 * i, 3 * i + 3);
 		const e = expected.slice(3 * i, 3 * i + 3);
 		const d = a.length === 3 && e.length === 3 ? Math.max(Math.abs(a[0] - e[0]), Math.abs(a[1] - e[1])) : Infinity;
-		if (a[2] !== e[2] || d > (offByOne.has(i) ? 1 : 0)) {
+		if (a[2] !== e[2] || d > 0) {
 			mismatches.push(`#${i}: expected ${show(e)}, got ${show(a)}`);
 		}
 	}
@@ -505,7 +505,7 @@ function boxShapeSequence(dc: PathDc, shape: (l: number, t: number, r: number, b
 }
 
 /** The Rectangle/RoundRect/Ellipse sequence of Wine's tests; `shape` gets the call index. */
-function boxTest(shape: (dc: PathDc, l: number, t: number, r: number, b: number, call: number) => void, perRun: number): number[] {
+function boxTest(shape: (dc: PathDc, l: number, t: number, r: number, b: number, call: number) => void, perRun: number, scale = 1): number[] {
 	const dc = new PathDc();
 	let call = 0;
 	const draw = (l: number, t: number, r: number, b: number) => shape(dc, l, t, r, b, call++);
@@ -523,7 +523,7 @@ function boxTest(shape: (dc: PathDc, l: number, t: number, r: number, b: number,
 	dc.setMapModeText(true);
 	dc.compatible = false;
 	boxShapeSequence(dc, draw, perRun);
-	return dc.getPath();
+	return dc.getPath(scale);
 }
 
 /** RoundRect corner sizes in call order (`test_roundrect`). */
@@ -616,25 +616,19 @@ const cases: Array<{ name: string; run: () => number[]; expected: number[] }> = 
 	},
 ];
 
-/**
- * Points still one unit off Windows (all within Wine's own 2-unit fudge):
- * two horizontal Bezier controls of `GM_COMPATIBLE` RoundRect corners
- * (`RoundRect(20, 20, 40, 40, 15, 12)` under a (-2, 2) viewport extent),
- * where no single rounding rule fits every case in the data.
- */
-const OFF_BY_ONE: Record<string, number[]> = {
-	test_roundrect: [102, 113],
-};
-
 describe('GDI path geometry against Windows (Wine gdi32/tests/path.c)', () => {
+	it('matches native compatible RoundRect controls at 1/16-pixel precision', () => {
+		const actual = boxTest((dc, l, t, r, b, i) => dc.roundRect(l, t, r, b, ...ROUNDRECT_CORNERS[i]), 7, 16);
+		expect(actual.slice(0, 180 * 3)).toEqual(nativeRoundrectFixPath.slice(0, 180 * 3));
+	});
 	it('confirms the historical RoundRect reference on current Windows', () => {
 		const c = cases.find(c => c.name === 'test_roundrect')!;
 		expect(nativeRoundrectPath).toEqual(c.expected);
-		expect(comparePath(c.run(), nativeRoundrectPath, new Set(OFF_BY_ONE[c.name]))).toEqual([]);
+		expect(comparePath(c.run(), nativeRoundrectPath)).toEqual([]);
 	});
 	for (const c of cases) {
 		it(`${c.name}: the same points and types as GetPath`, () => {
-			expect(comparePath(c.run(), c.expected, new Set(OFF_BY_ONE[c.name] ?? []))).toEqual([]);
+			expect(comparePath(c.run(), c.expected)).toEqual([]);
 		});
 	}
 });

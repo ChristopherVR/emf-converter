@@ -36,7 +36,7 @@ const bounded = (name: string, tolerance: number, maxMismatch: number): EffectCa
 });
 
 /**
- * Blur: GDI+ blurs each row with a Gaussian of `radius / 1.98` (taps to
+ * Blur: GDI+ blurs each row with `exp(-(1.4 * offset / radius)^2)` (taps to
  * `ceil(radius)`, rows reflected at their ends) and only the top row down
  * its column; expandEdge blurs transparency in. The one-level differences
  * are float rounding.
@@ -44,14 +44,14 @@ const bounded = (name: string, tolerance: number, maxMismatch: number): EffectCa
 const BLUR: EffectCase[] = [
 	exact('blur-r1'), // 5.615% before
 	within('blur-r2p5'), // 39.880% before, 0.212% one level off now
-	within('blur-r3'), // 54.517%, 0.191%
-	within('blur-r3-expand'), // 68.673%, 0.187%
+	exact('blur-r3'), // 54.517% before; rounding rows before the vertical pass removes the residue
+	exact('blur-r3-expand'), // 68.673% before
 	within('blur-r10'), // 83.138%, 0.191%
 	within('blur-r10-expand'), // 99.972%, 0.118%
 	exact('blur-r4-subrect'), // 84.719%
-	within('blur-r4-subrect-expand'), // 96.044%, 0.115%
-	within('blur-r3-scale2'), // 71.126%, 1.530%
-	within('blur-r3-rotate30'), // 79.590%, 1.497%
+	exact('blur-r4-subrect-expand'), // 96.044% before
+	exact('blur-r3-scale2'), // 71.126% before
+	exact('blur-r3-rotate30'), // 79.590% before; draw-edge sampling differences remain in playback
 ];
 
 /** Sharpen: an unsharp mask along rows against GDI+'s 8-bit row blur. */

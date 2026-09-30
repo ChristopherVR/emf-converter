@@ -43,6 +43,10 @@ public static class PathProbe
 			var json=new StringBuilder("[");
 			for(int i=0;i<n;i++){if(i>0)json.Append(',');json.Append(points[i].X).Append(',').Append(points[i].Y).Append(',').Append(types[i]);}
 			File.WriteAllText(Path.Combine(dir,"roundrect-path.json"),json.Append(']').ToString());
+			SetMapMode(dc,8); SetWindowExtEx(dc,16,16,IntPtr.Zero); SetViewportExtEx(dc,1,1,IntPtr.Zero);
+			GetPath(dc,points,types,n); json=new StringBuilder("[");
+			for(int i=0;i<n;i++){if(i>0)json.Append(',');json.Append(points[i].X).Append(',').Append(points[i].Y).Append(',').Append(types[i]);}
+			File.WriteAllText(Path.Combine(dir,"roundrect-path-fix.json"),json.Append(']').ToString());
 		} finally { DeleteDC(dc); }
 	}
 }

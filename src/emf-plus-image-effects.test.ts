@@ -278,10 +278,11 @@ describe('Blur and Sharpen', () => {
 		expect(reds(apply(greyRow(0, 255, 255), { kind: 'blur', radius: 1, expandEdge: false }))).toEqual([56, 227, 255]);
 	});
 
-	it('blurs down the columns in the top row only', () => {
-		// Two columns of alternating rows: the top row mixes with the (reflected) row below, the others do not.
+	it('blurs the leading ceil(height / width) rows vertically', () => {
+		// Tall bitmaps expose a second vertical pass; square/landscape images
+		// filter just their leading row.
 		const src = greyRow(0, 0, 255, 255, 0, 0);
-		expect(reds(apply(src, { kind: 'blur', radius: 1, expandEdge: false }, 2, 3))).toEqual([56, 56, 255, 255, 0, 0]);
+		expect(reds(apply(src, { kind: 'blur', radius: 1, expandEdge: false }, 2, 3))).toEqual([56, 56, 199, 199, 0, 0]);
 	});
 
 	it('blurs straight colour and alpha independently', () => {
@@ -293,7 +294,7 @@ describe('Blur and Sharpen', () => {
 	it('sharpens along rows with an unsharp mask against the 8-bit blur', () => {
 		// Gain 2 at radius 3, amount 100.
 		expect(sharpenGain(3, 100)).toBe(2);
-		expect(sharpenGain(1, 50)).toBeCloseTo(1 / 3, 12);
+		expect(sharpenGain(1, 50)).toBe(21 / 64);
 		expect(sharpenGain(6, 30)).toBeCloseTo(5 / 32, 12);
 		expect(reds(apply(greyRow(64, 64, 64, 192, 192, 192), { kind: 'sharpen', radius: 3, amount: 100 }))).toEqual([
 			44, 26, 0, 255, 230, 212,

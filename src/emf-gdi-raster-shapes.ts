@@ -169,7 +169,7 @@ function boxFrame(box: FixBox): { l: number; t: number; r: number; b: number } {
  */
 export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, clockwise = false, compatible = false): number[] {
 	const f = boxFrame(box);
-	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch, compatible);
+	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch, compatible, clockwise);
 	const map = frameMapper(box, f.l, f.t, f.r - f.l, f.b - f.t);
 	const pts: number[] = [];
 	for (let i = 0; i < q.length; i += 2) {

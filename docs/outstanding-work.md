@@ -13,10 +13,12 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
   - Tint is within 3 levels.
   - Levels has one one-level rounding difference in the 258,560-value native sweep.
   - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
-  - The blur has a 0.22% residual along one edge of the rotated draw (`plus-effect-blur-r3-rotate30`).
+  - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`).
+  - Blur and sharpen differ above radius 16, where native GDI+ uses a different algorithm. The native radius sweep covers 0.25–255, and dimension probes cover seven square, tall and narrow buffers. Through radius 16, colour impulses are exact and ramps are within one level; smaller-radius sharpen residuals are at most two levels.
 - **Fitted to a single data point:**
   - tint's chroma scale;
-  - sharpen's gain beyond radius 3;
+
+Sharpen strength now uses the native rational amount curve, quantized to 1/64 with half-down rounding. It matches every integer amount 0–100 and 19 radii when tested independently of blur convolution.
 
 - **JPEG chroma reconstruction:** the bundled fallback decoder differs from Windows by up to 19 levels on the ramp fixture. GIF and TIFF match native references exactly, including offset opaque/transparent animated GIF frames with global/local palettes and different background and transparency indices, LZW-compressed TIFF, and multipage TIFF. Further TIFF compression variants remain useful coverage.
 
@@ -32,7 +34,7 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
 
 ## GDI path geometry
 
-- **RoundRect control points:** compatible-mode vertical-control rounding now fixes #33 and #38. Two horizontal controls under a mirrored viewport (#102, #113) remain one unit off the native `GetPath` capture; `path-probe` regenerates it. See `OFF_BY_ONE` in `src/gdi-path-wine.test.ts`.
+RoundRect controls now match native `GetPath` captures without exceptions. The compatible-mode cases also match at 1/16-pixel precision, including mirrored viewports and clockwise paths; `path-probe` regenerates both captures.
 - **Existing residuals with no ground truth yet:**
   - `WidenPath` inner join triangles;
   - wide round joins;

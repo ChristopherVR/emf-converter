@@ -182,20 +182,21 @@ export function wmfRectangle(p: WmfPlayer, l: number, t: number, r: number, b: n
 }
 
 /** The device FIX extents of a compatible-mode RoundRect's corner ellipse (logical `w` x `h`). */
-function compatCorner(p: WmfPlayer, w: number, h: number): [number, number] {
+function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox): [number, number] {
 	const m = gdiDeviceMatrix(p.rCtx);
 	const cw = Math.round(Math.abs(w * m[0]) * 16);
 	const ch = Math.round(Math.abs(h * m[3]) * 16);
-	// The corner ellipse is a whole even number of device pixels on each
-	// axis, so its half axes are whole pixels. Under a wide pen its size is
-	// rounded down to that (measured: `wmf-shapes`); otherwise it is rounded
-	// to whole pixels first and then down to an even number (Windows'
-	// `GetPath`, Wine `gdi32/tests/path.c`, `test_roundrect` and
-	// `test_all_functions`: an odd corner size puts each corner half a pixel
-	// further in; `wmf-shapes-scaled` rules out rounding a fractional size
-	// down).
 	const ux = 16 * p.kx;
 	const uy = 16 * p.ky;
+	if (!penIsNull(p) && penIsCosmetic(p.rCtx)) {
+		// GDI constructs the corner on the original box, then scales it onto
+		// the box with its right/bottom pixel excluded. Retain fractional FIX
+		// extents until the corner's endpoints are rounded (native GetPath).
+		const width = box.x1 - box.x0, height = box.y1 - box.y0;
+		return [Math.min(cw, width + ux) * width / (width + ux), Math.min(ch, height + uy) * height / (height + uy)];
+	}
+	// Wide and null pens retain whole, even device-pixel corner extents
+	// (the wmf-shapes and wmf-shapes-scaled native captures).
 	if (!penIsNull(p) && !penIsCosmetic(p.rCtx)) {
 		return [Math.round(Math.floor(cw / (2 * ux)) * 2 * ux), Math.round(Math.floor(ch / (2 * uy)) * 2 * uy)];
 	}
@@ -218,8 +219,8 @@ export const wmfShapePath = {
 		if (box.x1 < box.x0 || box.y1 < box.y0) {
 			return null;
 		}
-		const [cw, ch] = compatCorner(p, w, h);
-		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, true);
+		const [cw, ch] = compatCorner(p, w, h, box);
+		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx));
 	},
 	ellipse(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
 		const box = compatBox(p, l, t, r, b, { curved: true });
@@ -257,7 +258,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
-	const [cw, ch] = compatCorner(p, w, h);
+	const [cw, ch] = compatCorner(p, w, h, box);
 	const cr = canvasRect(box);
 	paintGdiShape(p.rCtx, {
 		build: (c: CanvasContext) => {
@@ -282,7 +283,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 			c.ellipse(cr.x + ex, cr.y + ey, ex, ey, 0, 2 * q, 3 * q);
 			c.closePath();
 		},
-		raster: () => roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, true),
+		raster: () => roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx)),
 		roundPen: true,
 		fill: true,
 		stroke: true,

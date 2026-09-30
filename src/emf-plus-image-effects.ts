@@ -18,10 +18,11 @@
  * GDI+'s own result next to it (`emf-plus-image-effects.fixture.test.ts`).
  * Against those bitmaps:
  *
- * - `ColorMatrix`, `ColorLookupTable`, `BrightnessContrast`, `ColorBalance`,
- *   `Levels` and `Sharpen` are exact.
- * - `Blur` is within one level (float rounding). GDI+ blurs rows only, plus
- *   the top row down its columns ({@link applyBlur}).
+ * - `ColorMatrix`, `ColorLookupTable`, `BrightnessContrast`, `ColorBalance`
+ *   match the native fixtures exactly. Sharpen strength is exact; its blur
+ *   convolution retains differences.
+ * - `Blur` is within one level through radius 16 in the dimension sweep.
+ *   Larger radii use a different native algorithm, still approximated here.
  * - `ColorCurve` uses complete native 256-entry tables for every legal
  *   adjustment and intensity ({@link curveAdjustmentLut}).
  * - A broader Levels sweep has one one-level difference in 258,560 values.
@@ -500,8 +501,8 @@ export function applyRedEyeCorrection(
 // ---------------------------------------------------------------------------
 
 /**
- * GDI+'s blur kernel for `radius`: a Gaussian of standard deviation
- * `radius / 1.98` truncated at `ceil(radius)` taps on each side and
+ * GDI+'s blur kernel for `radius`: `exp(-(1.4 * offset / radius)^2)`,
+ * truncated at `ceil(radius)` taps on each side and
  * normalised (measured; `[0.110, 0.780, 0.110]` at radius 1).
  */
 export function blurKernel(radius: number): Float64Array {
@@ -511,10 +512,9 @@ export function blurKernel(radius: number): Float64Array {
 		k[0] = 1;
 		return k;
 	}
-	const sigma = radius / 1.98;
 	let sum = 0;
 	for (let i = -taps; i <= taps; i++) {
-		const w = Math.exp(-(i * i) / (2 * sigma * sigma));
+		const w = Math.exp(-1.96 * i * i / (radius * radius));
 		k[i + taps] = w;
 		sum += w;
 	}
@@ -538,14 +538,17 @@ function mirror(p: number, n: number): number {
 /**
  * GDI+'s blur of a `w` x `h` straight RGBA buffer: every channel (alpha
  * included, colour not premultiplied) convolved along each row with
- * {@link blurKernel}, rows reflected at their ends; then only row
- * `vRow` is also convolved down its column (rows reflected at the buffer's
- * top and bottom, or read as transparent when `vZeroAbove`). This is what
- * GDI+ does: it never blurs vertically beyond that one row. Returns floats.
+ * {@link blurKernel}, with rounded horizontal pixels before the vertical
+ * pass. Through radius 16, native filtering visits ceil(h / w) leading
+ * rows starting at `vRow`. Edges reflect unless the radius reaches that
+ * axis's size, when they clamp; `vZeroAbove` reads transparency above the
+ * source rectangle. Larger radii still use an approximation. Returns floats.
  */
 function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false): Float64Array {
 	const k = blurKernel(radius);
 	const taps = (k.length - 1) / 2;
+	const horizontalIndex = radius <= 16 && radius >= w ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
+	const verticalIndex = radius <= 16 && radius >= h ? (y: number) => Math.max(0, Math.min(h - 1, y)) : (y: number) => mirror(y, h);
 	const out = new Float64Array(w * h * 4);
 	for (let y = 0; y < h; y++) {
 		const row = y * w * 4;
@@ -555,7 +558,7 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 			let s2 = 0;
 			let s3 = 0;
 			for (let j = -taps; j <= taps; j++) {
-				const p = row + mirror(x + j, w) * 4;
+				const p = row + horizontalIndex(x + j) * 4;
 				const kw = k[j + taps];
 				s0 += kw * src[p];
 				s1 += kw * src[p + 1];
@@ -563,32 +566,39 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 				s3 += kw * src[p + 3];
 			}
 			const o = row + x * 4;
-			out[o] = s0;
-			out[o + 1] = s1;
-			out[o + 2] = s2;
-			out[o + 3] = s3;
+			out[o] = Math.round(s0);
+			out[o + 1] = Math.round(s1);
+			out[o + 2] = Math.round(s2);
+			out[o + 3] = Math.round(s3);
 		}
 	}
 	if (taps > 0 && vRow >= 0 && vRow < h) {
-		const col = new Float64Array(w * 4);
-		for (let j = -taps; j <= taps; j++) {
-			const yy = vRow + j;
-			if (vZeroAbove && yy < vRow) {
-				continue;
+		const horizontal = out.slice();
+		// Native small-radius filtering visits ceil(height / width) leading
+		// rows. Tall and narrow probes expose the extra rows hidden by square
+		// and landscape fixtures.
+		const endRow = Math.min(h, vRow + (radius <= 16 ? Math.ceil(h / w) : 1));
+		for (let row = vRow; row < endRow; row++) {
+			const col = new Float64Array(w * 4);
+			for (let j = -taps; j <= taps; j++) {
+				const yy = row + j;
+				if (vZeroAbove && yy < vRow) {
+					continue;
+				}
+				const base = verticalIndex(yy) * w * 4;
+				for (let i = 0; i < w * 4; i++) {
+					col[i] += k[j + taps] * horizontal[base + i];
+				}
 			}
-			const base = mirror(yy, h) * w * 4;
-			for (let i = 0; i < w * 4; i++) {
-				col[i] += k[j + taps] * out[base + i];
-			}
+			out.set(col, row * w * 4);
 		}
-		out.set(col, vRow * w * 4);
 	}
 	return out;
 }
 
 /**
  * Blur (MS-EMFPLUS 2.2.3.1) as GDI+ applies it to a `w` x `h` buffer (see
- * {@link gdipBlur}): rows blurred with a Gaussian of `radius / 1.98`, the
+ * {@link gdipBlur}): rows blurred with the Gaussian kernel, the
  * top row also blurred down its column, results rounded. `expandEdge` is
  * handled by {@link applyImageEffectToRect}.
  */
@@ -596,22 +606,13 @@ export function applyBlur(src: Uint8ClampedArray, w: number, h: number, radius: 
 	return Uint8ClampedArray.from(gdipBlur(src, w, h, radius), Math.round);
 }
 
-/** Exponent of the gain's fall-off beyond radius 3, fitted so radius 6 gives 25/48 per unit amount. */
-const SHARPEN_FALLOFF = Math.log2(96 / 25);
-
 /**
- * The unsharp-mask gain GDI+ uses for `amount` (0..100) at `radius`,
- * measured: `amount / 100 * 2 radius / 3` up to radius 3 (1/3 at radius 1,
- * amount 50; 2 at radius 3, amount 100). Beyond radius 3 it falls off; the
- * one measured point (5/32 at radius 6, amount 30) fixes the fall-off
- * `amount / 100 * 2 (3 / radius)^1.94`, which is a fit, not GDI+'s formula.
+ * GDI+'s unsharp-mask gain, independent of radius. The rational amount
+ * curve is quantized to 1/64 with half-down rounding. Verified against
+ * every integer amount from 0 through 100 in a native pixel sweep.
  */
-export function sharpenGain(radius: number, amount: number): number {
-	const x = amount / 100;
-	if (radius <= 3) {
-		return (x * 2 * radius) / 3;
-	}
-	return x * 2 * (3 / radius) ** SHARPEN_FALLOFF;
+export function sharpenGain(_radius: number, amount: number): number {
+	return roundHalfDown(64 * amount / (250 - 2 * amount)) / 64;
 }
 
 /**

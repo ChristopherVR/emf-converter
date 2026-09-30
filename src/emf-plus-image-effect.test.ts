@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { nativeCurveLookup } from './emf-plus-image-curves';
 import { describe, expect, it } from 'vitest';
-import { applyImageEffect as applyNativeEffect, parseSerializableObject as parseImageEffect, levelsLut, type EmfPlusImageEffect } from './emf-plus-image-effects';
+import { applyImageEffect as applyNativeEffect, applyBlur, parseSerializableObject as parseImageEffect, levelsLut, sharpenGain, type EmfPlusImageEffect } from './emf-plus-image-effects';
 const applyImageEffect = (source: Uint8ClampedArray, effect: EmfPlusImageEffect) => applyNativeEffect(source, 16, 16, effect)!;
 const greyRamp = Uint8ClampedArray.from(Array.from({ length: 1024 }, (_, i) => i % 4 === 3 ? 255 : Math.floor(i / 4)));
 
@@ -30,6 +30,53 @@ function nativeCase(name: string) {
 }
 
 describe('EMF+ image effects', () => {
+	it('matches native blur across tall, narrow and square buffers through radius 16', () => {
+		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-dimensions.json', import.meta.url), 'utf8'));
+		for (const c of cases) {
+			if (c.radius > 16) continue;
+			for (const pattern of ['ramp', 'impulse']) {
+				const source = new Uint8ClampedArray(c.width * c.height * 4);
+				for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+					const grey = (y * c.width + x) & 255;
+					source.set(pattern === 'ramp' ? [grey, grey, grey, 255] : [x === 0 ? 255 : 0, x === c.width / 2 - 1 ? 255 : 0, x === c.width - 1 ? 255 : 0, 255], (y * c.width + x) * 4);
+				}
+				const actual = applyBlur(source, c.width, c.height, c.radius);
+				const expected = Buffer.from(c[pattern], 'base64');
+				let maxDiff = 0;
+				for (let i = 0; i < actual.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
+				expect(maxDiff, `${c.width}x${c.height} radius=${c.radius} ${pattern}`).toBeLessThanOrEqual(pattern === 'impulse' ? 0 : 1);
+			}
+		}
+	});
+	it('matches native blur colour impulses at 14 radii from 0.25 through 10', () => {
+		const sweep = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-sharpen-sweep.json', import.meta.url), 'utf8'));
+		const source = new Uint8ClampedArray(1024);
+		for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+			source.set([x === 0 ? 255 : 0, x === 7 ? 255 : 0, x === 15 ? 255 : 0, 255], (y * 16 + x) * 4);
+		}
+		for (let r = 0; r < sweep.radii.length && sweep.radii[r] <= 10; r++) {
+			expect(Array.from(applyBlur(source, 16, 16, sweep.radii[r])), `radius=${sweep.radii[r]}`).toEqual(Array.from(Buffer.from(sweep.impulseBlur[r], 'base64')));
+		}
+	});
+	it('matches native sharpen strength for every integer amount and 19 radii', () => {
+		const sweep = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-sharpen-sweep.json', import.meta.url), 'utf8'));
+		const amounts = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-sharpen-amounts.json', import.meta.url), 'utf8'));
+		const expectedAmounts = Buffer.from(amounts.expected, 'base64');
+		const check = (radius: number, amount: number, blur: Buffer, expected: Buffer) => {
+			// Isolate strength from convolution using Windows' own blurred pixels.
+			const gain = sharpenGain(radius, amount);
+			const actual = Uint8ClampedArray.from(greyRamp, (v, i) => i % 4 === 3 ? v : Math.round(v + gain * (v - blur[i])));
+			expect(Array.from(actual), `radius=${radius}, amount=${amount}`).toEqual(Array.from(expected));
+		};
+		for (let r = 0; r < sweep.radii.length; r++) {
+			const blur = Buffer.from(sweep.blur[r], 'base64');
+			for (let a = 0; a < sweep.amounts.length; a++) {
+				check(sweep.radii[r], sweep.amounts[a], blur, Buffer.from(sweep.expected[r * sweep.amounts.length + a], 'base64'));
+			}
+		}
+		const blur = Buffer.from(sweep.blur[sweep.radii.indexOf(amounts.radius)], 'base64');
+		for (let amount = 0; amount <= 100; amount++) check(amounts.radius, amount, blur, expectedAmounts.subarray(amount * 1024, (amount + 1) * 1024));
+	});
 	it.each(['matrix-swap', 'matrix-mix', 'lookup', 'balance-0', 'balance-1', 'balance-2', 'balance-3', 'balance-4', ...Array.from({ length: 8 }, (_, i) => `curve-${i}`), ...Array.from({ length: 5 }, (_, i) => `levels-${i}`)])('matches native GDI+ %s pixels', (name) => {
 		const { view, source, expected } = nativeCase(name);
 		const original = source.slice();
