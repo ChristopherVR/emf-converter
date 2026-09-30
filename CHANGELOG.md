@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.3) - 2026-09-30
+
+### Bug Fixes
+
+- Match standalone GDI channel curves and compatible rounding ([85f0712](https://github.com/ChristopherVR/emf-converter/commit/85f07127a1f1868ee7246c2980163727b115e2e2))
+
 ## [4.4.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.2) - 2026-09-30
 
 ### Bug Fixes
