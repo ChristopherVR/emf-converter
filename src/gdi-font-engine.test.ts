@@ -252,7 +252,7 @@ describe('raster (.fon) fonts', () => {
 	});
 
 	it('paints raster glyphs 1:1', async () => {
-		ensureNodeCanvasModule();
+		await ensureNodeCanvasModule();
 		const napi = await import('@napi-rs/canvas');
 		const canvas = napi.createCanvas(40, 20);
 		const ctx = canvas.getContext('2d') as unknown as CanvasContext;

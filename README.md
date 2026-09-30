@@ -41,7 +41,7 @@ npm install emf-converter
 
 No required dependencies:
 
-- **Browser / Web Worker**: `OffscreenCanvas` or `HTMLCanvasElement` is used automatically.
+- **Browser / Web Worker**: `OffscreenCanvas` or `HTMLCanvasElement` is used automatically. Bundlers select the dedicated browser entry through conditional exports; it contains no native canvas or Node filesystem imports. Installing `@napi-rs/canvas` is only needed for the optional Node backend.
 - **Node.js**: SVG output, and PNG output for drawings without text, work out of the box through the built-in rasteriser. For PNG output of drawings with text, either pass `fonts` (see [Exact text](#exact-text)) or install the optional [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas) (prebuilt, no `node-gyp`):
 
   ```bash

@@ -31,19 +31,25 @@
 	],
 	"main": "dist/index.js",
 	"module": "dist/index.mjs",
+	"browser": "dist/browser.mjs",
 	"types": "dist/index.d.ts",
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
+			"browser": {
+				"import": "./dist/browser.mjs",
+				"require": "./dist/browser.js"
+			},
 			"import": "./dist/index.mjs",
 			"require": "./dist/index.js"
 		}
 	},
 	"scripts": {
-		"build": "tsup",
+		"build": "tsup && tsup --config tsup.browser.config.ts",
 		"dev": "tsup --watch",
 		"typecheck": "tsc --noEmit --pretty",
 		"test": "vitest run",
+		"test:browser-package": "node scripts/check-browser-package.mjs",
 		"test:watch": "vitest",
 		"pack": "bun run build && bun pm pack",
 		"docs:typecheck": "vue-tsc --noEmit -p docs/tsconfig.json",

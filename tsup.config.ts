@@ -1,6 +1,8 @@
-import { defineConfig } from 'tsup';
+import { defineConfig, type Options } from 'tsup';
+import { browserConfig } from './tsup.browser.config';
 
-export default defineConfig((options) => ({
+export default defineConfig((options) => {
+	const nodeConfig: Options = {
 	entry: ['src/index.ts'],
 	format: ['esm', 'cjs'],
 	dts: true,
@@ -14,4 +16,6 @@ export default defineConfig((options) => ({
 	// that path aren't forced to bundle or install it.
 	external: ['@napi-rs/canvas'],
 	noExternal: ['jpeg-js', 'gifuct-js', 'js-binary-schema-parser', 'utif', 'pako'],
-}));
+	};
+	return options.watch ? [nodeConfig, browserConfig] : nodeConfig;
+});

@@ -28,6 +28,7 @@ import {
 import { emfLog, emfWarn } from './emf-logging';
 import { decodePng, isPng } from './png-decoder';
 import { decodeImageCodecFallback } from './image-codec-fallback';
+import { loadNodeCanvasModule } from './node-canvas-loader';
 import { encodePng } from './png-encoder';
 import { cosmeticStyle } from './gdi-raster';
 import { SoftwareRasterCanvas } from './software-raster';
@@ -76,12 +77,7 @@ export async function ensureNodeCanvasModule(): Promise<NodeCanvasModule | null>
 		return nodeCanvasModule;
 	}
 	try {
-		// The magic comments keep webpack/Turbopack and Vite from statically
-		// resolving the optional Node.js backend into a browser bundle; the
-		// guards above mean this line never runs there.
-		nodeCanvasModule = await import(
-			/* webpackIgnore: true */ /* @vite-ignore */ '@napi-rs/canvas'
-		);
+		nodeCanvasModule = await loadNodeCanvasModule();
 	} catch {
 		emfWarn(
 			'createCanvas: no OffscreenCanvas/document and @napi-rs/canvas is not installed. ' +
