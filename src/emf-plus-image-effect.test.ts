@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { nativeCurveLookup } from './emf-plus-image-curves';
 import { describe, expect, it } from 'vitest';
-import { applyImageEffect as applyNativeEffect, applyBlur, parseSerializableObject as parseImageEffect, levelsLut, sharpenGain, type EmfPlusImageEffect } from './emf-plus-image-effects';
+import { applyImageEffect as applyNativeEffect, applyBlur, applySharpen, parseSerializableObject as parseImageEffect, levelsLut, sharpenGain, type EmfPlusImageEffect } from './emf-plus-image-effects';
 const applyImageEffect = (source: Uint8ClampedArray, effect: EmfPlusImageEffect) => applyNativeEffect(source, 16, 16, effect)!;
 const greyRamp = Uint8ClampedArray.from(Array.from({ length: 1024 }, (_, i) => i % 4 === 3 ? 255 : Math.floor(i / 4)));
 
@@ -30,6 +30,52 @@ function nativeCase(name: string) {
 }
 
 describe('EMF+ image effects', () => {
+	it('bounds native large-radius sharpen across all captured amounts', () => {
+		const sweep = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-sharpen-sweep.json', import.meta.url), 'utf8'));
+		for (let r = 0; r < sweep.radii.length; r++) {
+			if (sweep.radii[r] < 20) continue;
+			for (let a = 0; a < sweep.amounts.length; a++) {
+				const actual = applySharpen(greyRamp, 16, 16, sweep.radii[r], sweep.amounts[a]);
+				const expected = Buffer.from(sweep.expected[r * sweep.amounts.length + a], 'base64');
+				let maxDiff = 0;
+				for (let i = 0; i < actual.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
+				expect(maxDiff, `radius=${sweep.radii[r]} amount=${sweep.amounts[a]}`).toBeLessThanOrEqual(sweep.radii[r] === 255 ? 0 : 4);
+			}
+		}
+	});
+	it('bounds native large-radius blur on square and rectangular buffers', () => {
+		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-large.json', import.meta.url), 'utf8'));
+		for (const c of cases) {
+			// Partial blocks on tiny images follow a separate, unresolved native edge path.
+			if (c.width < 8 && c.radius >= 20) continue;
+			for (const pattern of ['ramp', 'impulse']) {
+				const source = new Uint8ClampedArray(c.width * c.height * 4);
+				for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+					const v = (y * c.width + x) & 255;
+					source.set(pattern === 'ramp' ? [v, v, v, 255] : [x === 0 ? 255 : 0, x === Math.floor(c.width / 2) - 1 ? 255 : 0, x === c.width - 1 ? 255 : 0, 255], (y * c.width + x) * 4);
+				}
+				const actual = applyBlur(source, c.width, c.height, c.radius);
+				const expected = Buffer.from(c[pattern], 'base64');
+				let maxDiff = 0;
+				for (let i = 0; i < actual.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
+				const bound = c.radius < 20 ? (pattern === 'impulse' ? 0 : 1) : pattern === 'impulse' ? (c.width % 2 ? 8 : 3) : 7;
+				expect(maxDiff, `${c.width}x${c.height} radius=${c.radius} ${pattern}`).toBeLessThanOrEqual(bound);
+			}
+		}
+	});
+	it('follows native blur reduction transitions at all 957 quarter radii', () => {
+		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-factors.json', import.meta.url), 'utf8'));
+		const source = new Uint8ClampedArray(16 * 16 * 4);
+		for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) source.set([x === 0 ? 255 : 0, x === 7 ? 255 : 0, x === 15 ? 255 : 0, 255], (y * 16 + x) * 4);
+		expect(cases).toHaveLength(957);
+		for (const c of cases) {
+			const actual = applyBlur(source, 16, 16, c.radius);
+			const expected = Buffer.from(c.row, 'base64');
+			let maxDiff = 0;
+			for (let i = 0; i < expected.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
+			expect(maxDiff, `radius=${c.radius}`).toBeLessThanOrEqual(c.radius < 20 ? 1 : 3);
+		}
+	});
 	it('matches native blur across tall, narrow and square buffers through radius 16', () => {
 		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-dimensions.json', import.meta.url), 'utf8'));
 		for (const c of cases) {
@@ -38,7 +84,7 @@ describe('EMF+ image effects', () => {
 				const source = new Uint8ClampedArray(c.width * c.height * 4);
 				for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
 					const grey = (y * c.width + x) & 255;
-					source.set(pattern === 'ramp' ? [grey, grey, grey, 255] : [x === 0 ? 255 : 0, x === c.width / 2 - 1 ? 255 : 0, x === c.width - 1 ? 255 : 0, 255], (y * c.width + x) * 4);
+					source.set(pattern === 'ramp' ? [grey, grey, grey, 255] : [x === 0 ? 255 : 0, x === Math.floor(c.width / 2) - 1 ? 255 : 0, x === c.width - 1 ? 255 : 0, 255], (y * c.width + x) * 4);
 				}
 				const actual = applyBlur(source, c.width, c.height, c.radius);
 				const expected = Buffer.from(c[pattern], 'base64');

@@ -14,7 +14,7 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
   - Levels has one one-level rounding difference in the 258,560-value native sweep.
   - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
   - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`).
-  - Blur and sharpen differ above radius 16, where native GDI+ uses a different algorithm. The native radius sweep covers 0.25–255, and dimension probes cover seven square, tall and narrow buffers. Through radius 16, colour impulses are exact and ramps are within one level; smaller-radius sharpen residuals are at most two levels.
+  - Large blur now follows native reduction factors measured at all 957 quarter radii from 16–255. Nine dimensions and 22 radii cover the transition boundaries; even-sized buffers retain at most three levels on colour impulses and seven on ramps; odd-sized buffers retain at most eight and seven respectively. Through radius 16, colour impulses are exact and ramps are within one level; smaller-radius sharpen residuals are at most two levels. Large-radius rounding, tiny partial blocks and expanded-edge filtering remain unresolved; sharpen inherits blur differences.
 - **Fitted to a single data point:**
   - tint's chroma scale;
 

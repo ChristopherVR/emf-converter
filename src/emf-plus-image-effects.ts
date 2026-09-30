@@ -539,16 +539,16 @@ function mirror(p: number, n: number): number {
  * GDI+'s blur of a `w` x `h` straight RGBA buffer: every channel (alpha
  * included, colour not premultiplied) convolved along each row with
  * {@link blurKernel}, with rounded horizontal pixels before the vertical
- * pass. Through radius 16, native filtering visits ceil(h / w) leading
+ * pass. Below radius 20, native filtering visits ceil(h / w) leading
  * rows starting at `vRow`. Edges reflect unless the radius reaches that
  * axis's size, when they clamp; `vZeroAbove` reads transparency above the
- * source rectangle. Larger radii still use an approximation. Returns floats.
+ * source rectangle. Reduced large-radius buffers filter every row. Returns floats.
  */
-function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false): Float64Array {
+function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false, fullVertical = false, edgeWidth = w, edgeHeight = h): Float64Array {
 	const k = blurKernel(radius);
 	const taps = (k.length - 1) / 2;
-	const horizontalIndex = radius <= 16 && radius >= w ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
-	const verticalIndex = radius <= 16 && radius >= h ? (y: number) => Math.max(0, Math.min(h - 1, y)) : (y: number) => mirror(y, h);
+	const horizontalIndex = taps >= edgeWidth ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
+	const verticalIndex = taps >= edgeHeight ? (y: number) => Math.max(0, Math.min(h - 1, y)) : (y: number) => mirror(y, h);
 	const out = new Float64Array(w * h * 4);
 	for (let y = 0; y < h; y++) {
 		const row = y * w * 4;
@@ -577,7 +577,7 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 		// Native small-radius filtering visits ceil(height / width) leading
 		// rows. Tall and narrow probes expose the extra rows hidden by square
 		// and landscape fixtures.
-		const endRow = Math.min(h, vRow + (radius <= 16 ? Math.ceil(h / w) : 1));
+		const endRow = fullVertical ? h : Math.min(h, vRow + Math.ceil(h / w));
 		for (let row = vRow; row < endRow; row++) {
 			const col = new Float64Array(w * 4);
 			for (let j = -taps; j <= taps; j++) {
@@ -596,14 +596,54 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 	return out;
 }
 
+/** Native reduction transitions, measured at every quarter radius from 16 to 255. */
+function blurReduction(radius: number): number {
+	return radius < 20 ? 1 : radius < 40 ? 2 : radius <= 80 ? 4 : radius < 160 ? 8 : 16;
+}
+
+/** Large native blurs reduce in powers of two, filter both axes, then interpolate. */
+function effectBlur(src: Uint8ClampedArray, width: number, height: number, radius: number): Float64Array {
+	const factor = blurReduction(radius);
+	// Native partial blocks on very small buffers use a different edge path.
+	if (factor === 1 || ((width < 4 || height < 4) && (width % factor !== 0 || height % factor !== 0))) {
+		return gdipBlur(src, width, height, radius);
+	}
+	const w = Math.ceil(width / factor);
+	const h = Math.ceil(height / factor);
+	const reduced = new Uint8ClampedArray(w * h * 4);
+	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+		const x1 = Math.min(width, (x + 1) * factor), y1 = Math.min(height, (y + 1) * factor);
+		const count = (x1 - x * factor) * (y1 - y * factor);
+		for (let c = 0; c < 4; c++) {
+			let sum = 0;
+			for (let yy = y * factor; yy < y1; yy++) for (let xx = x * factor; xx < x1; xx++) sum += src[(yy * width + xx) * 4 + c];
+			reduced[(y * w + x) * 4 + c] = Math.floor(sum / count);
+		}
+	}
+	// Native edge-mode selection counts complete blocks, although the buffer
+	// retains a partial final block. Odd dimensions expose this distinction.
+	const filtered = gdipBlur(reduced, w, h, radius / factor, 0, false, true, Math.floor(width / factor), Math.floor(height / factor));
+	// Native filtering rounds the vertical pass before enlargement too.
+	for (let i = 0; i < filtered.length; i++) filtered[i] = Math.round(filtered[i]);
+	const out = new Float64Array(src.length);
+	for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+		const px = clamp((x + 0.5) / factor - 0.5, 0, w - 1), py = clamp((y + 0.5) / factor - 0.5, 0, h - 1);
+		const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy;
+		const a = (iy * w + ix) * 4, b = (iy * w + Math.min(w - 1, ix + 1)) * 4;
+		const d = (Math.min(h - 1, iy + 1) * w + ix) * 4, e = (Math.min(h - 1, iy + 1) * w + Math.min(w - 1, ix + 1)) * 4;
+		for (let c = 0; c < 4; c++) out[(y * width + x) * 4 + c] = Math.round((1 - fy) * ((1 - fx) * filtered[a + c] + fx * filtered[b + c]) + fy * ((1 - fx) * filtered[d + c] + fx * filtered[e + c]));
+	}
+	return out;
+}
+
 /**
  * Blur (MS-EMFPLUS 2.2.3.1) as GDI+ applies it to a `w` x `h` buffer (see
- * {@link gdipBlur}): rows blurred with the Gaussian kernel, the
- * top row also blurred down its column, results rounded. `expandEdge` is
+ * {@link effectBlur}): small radii filter rows and leading columns; large
+ * radii reduce, filter both axes and enlarge. `expandEdge` is
  * handled by {@link applyImageEffectToRect}.
  */
 export function applyBlur(src: Uint8ClampedArray, w: number, h: number, radius: number): Uint8ClampedArray {
-	return Uint8ClampedArray.from(gdipBlur(src, w, h, radius), Math.round);
+	return Uint8ClampedArray.from(effectBlur(src, w, h, radius), Math.round);
 }
 
 /**
@@ -616,9 +656,9 @@ export function sharpenGain(_radius: number, amount: number): number {
 }
 
 /**
- * Sharpen (MS-EMFPLUS 2.2.3.10): an unsharp mask along rows,
- * `v + gain * (v - round(blur(v)))` with GDI+'s row blur at `radius` (see
- * {@link gdipBlur}, the blur rounded to 8 bits first) and the gain of
+ * Sharpen (MS-EMFPLUS 2.2.3.10): an unsharp mask,
+ * `v + gain * (v - round(blur(v)))` using {@link effectBlur}
+ * (the blur rounded to 8 bits first) and the gain of
  * {@link sharpenGain}. Alpha is raised to the largest colour channel, as
  * GDI+ does (it treats the straight colour as premultiplied and restores
  * `colour <= alpha`), so a translucent pixel comes out more opaque.
@@ -630,7 +670,7 @@ export function applySharpen(
 	radius: number,
 	amount: number,
 ): Uint8ClampedArray {
-	const blurred = gdipBlur(src, w, h, radius);
+	const blurred = effectBlur(src, w, h, radius);
 	const gain = sharpenGain(radius, amount);
 	const out = new Uint8ClampedArray(src);
 	for (let i = 0; i < src.length; i += 4) {

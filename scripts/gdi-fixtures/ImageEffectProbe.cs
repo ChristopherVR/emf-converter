@@ -185,6 +185,23 @@ public static class ImageEffectProbe
 	{
 		int[][] sizes = {new int[]{2,3},new int[]{8,16},new int[]{16,8},new int[]{32,16},new int[]{16,32},new int[]{32,32},new int[]{64,64}};
 		float[] radii = {1,3,8,10,16,24,32,64};
+		BlurSamples(dir,"effect-blur-dimensions.json",sizes,radii);
+	}
+	public static void LargeBlur(string dir)
+	{
+		int[][] sizes = {new int[]{2,3},new int[]{8,16},new int[]{16,8},new int[]{16,16},new int[]{32,32},new int[]{64,64},new int[]{13,21},new int[]{31,17},new int[]{63,65}};
+		float[] radii = {16.25f,17,23.49f,23.5f,24,31.5f,32.25f,33,39.5f,40,48,55.5f,56,63.5f,65,80,96,112,129,144,240,255};
+		BlurSamples(dir,"effect-blur-large.json",sizes,radii);
+		var scan = new System.Text.StringBuilder("[");
+		using (var init = new Bitmap(1,1)) for(int quarter=64;quarter<=1020;quarter++) {
+			float radius=quarter/4.0f;byte[] parameters=new byte[8];Buffer.BlockCopy(new float[]{radius,0},0,parameters,0,8);
+			var pixels=Case(dir,"blur-factors","633c80a4-1843-482b-9ef2-be2834c5fdd4",parameters,true,true);
+			if(quarter>64)scan.Append(',');scan.Append("{\"radius\":").Append(radius).Append(",\"row\":\"").Append(Convert.ToBase64String(pixels,0,64)).Append("\"}");
+		}
+		File.WriteAllText(Path.Combine(dir,"effect-blur-factors.json"),scan.Append(']').ToString());
+	}
+	static void BlurSamples(string dir,string file,int[][] sizes,float[] radii)
+	{
 		var json = new System.Text.StringBuilder("[");
 		using (var init = new Bitmap(1,1)) foreach(int[] size in sizes) foreach(float radius in radii) {
 			if(json.Length>1)json.Append(',');
@@ -193,6 +210,6 @@ public static class ImageEffectProbe
 			.Append(Convert.ToBase64String(Case(dir,"blur-dimensions","633c80a4-1843-482b-9ef2-be2834c5fdd4",parameters,true,false,size[0],size[1])))
 			.Append("\",\"impulse\":\"").Append(Convert.ToBase64String(Case(dir,"blur-dimensions","633c80a4-1843-482b-9ef2-be2834c5fdd4",parameters,true,true,size[0],size[1]))).Append("\"}");
 		}
-		File.WriteAllText(Path.Combine(dir,"effect-blur-dimensions.json"),json.Append("]").ToString());
+		File.WriteAllText(Path.Combine(dir,file),json.Append("]").ToString());
 	}
 }

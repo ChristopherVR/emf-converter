@@ -260,7 +260,7 @@ describe('RedEyeCorrection', () => {
 });
 
 describe('Blur and Sharpen', () => {
-	it('uses a Gaussian of radius / 1.98 truncated at ceil(radius) taps', () => {
+	it('uses the native Gaussian exponent truncated at ceil(radius) taps', () => {
 		expect(Array.from(blurKernel(0))).toEqual([1]);
 		const k = Array.from(blurKernel(1));
 		expect(k).toHaveLength(3);
