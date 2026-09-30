@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.9](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.9) - 2026-09-30
+
+### Bug Fixes
+
+- Decode RGB JPEG TIFF and reconstruct subsampled chroma ([e590d86](https://github.com/ChristopherVR/emf-converter/commit/e590d86b1bd0bd7c7b9e69bece260a5edf3e3ef8))
+
 ## [4.4.8](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.8) - 2026-09-30
 
 ### Bug Fixes
