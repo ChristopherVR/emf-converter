@@ -38,6 +38,14 @@ function embeddedImage(encoded: Uint8Array): ArrayBuffer {
 }
 
 describe('bundled image codecs without a canvas backend', () => {
+	it.each(['none', 'packbits', 'ccitt3', 'ccitt4'])('matches native bilevel TIFF %s with odd-width scanlines', async (compression) => {
+		const kind = `tiff-bilevel-${compression}`;
+		const decoded = (await decodeImageBytesBuiltIn(bytesFor(kind)))!;
+		const reference = (await decodePng(new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/codec-${kind}.png`, import.meta.url)))))!;
+		expect(decoded).not.toBeNull();
+		expect([decoded.width, decoded.height]).toEqual([37, 19]);
+		expect(decoded.data).toEqual(reference.data);
+	});
 	it.each(['gif-offset-opaque', 'gif-offset-opaque-background', 'gif-offset-transparent', 'gif-offset-transparent-background', 'gif-offset-transparent-index', 'gif-offset-opaque-background-local', 'gif-offset-transparent-background-local', 'tiff-lzw', 'tiff-multipage'])('matches the first native frame/page of %s byte for byte', async (kind) => {
 		const decoded = (await decodeImageBytesBuiltIn(bytesFor(kind)))!;
 		const reference = (await decodePng(new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/codec-${kind}.png`, import.meta.url)))))!;

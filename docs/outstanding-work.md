@@ -20,7 +20,7 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
 
 Sharpen strength now uses the native rational amount curve, quantized to 1/64 with half-down rounding. It matches every integer amount 0–100 and 19 radii when tested independently of blur convolution.
 
-- **JPEG chroma reconstruction:** the bundled fallback decoder differs from Windows by up to 19 levels on the ramp fixture. GIF and TIFF match native references exactly, including offset opaque/transparent animated GIF frames with global/local palettes and different background and transparency indices, LZW-compressed TIFF, and multipage TIFF. Further TIFF compression variants remain useful coverage.
+- **JPEG chroma reconstruction:** the bundled fallback decoder differs from Windows by up to 19 levels on the ramp fixture. GIF and TIFF match native references exactly, including offset opaque/transparent animated GIF frames with global/local palettes and different background and transparency indices, LZW-compressed TIFF, multipage TIFF, and odd-width bilevel uncompressed/PackBits/CCITT Group 3/4 TIFF. Group 3 now honors explicit one-dimensional coding instead of guessing from the first run. Deflate/JPEG-compressed and tiled TIFF remain additional coverage targets.
 
 ## GDI color adjustment and HALFTONE
 

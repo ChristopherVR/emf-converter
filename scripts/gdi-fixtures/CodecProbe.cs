@@ -87,4 +87,30 @@ public static class CodecProbe
 		}
 		Extended(dir);
 	}
+	public static void CompressionVariants(string dir)
+	{
+		ImageCodecInfo codec = Array.Find(ImageCodecInfo.GetImageEncoders(), c => c.FormatID == ImageFormat.Tiff.Guid);
+		// An odd width exercises the bit and scanline padding in fax/RLE data.
+		using (var bitmap = new Bitmap(37, 19, PixelFormat.Format1bppIndexed)) {
+			var palette = bitmap.Palette;
+			palette.Entries[0] = Color.Black; palette.Entries[1] = Color.White; bitmap.Palette = palette;
+			var bits = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.WriteOnly, bitmap.PixelFormat);
+			try {
+				var data = new byte[bits.Stride * bitmap.Height];
+				for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < bitmap.Width; x++)
+					if ((x / 3 + y / 2) % 2 == 0 || x == y) data[y * bits.Stride + x / 8] |= (byte)(128 >> (x % 8));
+				System.Runtime.InteropServices.Marshal.Copy(data, 0, bits.Scan0, data.Length);
+			} finally { bitmap.UnlockBits(bits); }
+			var modes = new[] { EncoderValue.CompressionNone, EncoderValue.CompressionRle, EncoderValue.CompressionCCITT3, EncoderValue.CompressionCCITT4 };
+			var names = new[] { "none", "packbits", "ccitt3", "ccitt4" };
+			for (int i = 0; i < modes.Length; i++) {
+				string path = Path.Combine(dir, "codec-tiff-bilevel-" + names[i] + ".bin");
+				using (var parameters = new EncoderParameters(1)) {
+					parameters.Param[0] = new EncoderParameter(Encoder.Compression, (long)modes[i]);
+					bitmap.Save(path, codec, parameters);
+				}
+				Reference(path);
+			}
+		}
+	}
 }

@@ -26,9 +26,9 @@ function Complete-Fixtures {
     $name = 'environment-' + ($Which -replace '[^a-zA-Z0-9-]', '-') + '.json'
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $Directory $name) -Groups $Which -Files $files
 }
-if ($Which -eq 'image-codecs') {
+if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra') {
     Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing
-    [CodecProbe]::Run($outDir)
+    if ($Which -eq 'image-codecs-extra') { [CodecProbe]::CompressionVariants($outDir) } else { [CodecProbe]::Run($outDir) }
     Complete-Fixtures
     return
 }
