@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { inflateSync, gunzipSync } from 'node:zlib';
 import { nativeCurveLookup } from './emf-plus-image-curves';
 import { describe, expect, it } from 'vitest';
-import { applyImageEffect as applyNativeEffect, applyBlur, applySharpen, applyHueSaturationLightness, parseSerializableObject as parseImageEffect, levelsLut, sharpenGain, type EmfPlusImageEffect } from './emf-plus-image-effects';
+import { applyImageEffect as applyNativeEffect, applyBlur, applySharpen, applyTint, applyHueSaturationLightness, parseSerializableObject as parseImageEffect, levelsLut, sharpenGain, type EmfPlusImageEffect } from './emf-plus-image-effects';
 const applyImageEffect = (source: Uint8ClampedArray, effect: EmfPlusImageEffect) => applyNativeEffect(source, 16, 16, effect)!;
 const greyRamp = Uint8ClampedArray.from(Array.from({ length: 1024 }, (_, i) => i % 4 === 3 ? 255 : Math.floor(i / 4)));
 
@@ -30,6 +30,22 @@ function nativeCase(name: string) {
 }
 
 describe('EMF+ image effects', () => {
+	it('bounds native Tint across negative hue wrapping, amount signs and greys', () => {
+		const source = new Uint8ClampedArray(readFileSync(new URL('./__fixtures__/gdi/effect-tint-source.bin', import.meta.url)));
+		const expected = gunzipSync(readFileSync(new URL('./__fixtures__/gdi/effect-tint-sweep.bin.gz', import.meta.url)));
+		const settings = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-tint-settings.json', import.meta.url), 'utf8')) as number[][];
+		expect(settings).toHaveLength(90);
+		expect(expected.length).toBe(settings.length * source.length);
+		settings.forEach(([hue, amount], setting) => {
+			const actual = applyTint(source, hue, amount);
+			let maximum = 0;
+			for (let i = 0; i < source.length; i++) {
+				if (i % 4 === 3) { if (actual[i] !== source[i] || actual[i] !== expected[setting * source.length + i]) throw new Error('Tint changed source alpha'); continue; }
+				maximum = Math.max(maximum, Math.abs(actual[i] - expected[setting * source.length + i]));
+			}
+			expect(maximum, `hue=${hue} amount=${amount}`).toBeLessThanOrEqual(amount === 0 ? 1 : amount > 0 ? 3 : amount === -50 ? 3 : 5);
+		});
+	});
 	it('matches native hue quantization across every integer angle and bounds mixed HSL controls', () => {
 		const source = new Uint8ClampedArray(readFileSync(new URL('./__fixtures__/gdi/effect-hue-source.bin', import.meta.url)));
 		const expected = gunzipSync(readFileSync(new URL('./__fixtures__/gdi/effect-hue-sweep.bin.gz', import.meta.url)));
@@ -40,9 +56,8 @@ describe('EMF+ image effects', () => {
 			const actual = applyHueSaturationLightness(source, hue, saturation, lightness);
 			let maximum = 0, saturatedMaximum = 0;
 			for (let i = 0; i < source.length; i++) {
-				// BitmapApplyEffect makes alpha opaque; DrawImage preserves it,
-				// as independently verified by the recorded Dual/Only fixtures.
-				if (i % 4 === 3) { if (actual[i] !== source[i]) throw new Error('HSL changed source alpha'); continue; }
+				// Native alpha preservation is also covered by Dual/Only recordings.
+				if (i % 4 === 3) { if (actual[i] !== source[i] || actual[i] !== expected[setting * source.length + i]) throw new Error('HSL changed source alpha'); continue; }
 				const difference = Math.abs(actual[i] - expected[setting * source.length + i]);
 				maximum = Math.max(maximum, difference);
 				if (i < 1536 * 4) saturatedMaximum = Math.max(saturatedMaximum, difference);

@@ -1068,7 +1068,7 @@ const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
 	exact('plus-effect-tint-h120-a100'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-tint-h180-a100'), // 0.153% before (0.153% beyond 8 levels)
 	levelExact('plus-effect-tint-h60-an50'), // 0.153% before, 0.153% one level off now
-	exact('plus-effect-tint-hn90-a30'), // 0.153% before (0.153% beyond 8 levels)
+	levelExact('plus-effect-tint-hn90-a30'), // quantized hue leaves 96 boundary pixels one level off
 ];
 
 const EMF_PLUS_ONLY_EFFECT_CASES: ParityCase[] = EMF_PLUS_EFFECT_CASES

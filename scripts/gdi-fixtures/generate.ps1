@@ -42,7 +42,7 @@ if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe' -or $Which -eq 'wid
     Complete-Fixtures
     return
 }
-if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -or $Which -eq 'image-effect-hue' -or $Which -eq 'image-effect-tables' -or $Which -eq 'image-effects') {
+if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -or $Which -eq 'image-effect-hue' -or $Which -eq 'image-effect-tint' -or $Which -eq 'image-effect-tables' -or $Which -eq 'image-effects') {
     Add-Type -Path (Join-Path $here 'ImageEffectProbe.cs') -ReferencedAssemblies System.Drawing
     if ($Which -eq 'image-effect-sharpen') {
         [ImageEffectProbe]::SharpenSweep($outDir)
@@ -52,6 +52,8 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -
         [ImageEffectProbe]::LargeBlur($outDir)
     } elseif ($Which -eq 'image-effect-hue') {
         [ImageEffectProbe]::HueSweep($outDir)
+    } elseif ($Which -eq 'image-effect-tint') {
+        [ImageEffectProbe]::TintSweep($outDir)
     } elseif ($Which -eq 'image-effect-tables') {
         if (!$TablesDir) { throw 'Pass a temporary output directory for the native tables' }
         $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $TablesDir)).Path

@@ -431,7 +431,7 @@ export function applyHueSaturationLightness(
 /** Rec. 709 luma weights, which GDI+'s Tint uses. */
 const LUMA_709 = [0.2126, 0.7152, 0.0722] as const;
 
-/** Measured scale of the tint colour's chroma (GDI+'s is about 1.5% short of the exact colour's). */
+/** Fitted native chroma scale, now checked across 90 hue/amount settings. */
 const TINT_CHROMA_SCALE = 0.985;
 
 /**
@@ -440,11 +440,16 @@ const TINT_CHROMA_SCALE = 0.985;
  * saturated colour at `hue` degrees (0 red, 120 green, -120 blue; GDI+'s
  * documentation counts from blue, but its red and blue are swapped) scaled
  * by the pixel's largest channel. A negative amount extrapolates away from
- * it, strengthening the complementary colour. Within one level of GDI+ on
- * most pixels; the chroma scale is a fit.
+ * it, strengthening the complementary colour. Native Tint wraps its
+ * quantized hue at 256, unlike HSL's 255-index rotation. A broader sweep
+ * retains three levels at positive amounts and five at negative amounts;
+ * the chroma scale and colour rounding remain approximate.
  */
 export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): Uint8ClampedArray {
-	const tint = hslToRgb(hue, 1, 0.5);
+	// Signed half rounding makes -180 and +180 adjacent palette indices.
+	const index = (Math.round(hue * 255 / 360) + 256) % 256;
+	const q = (index + Math.floor((index + 41) / 85)) % 258;
+	const tint = hslToRgb(q * 60 / 43, 1, 0.5);
 	const ty = tint[0] * LUMA_709[0] + tint[1] * LUMA_709[1] + tint[2] * LUMA_709[2];
 	const chroma = tint.map((c) => (c - ty) * TINT_CHROMA_SCALE);
 	const a = amount / 100;

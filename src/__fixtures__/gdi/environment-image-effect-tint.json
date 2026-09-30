@@ -1,7 +1,7 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-09-30T23:07:16.5580602Z",
-    "groups":  "image-effect-hue",
+    "capturedAt":  "2026-09-30T23:01:05.9130759Z",
+    "groups":  "image-effect-tint",
     "os":  "Microsoft Windows NT 10.0.26200.0",
     "build":  9457,
     "architecture":  "AMD64",
@@ -3382,16 +3382,16 @@
               ],
     "references":  [
                        {
-                           "name":  "effect-hue-settings.json",
-                           "sha256":  "ce5755250708ce97c8abe08a7e2f5f906732f6ebe637a84d3c231280e4770695"
+                           "name":  "effect-tint-settings.json",
+                           "sha256":  "5306a7df8ef938ce2ca7a2e404fd07e589d9f24d5db198b8018495818f94c42d"
                        },
                        {
-                           "name":  "effect-hue-source.bin",
-                           "sha256":  "a1c783c6c10d4dca5cff254cb04f8f8d105606015238e45f34574279e0c7e405"
+                           "name":  "effect-tint-source.bin",
+                           "sha256":  "94705fc1a6e88dcd64a3ef04dc6bf3244d8911f17d7025177439e7433c660d1e"
                        },
                        {
-                           "name":  "effect-hue-sweep.bin.gz",
-                           "sha256":  "c7d2986d2d4a3253dd0d3a4a001ca27d3d18cd89b478065dc59ac1c1f7720b63"
+                           "name":  "effect-tint-sweep.bin.gz",
+                           "sha256":  "814ae8514b9bbe55a3d12e06d42a97b2383afbc71d9c249b64a0f155250ce8d7"
                        }
                    ]
 }

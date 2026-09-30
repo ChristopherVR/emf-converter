@@ -10,13 +10,12 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
 
 - **Not exact yet:**
   - HSL hue quantization now matches all 554,496 saturated-colour/angle pairs exactly. The broader 1,390,080-pair hue/saturation/lightness sweep retains at most one level on mixed colours and controls. All recorded pure rotation fixtures now match exactly; tone rounding remains.
-  - Tint is within 3 levels.
+  - Tint's native 256-index palette and signed hue wrapping now match the broader probe; the 253,440-pair sweep retains at most three levels for positive amounts and five for negative amounts.
   - Levels has one one-level rounding difference in the 258,560-value native sweep.
   - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
   - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`).
   - Large blur now follows native reduction factors measured at all 957 quarter radii from 16–255. Nine dimensions and 22 radii cover the transition boundaries; even-sized buffers retain at most three levels on colour impulses and seven on ramps; odd-sized buffers retain at most eight and seven respectively. Through radius 16, colour impulses are exact and ramps are within one level; smaller-radius sharpen residuals are at most two levels. Large-radius rounding, tiny partial blocks and expanded-edge filtering remain unresolved; sharpen inherits blur differences.
-- **Fitted to a single data point:**
-  - tint's chroma scale;
+- **Still fitted:** Tint's chroma scale. It is now checked across 90 hue/amount combinations, but its colour conversion and rounding remain approximate.
 
 Sharpen strength now uses the native rational amount curve, quantized to 1/64 with half-down rounding. It matches every integer amount 0–100 and 19 radii when tested independently of blur convolution.
 
