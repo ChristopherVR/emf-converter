@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.10](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.10) - 2026-09-30
+
+### Bug Fixes
+
+- Match native HSL hue quantization and rotation ([50309ac](https://github.com/ChristopherVR/emf-converter/commit/50309ac9ac28655b08ffbd7519c662bae5500b4d))
+
 ## [4.4.9](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.9) - 2026-09-30
 
 ### Bug Fixes
