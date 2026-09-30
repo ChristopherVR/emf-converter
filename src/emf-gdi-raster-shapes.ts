@@ -321,7 +321,7 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 	const { state } = rCtx;
 	const flags = state.penFlags ?? state.penStyle;
 	const matrix = gdiDeviceMatrix(rCtx);
-	const widthPx = opts.rectangle && rCtx.wholeDevicePixels && (flags & 0xf) === 6
+	const widthPx = rCtx.wholeDevicePixels && (flags & 0xf) === 6
 		? state.penWidth * Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2]))
 		: penDeviceWidth(rCtx);
 	const capBits = flags & 0xf00;

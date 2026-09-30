@@ -15,7 +15,7 @@ on:
           pattern, rotation, rop2, image, rotation-affine, text-extra, gdi-raster,
           emfplus-records, gdiplus-extra, wmf-records, emf-records, halftone,
           emfplus-effects, pen-transform, halftone-mixed,
-          color-adjustment-controls, illuminant-charts, halftone-dither;
+          color-adjustment-controls, illuminant-charts, halftone-dither, wmf-insideframe-curves;
           standalone: path-probe, wide-path-probe, wide-outline-probe, image-codecs, image-codecs-extra,
           image-effects, image-effect-sharpen, illuminant-tables
         required: true

@@ -43,6 +43,6 @@ EMF files do not record the graphics mode. Windows plays back RoundRect, Arc, Ch
 
 ## WMF
 
-- Fractional `PS_INSIDEFRAME` rectangles now match the 1.0–2.9 px width sweep exactly. Wider half-pixel widths retain a 0.39% residual in the dedicated fixture; curved boxes need further native comparisons.
+- Fractional `PS_INSIDEFRAME` rectangles match the 1.0–2.9 px width sweep exactly. Wider half-pixel widths retain a 0.39% residual. Curved shapes retain fractional fitting and widening; native 0.5–10 px sweeps show 0.11–0.16% differences on closed curves and 0.039% on arcs.
 - Mirrored `LAYOUT_RTL` cosmetic and wide line fixtures match Windows exactly.
 - Metric map modes default to a 96 dpi reference device. Set `wmfReferenceDpi` to a number or `{ x, y }` when the original physical-device resolution is known. Metafiles do not always record that information.

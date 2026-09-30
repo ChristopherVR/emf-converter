@@ -187,8 +187,9 @@ jobs:
           git add package.json CHANGELOG.md
           git commit -m "chore(release): ${{ steps.v.outputs.tag }} [skip ci]"
           git tag -a "${{ steps.v.outputs.tag }}" -m "${{ steps.v.outputs.tag }}"
-          git push origin HEAD:main
-          git push origin "${{ steps.v.outputs.tag }}"
+          # Update both refs together: a rejected tag must not leave main
+          # carrying a release version that was never published.
+          git push --atomic origin HEAD:main "${{ steps.v.outputs.tag }}"
 
       - name: Publish to npm
         if: steps.v.outputs.release == 'true'

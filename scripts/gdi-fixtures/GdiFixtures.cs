@@ -2817,6 +2817,26 @@ public static class GdiFixtures
 		WmfPlayCase("wmf-shapes-scaled", 365, 242, WmfRecord(delegate (IntPtr hdc) { WmfShapeSheet(hdc, 10); }), new int[] { 0, 0, 3800, 2520 }, 1000);
 	}
 
+	static void WmfInsideFrameCurves()
+	{
+		var names = new[] { "ellipse", "roundrect", "chord", "pie", "arc" };
+		for (int shape = 0; shape < names.Length; shape++) {
+			int kind = shape;
+			WmfPlayCase("wmf-insideframe-curved-" + names[shape], 400, 160, WmfRecord(delegate (IntPtr hdc) {
+				for (int i = 0; i < 20; i++) {
+					int x = (i % 10) * 400 + 50, y = (i / 10) * 800 + 100;
+					WithObjects(hdc, CreatePen(6, (i + 1) * 5, Rgb(16, 16, 96)), CreateSolidBrush(Palette[2]), delegate {
+						if (kind == 0) Ellipse(hdc,x,y,x+300,y+600);
+						else if (kind == 1) RoundRect(hdc,x,y,x+300,y+600,120,160);
+						else if (kind == 2) Chord(hdc,x,y,x+300,y+600,x+300,y+100,x+50,y+550);
+						else if (kind == 3) Pie(hdc,x,y,x+300,y+600,x+300,y+100,x+50,y+550);
+						else Arc(hdc,x,y,x+300,y+600,x+300,y+100,x+50,y+550);
+					});
+				}
+			}), new int[] {0,0,4000,1600},960);
+		}
+	}
+
 	/** A few shapes in a 60 x 40 logical cell at (`x`, `y`), scaled by `k`. */
 	static void WmfProbe(IntPtr hdc, int x, int y, int k, int color)
 	{
@@ -6140,6 +6160,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "illuminant-charts") { ErIlluminantCharts(); }
 		if (which == "all" || which == "halftone-dither") { ErDitherCharts(); }
 		if (which == "illuminant-tables") { ErIlluminantTables(); }
+		if (which == "all" || which == "wmf-insideframe-curves") { WmfInsideFrameCurves(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 	}
 }

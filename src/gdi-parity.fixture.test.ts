@@ -751,6 +751,11 @@ const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-insideframe-subpixel'),
 	wmf('wmf-insideframe-fractional', 0.004), // measured 0.385%: 6.5/7.5 px pen boundaries
 	wmf('wmf-insideframe-wide-subpixel', 0.004), // measured 0.385%: the same half-width ties
+	wmf('wmf-insideframe-curved-ellipse', 0.0011), // 0.109%, before 2.057%
+	wmf('wmf-insideframe-curved-roundrect', 0.0015), // 0.145%, before 2.785%
+	wmf('wmf-insideframe-curved-chord', 0.0016), // 0.156%, before 1.794%
+	wmf('wmf-insideframe-curved-pie', 0.0015), // 0.142%, before 1.666%
+	wmf('wmf-insideframe-curved-arc', 0.0004), // 0.039%, before 0.088%
 	wmf('wmf-map-anisotropic'),
 	wmf('wmf-map-isotropic'),
 	wmf('wmf-map-text'),

@@ -5,8 +5,8 @@
  * `emf-gdi-shape-paint.ts`), but with the geometry GDI builds when it plays
  * a WMF, which it always does in the `GM_COMPATIBLE` graphics mode:
  *   - every point lands on a whole device pixel (`fixPoint` rounds to them
- *     under `rCtx.wholeDevicePixels`), and so does the pen width except
- *     for Rectangle's fractional `PS_INSIDEFRAME` fitting;
+ *     under `rCtx.wholeDevicePixels`), with fractional `PS_INSIDEFRAME`
+ *     widths retained for fitting and widening;
  *   - the box's corners are ordered and its right and bottom edges pulled
  *     in by one device pixel: the box excludes its right/bottom edge, in
  *     device space, whatever the mapping (see {@link compatBox} for the
@@ -62,11 +62,9 @@ interface CompatBoxOptions {
  *     still on the right and bottom, and then grown by a quarter pixel on
  *     every side (the quarter pixel `GM_ADVANCED` also adds, see
  *     `curvedFixBox` in `emf-gdi-draw-shapes.ts`);
- *   - a `PS_INSIDEFRAME` pen wider than a pixel moves the left/top edge in
- *     by half its width (rounded down) and the right/bottom edge by half
- *     of one less, so the whole stroke lies inside the box.
- *     Rectangle fits the unrounded half-width symmetrically at FIX
- *     precision instead (measured across fractional-width sweeps).
+ *   - a `PS_INSIDEFRAME` pen wider than a pixel fits its unrounded
+ *     half-width symmetrically inside the original box at FIX precision
+ *     (measured across native rectangle and curved-box width sweeps).
  */
 export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: number, opts: CompatBoxOptions = {}): CompatBox {
 	const exclusive = opts.exclusive !== false;
@@ -94,21 +92,12 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 		if (w > 1) {
 			const matrix = gdiDeviceMatrix(p.rCtx);
 			const rawWidth = p.rCtx.state.penWidth * Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2])) / p.kx;
-			// Rectangle fits the actual half-width on both sides of the
-			// inclusive box at FIX precision, even in compatible mode.
-			if (!opts.curved) {
-				box.x1 += Math.round(ux);
-				box.y1 += Math.round(uy);
-				box.x0 += Math.round(rawWidth * ux / 2);
-				box.y0 += Math.round(rawWidth * uy / 2);
-				box.x1 -= Math.round(rawWidth * ux / 2);
-				box.y1 -= Math.round(rawWidth * uy / 2);
-				return box;
-			}
-			box.x0 += Math.round(Math.floor(w / 2) * ux);
-			box.y0 += Math.round(Math.floor(w / 2) * uy);
-			box.x1 -= Math.round(Math.floor((w - 1) / 2) * ux);
-			box.y1 -= Math.round(Math.floor((w - 1) / 2) * uy);
+			box.x1 += Math.round(ux);
+			box.y1 += Math.round(uy);
+			box.x0 += Math.round(rawWidth * ux / 2);
+			box.y0 += Math.round(rawWidth * uy / 2);
+			box.x1 -= Math.round(rawWidth * ux / 2);
+			box.y1 -= Math.round(rawWidth * uy / 2);
 		}
 	}
 	return box;
@@ -188,6 +177,13 @@ function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox): [numb
 	const ch = Math.round(Math.abs(h * m[3]) * 16);
 	const ux = 16 * p.kx;
 	const uy = 16 * p.ky;
+	if ((p.rCtx.state.penStyle & 0x0f) === PS_INSIDEFRAME && !penIsCosmetic(p.rCtx)) {
+		// GDI scales the original corner onto the inset box, retaining FIX
+		// fractions instead of using the other wide pens' even-pixel corners.
+		const penWidth = p.rCtx.state.penWidth * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) * 16;
+		const width = box.x1 - box.x0, height = box.y1 - box.y0;
+		return [Math.min(cw, width + penWidth) * width / (width + penWidth), Math.min(ch, height + penWidth) * height / (height + penWidth)];
+	}
 	if (!penIsNull(p) && penIsCosmetic(p.rCtx)) {
 		// GDI constructs the corner on the original box, then scales it onto
 		// the box with its right/bottom pixel excluded. Retain fractional FIX
@@ -399,4 +395,3 @@ function clockwiseOf(p: WmfPlayer): boolean {
 export function penIsNull(p: WmfPlayer): boolean {
 	return (p.rCtx.state.penStyle & 0x0f) === PS_NULL;
 }
-

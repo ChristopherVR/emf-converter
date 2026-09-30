@@ -60,7 +60,7 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-tables' -or $
 
 $known = @('all', 'rop', 'gradient', 'text', 'pattern', 'rotation', 'rop2', 'image', 'rotation-affine',
 	'text-extra', 'gdi-raster', 'emfplus-records', 'gdiplus-extra', 'wmf-records', 'emf-records',
-	'halftone', 'halftone-mixed', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'emfplus-effects', 'pen-transform')
+	'halftone', 'halftone-mixed', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'emfplus-effects', 'pen-transform')
 $groups = @($Which -split '[,\s]+' | Where-Object { $_ })
 if ($groups.Count -eq 0) { $groups = @('all') }
 foreach ($g in $groups) {
