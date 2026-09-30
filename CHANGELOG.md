@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.0) - 2026-09-30
+
+### Features
+
+- Close image decoding, deferred effects and anchor cap gaps ([0f7f8ed](https://github.com/ChristopherVR/emf-converter/commit/0f7f8ed92045d5d9810f419586850904badfe442))
+
 ## [4.3.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.5) - 2026-09-28
 
 ### Bug Fixes
@@ -71,6 +77,8 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
 ### Features
 
+- Support affine pens, ANSI encodings and image effects ([ad655d0](https://github.com/ChristopherVR/emf-converter/commit/ad655d0993e8cc91d36d0a512145f2f87eb35945))
+- Add native colour curves and levels effects, fix WMF RTL ([2000fc1](https://github.com/ChristopherVR/emf-converter/commit/2000fc17f2e6ad9c66a4c284dc3b40b70d4444d4))
 - Support nonuniform and skewed EMF+ pen transforms ([0ae5c6b](https://github.com/ChristopherVR/emf-converter/commit/0ae5c6b2e1ac09bd5f0803a32b04a5c2728d3d8e))
 - Apply EMF+ image effects to DrawImage ([2f21d93](https://github.com/ChristopherVR/emf-converter/commit/2f21d93d7ad43fb7266c408a14ef546f050ca3f2))
 
