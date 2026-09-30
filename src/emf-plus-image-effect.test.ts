@@ -121,15 +121,20 @@ describe('EMF+ image effects', () => {
 		const expected = inflateSync(Buffer.from(fixture.expected, 'base64'));
 		const { view } = nativeCase('levels-0');
 		let differences = 0;
+		let maximumDifference = 0;
 		fixture.settings.forEach((setting, i) => {
 			setting.forEach((value, ch) => view.setInt32(20 + ch * 4, value, true));
 			const effect = parseImageEffect(view, 0, view.byteLength)!;
+			expect(effect.kind).toBe('levels');
+			if (effect.kind !== 'levels') throw new Error('Expected a levels effect');
+			const lut = levelsLut(effect.highlight, effect.midtone, effect.shadow);
 			for (let value = 0; value < 256; value++) {
-				const diff = Math.abs(levelsLut(...setting as [number, number, number])[value] - expected[i * 256 + value]);
-				expect(diff).toBeLessThanOrEqual(1);
+				const diff = Math.abs(lut[value] - expected[i * 256 + value]);
+				maximumDifference = Math.max(maximumDifference, diff);
 				if (diff) differences++;
 			}
 		});
+		expect(maximumDifference).toBeLessThanOrEqual(1);
 		expect(differences).toBe(1);
 	});
 	it('rejects truncated and nonfinite parameters', () => {
