@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import nativePaths from './__fixtures__/gdi/wide-path-fix.json';
+import nativeOutlines from './__fixtures__/gdi/wide-outline-fix.json';
 import { GdiRasterPath, fillPolygonSpans } from './gdi-raster';
 import { widenPath } from './gdi-raster-widen';
+import { ellipseRasterPath } from './emf-gdi-raster-shapes';
+import { axisBox } from './gdi-raster';
 
 function nativePolygons(points: number[]): number[][] {
 	const polygons: number[][] = [];
@@ -25,6 +28,19 @@ describe('wide round joins against native WidenPath at 1/16-pixel precision', ()
 				const expected = fillPolygonSpans(nativePolygons(c.expected), true);
 				expect(Array.from(actual.data.subarray(0, actual.length * 3)), `path ${c.source.join(',')}`).toEqual(Array.from(expected.data.subarray(0, expected.length * 3)));
 			}
+		});
+	}
+});
+
+describe('native Ellipse WidenPath outlines', () => {
+	for (const c of nativeOutlines.filter(c => c.shape === 1)) {
+		it(`matches every outline vertex at width ${c.width}, cap ${c.cap}, join ${c.join}`, () => {
+			const path = ellipseRasterPath(axisBox(110 * 16, 15 * 16, 184 * 16, 99 * 16));
+			const actual = widenPath(path, {
+				width: c.width * 16, cap: (['round', 'square', 'flat'] as const)[c.cap],
+				join: (['round', 'bevel', 'miter'] as const)[c.join], miterLimit: 10,
+			});
+			expect(actual).toEqual(nativePolygons(c.expected));
 		});
 	}
 });

@@ -16,7 +16,7 @@ on:
           emfplus-records, gdiplus-extra, wmf-records, emf-records, halftone,
           emfplus-effects, pen-transform, halftone-mixed,
           color-adjustment-controls, illuminant-charts, halftone-dither;
-          standalone: path-probe, wide-path-probe, image-codecs, image-codecs-extra,
+          standalone: path-probe, wide-path-probe, wide-outline-probe, image-codecs, image-codecs-extra,
           image-effects, image-effect-sharpen, illuminant-tables
         required: true
         default: emfplus-effects,halftone,pen-transform

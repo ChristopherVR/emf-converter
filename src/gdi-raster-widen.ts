@@ -85,6 +85,8 @@ export interface WidenOptions {
 	 * `PS_DASHDOTDOT`), false for `PS_USERSTYLE` (measured).
 	 */
 	shortenDashes?: boolean;
+	/** Native Ellipse curve sides; retain the selected pen's inner triangle rule. */
+	roundCurveJoins?: boolean;
 }
 
 type Pt = [number, number];
@@ -263,6 +265,7 @@ interface Seg {
 	v: Pt;
 	/** Square-cap extension. */
 	e: Pt;
+	curveEnd: boolean;
 }
 
 /** Builds one pen's outlines; `out` collects finished figures. */
@@ -271,6 +274,7 @@ class Outliner {
 	private readonly n: number;
 	private readonly rr: boolean;
 	private readonly roundJoinSides: boolean;
+	private readonly originalRoundJoinSides: boolean;
 	private readonly maxX: number;
 	private pts: Pt[] = [];
 
@@ -281,7 +285,8 @@ class Outliner {
 		this.pen = penPolygon(opts.width);
 		this.n = this.pen.length;
 		this.rr = opts.cap === 'round' && opts.join === 'round';
-		this.roundJoinSides = opts.join === 'round' && opts.cap !== 'flat';
+		this.originalRoundJoinSides = opts.join === 'round' && opts.cap !== 'flat';
+		this.roundJoinSides = !!opts.roundCurveJoins || this.originalRoundJoinSides;
 		this.maxX = Math.max(...this.pen.map((q) => Math.abs(q[0])));
 	}
 
@@ -295,7 +300,8 @@ class Outliner {
 		const dy = dir ? dir[1] : b[1] - a[1];
 		const d = drawDir ?? [dx, dy];
 		const [L, R] = drawVertices(this.pen, d[0], d[1]);
-		return { dx, dy, L, R, v: flatVector(this.opts.width, dx, dy), e: squareExtension(this.opts.width, dx, dy) };
+		const perpendicular = this.opts.roundCurveJoins && drawDir ? drawDir : [dx, dy];
+		return { dx, dy, L, R, v: flatVector(this.opts.width, perpendicular[0], perpendicular[1]), e: squareExtension(this.opts.width, dx, dy), curveEnd: !!drawDir };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -422,12 +428,19 @@ class Outliner {
 	 * segment).
 	 */
 	private join(p: Pt, a: Seg, b: Seg, side: 'L' | 'R', outer: boolean): void {
-		const { join, cap, width, miterLimit } = this.opts;
-		const sa = this.joinSide(a, side);
-		const sb = this.joinSide(b, side);
+		const { cap, width, miterLimit } = this.opts;
+		const join = this.opts.roundCurveJoins ? 'round' : this.opts.join;
+		let sa = this.joinSide(a, side);
+		let sb = this.joinSide(b, side);
+	if (this.opts.roundCurveJoins && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
+			// At the boundary of two ellipse cubics, these styles use the
+			// true tangent's perpendicular rather than a pen support vertex.
+			sa = side === 'R' ? a.v : [-a.v[0], -a.v[1]];
+			sb = side === 'R' ? b.v : [-b.v[0], -b.v[1]];
+		}
 		const Da = side === 'R' ? a.R : a.L;
 		const Db = side === 'R' ? b.R : b.L;
-		if (this.roundJoinSides && Da === Db) {
+		if (this.roundJoinSides && (Da === Db || (this.opts.roundCurveJoins && sa[0] === sb[0] && sa[1] === sb[1]))) {
 			this.push(p, sa);
 			return;
 		}
@@ -453,7 +466,14 @@ class Outliner {
 			}
 		} else {
 			this.pts.push([p[0], p[1]]);
-			if (join === 'round' && cap === 'flat') {
+			if (this.opts.roundCurveJoins && !this.originalRoundJoinSides) {
+				// Native WidenPath repeats this inner triangle. Filling hides
+				// the repetition; stroking the widened outline exposes it.
+				this.push(p, sb);
+				this.push(p, sa);
+				this.pts.push([p[0], p[1]]);
+			}
+			if (join === 'round' && cap === 'flat' && !this.opts.roundCurveJoins) {
 				// Flat-capped round joins loop round the pen on the inner side too.
 				this.push(p, sb);
 				this.wedge(p, sb, sa, false, false);
@@ -664,9 +684,9 @@ function distinct(pts: readonly number[]): Pt[] {
  */
 export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 	const out: number[][] = [];
-	const outliner = new Outliner(opts, out);
 	const dashed = !!opts.dashes && opts.dashes.length > 0;
 	for (const fig of path.figures) {
+		const outliner = new Outliner(fig.roundWiden ? { ...opts, roundCurveJoins: true } : opts, out);
 		// Distinct points, and per remaining segment the curve tangent GDI
 		// widens it with (when it is a flattened Bezier's first or last).
 		let P: Pt[] = [];

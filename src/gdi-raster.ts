@@ -930,6 +930,8 @@ export function arcBeziers(
 export interface GdiFigure {
 	pts: number[];
 	closed: boolean;
+	/** Native Ellipse records widen with rounded curve sides under every pen style. */
+	roundWiden?: boolean;
 	/**
 	 * Directions a wide pen uses instead of a flattened segment's own, keyed
 	 * by the segment's first point index: the first and last segment of a
@@ -1066,7 +1068,7 @@ export class GdiRasterPath {
 	/** Appends every figure of `other`. */
 	append(other: GdiRasterPath): void {
 		for (const f of other.figures) {
-			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents) });
+			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents), roundWiden: f.roundWiden });
 		}
 		for (let i = 0; i < other.getPath.types.length; i++) {
 			this.log(other.getPath.pts[2 * i], other.getPath.pts[2 * i + 1], other.getPath.types[i]);

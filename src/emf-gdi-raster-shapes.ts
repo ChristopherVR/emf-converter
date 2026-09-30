@@ -120,6 +120,7 @@ export function ellipseRasterPath(box: FixBox, clockwise = false): GdiRasterPath
 	const path = new GdiRasterPath();
 	path.addBeziers(ellipseBeziersBox(box, clockwise), true);
 	path.closeFigure();
+	path.figures[0].roundWiden = true;
 	return path;
 }
 

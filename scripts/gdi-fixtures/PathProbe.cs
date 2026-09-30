@@ -18,6 +18,7 @@ public static class PathProbe
 	[DllImport("gdi32.dll")] static extern bool EndPath(IntPtr dc);
 	[DllImport("gdi32.dll")] static extern int GetPath(IntPtr dc, [Out] Point[] points, [Out] byte[] types, int count);
 	[DllImport("gdi32.dll")] static extern bool RoundRect(IntPtr dc, int l, int t, int r, int b, int w, int h);
+	[DllImport("gdi32.dll")] static extern bool Ellipse(IntPtr dc, int l, int t, int r, int b);
 	[DllImport("gdi32.dll")] static extern int SetArcDirection(IntPtr dc, int direction);
 	[DllImport("gdi32.dll")] static extern int SetMapMode(IntPtr dc, int mode);
 	[DllImport("gdi32.dll")] static extern int SetGraphicsMode(IntPtr dc, int mode);
@@ -75,6 +76,29 @@ public static class PathProbe
 				}finally{SelectObject(dc,old);DeleteObject(pen);}
 			}
 			File.WriteAllText(Path.Combine(dir,"wide-path-fix.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
+	static string ReadFixPath(IntPtr dc) {
+		SetMapMode(dc,8);SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+		int n=GetPath(dc,null,null,0);if(n<0)throw new Exception("GetPath failed");
+		var points=new Point[n];var types=new byte[n];GetPath(dc,points,types,n);
+		var json=new StringBuilder("[");for(int i=0;i<n;i++){if(i>0)json.Append(',');json.Append(points[i].X).Append(',').Append(points[i].Y).Append(',').Append(types[i]);}
+		SetMapMode(dc,1);return json.Append(']').ToString();
+	}
+	public static void Outline(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			foreach(int width in new[]{2,7,10,32})for(int cap=0;cap<3;cap++)for(int join=0;join<3;join++){
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|cap*0x100|join*0x1000),(uint)width,ref brush,0,IntPtr.Zero),old=SelectObject(dc,pen);
+				try { for(int shape=0;shape<2;shape++){
+					BeginPath(dc);
+					if(shape==0)Polyline(dc,new[]{new Point{X=15,Y=20},new Point{X=60,Y=90},new Point{X=90,Y=25}},3);
+					else Ellipse(dc,110,15,185,100);
+					EndPath(dc);string source=ReadFixPath(dc);if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');json.Append("{\"width\":").Append(width).Append(",\"cap\":").Append(cap).Append(",\"join\":").Append(join).Append(",\"shape\":").Append(shape).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				}}finally{SelectObject(dc,old);DeleteObject(pen);}
+			}
+			File.WriteAllText(Path.Combine(dir,"wide-outline-fix.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
 }

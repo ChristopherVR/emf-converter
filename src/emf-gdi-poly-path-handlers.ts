@@ -435,6 +435,7 @@ function flattenBracketPath(rCtx: EmfGdiReplayCtx): void {
 	}
 	for (const f of rCtx.rasterPath.figures) {
 		delete f.tangents;
+		delete f.roundWiden;
 	}
 	syncPathCmds(rCtx);
 }

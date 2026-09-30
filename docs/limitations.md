@@ -27,7 +27,7 @@ EMF+ pen transforms (uniform, non-uniform and skewed) match GDI+ exactly on the 
 
 - Flat-capped GDI pens 7 px and wider can differ by a few pixels at round joins.
 - Dashed wide Bezier curves follow `WidenPath`, which Windows' direct drawing does not match exactly. The difference is at most 0.2% of pixels on the fixtures.
-- `EMR_WIDENPATH` does not reproduce the extra inner join triangles that GDI's `WidenPath` emits. This is only visible when the widened outline is stroked.
+- `EMR_WIDENPATH` ellipse outlines now match native vertices for every cap/join combination in the 2–32 px sweep, including the duplicated inner triangles. The stroked-outline fixture matches exactly; mixed cap/join polyline and curve cases retain small residuals.
 - EMF+ 1-pixel antialiased lines can differ by one antialiasing sample at their ends, and some closed widened outlines by one sample along an edge.
 - Inset and compound pens on closed figures are approximate.
 

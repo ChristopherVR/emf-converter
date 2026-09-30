@@ -12,7 +12,7 @@ $fonts = @()
 foreach ($directory in @("$env:WINDIR\Fonts", "$env:LOCALAPPDATA\Microsoft\Windows\Fonts")) {
     if (!(Test-Path -LiteralPath $directory)) { continue }
     $fonts += @(Get-ChildItem -LiteralPath $directory -File | Where-Object {
-        $_.Extension -in @('.ttf', '.ttc', '.otf')
+        $_.Extension -in @('.ttf', '.ttc', '.otf', '.fon', '.fnt')
     } | Sort-Object Name | ForEach-Object {
         [ordered]@{ name = $_.Name; location = $(if ($directory -eq "$env:WINDIR\Fonts") { 'system' } else { 'user' }); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
     })

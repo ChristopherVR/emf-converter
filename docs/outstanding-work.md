@@ -38,6 +38,7 @@ Native `illuminant-charts` now capture 256 greys, primaries and mixed colours fo
 
 RoundRect controls now match native `GetPath` captures without exceptions. The compatible-mode cases also match at 1/16-pixel precision, including mirrored viewports and clockwise paths; `path-probe` regenerates both captures.
 - Native `wide-path-probe` now covers 2,136 three-point paths with 2–64 px pens, all cap/join combinations and near reversals. All 128 round-cap/round-join fills match exactly in the regression test. Mixed cap/join styles still have half-pixel perpendicular and arc-end inclusion differences; near-reversal miter limits also need work.
+- `wide-outline-probe` captures 72 polyline/ellipse outlines across four widths and every cap/join combination. All 36 ellipse outlines match every native vertex, including the duplicated inner triangles; `emfrec-path-widen-outline` now matches exactly (previously 1.184% mismatches).
 - WMF `PS_INSIDEFRAME` curved boxes still need native captures.
 
   Rectangular inside-frame native sweeps now cover 0.5–10 px widths. The narrow subpixel sweep is exact; wider half-pixel widths retain 0.39% mismatches.

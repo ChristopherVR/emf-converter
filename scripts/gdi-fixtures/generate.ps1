@@ -32,9 +32,9 @@ if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra') {
     Complete-Fixtures
     return
 }
-if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe') {
+if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe' -or $Which -eq 'wide-outline-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    if ($Which -eq 'wide-path-probe') { [PathProbe]::Wide($outDir) } else { [PathProbe]::Run($outDir) }
+    if ($Which -eq 'wide-path-probe') { [PathProbe]::Wide($outDir) } elseif ($Which -eq 'wide-outline-probe') { [PathProbe]::Outline($outDir) } else { [PathProbe]::Run($outDir) }
     Complete-Fixtures
     return
 }

@@ -882,7 +882,7 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-anglearc', 0.001), // measured 0.062%
 	emfrec('emfrec-path-flatten', 0.0005), // measured 0.011%
 	emfrec('emfrec-path-widen', 0.002), // measured 0.157%
-	emfrec('emfrec-path-widen-outline', 0.015), // measured 1.184%
+	emfrec('emfrec-path-widen-outline'), // ellipse curve sides and duplicated inner triangles
 ];
 
 /**
