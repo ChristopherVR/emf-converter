@@ -26,6 +26,12 @@ function Complete-Fixtures {
     $name = 'environment-' + ($Which -replace '[^a-zA-Z0-9-]', '-') + '.json'
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $Directory $name) -Groups $Which -Files $files
 }
+if ($Which -eq 'image-effect-expanded-blur') {
+    Add-Type -Path (Join-Path $here 'ExpandedBlurProbe.cs') -ReferencedAssemblies System.Drawing
+    [ExpandedBlurProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'gradient-blend-probe') {
     Add-Type -Path (Join-Path $here 'GradientProbe.cs') -ReferencedAssemblies System.Drawing
     [GradientProbe]::Run($outDir)

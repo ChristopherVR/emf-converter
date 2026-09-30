@@ -17,6 +17,31 @@
 import { describe, it, expect } from 'vitest';
 
 import { diffBakedEffects } from './__fixtures__/emf-plus-effect-baked-diff';
+import { readBakedEffects } from './__fixtures__/emf-plus-effect-baked';
+import { applyImageEffectToRect } from './emf-plus-image-effects';
+
+describe('native expanded blur regions', () => {
+	it('bounds 504 draws across radii, edge positions, fractional rectangles and alpha', async () => {
+		const cases = await readBakedEffects('effect-blur-expanded');
+		expect(cases).toHaveLength(504);
+		for (const { source, effect, srcRect, baked } of cases) {
+			expect(effect.kind).toBe('blur');
+			if (effect.kind !== 'blur') throw new Error('not a blur capture');
+			const [x, y, w, h] = srcRect;
+			const region = applyImageEffectToRect(source.data, source.width, source.height, effect, { x, y, w, h })!;
+			const fractional = srcRect.some(v => !Number.isInteger(v));
+			let maximum = 0;
+			for (let yy = 0; yy < Math.ceil(h); yy++) for (let xx = 0; xx < Math.ceil(w); xx++) {
+				const i = (yy * region.width + xx) * 4, j = (yy * baked.width + xx) * 4;
+				maximum = Math.max(maximum, Math.abs(region.rgba[i + 3] - baked.data[j + 3]));
+				if (region.rgba[i + 3] || baked.data[j + 3]) for (let ch = 0; ch < 3; ch++) {
+					maximum = Math.max(maximum, Math.abs(region.rgba[i + ch] - baked.data[j + ch]));
+				}
+			}
+			expect(maximum, `radius ${effect.radius}, rectangle ${srcRect}`).toBeLessThanOrEqual(effect.radius < 20 ? 1 : fractional ? 11 : 3);
+		}
+	}, 15000);
+});
 
 interface EffectCase {
 	name: string;

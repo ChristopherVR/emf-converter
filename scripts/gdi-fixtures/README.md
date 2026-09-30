@@ -28,7 +28,7 @@ Additional diagnostic groups:
 - `image-codecs-extra`: odd-width bilevel TIFF captures with uncompressed, PackBits and CCITT Group 3/4 compression.
 - `illuminant-tables`: large raw native samples, excluded from `all`. `halftone-dither-grey-samples.bin` contains 256 × 64 bytes, indexed by grey level then `(sourceY + 5) % 8`, `(sourceX + 5) % 8`; bytes are the nearest output index on the 32-level channel scale. `illuminant-colour-samples-N.bin` contains 32³ RGB triples, indexed by `(r * 32 + g) * 32 + b`, for inputs `floor(channel * 255 / 31)`, sampled at source cell offset (11,11). These captures are specific to the probe layout: using them as universal conversion tables fails independent chart comparisons.
 
-These standalone probe modes must be invoked separately from comma-separated drawing groups: `path-probe`, `wide-path-probe`, `wide-outline-probe`, `gradient-blend-probe`, `image-codecs`, `image-codecs-extra`, `image-codecs-advanced`, `image-effects`, `image-effect-sharpen`, `image-effect-large-blur`, `image-effect-hue`, `image-effect-tint`, `image-effect-tables`.
+These standalone probe modes must be invoked separately from comma-separated drawing groups: `path-probe`, `wide-path-probe`, `wide-outline-probe`, `gradient-blend-probe`, `image-codecs`, `image-codecs-extra`, `image-codecs-advanced`, `image-effects`, `image-effect-sharpen`, `image-effect-large-blur`, `image-effect-expanded-blur`, `image-effect-hue`, `image-effect-tint`, `image-effect-tables`.
 
 Every generator run also writes `environment-<groups>.json`. It records SHA-256 hashes of the generated references, installed system/user font files and native drawing libraries, plus Windows version, screen DPI and runner image. Compare manifests before accepting regenerated text fixtures; older captures have no recoverable environment manifest. Temporary image-effect tables keep their manifest in the requested temporary directory.
 
@@ -114,6 +114,8 @@ sweep. `emfplus-effects` records metafiles for playback parity.
 `path-probe` captures native `GetPath` coordinates for the RoundRect sequence at whole-pixel and 1/16-pixel precision. `image-effect-sharpen` captures the sharpen amount sweep (0–100), blur/sharpen at 19 radii from 0.25 through 255, and blur ramps/colour impulses across seven bitmap dimensions.
 
 `image-effect-large-blur` captures ramps and colour impulses at 22 radii on nine bitmap dimensions, plus impulse rows at every quarter radius from 16 through 255 to identify native reduction transitions.
+
+`image-effect-expanded-blur` records 504 Dual draws into one metafile, retaining the source pixels, effect and native baked bitmap for every draw. Twelve radii (1–255), fourteen rectangles and three source patterns cover interior regions, every edge, one-pixel gaps, fractional bounds and varying alpha. This tests the effect before drawing/compositing differences.
 
 `image-effect-hue` captures all 361 integer hue angles plus 182 saturation/lightness combinations on 1,536 saturated colours and 1,024 seeded mixed colours with varying alpha. Source bytes, setting triples and gzip-compressed output cover 1,390,080 colour/setting pairs. The regression verifies RGB bounds and exact native alpha preservation, also covered by the recorded DrawImage fixtures.
 

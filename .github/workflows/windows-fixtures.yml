@@ -17,7 +17,7 @@ on:
           emfplus-effects, pen-transform, halftone-mixed,
           color-adjustment-controls, illuminant-charts, halftone-dither, wmf-insideframe-curves;
           standalone: path-probe, wide-path-probe, wide-outline-probe, gradient-blend-probe, image-codecs, image-codecs-extra, image-codecs-advanced,
-          image-effects, image-effect-sharpen, image-effect-large-blur, image-effect-hue, image-effect-tint, illuminant-tables
+          image-effects, image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur, image-effect-hue, image-effect-tint, illuminant-tables
         required: true
         default: emfplus-effects,halftone,pen-transform
         type: string

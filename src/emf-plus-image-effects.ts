@@ -549,7 +549,7 @@ function mirror(p: number, n: number): number {
  * axis's size, when they clamp; `vZeroAbove` reads transparency above the
  * source rectangle. Reduced large-radius buffers filter every row. Returns floats.
  */
-function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false, fullVertical = false, edgeWidth = w, edgeHeight = h): Float64Array {
+function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false, fullVertical = false, edgeWidth = w, edgeHeight = h, verticalRows = Math.ceil(h / w)): Float64Array {
 	const k = blurKernel(radius);
 	const taps = (k.length - 1) / 2;
 	const horizontalIndex = taps >= edgeWidth ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
@@ -582,7 +582,7 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 		// Native small-radius filtering visits ceil(height / width) leading
 		// rows. Tall and narrow probes expose the extra rows hidden by square
 		// and landscape fixtures.
-		const endRow = fullVertical ? h : Math.min(h, vRow + Math.ceil(h / w));
+		const endRow = fullVertical ? h : Math.min(h, vRow + verticalRows);
 		for (let row = vRow; row < endRow; row++) {
 			const col = new Float64Array(w * 4);
 			for (let j = -taps; j <= taps; j++) {
@@ -779,11 +779,13 @@ function copyBlock(
 /**
  * An expanded blur (`expandEdge`) of the region [x0, x1) x [y0, y1) of the
  * image, cropped back to that region. GDI+ blurs a buffer grown by the
- * kernel's reach on every side, transparent where it has no pixels: when
- * the grown rectangle stays inside the image only the region's own pixels
- * are copied in (the rest transparent) and the one vertically blurred row
- * is the region's top row; when it reaches past the image, every image
- * pixel inside it is copied and that row is the buffer's (transparent) top.
+ * kernel's reach on every side, transparent where it has no pixels. A
+ * source rectangle ending before both the right and bottom image edges
+ * copies only its own pixels and starts vertical filtering at its top row.
+ * A rectangle reaching either edge copies image pixels throughout the
+ * grown buffer and starts at the buffer's top. Small-radius vertical row
+ * counts use the source region's dimensions, before adding transparent
+ * padding. Large radii reduce and filter both axes, including the padding.
  */
 function expandedBlur(
 	rgba: Uint8ClampedArray,
@@ -794,13 +796,13 @@ function expandedBlur(
 	y0: number,
 	x1: number,
 	y1: number,
+	cropped: boolean,
 ): Uint8ClampedArray {
 	const r = Math.ceil(radius);
 	const bw = x1 - x0 + 2 * r;
 	const bh = y1 - y0 + 2 * r;
 	const buf = new Uint8ClampedArray(bw * bh * 4);
-	const inside = x0 - r >= 0 && y0 - r >= 0 && x1 + r <= width && y1 + r <= height;
-	if (inside) {
+	if (cropped) {
 		copyBlock(rgba, width, x0, y0, x1 - x0, y1 - y0, buf, bw, r, r);
 	} else {
 		const gx0 = Math.max(0, x0 - r);
@@ -809,7 +811,7 @@ function expandedBlur(
 		const gy1 = Math.min(height, y1 + r);
 		copyBlock(rgba, width, gx0, gy0, gx1 - gx0, gy1 - gy0, buf, bw, gx0 - (x0 - r), gy0 - (y0 - r));
 	}
-	const blurred = gdipBlur(buf, bw, bh, radius, inside ? r : 0, inside);
+	const blurred = blurReduction(radius) > 1 ? effectBlur(buf, bw, bh, radius) : gdipBlur(buf, bw, bh, radius, cropped ? r : 0, cropped, false, bw, bh, Math.ceil((y1 - y0) / (x1 - x0)));
 	const w = x1 - x0;
 	const out = new Uint8ClampedArray(w * (y1 - y0) * 4);
 	for (let y = 0; y < y1 - y0; y++) {
@@ -877,7 +879,10 @@ export function applyImageEffectToRect(
 		return { rgba: shown, x: x0, y: y0, width: shownWidth, height: shownHeight };
 	};
 	if (src && effect.kind === 'blur' && effect.expandEdge) {
-		return result(expandedBlur(rgba, width, height, effect.radius, x0, y0, x1, y1));
+		// Decide cropping from the shown rectangle, before adding the extra
+		// native working column/row. A one-pixel gap still takes the crop path.
+		const cropped = Math.ceil(src.x + src.w) < width && Math.ceil(src.y + src.h) < height;
+		return result(expandedBlur(rgba, width, height, effect.radius, x0, y0, x1, y1, cropped));
 	}
 	let region = rgba;
 	if (w !== width || h !== height) {
