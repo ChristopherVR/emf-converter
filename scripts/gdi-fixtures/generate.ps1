@@ -26,9 +26,13 @@ function Complete-Fixtures {
     $name = 'environment-' + ($Which -replace '[^a-zA-Z0-9-]', '-') + '.json'
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $Directory $name) -Groups $Which -Files $files
 }
-if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra') {
+if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra' -or $Which -eq 'image-codecs-advanced') {
     Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing
-    if ($Which -eq 'image-codecs-extra') { [CodecProbe]::CompressionVariants($outDir) } else { [CodecProbe]::Run($outDir) }
+    if ($Which -eq 'image-codecs-advanced') {
+        python (Join-Path $here 'codec-advanced.py') $outDir
+        if ($LASTEXITCODE -ne 0) { throw 'Advanced TIFF encoding failed (requires Python and Pillow >= 10.2)' }
+        [CodecProbe]::AdvancedReferences($outDir)
+    } elseif ($Which -eq 'image-codecs-extra') { [CodecProbe]::CompressionVariants($outDir) } else { [CodecProbe]::Run($outDir) }
     Complete-Fixtures
     return
 }

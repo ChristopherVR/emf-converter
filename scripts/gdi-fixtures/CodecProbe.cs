@@ -6,6 +6,13 @@ using System.IO;
 
 public static class CodecProbe
 {
+	public static void AdvancedReferences(string dir)
+	{
+		foreach (string name in new[] { "deflate-strips", "deflate-legacy-strips", "deflate-predictor-strips", "uncompressed-tiles", "deflate-tiles", "deflate-legacy-tiles", "jpeg-ycbcr-strips", "jpeg-rgb-tiles", "jpeg-ycbcr-tiles", "jpeg-rgb-strips" })
+			Reference(Path.Combine(dir, "codec-tiff-" + name + ".bin"));
+		foreach (string name in new[] { "444", "422", "420", "progressive", "rgb", "grey" })
+			Reference(Path.Combine(dir, "codec-jpeg-" + name + ".bin"));
+	}
 	static void Reference(string path)
 	{
 		using (var decoded = Image.FromFile(path))

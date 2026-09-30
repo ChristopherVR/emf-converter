@@ -16,7 +16,7 @@ on:
           emfplus-records, gdiplus-extra, wmf-records, emf-records, halftone,
           emfplus-effects, pen-transform, halftone-mixed,
           color-adjustment-controls, illuminant-charts, halftone-dither, wmf-insideframe-curves;
-          standalone: path-probe, wide-path-probe, wide-outline-probe, image-codecs, image-codecs-extra,
+          standalone: path-probe, wide-path-probe, wide-outline-probe, image-codecs, image-codecs-extra, image-codecs-advanced,
           image-effects, image-effect-sharpen, image-effect-large-blur, illuminant-tables
         required: true
         default: emfplus-effects,halftone,pen-transform
@@ -41,6 +41,10 @@ jobs:
         run: git config --global core.autocrlf false
 
       - uses: actions/checkout@v7
+
+      - name: Install advanced TIFF encoder
+        if: inputs.groups == 'image-codecs-advanced'
+        run: python -m pip install "Pillow>=10.2"
 
       - name: Describe the runner
         shell: powershell

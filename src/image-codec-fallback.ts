@@ -1,8 +1,9 @@
 /** Bundled pixel decoders for environments without Canvas image decoding. */
-import { decode as decodeJpeg } from 'jpeg-js';
+import { decodeJpegPixels } from './jpeg-decoder';
 import { parseGIF, decompressFrame, type Frame } from 'gifuct-js';
 import * as UTIF from 'utif';
 import { normalizeGroup3 } from './tiff-group3';
+import { decodeJpegTiff } from './tiff-jpeg';
 
 interface Pixels { data: Uint8ClampedArray; width: number; height: number }
 const validSize = (w: number, h: number): boolean => Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 8192 && h <= 8192;
@@ -11,7 +12,7 @@ const validSize = (w: number, h: number): boolean => Number.isInteger(w) && Numb
 export function decodeImageCodecFallback(bytes: Uint8Array): Pixels | null {
 	try {
 		if (bytes[0] === 0xff && bytes[1] === 0xd8) {
-			const p = decodeJpeg(bytes, { useTArray: true, formatAsRGBA: true, maxResolutionInMP: 67.108864, maxMemoryUsageInMB: 512 });
+			const p = decodeJpegPixels(bytes);
 			return validSize(p.width, p.height) ? { ...p, data: new Uint8ClampedArray(p.data) } : null;
 		}
 		if (bytes.length >= 13 && String.fromCharCode(...bytes.subarray(0, 6)).match(/^GIF8[79]a$/)) {
@@ -46,6 +47,11 @@ export function decodeImageCodecFallback(bytes: Uint8Array): Pixels | null {
 			const pages = UTIF.decode(buffer);
 			const page = pages.find((p) => p.t256 && p.t257);
 			if (!page || !Array.isArray(page.t256) || !Array.isArray(page.t257) || !validSize(Number(page.t256[0]), Number(page.t257[0]))) return null;
+			const jpeg = decodeJpegTiff(new Uint8Array(buffer), page);
+			if (jpeg) return { data: jpeg, width: Number(page.t256[0]), height: Number(page.t257[0]) };
+			// The legacy and Adobe Deflate tags encode the same zlib stream.
+			// https://gitlab.com/libtiff/libtiff/-/blob/master/libtiff/tiff.h
+			if (Array.isArray(page.t259) && page.t259[0] === 32946) page.t259 = [8];
 			UTIF.decodeImage(normalizeGroup3(buffer, page), page);
 			const width = page.width, height = page.height;
 			if (!validSize(width, height)) return null;

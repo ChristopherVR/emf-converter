@@ -38,6 +38,29 @@ function embeddedImage(encoded: Uint8Array): ArrayBuffer {
 }
 
 describe('bundled image codecs without a canvas backend', () => {
+	it.each(['deflate-strips', 'deflate-legacy-strips', 'deflate-predictor-strips', 'uncompressed-tiles', 'deflate-tiles', 'deflate-legacy-tiles', 'jpeg-ycbcr-strips', 'jpeg-rgb-strips', 'jpeg-rgb-tiles', 'jpeg-ycbcr-tiles'])('decodes native TIFF %s including partial edge blocks', async (variant) => {
+		const kind = `tiff-${variant}`, encoded = bytesFor(kind), original = encoded.slice();
+		const decoded = (await decodeImageBytesBuiltIn(encoded))!;
+		const reference = (await decodePng(new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/codec-${kind}.png`, import.meta.url)))))!;
+		expect(decoded).not.toBeNull();
+		expect([decoded.width, decoded.height]).toEqual([37, 19]);
+		let max = 0, sum = 0;
+		for (let i = 0; i < decoded.data.length; i++) { const difference = Math.abs(decoded.data[i] - reference.data[i]); max = Math.max(max, difference); sum += difference; }
+		const rgbJpeg = variant.includes('jpeg-rgb'), ycbcrJpeg = variant.includes('jpeg-ycbcr');
+		expect(max).toBeLessThanOrEqual(rgbJpeg ? 1 : ycbcrJpeg ? 4 : 0);
+		expect(sum / decoded.data.length).toBeLessThanOrEqual(rgbJpeg ? 0.1 : ycbcrJpeg ? 0.4 : 0);
+		expect(encoded).toEqual(original);
+	});
+	it.each(['444', '422', '420', 'progressive', 'rgb', 'grey'])('matches native JPEG %s reconstruction on odd-sized images', async (variant) => {
+		const kind = `jpeg-${variant}`, decoded = (await decodeImageBytesBuiltIn(bytesFor(kind)))!;
+		const reference = (await decodePng(new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/codec-${kind}.png`, import.meta.url)))))!;
+		expect(decoded).not.toBeNull();
+		expect([decoded.width, decoded.height]).toEqual([37, 19]);
+		let max = 0, sum = 0;
+		for (let i = 0; i < decoded.data.length; i++) { const difference = Math.abs(decoded.data[i] - reference.data[i]); max = Math.max(max, difference); sum += difference; }
+		expect(max).toBeLessThanOrEqual(variant === 'rgb' || variant === 'grey' ? 1 : 3);
+		expect(sum / decoded.data.length).toBeLessThanOrEqual(0.4);
+	});
 	it.each(['none', 'packbits', 'ccitt3', 'ccitt4'])('matches native bilevel TIFF %s with odd-width scanlines', async (compression) => {
 		const kind = `tiff-bilevel-${compression}`;
 		const decoded = (await decodeImageBytesBuiltIn(bytesFor(kind)))!;
@@ -63,10 +86,10 @@ describe('bundled image codecs without a canvas backend', () => {
 			max = Math.max(max, d);
 			sum += d;
 		}
-		// jpeg-js uses different chroma reconstruction from Windows. Retain a
-		// measured bound; lossless GIF and TIFF must match byte for byte.
-		expect(max).toBeLessThanOrEqual(kind === 'jpeg' ? 19 : 0);
-		expect(sum / decoded.data.length).toBeLessThanOrEqual(kind === 'jpeg' ? 4.75 : 0);
+		// Pixel-centred chroma reconstruction leaves small JPEG rounding
+		// differences; lossless GIF and TIFF must match byte for byte.
+		expect(max).toBeLessThanOrEqual(kind === 'jpeg' ? 2 : 0);
+		expect(sum / decoded.data.length).toBeLessThanOrEqual(kind === 'jpeg' ? 0.4 : 0);
 		const { convertMetafileToSvg } = await import('./index');
 		const svg = (await convertMetafileToSvg(embeddedImage(encoded)))!;
 		const image = /data:image\/png;base64,([A-Za-z0-9+/=]+)/.exec(svg);
