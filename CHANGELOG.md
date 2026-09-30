@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.7](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.7) - 2026-09-30
+
+### Bug Fixes
+
+- Match native widened ellipse outlines and inner triangles ([89fe52f](https://github.com/ChristopherVR/emf-converter/commit/89fe52f204a3a76bfda3ac3a76e089818ee6bd02))
+
 ## [4.4.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.6) - 2026-09-30
 
 ### Bug Fixes
