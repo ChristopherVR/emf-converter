@@ -145,8 +145,8 @@ function mix(c0: readonly number[], c1: readonly number[], f: number): [number, 
  * Blend of the end colours at blend factor `f` the way GDI+ forms a
  * `Blend` knot: each end's share is truncated in 8.8 fixed point, with
  * `1 - f` held as a float32, so a factor landing exactly on a half level
- * rounds the way GDI+'s float arithmetic tips it (this matches all but
- * about 0.5% of the exact-tie knots measured; preset colours and plain
+ * rounds the way GDI+'s float arithmetic tips it (the 4,352-ramp native
+ * sweep retains 4,664 one-level channel differences; preset colours and plain
  * gradients round their exact value half up instead). The result is in
  * 1/256 levels' precision; {@link buildLinearRampTable} rounds it half up.
  */

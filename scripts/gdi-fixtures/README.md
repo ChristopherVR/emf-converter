@@ -28,7 +28,7 @@ Additional diagnostic groups:
 - `image-codecs-extra`: odd-width bilevel TIFF captures with uncompressed, PackBits and CCITT Group 3/4 compression.
 - `illuminant-tables`: large raw native samples, excluded from `all`. `halftone-dither-grey-samples.bin` contains 256 × 64 bytes, indexed by grey level then `(sourceY + 5) % 8`, `(sourceX + 5) % 8`; bytes are the nearest output index on the 32-level channel scale. `illuminant-colour-samples-N.bin` contains 32³ RGB triples, indexed by `(r * 32 + g) * 32 + b`, for inputs `floor(channel * 255 / 31)`, sampled at source cell offset (11,11). These captures are specific to the probe layout: using them as universal conversion tables fails independent chart comparisons.
 
-These standalone probe modes must be invoked separately from comma-separated drawing groups: `path-probe`, `wide-path-probe`, `wide-outline-probe`, `image-codecs`, `image-codecs-extra`, `image-codecs-advanced`, `image-effects`, `image-effect-sharpen`, `image-effect-large-blur`, `image-effect-hue`, `image-effect-tint`, `image-effect-tables`.
+These standalone probe modes must be invoked separately from comma-separated drawing groups: `path-probe`, `wide-path-probe`, `wide-outline-probe`, `gradient-blend-probe`, `image-codecs`, `image-codecs-extra`, `image-codecs-advanced`, `image-effects`, `image-effect-sharpen`, `image-effect-large-blur`, `image-effect-hue`, `image-effect-tint`, `image-effect-tables`.
 
 Every generator run also writes `environment-<groups>.json`. It records SHA-256 hashes of the generated references, installed system/user font files and native drawing libraries, plus Windows version, screen DPI and runner image. Compare manifests before accepting regenerated text fixtures; older captures have no recoverable environment manifest. Temporary image-effect tables keep their manifest in the requested temporary directory.
 
@@ -100,6 +100,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/gdi-fixtures/gen
 The files are written straight into `src/__fixtures__/gdi`.
 
 Native lookup tables can be regenerated separately:
+
+`gradient-blend-probe` captures 17 premultiplied knots for each of 4,352 three-point Blend ramps, covering eight positions, eight factors and 68 opaque/translucent endpoint pairs. The compressed JSON preserves the recorded float32 positions and factors; tests reconstruct them with `Math.fround`.
 
 ```powershell
 powershell.exe -NoProfile -File scripts/gdi-fixtures/generate.ps1 image-effect-tables .scratch/tables

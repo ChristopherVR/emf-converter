@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { describe, it, expect } from 'vitest';
 
 import { fixturePath } from './__fixtures__/gdi-parity-harness';
@@ -41,6 +42,30 @@ describe('linearRampIntervals', () => {
 });
 
 describe('buildLinearRampTable', () => {
+	it('bounds every premultiplied knot in 4,352 native Blend ramps', () => {
+		const cases = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/gradient-blend-knots.json.gz', import.meta.url))).toString()) as {
+			a: number; b: number; position: number; factor: number; knots: string;
+		}[];
+		expect(cases).toHaveLength(4352);
+		let differences = 0;
+		let maximum = 0;
+		for (const c of cases) {
+			const actual = buildLinearRampTable(ramp({
+				startArgb: c.a, endArgb: c.b,
+				blend: { positions: [0, Math.fround(c.position), 1], factors: [0, Math.fround(c.factor), 1] },
+			}), { x: 0, y: 0, w: 4096, h: 1 }).knots;
+			const expected = Buffer.from(c.knots, 'base64');
+			expect(expected).toHaveLength(actual.length);
+			for (let i = 0; i < actual.length; i++) {
+				const delta = Math.abs(actual[i] - expected[i]);
+				maximum = Math.max(maximum, delta);
+				if (delta) differences++;
+			}
+		}
+		expect(maximum).toBeLessThanOrEqual(1);
+		expect(differences).toBeLessThanOrEqual(4664);
+	});
+
 	it('rounds a plain two-colour ramp to knots at k/16, halves up', () => {
 		const t = buildLinearRampTable(ramp(), { x: 0, y: 0, w: 100, h: 10 });
 		expect(t.intervals).toBe(16);

@@ -21,6 +21,10 @@ Sharpen strength now uses the native rational amount curve, quantized to 1/64 wi
 
 - **JPEG rounding:** pixel-centred chroma reconstruction reduces the original native ramp's maximum error from 19 levels to two (mean 0.36). Odd-sized 4:4:4/4:2:2/4:2:0 and progressive JPEG are within three levels; RGB/greyscale JPEG are within one. GIF and lossless TIFF references remain exact, including offset/palette GIFs, LZW/multipage/bilevel TIFF, Deflate strips (both tags and horizontal prediction) and uncompressed/Deflate tiles. RGB JPEG TIFF strips and tiles are within one level; YCbCr JPEG TIFF is within four. The TIFF coverage target is now captured; JPEG IDCT/chroma rounding differences remain.
 
+## EMF+ gradients
+
+The `gradient-blend-probe` capture covers 4,352 three-point Blend ramps with opaque and translucent endpoints. All 295,936 premultiplied channel values are within one level; 4,664 differ. Native weight interpolation and rounding remain unresolved. This capture bounds the remaining differences without claiming exact Blend arithmetic.
+
 ## GDI color adjustment and HALFTONE
 
 - **`EMR_SETCOLORADJUSTMENT` formulas** are fitted to the Windows fixtures and still approximate:
