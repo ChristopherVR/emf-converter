@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.12](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.12) - 2026-09-30
+
+### Testing
+
+- Bound native Blend rounding across 4352 gradient ramps ([445cd06](https://github.com/ChristopherVR/emf-converter/commit/445cd06562e84e019aa26d4df71f57b8dbaf8099))
+
 ## [4.4.11](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.11) - 2026-09-30
 
 ### Bug Fixes
