@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.2) - 2026-09-30
+
+### Bug Fixes
+
+- Match GIF canvas backgrounds and improve mixed-axis halftone ([44c3c85](https://github.com/ChristopherVR/emf-converter/commit/44c3c858b1a3fb68f93e743510aa5cbeab373989))
+
 ## [4.4.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.1) - 2026-09-30
 
 ### Bug Fixes
