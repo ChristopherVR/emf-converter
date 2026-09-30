@@ -13,4 +13,5 @@ export default defineConfig((options) => ({
 	// runtime in plain Node.js. Keep it external so consumers who never hit
 	// that path aren't forced to bundle or install it.
 	external: ['@napi-rs/canvas'],
+	noExternal: ['jpeg-js', 'gifuct-js', 'js-binary-schema-parser', 'utif', 'pako'],
 }));

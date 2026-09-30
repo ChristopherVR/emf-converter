@@ -20,7 +20,7 @@
  * @module emf-converter
  */
 
-import { applyImageEffect } from './emf-plus-image-effect';
+import { effectedDraw } from './emf-plus-draw-image';
 import { encodePng } from './png-encoder';
 import {
 	canvasDrawImage,
@@ -427,7 +427,7 @@ async function processDeferredImages(
 	emfLog(`processDeferredImages: ${deferredImages.length} deferred images (recursionDepth=${recursionDepth})`);
 	let complete = true;
 	for (let idx = 0; idx < deferredImages.length; idx++) {
-		const img = deferredImages[idx];
+		let img = deferredImages[idx];
 		try {
 			const plainBuffer = toPlainBuffer(img.imageData);
 			// Restore the affine transform active when the draw was recorded.
@@ -457,7 +457,12 @@ async function processDeferredImages(
 			if (img.effect && !img.isMetafile) {
 				const pixels = await decodeToRgba(bytes);
 				if (pixels) {
-					bytes = toPlainBuffer((await encodePng(applyImageEffect(pixels.data, img.effect), pixels.width, pixels.height)).buffer);
+					const effected = effectedDraw({ kind: 'plus-image', type: 1, data: img.imageData }, { kind: 'bitmap', rgba: pixels.data, width: pixels.width, height: pixels.height }, img.effect, img, img.effectSource);
+					if (effected) {
+						bytes = toPlainBuffer((await encodePng(effected.bitmap.rgba, effected.bitmap.width, effected.bitmap.height)).buffer);
+						img = effected.draw;
+						ctx.setTransform(...img.transform);
+					}
 					mime = 'image/png';
 				}
 			}
@@ -583,7 +588,7 @@ export { sniffImageMime };
 
 
 /**
- * Decodes image bytes to straight RGBA: PNG and BMP in pure JavaScript,
+ * Decodes image bytes to straight RGBA using the bundled image decoders,
  * anything else through the canvas backend when one exists.
  */
 async function decodeToRgba(bytes: ArrayBuffer): Promise<{ data: Uint8ClampedArray; width: number; height: number } | null> {
@@ -641,12 +646,18 @@ async function processDeferredImagesSvg(
 	recursionDepth: number,
 ): Promise<void> {
 	for (let idx = 0; idx < deferredImages.length; idx++) {
-		const img = deferredImages[idx];
+		let img = deferredImages[idx];
 		try {
 			let bytes = toPlainBuffer(img.imageData);
 			if (img.effect && !img.isMetafile) {
 				const pixels = await decodeToRgba(bytes);
-				if (pixels) bytes = toPlainBuffer((await encodePng(applyImageEffect(pixels.data, img.effect), pixels.width, pixels.height)).buffer);
+				if (pixels) {
+					const effected = effectedDraw({ kind: 'plus-image', type: 1, data: img.imageData }, { kind: 'bitmap', rgba: pixels.data, width: pixels.width, height: pixels.height }, img.effect, img, img.effectSource);
+					if (effected) {
+						bytes = toPlainBuffer((await encodePng(effected.bitmap.rgba, effected.bitmap.width, effected.bitmap.height)).buffer);
+						img = effected.draw;
+					}
+				}
 			}
 			let payload: ImagePayload | null = null;
 			if (img.isMetafile) {

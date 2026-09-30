@@ -11,11 +11,25 @@
  * a wider one as the outline GDI+'s widener builds (joins, caps, dash
  * pattern and DashCap, compound bands, Inset alignment:
  * `emf-plus-widen.ts`), scan-converted by GDI+'s fill rules
- * (`emf-plus-raster.ts`); under `gdiAntialias: true` Canvas strokes it. In
+ * (`emf-plus-raster.ts`); under `gdiAntialias: true` Canvas strokes it (a
+ * pen with custom caps, which Canvas cannot stroke, fills GDI+'s outline
+ * with the caps instead, in world space). In
  * every raster mode the colour of each device pixel comes from the very
  * brush sampler a fill uses, so a texture or gradient pen shows its brush
  * exactly as GDI+ paints it, unfiltered. SVG output keeps a vector stroke
  * painted with the brush's paint server (`<linearGradient>`, `<pattern>`).
+ *
+ * A pen's own transform (`PenDataTransform`) maps its nib, the pen's
+ * cross-section, in world space before the world transform applies: GDI+
+ * widens the path in the pen's space, where the nib is round, and maps the
+ * widened outline back through the transform's linear part. A similarity
+ * only rescales a round nib, so it folds into the pen width; any other
+ * transform (nonuniform scale, skew) is stroked in pen space (see
+ * {@link resolvePenTransform}): the raster routes widen the path recorded
+ * through the inverse of the nib transform, and Canvas and SVG build the
+ * path under the world transform and stroke it under world x nib, which is
+ * the same stroke because Canvas measures width, dashes, joins and caps in
+ * the user space current at `stroke()`.
  *
  * @module emf-plus-stroke
  */
@@ -25,6 +39,7 @@ import {
 	cssColorToArgb,
 	compositeBrushCoverage,
 	deviceBounds,
+	invertAffine,
 	plusRasterMode,
 	paintBrushThroughMask,
 	solidSampler,
@@ -43,6 +58,7 @@ import { applyPlusWorldTransform, brushPaint, plusWorldMatrix } from './emf-plus
 import { customCapGeometry } from './emf-plus-custom-cap';
 import { nominalLineCoverage, recordNominalFigures, type NominalFigure } from './emf-plus-nominal-line';
 import { widenFigures, type DevicePen } from './emf-plus-widen';
+import { mulMatrix } from './emf-plus-brush-gradient';
 import { isSvgContext } from './svg-context';
 import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
@@ -138,35 +154,42 @@ export function strokePlusGeometry(
 	closedFigure: boolean = false,
 ): void {
 	const { ctx } = rCtx;
-	// PenDataTransform is a transform of the pen's geometric attributes. For
-	// a similarity transform its only effect on a centered stroke is to scale
-	// every pen-space length uniformly; its rotation does not change a round
-	// pen. Fold that scale into the pen so both the Canvas and widened/raster
-	// routes see it. Translation has no effect on centered pen geometry.
-	pen = applySimilarityPenTransform(pen);
-	// An affine pen is an ellipse in world space. Widen the unchanged path
-	// in pen space, then map its outline back; translation never moves it.
-	if (pen?.transform) {
-		if (strokeAffinePen(rCtx, pen, buildPath, closedFigure)) return;
-	}
+	const resolved = resolvePenTransform(pen);
+	pen = resolved.pen;
+	const nib = resolved.nib;
 	const inset = !!pen && pen.alignment === 1 && closedFigure;
 	const widthScale = inset ? 2 : 1;
-	/** Strokes on `c` (transform already set), clipped to the figure for an inset pen. */
+	/**
+	 * Strokes on `c` (world transform already set), clipped to the figure
+	 * for an inset pen. The path is built under the world transform; a nib
+	 * transform then applies for the stroke alone, so Canvas measures the
+	 * pen in pen space while the path stays where it is.
+	 */
 	const stroke = (c: CanvasContext): void => {
-		if (inset) {
+		if (inset || nib) {
 			c.save();
+		}
+		if (inset) {
 			c.beginPath();
 			buildPath(c);
 			c.clip();
 		}
 		c.beginPath();
 		buildPath(c);
+		if (nib) {
+			c.transform(nib[0], nib[1], nib[2], nib[3], 0, 0);
+		}
 		c.stroke();
-		if (inset) {
+		if (inset || nib) {
 			c.restore();
 		}
 	};
 	if (pen) {
+		// Canvas would measure the dashes in pen space; GDI+ lays them out in
+		// world space, so a dashed pen under a nib transform fills GDI+'s
+		// widened outline instead.
+		const nibDashed = !!nib && penDashArray(pen).length > 0;
+		const anchored = [pen.startCap, pen.endCap].some((cap) => cap !== undefined && cap >= 0x11 && cap <= 0x14);
 		applyPlusPenStyle(ctx, pen, widthScale);
 		const mode = plusRasterMode(rCtx);
 		let sampler = pen.brush && !isSvgContext(ctx) ? brushSampler(rCtx, pen.brush) : null;
@@ -177,133 +200,153 @@ export function strokePlusGeometry(
 		if (sampler) {
 			const size = surfaceSize(ctx);
 			const device = plusWorldMatrix(rCtx);
-			const scale = Math.max(Math.hypot(device[0], device[1]), Math.hypot(device[2], device[3]));
-			if (mode !== 'canvas' && size && strokeGdiplus(rCtx, pen, sampler, buildPath, device, size, mode, closedFigure)) {
+			const scale = maxStretch(nib ? mulMatrix(device, nib) : device);
+			if (mode !== 'canvas' && size && strokeGdiplus(rCtx, pen, nib, sampler, buildPath, device, size, mode, closedFigure)) {
 				return;
 			}
-			const miter = Math.max(1, ctx.miterLimit || 10);
-			const margin = (pen.width * scale * miter) / 2 + 2;
-			const box = size ? deviceBounds(points, device, size, margin) : null;
+			// Custom caps are not a Canvas stroke: the mask is GDI+'s whole
+			// outline (shortened line and caps), in world space, filled nonzero.
+			const outline = hasCustomCap(pen) || anchored || nibDashed ? penOutlineWorld(rCtx, pen, nib, buildPath, closedFigure) : null;
+			let box: { x: number; y: number; w: number; h: number } | null = null;
+			if (size && outline) {
+				box = deviceBounds(outline.flat(), device, size, 2);
+			} else if (size) {
+				const miter = Math.max(1, ctx.miterLimit || 10);
+				const margin = (pen.width * scale * miter) / 2 + 2;
+				box = deviceBounds(points, device, size, margin);
+			}
 			if (size && !box) {
 				return; // Entirely off the surface.
 			}
-			if (
-				box &&
-				paintBrushThroughMask(
-					rCtx,
-					sampler,
-					box,
-					(c) => {
+			const drawMask = outline
+				? (c: CanvasContext): void => {
+						// Left current for the hit test.
+						traceOutline(c, outline);
+						c.fill('nonzero');
+					}
+				: (c: CanvasContext): void => {
 						applyPlusPenStyle(c, pen, widthScale);
 						stroke(c);
-						// Leave the geometry current for the aliased hit test.
+						// Leave the geometry current for the aliased hit test,
+						// which measures the stroke under the nib transform.
 						c.beginPath();
 						buildPath(c);
-					},
-					mode,
-					(c, x, y) => c.isPointInStroke(x, y) && (!inset || c.isPointInPath(x, y)),
-				)
-			) {
+						if (nib) {
+							c.transform(nib[0], nib[1], nib[2], nib[3], 0, 0);
+						}
+					};
+			const hitTest = outline
+				? (c: CanvasContext, x: number, y: number): boolean => c.isPointInPath(x, y, 'nonzero')
+				: (c: CanvasContext, x: number, y: number): boolean => c.isPointInStroke(x, y) && (!inset || c.isPointInPath(x, y));
+			if (box && paintBrushThroughMask(rCtx, sampler, box, drawMask, mode, hitTest)) {
 				return;
 			}
 		}
-		if (hasCustomCap(pen) && !pen.transform && fillCustomCapStroke(rCtx, pen, buildPath, closedFigure)) {
+		const paint = pen.brush ? brushPaint(rCtx, pen.brush) : pen.color;
+		// A gradient or pattern paint is laid out in world space, so a stroke
+		// under the nib transform would distort it: fill the widened outline
+		// under the world transform instead, as for custom caps and dashes.
+		if ((hasCustomCap(pen) || anchored || nibDashed || (nib && typeof paint !== 'string')) && fillPenOutline(rCtx, pen, nib, paint, buildPath, closedFigure)) {
 			return;
 		}
-		ctx.strokeStyle = pen.brush ? brushPaint(rCtx, pen.brush) : pen.color;
+		ctx.strokeStyle = paint;
 	}
 	applyPlusWorldTransform(rCtx);
 	stroke(ctx);
 }
 
-/** Fold a pen-local similarity transform into its scalar stroke dimensions. */
-function applySimilarityPenTransform(pen: EmfPlusPen | null): EmfPlusPen | null {
+/**
+ * Resolves a pen's `PenDataTransform` against its nib. Its translation
+ * never affects a centered stroke. A similarity (uniform scale with any
+ * rotation or reflection) only rescales the round nib, so its scale folds
+ * into the width (the dash pattern shrinking to match, since GDI+ lays the
+ * dashes out in the untransformed width) and every route sees an ordinary
+ * pen; native GDI+ keeps a
+ * zero-width pen at its unscaled one-pixel minimum under any transform.
+ * Any other invertible transform (nonuniform scale, skew) comes back as
+ * `nib`, the linear part mapping the pen-space nib into world space; a
+ * singular or non-finite one is ignored.
+ */
+function resolvePenTransform(pen: EmfPlusPen | null): { pen: EmfPlusPen | null; nib: TransformMatrix | null } {
 	if (!pen?.transform) {
-		return pen;
-	}
-	if (isIdentity(pen.transform)) {
-		return { ...pen, transform: null };
+		return { pen, nib: null };
 	}
 	const [a, b, c, d] = pen.transform;
 	const sx = Math.hypot(a, b);
 	const sy = Math.hypot(c, d);
 	const dot = a * c + b * d;
-	if (!Number.isFinite(sx + sy + dot) || !(sx > 0) || Math.abs(sx - sy) > 1e-6 * sx || Math.abs(dot) > 1e-6 * sx * sy) {
-		return pen;
+	const det = a * d - b * c;
+	const plain = { ...pen, transform: null };
+	if (pen.width === 0 || isIdentity(pen.transform) || !Number.isFinite(sx + sy + dot + det) || Math.abs(det) < 1e-12) {
+		return { pen: { ...plain, width: pen.width === 0 ? 1 : pen.width }, nib: null };
 	}
-	// Native GDI+ does not scale a zero-width pen's minimum width.
-	return { ...pen, width: pen.width === 0 ? 1 : pen.width * sx, transform: null };
+	if (Math.abs(sx - sy) <= 1e-6 * sx && Math.abs(dot) <= 1e-6 * sx * sy) {
+		// The dashes stay in the untransformed width (see framePen).
+		const pattern = pen.dashStyle === 5 ? pen.dashPattern : DASH_PATTERNS[pen.dashStyle];
+		const dashed = pattern && pattern.length > 0 ? { dashStyle: 5, dashPattern: pattern.map((v) => v / sx), dashOffset: (pen.dashOffset ?? 0) / sx } : {};
+		return { pen: { ...plain, ...dashed, width: pen.width * sx }, nib: null };
+	}
+	return { pen: plain, nib: [a, b, c, d, 0, 0] };
 }
 
-/** Affine pen outline shared by raster, Canvas and SVG output. */
-function strokeAffinePen(
-	rCtx: EmfPlusReplayCtx,
-	pen: EmfPlusPen,
-	buildPath: (c: CanvasContext) => void,
-	closedFigure: boolean,
-): boolean {
-	const [a, b, c, d] = pen.transform!;
-	const det = a * d - b * c;
-	if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return true;
-	// A hairline is a device minimum, not a transformed ellipse.
-	if (pen.width === 0) {
-		strokePlusGeometry(rCtx, { ...pen, transform: null }, buildPath, null, closedFigure);
-		return true;
+/** The largest factor by which the linear part of `m` stretches any vector (its largest singular value). */
+function maxStretch(m: TransformMatrix): number {
+	const s = m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3];
+	const det = m[0] * m[3] - m[1] * m[2];
+	return Math.sqrt((s + Math.sqrt(Math.max(0, s * s - 4 * det * det))) / 2);
+}
+
+/**
+ * The space a pen is widened in, where its nib is round: `record` maps
+ * world coordinates into it, `unit` is one pen-space unit there (the pen
+ * width and dash lengths multiply by it) and `toDevice` maps it to device
+ * pixels. Without a nib transform it is device space itself (`unit` the
+ * device scale). With one, it is pen space scaled by the largest stretch of
+ * world x nib, so no direction is recorded or flattened coarser than
+ * device pixels.
+ */
+function penFrame(
+	device: TransformMatrix,
+	nib: TransformMatrix | null,
+): { record: TransformMatrix; unit: number; toDevice: TransformMatrix } | null {
+	if (!nib) {
+		return { record: device, unit: Math.hypot(device[0], device[1]), toDevice: IDENTITY };
 	}
-	let figures: DeviceFigure[];
-	try {
-		figures = recordDeviceFigures(buildPath, [d / det, -b / det, -c / det, a / det, 0, 0]);
-	} catch {
-		return false;
+	const full = mulMatrix(device, nib);
+	const unit = maxStretch(full);
+	const inv = invertAffine(nib);
+	if (!inv || !(unit > 0) || !Number.isFinite(unit)) {
+		return null;
 	}
-	if (closedFigure) figures = figures.map((f) => ({ ...f, closed: true }));
-	const dash = penDashArray(pen);
-	const geometry: DevicePen = {
-		half: pen.width / 2, join: pen.lineJoin ?? 0,
-		miterLimit: pen.miterLimit && pen.miterLimit >= 1 ? pen.miterLimit : 10,
-		startCap: pen.startCap ?? 0, endCap: pen.endCap ?? 0, dashCap: pen.dashCap ?? 0,
-		dash: dash.length ? dash : null, dashOffset: (pen.dashOffset ?? 0) * pen.width,
-		compound: pen.compound ?? null, inset: pen.alignment === 1,
+	return {
+		record: [inv[0] * unit, inv[1] * unit, inv[2] * unit, inv[3] * unit, 0, 0],
+		unit,
+		toDevice: mulMatrix(full, [1 / unit, 0, 0, 1 / unit, 0, 0]),
 	};
-	const outline = hasCustomCap(pen)
-		? customCapOutline(figures, pen.width, geometry, pen)
-		: widenFigures(figures, geometry);
-	const world = outline.map((poly) => poly.map((p) => ({ x: a * p.x + c * p.y, y: b * p.x + d * p.y })));
-	const device = plusWorldMatrix(rCtx);
-	const mode = plusRasterMode(rCtx);
-	const size = surfaceSize(rCtx.ctx);
-	if (mode !== 'canvas' && size) {
-		const sampler = pen.brush ? brushSampler(rCtx, pen.brush) : null;
-		const color = cssColorToArgb(pen.color);
-		const paint = sampler ?? (color === null ? null : solidSampler(color));
-		if (paint) {
-			const fix = world.map((poly) => poly.flatMap((p) => [
-				toPlusFix(device[0] * p.x + device[2] * p.y + device[4]),
-				toPlusFix(device[1] * p.x + device[3] * p.y + device[5]),
-			]));
-			const box = figuresBox(fix, size);
-			if (!box) return true;
-			if (box.w * box.h <= 16_000_000) {
-				const coverage = rasterizePlusFill(fix, false, mode === 'gdiplus-aa', isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), box);
-				if (compositeBrushCoverage(rCtx, paint, box, coverage, 1, true)) return true;
-			}
-		}
-	}
-	const { ctx } = rCtx;
-	ctx.save();
-	try {
-		applyPlusWorldTransform(rCtx);
-		ctx.fillStyle = pen.brush ? brushPaint(rCtx, pen.brush) : pen.color;
-		ctx.beginPath();
-		for (const poly of world) {
-			poly.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
-			ctx.closePath();
-		}
-		ctx.fill('nonzero');
-	} finally {
-		ctx.restore();
-	}
-	return true;
+}
+
+/**
+ * The widener's pen for `pen` in a space where one pen-space unit is
+ * `unit`. Under a `nib` transform the dashes are laid out along the path in
+ * world space (GDI+'s dash lengths are the pattern times the untransformed
+ * width there: a dashed line under a (4, 1) pen scale keeps 6 + 2 pixel
+ * dashes along x), so they are measured through the nib.
+ */
+function framePen(pen: EmfPlusPen, unit: number, nib: TransformMatrix | null = null): DevicePen {
+	const dash = penDashArray(pen).map((v) => v * unit);
+	return {
+		half: ((pen.width || 1) * unit) / 2,
+		join: pen.lineJoin ?? 0,
+		miterLimit: pen.miterLimit && pen.miterLimit >= 1 ? pen.miterLimit : 10,
+		startCap: pen.startCap ?? 0,
+		endCap: pen.endCap ?? 0,
+		dashCap: pen.dashCap ?? 0,
+		dash: dash.length > 0 ? dash : null,
+		dashOffset: (pen.dashOffset ?? 0) * (pen.width || 1) * unit,
+		dashMetric: nib ? [nib[0], nib[1], nib[2], nib[3]] : undefined,
+		compound: pen.compound ?? null,
+		inset: pen.alignment === 1,
+	};
 }
 
 /**
@@ -313,14 +356,21 @@ function strokeAffinePen(
  * nominal-width line and a wider one widened into GDI+'s outline
  * (`widenFigures`, emf-plus-widen.ts), both scan-converted by GDI+'s fill
  * rules and painted through the brush. `closedFigure` marks every figure
- * closed (the caller knows a rectangle, ellipse or polygon is). Returns
- * `false`, having drawn nothing, for geometry it cannot model: a pen
- * transform, a non-uniform or skewed device transform, or a path call the
- * recorder lacks.
+ * closed (the caller knows a rectangle, ellipse or polygon is). A `nib`
+ * transform (see {@link resolvePenTransform}) widens in pen space
+ * ({@link penFrame}), where the nib is round, and maps the outline to
+ * device pixels through world x nib, so the nib is the ellipse (or, for
+ * square caps and miters, the parallelogram) GDI+ strokes with; the frame's
+ * unit makes `width` the nib's widest device extent, so the nominal-width
+ * line applies when that is at most {@link NOMINAL_PEN_MAX}. Returns
+ * `false`, having drawn nothing, for geometry it cannot model: a
+ * non-uniform or skewed device transform without a nib transform, or a
+ * path call the recorder lacks.
  */
 function strokeGdiplus(
 	rCtx: EmfPlusReplayCtx,
 	pen: EmfPlusPen,
+	nib: TransformMatrix | null,
 	sampler: DeviceBrushSampler,
 	buildPath: (c: CanvasContext) => void,
 	device: TransformMatrix,
@@ -328,47 +378,42 @@ function strokeGdiplus(
 	mode: 'aliased' | 'gdiplus-aa',
 	closedFigure: boolean,
 ): boolean {
-	if (pen.transform && !isIdentity(pen.transform)) {
-		return false;
+	if (!nib) {
+		// Only a similarity (uniform scale and rotation): a pen stays round.
+		const sx = Math.hypot(device[0], device[1]);
+		const sy = Math.hypot(device[2], device[3]);
+		const dot = device[0] * device[2] + device[1] * device[3];
+		if (!(sx > 0) || Math.abs(sx - sy) > 1e-6 * sx || Math.abs(dot) > 1e-6 * sx * sy) {
+			return false;
+		}
 	}
-	// Only a similarity (uniform scale and rotation): a pen stays round.
-	const sx = Math.hypot(device[0], device[1]);
-	const sy = Math.hypot(device[2], device[3]);
-	const dot = device[0] * device[2] + device[1] * device[3];
-	if (!(sx > 0) || Math.abs(sx - sy) > 1e-6 * sx || Math.abs(dot) > 1e-6 * sx * sy) {
+	const frame = penFrame(device, nib);
+	if (!frame) {
 		return false;
 	}
 	let figures: DeviceFigure[];
 	try {
-		figures = recordDeviceFigures(buildPath, device);
+		figures = recordDeviceFigures(buildPath, frame.record);
 	} catch {
 		return false;
 	}
 	if (closedFigure) {
 		figures = figures.map((f) => ({ ...f, closed: true }));
 	}
-	const width = (pen.width || 1) * sx;
-	const dash = penDashArray(pen).map((v) => v * sx);
-	const devicePen: DevicePen = {
-		half: width / 2,
-		join: pen.lineJoin ?? 0,
-		miterLimit: pen.miterLimit && pen.miterLimit >= 1 ? pen.miterLimit : 10,
-		startCap: pen.startCap ?? 0,
-		endCap: pen.endCap ?? 0,
-		dashCap: pen.dashCap ?? 0,
-		dash: dash.length > 0 ? dash : null,
-		dashOffset: (pen.dashOffset ?? 0) * (pen.width || 1) * sx,
-		compound: pen.compound ?? null,
-		inset: pen.alignment === 1,
-	};
+	const width = (pen.width || 1) * frame.unit;
+	const devicePen = framePen(pen, frame.unit, nib);
 	const antialias = mode === 'gdiplus-aa';
+	const toFix = (poly: ReadonlyArray<{ x: number; y: number }>): number[] => {
+		const m = frame.toDevice;
+		return poly.flatMap((p) => [toPlusFix(m[0] * p.x + m[2] * p.y + m[4]), toPlusFix(m[1] * p.x + m[3] * p.y + m[5])]);
+	};
 	let fix: FixFigure[];
 	if (hasCustomCap(pen)) {
-		fix = customCapOutline(figures, width, devicePen, pen).map((poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
+		fix = customCapOutline(figures, width, devicePen, pen).map(toFix);
 	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash && !(((pen.startCap ?? 0) | (pen.endCap ?? 0) | (pen.dashCap ?? 0)) & 0xf0)) {
 		return strokeNominal(rCtx, pen, sampler, buildPath, device, size, antialias, closedFigure);
 	} else {
-		fix = widenFigures(figures, devicePen).map((poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
+		fix = widenFigures(figures, devicePen).map(toFix);
 	}
 	const box = figuresBox(fix, size);
 	if (!box) {
@@ -466,79 +511,90 @@ function customCapOutline(
 }
 
 /**
- * Strokes a custom-capped pen as a vector fill (SVG output and
- * `gdiAntialias: true`): the same outline GDI+ fills ({@link customCapOutline}),
- * mapped back to world space and filled nonzero with the pen's paint, so it
- * stays a single exact shape. Returns `false` when the geometry cannot be
- * recorded or the device matrix is singular.
+ * The outline GDI+ fills for a pen, in world space: {@link customCapOutline}
+ * for a custom-capped pen, otherwise the widened outline. It is built in
+ * the pen's frame ({@link penFrame}; pen space under a nib transform) and
+ * mapped back to world space, so filling it nonzero under the world
+ * transform keeps it a single exact shape and a gradient or pattern paint
+ * laid out in world space. Returns `null` when the geometry cannot be
+ * recorded or a matrix is singular.
  */
-function fillCustomCapStroke(
+function penOutlineWorld(
 	rCtx: EmfPlusReplayCtx,
 	pen: EmfPlusPen,
+	nib: TransformMatrix | null,
 	buildPath: (c: CanvasContext) => void,
 	closedFigure: boolean,
-): boolean {
+): Array<Array<{ x: number; y: number }>> | null {
 	const device = plusWorldMatrix(rCtx);
-	const sx = Math.hypot(device[0], device[1]);
-	const det = device[0] * device[3] - device[1] * device[2];
-	if (!(sx > 0) || !Number.isFinite(det) || Math.abs(det) < 1e-12) {
-		return false;
+	const frame = penFrame(device, nib);
+	const deviceInv = invertAffine(device);
+	if (!frame || !deviceInv || !(frame.unit > 0)) {
+		return null;
 	}
 	let figures: DeviceFigure[];
 	try {
-		figures = recordDeviceFigures(buildPath, device);
+		figures = recordDeviceFigures(buildPath, frame.record);
 	} catch {
-		return false;
+		return null;
 	}
 	if (closedFigure) {
 		figures = figures.map((f) => ({ ...f, closed: true }));
 	}
-	const width = (pen.width || 1) * sx;
-	const dash = penDashArray(pen).map((v) => v * sx);
-	const devicePen: DevicePen = {
-		half: width / 2,
-		join: pen.lineJoin ?? 0,
-		miterLimit: pen.miterLimit && pen.miterLimit >= 1 ? pen.miterLimit : 10,
-		startCap: pen.startCap ?? 0,
-		endCap: pen.endCap ?? 0,
-		dashCap: pen.dashCap ?? 0,
-		dash: dash.length > 0 ? dash : null,
-		dashOffset: (pen.dashOffset ?? 0) * (pen.width || 1) * sx,
-		compound: pen.compound ?? null,
-		inset: pen.alignment === 1,
-	};
-	const inv: TransformMatrix = [
-		device[3] / det,
-		-device[1] / det,
-		-device[2] / det,
-		device[0] / det,
-		(device[2] * device[5] - device[3] * device[4]) / det,
-		(device[1] * device[4] - device[0] * device[5]) / det,
-	];
+	const width = (pen.width || 1) * frame.unit;
+	const devicePen = framePen(pen, frame.unit, nib);
+	const outline = hasCustomCap(pen) ? customCapOutline(figures, width, devicePen, pen) : widenFigures(figures, devicePen);
+	const m = mulMatrix(deviceInv, frame.toDevice);
+	return outline.map((poly) => poly.map((p) => ({ x: m[0] * p.x + m[2] * p.y + m[4], y: m[1] * p.x + m[3] * p.y + m[5] })));
+}
+
+/** Issues `outline`'s polygons as one path (`beginPath()` included), each closed. */
+function traceOutline(c: CanvasContext, outline: ReadonlyArray<ReadonlyArray<{ x: number; y: number }>>): void {
+	c.beginPath();
+	for (const poly of outline) {
+		poly.forEach((p, i) => {
+			if (i === 0) {
+				c.moveTo(p.x, p.y);
+			} else {
+				c.lineTo(p.x, p.y);
+			}
+		});
+		c.closePath();
+	}
+}
+
+/**
+ * Strokes a pen as a vector fill (SVG output and `gdiAntialias: true`) of
+ * {@link penOutlineWorld}, filled nonzero with `paint` under the world
+ * transform. Returns `false` when the outline cannot be built.
+ */
+function fillPenOutline(
+	rCtx: EmfPlusReplayCtx,
+	pen: EmfPlusPen,
+	nib: TransformMatrix | null,
+	paint: string | CanvasGradient | CanvasPattern,
+	buildPath: (c: CanvasContext) => void,
+	closedFigure: boolean,
+): boolean {
+	const outline = penOutlineWorld(rCtx, pen, nib, buildPath, closedFigure);
+	if (!outline) {
+		return false;
+	}
 	const { ctx } = rCtx;
 	ctx.save();
 	try {
-		ctx.fillStyle = pen.brush ? brushPaint(rCtx, pen.brush) : pen.color;
+		ctx.fillStyle = paint;
 		applyPlusWorldTransform(rCtx);
-		ctx.beginPath();
-		for (const poly of customCapOutline(figures, width, devicePen, pen)) {
-			poly.forEach((p, i) => {
-				const x = inv[0] * p.x + inv[2] * p.y + inv[4];
-				const y = inv[1] * p.x + inv[3] * p.y + inv[5];
-				if (i === 0) {
-					ctx.moveTo(x, y);
-				} else {
-					ctx.lineTo(x, y);
-				}
-			});
-			ctx.closePath();
-		}
+		traceOutline(ctx, outline);
 		ctx.fill('nonzero');
 	} finally {
 		ctx.restore();
 	}
 	return true;
 }
+
+/** The identity matrix. */
+const IDENTITY: TransformMatrix = [1, 0, 0, 1, 0, 0];
 
 /** True for the identity matrix. */
 function isIdentity(m: TransformMatrix): boolean {

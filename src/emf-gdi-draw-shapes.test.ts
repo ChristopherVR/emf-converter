@@ -235,7 +235,7 @@ describe('emf-gdi-draw-shapes', () => {
 				expect(ctx.strokeRect).toHaveBeenCalledOnce();
 			});
 
-			it('uses ctx.rect when inPath', () => {
+			it('starts a bracketed rectangle at the native top-right corner', () => {
 				const rCtx = makeRCtx();
 				rCtx.inPath = true;
 				const d = 8;
@@ -246,7 +246,8 @@ describe('emf-gdi-draw-shapes', () => {
 
 				handleEmfGdiShapeRecord(rCtx, EMR_RECTANGLE, d, 24);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.rect).toHaveBeenCalledOnce();
+				expect(ctx.moveTo.mock.calls).toEqual([[25, 0]]);
+				expect(ctx.lineTo.mock.calls).toEqual([[0, 0], [0, 25], [25, 25]]);
 				expect(ctx.fillRect).not.toHaveBeenCalled();
 			});
 
@@ -339,7 +340,9 @@ describe('emf-gdi-draw-shapes', () => {
 
 				handleEmfGdiShapeRecord(rCtx, EMR_ELLIPSE, d, 24);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.ellipse).toHaveBeenCalledOnce();
+				expect(ctx.moveTo.mock.calls).toEqual([[25, 12.5]]);
+				expect(ctx.bezierCurveTo).toHaveBeenCalledTimes(4);
+				expect(ctx.closePath).toHaveBeenCalledOnce();
 				expect(ctx.beginPath).not.toHaveBeenCalled();
 				expect(ctx.fill).not.toHaveBeenCalled();
 			});

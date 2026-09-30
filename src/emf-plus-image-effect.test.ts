@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { nativeCurveLookup } from './emf-plus-image-curves';
 import { describe, expect, it } from 'vitest';
-import { applyImageEffect, parseImageEffect } from './emf-plus-image-effect';
+import { applyImageEffect as applyNativeEffect, parseSerializableObject as parseImageEffect, levelsLut, type EmfPlusImageEffect } from './emf-plus-image-effects';
+const applyImageEffect = (source: Uint8ClampedArray, effect: EmfPlusImageEffect) => applyNativeEffect(source, 16, 16, effect)!;
+const greyRamp = Uint8ClampedArray.from(Array.from({ length: 1024 }, (_, i) => i % 4 === 3 ? 255 : Math.floor(i / 4)));
+
 import { replayEmfPlusRecords } from './emf-plus-replay';
 import { createEmfPlusState } from './emf-types';
 import { ensureNodeCanvasModule } from './emf-canvas-helpers';
@@ -74,9 +77,8 @@ describe('EMF+ image effects', () => {
 		fixture.settings.forEach((setting, i) => {
 			setting.forEach((value, ch) => view.setInt32(20 + ch * 4, value, true));
 			const effect = parseImageEffect(view, 0, view.byteLength)!;
-			expect(effect.kind).toBe('lookup');
 			for (let value = 0; value < 256; value++) {
-				const diff = Math.abs(effect.values[value] - expected[i * 256 + value]);
+				const diff = Math.abs(levelsLut(...setting as [number, number, number])[value] - expected[i * 256 + value]);
 				expect(diff).toBeLessThanOrEqual(1);
 				if (diff) differences++;
 			}
@@ -99,7 +101,7 @@ describe('EMF+ image effects', () => {
 		const state = createEmfPlusState();
 		const ctx = new SvgContext(16, 16);
 		replayEmfPlusRecords(record, 0, record.byteLength, ctx as never, 16, 16, state);
-		expect(state.ext?.pendingEffect?.kind).toBe('matrix');
+		expect(state.ext?.pendingEffect?.kind).toBe('colorMatrix');
 		// DataSize claims an entire effect, but Size ends the record after its GUID.
 		record.setUint32(4, 32, true);
 		replayEmfPlusRecords(record, 0, record.byteLength, ctx as never, 16, 16, state);
@@ -112,9 +114,9 @@ describe('EMF+ image effects', () => {
 		for (let balance = -100; balance <= 100; balance++) {
 			for (let ch = 0; ch < 3; ch++) view.setInt32(20 + ch * 4, balance, true);
 			const effect = parseImageEffect(view, 0, view.byteLength)!;
-			expect(effect.kind).toBe('lookup');
+
 			for (let ch = 0; ch < 3; ch++) {
-				expect(Array.from(effect.values.slice(ch * 256, (ch + 1) * 256))).toEqual(Array.from(expected.subarray((balance + 100) * 256, (balance + 101) * 256)));
+				expect(Array.from(applyNativeEffect(greyRamp, 256, 1, effect)!).filter((_, i) => i % 4 === ch)).toEqual(Array.from(expected.subarray((balance + 100) * 256, (balance + 101) * 256)));
 			}
 		}
 	});

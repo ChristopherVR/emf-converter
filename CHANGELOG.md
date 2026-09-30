@@ -4,6 +4,85 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.3.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.5) - 2026-09-28
+
+### Bug Fixes
+
+- Match GDI+ image effect algorithms to Windows output ([df5fe59](https://github.com/ChristopherVR/emf-converter/commit/df5fe5994d279a79f976b46c3073742b10738e96))
+- Record Windows effect fixtures with the right EmfType and update outstanding work ([6d716d6](https://github.com/ChristopherVR/emf-converter/commit/6d716d688af4874d1f1e70afd1a2420d8dee2092))
+
+### Testing
+
+- Add Windows GDI+ image effect fixtures ([b3c0890](https://github.com/ChristopherVR/emf-converter/commit/b3c0890e17f8d6b40ebf5f5d72013745474ad661))
+
+## [4.3.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.4) - 2026-09-28
+
+### Documentation
+
+- List outstanding work ([e941743](https://github.com/ChristopherVR/emf-converter/commit/e941743b3583649ea7c9bb7ecc541a658530814a))
+
+## [4.3.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.3) - 2026-09-28
+
+### Bug Fixes
+
+- Match Windows' HALFTONE resampling and refit the colour adjustment ([2780238](https://github.com/ChristopherVR/emf-converter/commit/27802382e053dea0d842cab562ab0e9e983b7c1c))
+- Lay out EMF+ pen-transform dashes in world space and draw ArrowAnchor ([ce21dde](https://github.com/ChristopherVR/emf-converter/commit/ce21dde749b7ff67f4f6906bc9ceb4fabd5c2a6e))
+
+### Testing
+
+- Add Windows HALFTONE and pen transform fixtures ([bd7cff2](https://github.com/ChristopherVR/emf-converter/commit/bd7cff266f31c211044b3d1a937bf2a0fd5304cd))
+
+## [4.3.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.2) - 2026-09-28
+
+### Bug Fixes
+
+- Build GDI paths the way Windows' GetPath reports them ([97d0381](https://github.com/ChristopherVR/emf-converter/commit/97d0381feb29112978f31fae8515a6a450042568))
+- Mirror META_SETDIBTODEV's destination under LAYOUT_RTL ([a9bdd2b](https://github.com/ChristopherVR/emf-converter/commit/a9bdd2b576b181dbf7823d2b07e08b1d499529d0))
+
+### Testing
+
+- Check GDI path geometry against Wine's Windows-verified data ([1a0eb09](https://github.com/ChristopherVR/emf-converter/commit/1a0eb09908a36f345160bb7ee3eaaae0fc0550f3))
+
+## [4.3.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.1) - 2026-09-28
+
+### Build & CI
+
+- Generate Windows reference fixtures on a Windows runner ([6301668](https://github.com/ChristopherVR/emf-converter/commit/6301668b13b4527598ce7081b1e85176b67407bb))
+
+## [4.3.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.3.0) - 2026-09-28
+
+### Features
+
+- Apply EMR_SETCOLORADJUSTMENT to HALFTONE blits and box-filter HALFTONE ([9a59d5d](https://github.com/ChristopherVR/emf-converter/commit/9a59d5dd8a5ddfff9d5eb8014a5810630801a05c))
+
+## [4.2.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.2.1) - 2026-09-28
+
+### Bug Fixes
+
+- Draw custom caps of gradient and texture EMF+ pens ([c8d0f20](https://github.com/ChristopherVR/emf-converter/commit/c8d0f20fad9688af1ebae7ed2905ded429c89cec))
+- Remove leftover debug offsets from the brush mask transform ([c6653d1](https://github.com/ChristopherVR/emf-converter/commit/c6653d1a1b2f73991d93186e338f1fe1d041520b))
+- Apply EMF+ image effects to the source rectangle and grow expanded blurs ([381826d](https://github.com/ChristopherVR/emf-converter/commit/381826d04d0e0f3e12ded67b834b5e21c7d8733a))
+
+### Build & CI
+
+- Type-check the docs site ([b9c298e](https://github.com/ChristopherVR/emf-converter/commit/b9c298e89a15d4faef9480cdbc38db3d791d3556))
+
+## [4.2.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.2.0) - 2026-09-28
+
+### Features
+
+- Support nonuniform and skewed EMF+ pen transforms ([0ae5c6b](https://github.com/ChristopherVR/emf-converter/commit/0ae5c6b2e1ac09bd5f0803a32b04a5c2728d3d8e))
+- Apply EMF+ image effects to DrawImage ([2f21d93](https://github.com/ChristopherVR/emf-converter/commit/2f21d93d7ad43fb7266c408a14ef546f050ca3f2))
+
+### Bug Fixes
+
+- Skip the EMF fallback of dual-mode EMF+ files and keep the bounds origin under a mapping mode ([f5d892a](https://github.com/ChristopherVR/emf-converter/commit/f5d892ac39059f3914d5ae5cecc41c61c781b7ea))
+
+### Documentation
+
+- Replace the demo page with a VitePress site ([3e6506f](https://github.com/ChristopherVR/emf-converter/commit/3e6506fd8497686d4ba052333e7ed41769e7f868))
+- Sync the pen transform limitation with the README ([faf9bc4](https://github.com/ChristopherVR/emf-converter/commit/faf9bc4c456b570135979a90315c94a9d7c7fecf))
+
 ## [4.1.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.1.0) - 2026-09-27
 
 ### Features

@@ -12,6 +12,7 @@
 import type { Canvas as NodeCanvas, SKRSContext2D } from '@napi-rs/canvas';
 
 import type { ClipRegion } from './emf-clip-region';
+import type { EmfPlusImageEffect } from './emf-plus-image-effects';
 
 // ---------------------------------------------------------------------------
 // Shared type aliases
@@ -273,7 +274,12 @@ export interface DrawState {
 	colorRefs?: { pen?: number; brush?: number; text?: number; bk?: number };
 	/** EMR_SETTEXTJUSTIFICATION: extra space (logical units) spread over `count` break characters. */
 	textJustification?: { extra: number; count: number };
-	/** EMR_SETCOLORADJUSTMENT: the COLORADJUSTMENT the HALFTONE stretch mode applies. */
+	/**
+	 * EMR_SETCOLORADJUSTMENT: the COLORADJUSTMENT that HALFTONE StretchBlt /
+	 * StretchDIBits apply to their source (see `emf-gdi-color-adjust.ts`);
+	 * absent means the default, which changes nothing. Replaced, never
+	 * mutated, so a {@link cloneState} copy (SaveDC) stays independent.
+	 */
 	colorAdjustment?: GdiColorAdjustment;
 }
 
@@ -645,7 +651,12 @@ export interface EmfPlusPen {
 	 */
 	customStartCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
 	customEndCap?: import('./emf-plus-custom-cap').EmfPlusCustomLineCap | null;
-	/** Pen transform (`PenDataTransform`), applied to the pen's width and shape. */
+	/**
+	 * Pen transform (`PenDataTransform`): maps the pen's nib (its round
+	 * cross-section) in world space, before the world transform; its linear
+	 * part scales, skews or rotates the nib and its translation has no effect
+	 * (see `emf-plus-stroke.ts`).
+	 */
 	transform?: TransformMatrix | null;
 	/**
 	 * The pen's brush: a solid colour is also in {@link color}; a texture or
@@ -788,7 +799,9 @@ export type EmfPlusObject =
  */
 export interface DeferredImageDraw {
 	/** Image effect explicitly requested by DrawImagePoints flag E. */
-	effect?: import('./emf-plus-image-effect').ImageEffect;
+	effect?: EmfPlusImageEffect | null;
+	/** The source rectangle and mapping retained for an asynchronous effect draw. */
+	effectSource?: import('./emf-plus-draw-image').ImageDrawSource;
 	/** Raw image bytes (PNG/BMP/EMF/WMF). */
 	imageData: ArrayBuffer | SharedArrayBuffer;
 	/** Destination X in logical coordinates. */
@@ -893,8 +906,12 @@ export interface EmfPlusGraphicsExt {
 	textContrast?: number;
 	/** True after a well-formed `EmfPlusMultiFormatStart`: GDI+ then plays no further EMF+ record. */
 	multiFormatSkip?: boolean;
-	/** The image effect of the last `EmfPlusSerializableObject`, applied by the next DrawImagePoints with flag E. */
-	pendingEffect?: import('./emf-plus-image-effect').ImageEffect | null;
+	/**
+	 * The image effect of the last `EmfPlusSerializableObject` (`null` for an
+	 * unknown or malformed one), applied by the next DrawImagePoints with
+	 * flag E, which consumes it.
+	 */
+	pendingEffect?: EmfPlusImageEffect | null;
 }
 
 /**
@@ -983,6 +1000,18 @@ export interface EmfPlusState {
 	ext?: EmfPlusGraphicsExt;
 	/** `EmfConvertOptions.gdiAntialias`, for nested metafile replays. */
 	gdiAntialias?: boolean;
+	/**
+	 * True once an `EmfPlusHeader` with the `EmfPlusDual` flag (record flags
+	 * bit 0) has been played: the classic EMF records then duplicate the
+	 * EMF+ picture for EMF-only readers, and an EMF+ reader skips them.
+	 */
+	dualMode?: boolean;
+	/**
+	 * True while the last EMF+ record played was `EmfPlusGetDC`: the EMF
+	 * records that follow are part of the picture (drawn through an HDC) and
+	 * are played, dual mode or not, until the next EMF+ record.
+	 */
+	gdiPassthrough?: boolean;
 }
 
 /**
@@ -1194,6 +1223,13 @@ export interface EmfGdiReplayCtx {
 	viewportExt: { cx: number; cy: number };
 	/** When true, use window/viewport mapping instead of simple bounds-based scaling. */
 	useMappingMode: boolean;
+	/**
+	 * When true, the window/viewport mapping yields device units (as in an
+	 * EMF), which are then placed on the canvas by the same bounds mapping
+	 * the no-mapping-mode path uses: `(device - bounds.left/top) * sx/sy`.
+	 * When false or absent the viewport is already in canvas pixels (WMF).
+	 */
+	deviceToCanvas?: boolean;
 	/**
 	 * Tracks how many extra `ctx.save()` calls were made for clipping rects,
 	 * so they can be unwound before a state save/restore.

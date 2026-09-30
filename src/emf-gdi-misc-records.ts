@@ -11,8 +11,9 @@
  *     raster (Small Fonts, Terminal, System, MS Sans Serif, Courier) and
  *     TrueType text identically with and without it
  *     (`emfrec-text-mapperflags` vs `emfrec-text-mapperflags-off`).
- *   - EMR_SETCOLORADJUSTMENT (23): kept for the HALFTONE stretch mode
- *     (see `emf-gdi-stretch.ts`).
+ *   - EMR_SETCOLORADJUSTMENT (23): the COLORADJUSTMENT that HALFTONE
+ *     StretchBlt / StretchDIBits apply to their source bitmap (see
+ *     `emf-gdi-color-adjust.ts`).
  *   - Informational and ICM/OpenGL/driver records with no effect on a GDI
  *     raster surface, consumed without a warning: colour spaces
  *     (EMR_CREATECOLORSPACE, EMR_SETCOLORSPACE, EMR_DELETECOLORSPACE,
@@ -47,6 +48,7 @@ import {
 	EMR_SETMAPPERFLAGS,
 	EMR_SETTEXTJUSTIFICATION,
 } from './emf-constants';
+import { COLOR_ADJUSTMENT_SIZE, readColorAdjustment } from './emf-gdi-color-adjust';
 import { emfLog } from './emf-logging';
 import type { EmfGdiReplayCtx } from './emf-types';
 
@@ -84,20 +86,13 @@ export function handleEmfGdiMiscRecord(rCtx: EmfGdiReplayCtx, recType: number, d
 			return true;
 		}
 		case EMR_SETCOLORADJUSTMENT: {
-			if (recSize >= 32) {
-				state.colorAdjustment = {
-					flags: view.getUint16(dataOff + 2, true),
-					illuminant: view.getUint16(dataOff + 4, true),
-					redGamma: view.getUint16(dataOff + 6, true),
-					greenGamma: view.getUint16(dataOff + 8, true),
-					blueGamma: view.getUint16(dataOff + 10, true),
-					referenceBlack: view.getUint16(dataOff + 12, true),
-					referenceWhite: view.getUint16(dataOff + 14, true),
-					contrast: view.getInt16(dataOff + 16, true),
-					brightness: view.getInt16(dataOff + 18, true),
-					colorfulness: view.getInt16(dataOff + 20, true),
-					redGreenTint: view.getInt16(dataOff + 22, true),
-				};
+			// An out-of-range adjustment fails SetColorAdjustment, which keeps
+			// the previous one.
+			const ca = recSize >= 8 + COLOR_ADJUSTMENT_SIZE ? readColorAdjustment(view, dataOff) : null;
+			if (ca) {
+				state.colorAdjustment = ca;
+			} else {
+				emfLog('EMR_SETCOLORADJUSTMENT: invalid COLORADJUSTMENT ignored');
 			}
 			return true;
 		}

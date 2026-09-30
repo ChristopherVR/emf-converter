@@ -571,8 +571,36 @@ export function axisBox(l: number, t: number, r: number, b: number): FixBox {
  * controls and the left/top mid points round down, the horizontal-type
  * controls and the right/bottom mid points up, and the second half of the
  * ellipse is the first half reflected through the centre.
+ *
+ * With `clockwise` (`AD_CLOCKWISE`) the same ellipse runs the other way,
+ * starting at the same point and heading down first (Windows' `GetPath`,
+ * Wine `gdi32/tests/path.c`, `test_ellipse`), and its vertical control
+ * distances round up instead of down, as a clockwise `Arc`'s whole
+ * quadrants do ({@link clockwiseEllipseBeziersBox}).
  */
-export function ellipseBeziersBox(box: FixBox): number[] {
+export function ellipseBeziersBox(box: FixBox, clockwise = false): number[] {
+	if (!clockwise) {
+		return ellipsePoints(box, false);
+	}
+	const e = clockwiseEllipseBeziersBox(box);
+	const out: number[] = [];
+	for (let i = e.length - 2; i >= 0; i -= 2) {
+		out.push(e[i], e[i + 1]);
+	}
+	return out;
+}
+
+/**
+ * {@link ellipseBeziersBox}'s 13 points in its counter-clockwise order, but
+ * with the vertical control distances a clockwise arc uses:
+ * `ceil(KAPPA * floor(h / 2))` about each vertical mid point (measured on
+ * `Arc`'s whole quadrants: 449 of 452 exact).
+ */
+export function clockwiseEllipseBeziersBox(box: FixBox): number[] {
+	return ellipsePoints(box, true);
+}
+
+function ellipsePoints(box: FixBox, cwControls: boolean): number[] {
 	const half = (v: number, up: boolean) => (up ? Math.ceil(v / 2) : Math.floor(v / 2));
 	// Offsets along a component of ex (horizontal type) and ey (vertical type).
 	const hMidLo = (v: number) => half(v, false); // top mid
@@ -583,6 +611,12 @@ export function ellipseBeziersBox(box: FixBox): number[] {
 	const vMidHi = (v: number) => half(v, true); // right mid
 	const vCtl = (v: number) => Math.floor(v / 2) - Math.floor(KAPPA * Math.floor(v / 2)); // upper control
 	const vCtlR = (v: number) => v - vCtl(v); // lower control
+	// A clockwise arc's controls: a rounded-up distance about each mid point.
+	const vDist = (v: number) => Math.ceil(KAPPA * Math.floor(v / 2));
+	const rightUpper = cwControls ? (v: number) => vMidHi(v) - vDist(v) : vCtl;
+	const leftUpper = cwControls ? (v: number) => vMidLo(v) - vDist(v) : vCtl;
+	const leftLower = cwControls ? (v: number) => vMidLo(v) + vDist(v) : vCtlR;
+	const rightLower = cwControls ? (v: number) => vMidHi(v) + vDist(v) : vCtlR;
 	const zero = () => 0;
 	const full = (v: number) => v;
 	const { ax, ay, exx, exy, eyx, eyy } = box;
@@ -591,17 +625,17 @@ export function ellipseBeziersBox(box: FixBox): number[] {
 		out.push(ax + gx(exx) + gy(eyx), ay + gx(exy) + gy(eyy));
 	};
 	P(full, vMidHi);
-	P(full, vCtl);
+	P(full, rightUpper);
 	P(hCtl, zero);
 	P(hMidLo, zero);
 	P(hCtl2, zero);
-	P(zero, vCtl);
+	P(zero, leftUpper);
 	P(zero, vMidLo);
-	P(zero, vCtlR);
+	P(zero, leftLower);
 	P(hCtl2, full);
 	P(hMidHi, full);
 	P(hCtl, full);
-	P(full, vCtlR);
+	P(full, rightLower);
 	P(full, vMidHi);
 	return out;
 }
@@ -631,7 +665,8 @@ export function flattenBezierPath(pts: ArrayLike<number>): number[] {
  * straight edges: flat `[x, y, ...]` points where each corner contributes
  * `start, c1, c2, end` and the edges are the implied lines between corners.
  * The top-right corner is computed and the other three are its mirror
- * images; the corner size is clamped to the box. Fitted against `GetPath`
+ * images; the corner size is clamped to the box (to nothing on both axes
+ * when the box is flat on either). Fitted against `GetPath`
  * output (595 of 600 random fractional boxes exact; the rest differ by one
  * FIX, 1/16 pixel, in a corner end point, which never occurs for integer
  * device coordinates).
@@ -639,8 +674,14 @@ export function flattenBezierPath(pts: ArrayLike<number>): number[] {
 export function roundRectCorners(l: number, t: number, r: number, b: number, cw: number, ch: number): number[] {
 	const w = r - l;
 	const h = b - t;
-	const ew = Math.min(Math.abs(cw), w);
-	const eh = Math.min(Math.abs(ch), h);
+	let ew = Math.min(Math.abs(cw), w);
+	let eh = Math.min(Math.abs(ch), h);
+	if (ew === 0 || eh === 0) {
+		// A box with no width or no height has no corner rounding on either
+		// axis (Windows' `GetPath`, Wine `gdi32/tests/path.c`, `test_roundrect`).
+		ew = 0;
+		eh = 0;
+	}
 	const hy = Math.floor(h / 2) - Math.floor((h - eh) / 2);
 	const topX = Math.floor(r - ew / 2);
 	const hx = r - topX;
@@ -773,12 +814,7 @@ export function angleArcFix(box: FixBox, startDeg: number, sweepDeg: number): nu
 	const cx = l + w / 2;
 	const cy = t + h / 2;
 	const E = ellipseBeziers(l, t, l + w, t + h);
-	const Ecw = E.slice();
-	const d = Math.ceil(KAPPA * Math.floor(h / 2));
-	Ecw[3] = Ecw[1] - d;
-	Ecw[11] = Ecw[13] - d;
-	Ecw[15] = Ecw[13] + d;
-	Ecw[23] = Ecw[1] + d;
+	const Ecw = clockwiseEllipseBeziersBox(axisBox(l, t, l + w, t + h));
 	const start = (startDeg * Math.PI) / 180;
 	const out: number[] = [Math.round(cx + (w / 2) * tableCos(start)), Math.round(cy - (h / 2) * tableSin(start))];
 	for (const p of angleArcPieces(startDeg, sweepDeg)) {
@@ -849,18 +885,10 @@ export function arcBeziers(
 	}
 	const px = (a: number) => cx + rx * tableCos(a);
 	const py = (a: number) => cy - ry * tableSin(a);
-	const E = ellipseBeziers(l, t, r, b);
-	if (clockwise) {
-		// A clockwise arc's whole quadrants round their vertical control
-		// distances up (measured: 449 of 452 quadrants), the mirror image of
-		// the counter-clockwise ellipse's rounding down.
-		const fh = Math.floor((b - t) / 2);
-		const d = Math.ceil(KAPPA * fh);
-		E[3] = E[1] - d; // right, upper control
-		E[11] = E[13] - d; // left, upper control
-		E[15] = E[13] + d; // left, lower control
-		E[23] = E[1] + d; // right, lower control
-	}
+	// A clockwise arc's whole quadrants round their vertical control
+	// distances up (measured: 449 of 452 quadrants), the mirror image of
+	// the counter-clockwise ellipse's rounding down.
+	const E = clockwise ? clockwiseEllipseBeziersBox(axisBox(l, t, r, b)) : ellipseBeziers(l, t, r, b);
 	const out: number[] = [Math.round(px(a0)), Math.round(py(a0))];
 	let a = a0;
 	for (let guard = 0; guard < 8 && (s > 0 ? a < a1 - 1e-12 : a > a1 + 1e-12); guard++) {
@@ -915,12 +943,48 @@ export interface GdiFigure {
  */
 export class GdiRasterPath {
 	figures: GdiFigure[] = [];
+	/**
+	 * The path as `GetPath` reports it, before flattening: FIX points
+	 * (`[x0, y0, ...]`) and their `PT_*` types (`PT_MOVETO` 6, `PT_LINETO`
+	 * 2, `PT_BEZIERTO` 4, `PT_CLOSEFIGURE` 1 or-ed onto a figure's last
+	 * point). Used to check the geometry against Windows' own paths.
+	 */
+	readonly getPath: { pts: number[]; types: number[] } = { pts: [], types: [] };
 	private current: GdiFigure | null = null;
 
 	/** Starts a new figure at (`x`, `y`). */
 	moveTo(x: number, y: number): void {
 		this.current = { pts: [x, y], closed: false };
 		this.figures.push(this.current);
+		this.log(x, y, 6);
+	}
+
+	/**
+	 * Starts a new figure at the current position (`x`, `y`) unless the open
+	 * figure already ends there. GDI opens a new figure for a drawing call
+	 * that continues from the current position (`LineTo`, `PolylineTo`,
+	 * `ArcTo`, ...) when the path is empty, its last figure is closed, or
+	 * the current position has moved away from the path's last point (a
+	 * `MoveTo`, or a call such as `Polyline`, `Arc` or `PolyPolygon` that
+	 * adds to the path without moving the current position; Windows'
+	 * `GetPath`, Wine `gdi32/tests/path.c`, `test_all_functions`).
+	 */
+	continueAt(x: number, y: number): void {
+		const f = this.current;
+		if (f && f.pts[f.pts.length - 2] === x && f.pts[f.pts.length - 1] === y) {
+			return;
+		}
+		this.moveTo(x, y);
+	}
+
+	/** True when a figure is open (not closed and not ended by an appended path). */
+	hasOpenFigure(): boolean {
+		return this.current !== null;
+	}
+
+	private log(x: number, y: number, type: number): void {
+		this.getPath.pts.push(x, y);
+		this.getPath.types.push(type);
 	}
 
 	/** Adds a line to (`x`, `y`), starting a figure there when none is open. */
@@ -930,6 +994,7 @@ export class GdiRasterPath {
 			this.moveTo(last ? last[0] : x, last ? last[1] : y);
 		}
 		this.current!.pts.push(x, y);
+		this.log(x, y, 2);
 	}
 
 	/** Adds a cubic Bezier from the current point. */
@@ -940,6 +1005,9 @@ export class GdiRasterPath {
 		}
 		const p = this.current!.pts;
 		this.flattenInto(p[p.length - 2], p[p.length - 1], c1x, c1y, c2x, c2y, x, y);
+		this.log(c1x, c1y, 4);
+		this.log(c2x, c2y, 4);
+		this.log(x, y, 4);
 	}
 
 	/** Flattens one Bezier onto the open figure, recording its end tangents. */
@@ -976,6 +1044,9 @@ export class GdiRasterPath {
 		}
 		for (let i = 2; i + 5 < pts.length; i += 6) {
 			this.flattenInto(pts[i - 2], pts[i - 1], pts[i], pts[i + 1], pts[i + 2], pts[i + 3], pts[i + 4], pts[i + 5]);
+			for (let k = i; k < i + 6; k += 2) {
+				this.log(pts[k], pts[k + 1], 4);
+			}
 		}
 	}
 
@@ -984,6 +1055,8 @@ export class GdiRasterPath {
 		if (this.current) {
 			this.current.closed = true;
 			this.current = null;
+			const t = this.getPath.types;
+			t[t.length - 1] |= 1;
 		}
 	}
 
@@ -991,6 +1064,9 @@ export class GdiRasterPath {
 	append(other: GdiRasterPath): void {
 		for (const f of other.figures) {
 			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents) });
+		}
+		for (let i = 0; i < other.getPath.types.length; i++) {
+			this.log(other.getPath.pts[2 * i], other.getPath.pts[2 * i + 1], other.getPath.types[i]);
 		}
 		this.current = null;
 	}

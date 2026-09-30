@@ -416,7 +416,7 @@ export function paintBrushThroughMask(
 	// `drawCoverage` left current), or, without one, whether it is at least
 	// half covered.
 	const shift = aliased ? aliasedSampleShift(rCtx) : geometry ? plusCanvasShift(rCtx) : 0;
-	m.setTransform(device[0], device[1], device[2], device[3], device[4] - box.x + shift + Number(process.env.HDX ?? 0), device[5] - box.y + shift + Number(process.env.HDY ?? 0));
+	m.setTransform(device[0], device[1], device[2], device[3], device[4] - box.x + shift, device[5] - box.y + shift);
 	m.fillStyle = '#000';
 	m.strokeStyle = '#000';
 	// GDI+ modes: curves become the polygon GDI+ flattens them to (emf-plus-flatten.ts).

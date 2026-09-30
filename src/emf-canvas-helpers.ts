@@ -27,6 +27,7 @@ import {
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { decodePng, isPng } from './png-decoder';
+import { decodeImageCodecFallback } from './image-codec-fallback';
 import { encodePng } from './png-encoder';
 import { cosmeticStyle } from './gdi-raster';
 import { SoftwareRasterCanvas } from './software-raster';
@@ -718,6 +719,7 @@ export async function exportCanvasToPngDataUrl(canvas: AnyCanvas): Promise<strin
  */
 export type DecodedDrawable =
 	| ImageBitmap
+	| AnyCanvas
 	| InstanceType<NodeCanvasModule['Image']>
 	| { data: Uint8ClampedArray; width: number; height: number };
 
@@ -738,26 +740,31 @@ export async function decodeDeferredImageBytes(
 	mime?: string,
 ): Promise<{ drawable: DecodedDrawable; width: number; height: number; close: () => void } | null> {
 	if (usingSoftwareCanvas()) {
-		// No canvas backend: only the built-in decoders (PNG, BMP) are available.
+		// Bundled decoders provide pixels without a native canvas backend.
 		const pixels = await decodeImageBytesBuiltIn(new Uint8Array(bytes));
 		return pixels ? { drawable: pixels, width: pixels.width, height: pixels.height, close: () => {} } : null;
 	}
 	if (nodeCanvasModule) {
-		const image = await nodeCanvasModule.loadImage(new Uint8Array(bytes));
-		return { drawable: image, width: image.width, height: image.height, close: () => {} };
+		try {
+			const image = await nodeCanvasModule.loadImage(new Uint8Array(bytes));
+			return { drawable: image, width: image.width, height: image.height, close: () => {} };
+		} catch { /* Some native backends cannot decode TIFF; use bundled codecs. */ }
+	} else if (typeof createImageBitmap === 'function') {
+		try {
+			const blob = mime !== undefined ? new Blob([bytes], { type: mime }) : new Blob([bytes]);
+			const bitmap = await createImageBitmap(blob);
+			return { drawable: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+		} catch { /* Unsupported browser formats use bundled codecs below. */ }
 	}
-	if (typeof createImageBitmap !== 'function') {
-		return null;
-	}
-	const blob = mime !== undefined ? new Blob([bytes], { type: mime }) : new Blob([bytes]);
-	const bitmap = await createImageBitmap(blob);
-	return { drawable: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
+	const pixels = await decodeImageBytesBuiltIn(new Uint8Array(bytes));
+	const temp = pixels && createTempCanvas(pixels.width, pixels.height);
+	if (!pixels || !temp) return null;
+	canvasPutImageData(temp.ctx, createImageDataCompat(pixels.data, pixels.width, pixels.height), 0, 0);
+	return { drawable: temp.canvas, width: pixels.width, height: pixels.height, close: () => {} };
 }
 
 /**
- * Decodes PNG or BMP bytes into straight RGBA with no canvas at all (the
- * built-in `png-decoder.ts` and the DIB decoder). `null` for any other
- * format (JPEG, GIF, TIFF, ...), which needs a canvas backend.
+ * Decodes PNG, BMP, JPEG, GIF and TIFF bytes to straight RGBA without Canvas.
  */
 export async function decodeImageBytesBuiltIn(
 	bytes: Uint8Array,
@@ -771,7 +778,7 @@ export async function decodeImageBytesBuiltIn(
 		const image = decodeDibToImageData(view, 14, bitsOffset, view.byteLength - bitsOffset);
 		return image ? { data: image.data as Uint8ClampedArray, width: image.width, height: image.height } : null;
 	}
-	return null;
+	return decodeImageCodecFallback(bytes);
 }
 
 // ---------------------------------------------------------------------------

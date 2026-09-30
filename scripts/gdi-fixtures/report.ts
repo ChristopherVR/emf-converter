@@ -6,7 +6,7 @@
  *
  * Set GDI_DUMP=<dir> to also write each converter render as a PNG.
  */
-import { readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { compareFixture, fixturePath, renderFixture } from '../../src/__fixtures__/gdi-parity-harness';
@@ -19,6 +19,7 @@ async function main(): Promise<void> {
 	const rows: string[] = [];
 	for (const f of files.sort()) {
 		const name = f.replace(/\.(emf|wmf)$/, '');
+		if (!existsSync(join(dir, `${name}.png`))) continue;
 		if (filter && !name.includes(filter)) {
 			continue;
 		}

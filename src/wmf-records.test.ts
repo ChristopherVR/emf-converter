@@ -309,6 +309,29 @@ describe('wmf-replay', () => {
 		expect(px(data, 20, 1, 1)).toBe(-1);
 	});
 
+	it('mirrors the destination of META_SETDIBTODEV under LAYOUT_RTL but not its bits', () => {
+		// Windows (Wine gdi32/tests/bitmap.c, test_SetDIBitsToDevice): on an
+		// 8-pixel-wide RTL device, 3 columns drawn at x = 1 land in columns
+		// 4..6, source column 1 in column 4.
+		const dib: number[] = [];
+		const u32 = (v: number) => dib.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff);
+		[40, 8, 8].forEach(u32);
+		dib.push(1, 0, 32, 0);
+		[0, 0, 0, 0, 0, 0].forEach(u32);
+		for (let i = 0; i < 64; i++) {
+			u32(0x800000 + i); // bottom-up: pixel (column c, row r from the bottom) is 8r + c
+		}
+		// Colour usage, scan count, start scan, src y, src x, height, width, dest y, dest x.
+		const words = [0, 8, 0, 2, 1, 2, 3, 2, 1];
+		const params = new Uint8Array(words.length * 2 + dib.length);
+		words.forEach((w, i) => params.set([w & 0xff, w >> 8], 2 * i));
+		params.set(dib, words.length * 2);
+		const data = play([[0x0149, [1, 0]], [0x0d33, params]], 8, 8);
+		// Source rows 2..3 (bottom-up) are device rows 3 and 2.
+		expect([3, 4, 5, 6, 7].map((x) => px(data, 8, x, 3))).toEqual([-1, 0x800011, 0x800012, 0x800013, -1]);
+		expect([4, 5, 6].map((x) => px(data, 8, x, 2))).toEqual([0x800019, 0x80001a, 0x80001b]);
+	});
+
 	it('ignores the Win16 device-bitmap records Windows no longer plays', () => {
 		const pattern = new Uint8Array(48);
 		pattern.set([0, 0, 8, 0, 8, 0, 2, 0, 1, 1]);

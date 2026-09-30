@@ -12,6 +12,8 @@ import {
 	EMR_SETMETARGN,
 	EMR_SETICMMODE,
 	EMR_SETLAYOUT,
+	EMR_SAVEDC,
+	EMR_RESTOREDC,
 	EMFPLUS_SIGNATURE,
 	EMR_COMMENT_PUBLIC_SIGNATURE,
 	MAX_RECORDS_DEFAULT,
@@ -128,11 +130,16 @@ export function replayEmfRecords(
 		state: { ...defaultState(), fontFamilyMap: replayOptions.fontFamilyMap },
 		stateStack: [] as DrawState[],
 		inPath: false,
-		windowOrg: { x: bounds.left, y: bounds.top },
+		// GDI's defaults: both origins at 0 and a 1:1 window/viewport ratio.
+		// The window/viewport mapping yields device units, placed on the
+		// canvas like every other device coordinate (bounds' top-left to the
+		// canvas origin, scaled by sx/sy); see `deviceToCanvas`.
+		windowOrg: { x: 0, y: 0 },
 		windowExt: { cx: logicalW, cy: logicalH },
 		viewportOrg: { x: 0, y: 0 },
-		viewportExt: { cx: canvasW, cy: canvasH },
+		viewportExt: { cx: logicalW, cy: logicalH },
 		useMappingMode: false,
+		deviceToCanvas: true,
 		clipSaveDepth: 0,
 		bounds,
 		canvasW,
@@ -235,6 +242,21 @@ export function replayEmfRecords(
 			flushRasterLayer(rCtx);
 		}
 		if (replayOptions.gdiDrawing === false) {
+			offset += recSize;
+			continue;
+		}
+
+		// A dual-mode metafile carries the picture twice: as EMF+ and as a
+		// classic EMF fallback for readers without EMF+ support. Like GDI+,
+		// play only the EMF+ stream; the fallback's EMF records reach the
+		// canvas only after an EmfPlusGetDC (drawing done through an HDC).
+		// State-only records still update the DC so a later GetDC run sees
+		// the objects and mapping it expects; SaveDC/RestoreDC are skipped
+		// because they bracket canvas state the EMF+ stream owns.
+		if (emfPlusState.dualMode && !emfPlusState.gdiPassthrough) {
+			if (recType !== EMR_SAVEDC && recType !== EMR_RESTOREDC) {
+				handleEmfGdiStateRecord(rCtx, recType, offset, dataOff, recSize);
+			}
 			offset += recSize;
 			continue;
 		}

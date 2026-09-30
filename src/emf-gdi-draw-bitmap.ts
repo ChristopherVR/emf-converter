@@ -23,16 +23,17 @@ import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } f
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
+import { applyColorAdjustment, colorAdjustRgb } from './emf-gdi-color-adjust';
+import { gdiDevicePixelX, gdiDevicePixelY, gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
 import { paletteEntries } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
-import { HALFTONE, stretchGdi } from './emf-gdi-stretch';
+import { HALFTONE, stretchGdi, stretchHalftone } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
 import { drawBlendLayers, splitUnknownDestination, unknownDestination, type BlendLayer } from './emf-rop2-exact';
 import { rewritePixels } from './emf-rop2-exact';
 import { applyRop3, classifyRop3, clampPositiveRect, evalRop3, rop3Index, rop3Operands } from './emf-rop3';
 import type { Rop3Pattern, Rop3Plan } from './emf-rop3';
-import type { AnyCanvas, CanvasContext, EmfGdiReplayCtx } from './emf-types';
+import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
 import { canReadBack } from './svg-context';
 
 /** A decoded blit: destination rect (canvas px, may be negative) and optional source. */
@@ -55,6 +56,11 @@ interface BlitRequest {
 	sh: number;
 	/** STRETCHDIBITS addresses a bottom-up DIB from its lower-left corner. */
 	dibOrigin: 'top-left' | 'bottom-left';
+	/**
+	 * The record is a StretchBlt / StretchDIBits (not a BitBlt), so a
+	 * HALFTONE stretch mode applies the DC's colour adjustment.
+	 */
+	stretch?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,8 +97,9 @@ export function patternOperand(rCtx: EmfGdiReplayCtx, brush: RealizedBrush): Rop
  * on the (possibly mirrored) destination rect, expressed relative to
  * `target`'s own origin (`offsetX`, `offsetY`). A negative destination or
  * source extent mirrors the image on that axis, as GDI's StretchBlt does;
- * both negative cancel out. Non-HALFTONE modes resample exactly like GDI
- * (see `emf-gdi-stretch.ts`); HALFTONE uses the canvas's filtered resample.
+ * both negative cancel out. Every stretch mode resamples in JavaScript (see
+ * `emf-gdi-stretch.ts`): the non-HALFTONE modes exactly like GDI, HALFTONE
+ * like Windows' halftone engine, which also applies the colour adjustment.
  */
 function drawSourceMapped(
 	target: CanvasContext,
@@ -104,66 +111,39 @@ function drawSourceMapped(
 ): void {
 	const dLeft = Math.min(req.dx, req.dx + req.dw) - offsetX;
 	const dTop = Math.min(req.dy, req.dy + req.dh) - offsetY;
-	if (mode !== HALFTONE) {
-		const px = stretchGdi(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, mode);
-		const tile = createTempCanvas(px.width, px.height);
-		if (!tile) {
-			return;
-		}
-		canvasPutImageData(tile.ctx, createImageDataCompat(px.data, px.width, px.height), 0, 0);
-		target.save();
-		target.globalCompositeOperation = 'source-over';
-		canvasDrawImage(target, tile.canvas, Math.round(dLeft), Math.round(dTop), px.width, px.height);
-		target.restore();
+	const px =
+		mode === HALFTONE
+			? stretchHalftone(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, decoded.adjust)
+			: stretchGdi(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, mode);
+	if (px.width === 0 || px.height === 0) {
 		return;
 	}
-	const flipX = req.dw < 0 !== req.sw < 0;
-	const flipY = req.dh < 0 !== req.sh < 0;
-	const adw = Math.abs(req.dw);
-	const adh = Math.abs(req.dh);
+	const tile = createTempCanvas(px.width, px.height);
+	if (!tile) {
+		return;
+	}
+	canvasPutImageData(tile.ctx, createImageDataCompat(px.data, px.width, px.height), 0, 0);
 	target.save();
-	target.imageSmoothingEnabled = true;
-	target.transform(
-		flipX ? -1 : 1,
-		0,
-		0,
-		flipY ? -1 : 1,
-		flipX ? dLeft * 2 + adw : 0,
-		flipY ? dTop * 2 + adh : 0,
-	);
-	const draw = target.drawImage as unknown as (
-		img: AnyCanvas,
-		sx: number,
-		sy: number,
-		sw: number,
-		sh: number,
-		dx: number,
-		dy: number,
-		dw: number,
-		dh: number,
-	) => void;
-	draw.call(
-		target,
-		decoded.canvas,
-		Math.min(req.sx, req.sx + req.sw),
-		Math.min(req.sy, req.sy + req.sh),
-		Math.abs(req.sw),
-		Math.abs(req.sh),
-		dLeft,
-		dTop,
-		adw,
-		adh,
-	);
+	target.globalCompositeOperation = 'source-over';
+	canvasDrawImage(target, tile.canvas, Math.round(dLeft), Math.round(dTop), px.width, px.height);
 	target.restore();
 }
 
-/** A decoded source DIB: its pixels and a canvas holding them. */
+/** A decoded source DIB (top-down RGBA pixels). */
 interface DecodedSource {
 	pixels: ImageData;
-	canvas: AnyCanvas;
+	/** The DC's colour adjustment, for a HALFTONE StretchBlt / StretchDIBits. */
+	adjust?: (rgb: Int32Array) => void;
 }
 
-/** Decodes the record's source DIB into a canvas, resolving the source rect's origin. */
+/**
+ * Decodes the record's source DIB, resolving the source rect's origin. The
+ * source of a StretchBlt / StretchDIBits (`req.stretch`) under the HALFTONE
+ * stretch mode carries the DC's colour adjustment (`adjust`,
+ * `emf-gdi-color-adjust.ts`), which the halftone stretch applies to the
+ * source between its despeckle filter and resampling; BitBlt never goes
+ * through the halftone engine, so it has none.
+ */
 function decodeSource(
 	rCtx: EmfGdiReplayCtx,
 	req: BlitRequest,
@@ -181,17 +161,14 @@ function decodeSource(
 	if (!image) {
 		return null;
 	}
-	const temp = createTempCanvas(image.width, image.height);
-	if (!temp) {
-		return null;
-	}
-	canvasPutImageData(temp.ctx, image, 0, 0);
+	const ca = rCtx.state.colorAdjustment;
+	const adjust = req.stretch && rCtx.state.stretchBltMode === HALFTONE && ca ? (rgb: Int32Array): void => colorAdjustRgb(rgb, ca) : undefined;
 	let { sy } = req;
 	if (req.dibOrigin === 'bottom-left' && rCtx.view.getInt32(req.source.bmi + 8, true) > 0) {
 		sy = image.height - sy - req.sh;
 	}
 	return {
-		decoded: { pixels: image, canvas: temp.canvas },
+		decoded: { pixels: image, adjust },
 		req: { ...req, sy },
 	};
 }
@@ -384,6 +361,7 @@ function executeRotatedBlit(
 	sw: number,
 	sh: number,
 	dibOrigin: 'top-left' | 'bottom-left',
+	stretch: boolean,
 ): void {
 	const { ctx } = rCtx;
 	const index = rop3Index(rop);
@@ -426,11 +404,16 @@ function executeRotatedBlit(
 			sw,
 			sh,
 			dibOrigin,
+			stretch,
 		});
 		if (!decoded) {
 			return;
 		}
 		src = decoded.decoded.pixels;
+		if (decoded.decoded.adjust) {
+			// Sampled texel by texel, not through the halftone stretch.
+			applyColorAdjustment(src, rCtx.state.colorAdjustment);
+		}
 		srcX = decoded.req.sx;
 		srcY = decoded.req.sy;
 	}
@@ -533,8 +516,8 @@ export function paintParallelogram(
  * right of Canvas's `[x+w, x)`. Shift by one device pixel to match.
  */
 function alignMirroredDest(rCtx: EmfGdiReplayCtx, req: BlitRequest): BlitRequest {
-	const pxX = rCtx.useMappingMode ? 1 : rCtx.sx;
-	const pxY = rCtx.useMappingMode ? 1 : rCtx.sy;
+	const pxX = gdiDevicePixelX(rCtx);
+	const pxY = gdiDevicePixelY(rCtx);
 	return {
 		...req,
 		dx: req.dw < 0 ? req.dx + pxX : req.dx,
@@ -661,6 +644,7 @@ function handleBlt(
 			srcRect.sw,
 			srcRect.sh,
 			'top-left',
+			stretch,
 		);
 		return true;
 	}
@@ -673,6 +657,7 @@ function handleBlt(
 		source,
 		...srcRect,
 		dibOrigin: 'top-left',
+		stretch,
 	});
 	return true;
 }
@@ -706,7 +691,7 @@ function handleStretchDibits(
 	const sw = view.getInt32(dataOff + 32, true);
 	const sh = view.getInt32(dataOff + 36, true);
 	if (hasWorldRotation(rCtx)) {
-		executeRotatedBlit(rCtx, xDest, yDest, cxDest, cyDest, rop, source, sx, sy, sw, sh, 'bottom-left');
+		executeRotatedBlit(rCtx, xDest, yDest, cxDest, cyDest, rop, source, sx, sy, sw, sh, 'bottom-left', true);
 		return true;
 	}
 	executeBlit(rCtx, {
@@ -721,6 +706,7 @@ function handleStretchDibits(
 		sw,
 		sh,
 		dibOrigin: 'bottom-left',
+		stretch: true,
 	});
 	return true;
 }

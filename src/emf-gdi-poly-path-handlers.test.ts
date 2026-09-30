@@ -145,7 +145,7 @@ describe('emf-gdi-poly-path-handlers', () => {
 				expect(ctx.stroke.mock.calls.length).toBeGreaterThanOrEqual(1);
 			});
 
-			it('updates curX/curY to last point', () => {
+			it('leaves curX/curY alone (Polyline neither uses nor moves the current position)', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				const pts: Array<[number, number]> = [
@@ -154,8 +154,8 @@ describe('emf-gdi-poly-path-handlers', () => {
 				];
 				writePoly32(rCtx.view, dataOff, pts);
 				handleEmfGdiPolyPathRecord(rCtx, EMR_POLYLINE, 0, dataOff, 28 + pts.length * 8);
-				expect(rCtx.state.curX).toBe(30);
-				expect(rCtx.state.curY).toBe(40);
+				expect(rCtx.state.curX).toBe(0);
+				expect(rCtx.state.curY).toBe(0);
 			});
 
 			it('handles zero count gracefully', () => {
@@ -221,7 +221,7 @@ describe('emf-gdi-poly-path-handlers', () => {
 				expect(ctx.stroke.mock.calls.length).toBeGreaterThanOrEqual(1);
 			});
 
-			it('updates curX/curY to last 16-bit point', () => {
+			it('updates curX/curY to the last 16-bit point of a PolylineTo16', () => {
 				const rCtx = makeRCtx();
 				const dataOff = 8;
 				const pts: Array<[number, number]> = [
@@ -229,7 +229,7 @@ describe('emf-gdi-poly-path-handlers', () => {
 					[99, 88],
 				];
 				writePoly16(rCtx.view, dataOff, pts);
-				handleEmfGdiPolyPathRecord(rCtx, EMR_POLYLINE16, 0, dataOff, 28 + pts.length * 4);
+				handleEmfGdiPolyPathRecord(rCtx, EMR_POLYLINETO16, 0, dataOff, 28 + pts.length * 4);
 				expect(rCtx.state.curX).toBe(99);
 				expect(rCtx.state.curY).toBe(88);
 			});

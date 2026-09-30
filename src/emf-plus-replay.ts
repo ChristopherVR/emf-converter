@@ -5,7 +5,6 @@
  * dispatches to the appropriate handler modules.
  */
 
-import { parseImageEffect } from './emf-plus-image-effect';
 import {
 	EMFPLUS_HEADER,
 	EMFPLUS_ENDOFFILE,
@@ -15,6 +14,7 @@ import {
 	EMFPLUS_MULTIFORMATSTART,
 	EMFPLUS_MULTIFORMATSECTION,
 	EMFPLUS_MULTIFORMATEND,
+	EMFPLUS_SERIALIZABLEOBJECT,
 	MAX_RECORDS_EMFPLUS_DEFAULT,
 } from './emf-constants';
 import { argbToRgba } from './emf-color-helpers';
@@ -22,6 +22,7 @@ import { emfLog } from './emf-logging';
 import { createContinuationAccumulator, feedEmfPlusObjectRecord } from './emf-plus-continuation';
 import { handleEmfPlusCurveRecord } from './emf-plus-curve-handlers';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
+import { parseSerializableObject } from './emf-plus-image-effects';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
 import { handleEmfPlusStateRecord } from './emf-plus-state-handlers';
 import { handleEmfPlusTextImageRecord } from './emf-plus-text-image-handlers';
@@ -196,6 +197,10 @@ export function replayEmfPlusRecords(
 
 		const dataOff = offset + 12;
 
+		// EMF records are played again only right after an EmfPlusGetDC;
+		// any other EMF+ record ends that run.
+		s.gdiPassthrough = recType === EMFPLUS_GETDC;
+
 		// After a well-formed MultiFormatStart GDI+ plays no further EMF+
 		// record, MultiFormatSection and MultiFormatEnd included (their
 		// dispatch sits behind the same switch), so the rest of the file is
@@ -206,10 +211,10 @@ export function replayEmfPlusRecords(
 		}
 
 		switch (recType) {
-			case 0x4038: // EmfPlusSerializableObject
-				(rCtx.ext ?? (rCtx.ext = {})).pendingEffect = recDataSize <= recSize - 12 ? parseImageEffect(view, dataOff, recDataSize) : null;
-				break;
 			case EMFPLUS_HEADER: {
+				// Flags bit 0 (EmfPlusDual): the EMF records repeat the picture
+				// for readers without EMF+ support (see replayEmfRecords).
+				s.dualMode = (recFlags & 0x0001) !== 0;
 				if (recDataSize >= 16) {
 					const dpiX = view.getFloat32(dataOff + 8, true);
 					const dpiY = view.getFloat32(dataOff + 12, true);
@@ -233,6 +238,13 @@ export function replayEmfPlusRecords(
 			// Without a preceding MultiFormatStart these do nothing in GDI+.
 			case EMFPLUS_MULTIFORMATSECTION:
 			case EMFPLUS_MULTIFORMATEND:
+				break;
+
+			// An image effect for the next DrawImagePoints with flag E
+			// (`emf-plus-image-effects.ts`); an unknown or malformed effect
+			// replaces any earlier one with none.
+			case EMFPLUS_SERIALIZABLEOBJECT:
+				(rCtx.ext ?? (rCtx.ext = {})).pendingEffect = recDataSize <= recSize - 12 ? parseSerializableObject(view, dataOff, recDataSize) : null;
 				break;
 
 			case EMFPLUS_CLEAR: {

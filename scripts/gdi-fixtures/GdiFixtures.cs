@@ -5371,6 +5371,591 @@ public static class GdiFixtures
 		ReleaseDC(IntPtr.Zero, screen);
 	}
 
+	/** HALFTONE StretchBlt of a ramp and a checkerboard at 2x, 0.5x and 1.37x, each plain and under SetColorAdjustment. */
+	static void ErHalftoneCases()
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		// No flags, device-default illuminant, gamma 1.5 on every channel, a
+		// narrowed black/white reference, and contrast, brightness,
+		// colourfulness and red-green tint all away from zero.
+		var ca = new byte[24];
+		BitConverter.GetBytes((ushort)24).CopyTo(ca, 0);
+		BitConverter.GetBytes((ushort)0).CopyTo(ca, 2);
+		BitConverter.GetBytes((ushort)0).CopyTo(ca, 4);
+		BitConverter.GetBytes((ushort)15000).CopyTo(ca, 6);
+		BitConverter.GetBytes((ushort)15000).CopyTo(ca, 8);
+		BitConverter.GetBytes((ushort)15000).CopyTo(ca, 10);
+		BitConverter.GetBytes((ushort)400).CopyTo(ca, 12);
+		BitConverter.GetBytes((ushort)9600).CopyTo(ca, 14);
+		BitConverter.GetBytes((short)30).CopyTo(ca, 16);
+		BitConverter.GetBytes((short)-20).CopyTo(ca, 18);
+		BitConverter.GetBytes((short)40).CopyTo(ca, 20);
+		BitConverter.GetBytes((short)20).CopyTo(ca, 22);
+		// Ramp: 64 x 32, 8-row bands of a gray, red, green and blue 0..255 ramp.
+		Func<int, int, uint> ramp = delegate (int x, int y)
+		{
+			uint v = (uint)(x * 255 / 63);
+			switch (y / 8)
+			{
+				case 0: return 0xFF000000u | (v << 16) | (v << 8) | v;
+				case 1: return 0xFF000000u | (v << 16);
+				case 2: return 0xFF000000u | (v << 8);
+				default: return 0xFF000000u | v;
+			}
+		};
+		// Checkerboard: 32 x 32, a 1-pixel black/white checker over a 2-pixel red/blue one.
+		Func<int, int, uint> checker = delegate (int x, int y)
+		{
+			if (y < 16) { return ((x + y) % 2 == 0) ? 0xFF000000u : 0xFFFFFFFFu; }
+			return ((x / 2 + y / 2) % 2 == 0) ? 0xFFE03020u : 0xFF3050D0u;
+		};
+		string[] scaleNames = { "2x", "0p5x", "1p37x" };
+		double[] scales = { 2, 0.5, 1.37 };
+		foreach (string kind in new[] { "ramp", "checker" })
+		{
+			int sw = kind == "ramp" ? 64 : 32, sh = 32;
+			Func<int, int, uint> pix = kind == "ramp" ? ramp : checker;
+			for (int si = 0; si < scales.Length; si++)
+			{
+				int dw = (int)Math.Round(sw * scales[si]), dh = (int)Math.Round(sh * scales[si]);
+				int w = dw + 16, h = dh + 16;
+				foreach (bool on in new[] { false, true })
+				{
+					bool adjust = on;
+					GdiCase("emfrec-halftone-" + kind + "-" + scaleNames[si] + (adjust ? "-ca" : ""), w, h, delegate (IntPtr hdc)
+					{
+						Stripes(hdc, w, h);
+						if (adjust) { ErApi.SetColorAdjustment(hdc, ca); }
+						SetStretchBltMode(hdc, 4);
+						SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+						using (var src = ErArgbSource(screen, sw, sh, pix))
+						{
+							StretchBlt(hdc, 8, 8, dw, dh, src.Dc, 0, 0, sw, sh, 0x00CC0020);
+						}
+						SetStretchBltMode(hdc, 1);
+					});
+				}
+			}
+		}
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	// -----------------------------------------------------------------------
+	// GDI+ image effects (plus-effect-*)
+	// -----------------------------------------------------------------------
+	//
+	// System.Drawing has no image effects, so these cases drive the GDI+ 1.1
+	// flat API directly: GdipRecordMetafileFileName, then
+	// GdipGetImageGraphicsContext on the metafile, then GdipDrawImageFX with
+	// an effect from GdipCreateEffect / GdipSetEffectParameters. GDI+ records
+	// each such draw as an EmfPlusSerializableObject (the effect) followed by
+	// an EmfPlusDrawImagePoints with flag E. `<name>.png` is GDI+'s own
+	// playback of `<name>.emf` onto a 32bpp ARGB bitmap. Every GDI+ object
+	// here is created through this API; none is shared with System.Drawing.
+
+	[StructLayout(LayoutKind.Sequential)]
+	public struct FxRectF { public float X, Y, Width, Height; }
+
+	[StructLayout(LayoutKind.Sequential)]
+	public struct FxStartupInput { public uint GdiplusVersion; public IntPtr DebugEventCallback; public int SuppressBackgroundThread; public int SuppressExternalCodecs; }
+
+	static class FxApi
+	{
+		[DllImport("gdiplus.dll")] public static extern int GdiplusStartup(out IntPtr token, ref FxStartupInput input, IntPtr output);
+		[DllImport("gdiplus.dll")] public static extern int GdipCreateEffect(Guid guid, out IntPtr effect);
+		[DllImport("gdiplus.dll")] public static extern int GdipGetImageBounds(IntPtr image, out FxRectF bounds, out int unit);
+		[DllImport("gdiplus.dll")] public static extern int GdipDrawImageRect(IntPtr graphics, IntPtr image, float x, float y, float width, float height);
+		[DllImport("gdiplus.dll")] public static extern int GdipDeleteEffect(IntPtr effect);
+		[DllImport("gdiplus.dll")] public static extern int GdipSetEffectParameters(IntPtr effect, IntPtr parameters, uint size);
+		[DllImport("gdiplus.dll")] public static extern int GdipCreateBitmapFromScan0(int w, int h, int stride, int format, IntPtr scan0, out IntPtr bitmap);
+		[DllImport("gdiplus.dll")] public static extern int GdipBitmapSetPixel(IntPtr bitmap, int x, int y, int argb);
+		[DllImport("gdiplus.dll", CharSet = CharSet.Unicode)] public static extern int GdipRecordMetafileFileName(string file, IntPtr refHdc, int emfType, ref FxRectF frame, int frameUnit, string description, out IntPtr metafile);
+		[DllImport("gdiplus.dll", CharSet = CharSet.Unicode)] public static extern int GdipCreateMetafileFromFile(string file, out IntPtr metafile);
+		[DllImport("gdiplus.dll")] public static extern int GdipGetImageGraphicsContext(IntPtr image, out IntPtr graphics);
+		[DllImport("gdiplus.dll")] public static extern int GdipDeleteGraphics(IntPtr graphics);
+		[DllImport("gdiplus.dll")] public static extern int GdipDisposeImage(IntPtr image);
+		[DllImport("gdiplus.dll")] public static extern int GdipSetPageUnit(IntPtr graphics, int unit);
+		[DllImport("gdiplus.dll")] public static extern int GdipCreateSolidFill(int argb, out IntPtr brush);
+		[DllImport("gdiplus.dll")] public static extern int GdipDeleteBrush(IntPtr brush);
+		[DllImport("gdiplus.dll")] public static extern int GdipFillRectangleI(IntPtr graphics, IntPtr brush, int x, int y, int w, int h);
+		[DllImport("gdiplus.dll")] public static extern int GdipCreateMatrix2(float m11, float m12, float m21, float m22, float dx, float dy, out IntPtr matrix);
+		[DllImport("gdiplus.dll")] public static extern int GdipDeleteMatrix(IntPtr matrix);
+		[DllImport("gdiplus.dll")] public static extern int GdipDrawImageFX(IntPtr graphics, IntPtr image, ref FxRectF source, IntPtr xForm, IntPtr effect, IntPtr imageAttributes, int srcUnit);
+		[DllImport("gdiplus.dll")] public static extern int GdipDrawImageRectI(IntPtr graphics, IntPtr image, int x, int y, int w, int h);
+		[DllImport("gdiplus.dll", CharSet = CharSet.Unicode)] public static extern int GdipSaveImageToFile(IntPtr image, string file, ref Guid encoder, IntPtr encoderParams);
+	}
+
+	// ImageEffects GUIDs (gdipluseffects.h; MS-EMFPLUS 2.1.3.1).
+	static readonly Guid FxBlur = new Guid("633C80A4-1843-482b-9EF2-BE2834C5FDD4");
+	static readonly Guid FxSharpen = new Guid("63CBF3EE-C526-402c-8F71-62C540BF5142");
+	static readonly Guid FxColorMatrix = new Guid("718F2615-7933-40e3-A511-5F68FE14DD74");
+	static readonly Guid FxColorLut = new Guid("A7CE72A9-0F7F-40d7-B3CC-D0C02D5C3212");
+	static readonly Guid FxBrightnessContrast = new Guid("D3A1DBE1-8EC4-4c17-9F4C-EA97AD1C343D");
+	static readonly Guid FxHueSaturationLightness = new Guid("8B2DD6C3-EB07-4d87-A5F0-7108E26A9C5F");
+	static readonly Guid FxLevels = new Guid("99C354EC-2A31-4f3a-8C34-17A803B33A25");
+	static readonly Guid FxTint = new Guid("1077AF00-2848-4441-9489-44AD4C2D7A2C");
+	static readonly Guid FxColorBalance = new Guid("537E597D-251E-48da-9664-29CA496B70F8");
+	static readonly Guid FxRedEyeCorrection = new Guid("74D29D05-69A4-4266-9549-3CC52836B632");
+	static readonly Guid FxColorCurve = new Guid("DD6A0022-58E4-4a67-9D9B-D48EB881A53D");
+	static readonly Guid FxPngEncoder = new Guid("557CF406-1A04-11D3-9A73-0000F81EF32E");
+
+	const int FxArgb32 = 0x0026200A, FxUnitPixel = 2, FxEmfPlusOnly = 4, FxEmfPlusDual = 5; // GDI+ EmfType: EmfTypeEmfOnly 3, EmfTypeEmfPlusOnly 4, EmfTypeEmfPlusDual 5
+	const int FxBackdrop = unchecked((int)0xFFE0E8F0);
+
+	public delegate void FxDraw(IntPtr graphics);
+
+	static readonly List<string> FxFailures = new List<string>();
+
+	static void FxOk(int status, string what)
+	{
+		if (status != 0) { throw new InvalidOperationException(what + " failed with GpStatus " + status); }
+	}
+
+	/** A `w` x `h` 32bpp ARGB GDI+ bitmap whose pixel (x, y) is `argb(x, y)` (0xAARRGGBB). */
+	static IntPtr FxBitmap(int w, int h, Func<int, int, uint> argb)
+	{
+		IntPtr bmp;
+		FxOk(FxApi.GdipCreateBitmapFromScan0(w, h, 0, FxArgb32, IntPtr.Zero, out bmp), "GdipCreateBitmapFromScan0");
+		for (int y = 0; y < h; y++)
+		{
+			for (int x = 0; x < w; x++) { FxOk(FxApi.GdipBitmapSetPixel(bmp, x, y, unchecked((int)argb(x, y))), "GdipBitmapSetPixel"); }
+		}
+		return bmp;
+	}
+
+	/** An effect of type `guid` with `parameters`: the exact bytes of its *Params struct. */
+	static IntPtr FxEffect(Guid guid, byte[] parameters)
+	{
+		IntPtr effect;
+		FxOk(FxApi.GdipCreateEffect(guid, out effect), "GdipCreateEffect " + guid);
+		GCHandle pin = GCHandle.Alloc(parameters, GCHandleType.Pinned);
+		try { FxOk(FxApi.GdipSetEffectParameters(effect, pin.AddrOfPinnedObject(), (uint)parameters.Length), "GdipSetEffectParameters " + guid); }
+		finally { pin.Free(); }
+		return effect;
+	}
+
+	/**
+	 * RedEyeCorrectionParams { UINT numberOfAreas; RECT *areas; }, sized as
+	 * the SDK's RedEyeCorrection::SetParameters sizes it (the struct plus
+	 * numberOfAreas RECTs), with the RECTs laid out right after the struct.
+	 * Verified against Microsoft's gdipluseffects.h RedEyeCorrection::SetParameters:
+	 * https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/gdipluseffects.h
+	 * `ltrb` holds left, top, right, bottom per area.
+	 */
+	static IntPtr FxRedEyeEffect(params int[] ltrb)
+	{
+		IntPtr effect;
+		FxOk(FxApi.GdipCreateEffect(FxRedEyeCorrection, out effect), "GdipCreateEffect RedEyeCorrection");
+		int n = ltrb.Length / 4, head = 2 * IntPtr.Size, size = head + n * 16;
+		IntPtr buf = Marshal.AllocHGlobal(size);
+		try
+		{
+			Marshal.WriteInt32(buf, 0, n);
+			Marshal.WriteIntPtr(buf, IntPtr.Size, new IntPtr(buf.ToInt64() + head));
+			for (int i = 0; i < ltrb.Length; i++) { Marshal.WriteInt32(buf, head + 4 * i, ltrb[i]); }
+			FxOk(FxApi.GdipSetEffectParameters(effect, buf, (uint)size), "GdipSetEffectParameters RedEyeCorrection");
+		}
+		finally { Marshal.FreeHGlobal(buf); }
+		return effect;
+	}
+
+	/** GdipDrawImageFX of `image`'s source rect (sx, sy, sw, sh) under xForm [m11 m12 m21 m22 dx dy]. */
+	static void FxDrawImage(IntPtr g, IntPtr image, IntPtr effect, float sx, float sy, float sw, float sh, float m11, float m12, float m21, float m22, float dx, float dy)
+	{
+		IntPtr m;
+		FxOk(FxApi.GdipCreateMatrix2(m11, m12, m21, m22, dx, dy, out m), "GdipCreateMatrix2");
+		var src = new FxRectF(); src.X = sx; src.Y = sy; src.Width = sw; src.Height = sh;
+		try { FxOk(FxApi.GdipDrawImageFX(g, image, ref src, m, effect, IntPtr.Zero, FxUnitPixel), "GdipDrawImageFX"); }
+		finally { FxApi.GdipDeleteMatrix(m); }
+	}
+
+	/** Draws all of a `w` x `h` `image` 1:1 with its top-left at (x, y). */
+	static void FxDrawAt(IntPtr g, IntPtr image, IntPtr effect, int w, int h, float x, float y)
+	{
+		FxDrawImage(g, image, effect, 0, 0, w, h, 1, 0, 0, 1, x, y);
+	}
+
+	static void FxFill(IntPtr g, int argb, int x, int y, int w, int h)
+	{
+		IntPtr brush;
+		FxOk(FxApi.GdipCreateSolidFill(argb, out brush), "GdipCreateSolidFill");
+		FxApi.GdipFillRectangleI(g, brush, x, y, w, h);
+		FxApi.GdipDeleteBrush(brush);
+	}
+
+	/**
+	 * Records `draw` into `<name>.emf` (`emfType` EmfPlusOnly or EmfPlusDual,
+	 * a `w` x `h` pixel frame) and writes `<name>.png` as GDI+'s playback of
+	 * it. A failing case is reported, its files removed, and skipped.
+	 */
+	static void FxCase(string name, int w, int h, int emfType, FxDraw draw)
+	{
+		// Both types preserve effect parameters and the original source. Dual
+		// additionally draws the processed bitmap as a fallback. Check both.
+		if (emfType == FxEmfPlusOnly) {
+			FxCase(name, w, h, FxEmfPlusDual, draw);
+			name = name.Replace("plus-effect-", "plus-only-effect-");
+		}
+		string emf = Path.Combine(outDir, name + ".emf"), png = Path.Combine(outDir, name + ".png");
+		try
+		{
+			IntPtr screen = GetDC(IntPtr.Zero);
+			IntPtr mf = IntPtr.Zero, g = IntPtr.Zero;
+			try
+			{
+				var frame = new FxRectF(); frame.Width = w; frame.Height = h;
+				FxOk(FxApi.GdipRecordMetafileFileName(emf, screen, emfType, ref frame, FxUnitPixel, null, out mf), "GdipRecordMetafileFileName");
+				FxOk(FxApi.GdipGetImageGraphicsContext(mf, out g), "GdipGetImageGraphicsContext");
+				FxOk(FxApi.GdipSetPageUnit(g, FxUnitPixel), "GdipSetPageUnit");
+				draw(g);
+			}
+			finally
+			{
+				if (g != IntPtr.Zero) { FxApi.GdipDeleteGraphics(g); }
+				if (mf != IntPtr.Zero) { FxApi.GdipDisposeImage(mf); }
+				ReleaseDC(IntPtr.Zero, screen);
+			}
+			IntPtr played = IntPtr.Zero, bmp = IntPtr.Zero, bg = IntPtr.Zero;
+			try
+			{
+				FxOk(FxApi.GdipCreateMetafileFromFile(emf, out played), "GdipCreateMetafileFromFile");
+				FxOk(FxApi.GdipCreateBitmapFromScan0(w, h, 0, FxArgb32, IntPtr.Zero, out bmp), "GdipCreateBitmapFromScan0");
+				FxOk(FxApi.GdipGetImageGraphicsContext(bmp, out bg), "GdipGetImageGraphicsContext");
+				{
+					FxRectF bounds; int unit;
+					// Use natural bounds to preserve recorded pixel coordinates. A
+					// w-by-h destination rectangle scales them by the screen's DPI.
+					FxOk(FxApi.GdipGetImageBounds(played, out bounds, out unit), "GdipGetImageBounds");
+					FxOk(FxApi.GdipDrawImageRect(bg, played, 0, 0, bounds.Width, bounds.Height), "GdipDrawImageRect");
+				}
+				FxApi.GdipDeleteGraphics(bg); bg = IntPtr.Zero;
+				Guid encoder = FxPngEncoder;
+				FxOk(FxApi.GdipSaveImageToFile(bmp, png, ref encoder, IntPtr.Zero), "GdipSaveImageToFile");
+			}
+			finally
+			{
+				if (bg != IntPtr.Zero) { FxApi.GdipDeleteGraphics(bg); }
+				if (bmp != IntPtr.Zero) { FxApi.GdipDisposeImage(bmp); }
+				if (played != IntPtr.Zero) { FxApi.GdipDisposeImage(played); }
+			}
+		}
+		catch (Exception e)
+		{
+			FxFailures.Add(name + ": " + e.Message);
+			Console.WriteLine("plus-effect case " + name + " FAILED: " + e.Message);
+			if (File.Exists(emf)) { File.Delete(emf); }
+			if (File.Exists(png)) { File.Delete(png); }
+		}
+	}
+
+	/** A file-name token for a parameter: `n` for minus, `p` for the decimal point. */
+	static string FxNum(double v)
+	{
+		string s = Math.Abs(v).ToString(System.Globalization.CultureInfo.InvariantCulture).Replace('.', 'p');
+		return v < 0 ? "n" + s : s;
+	}
+
+	/** Opaque HSV colour: hue `h` in [0, 360), saturation `s` and value `v` in [0, 1]. */
+	static uint FxHsv(double h, double s, double v)
+	{
+		double c = v * s, hp = h / 60.0, x = c * (1 - Math.Abs(hp % 2 - 1)), m = v - c;
+		double r = 0, g = 0, b = 0;
+		if (hp < 1) { r = c; g = x; } else if (hp < 2) { r = x; g = c; } else if (hp < 3) { g = c; b = x; }
+		else if (hp < 4) { g = x; b = c; } else if (hp < 5) { r = x; b = c; } else { r = c; b = x; }
+		return 0xFF000000u | ((uint)Math.Round((r + m) * 255) << 16) | ((uint)Math.Round((g + m) * 255) << 8) | (uint)Math.Round((b + m) * 255);
+	}
+
+	static uint FxGray(int v) { return 0xFF000000u | ((uint)v << 16) | ((uint)v << 8) | (uint)v; }
+
+	/** The shared test images, created once per effects run. */
+	sealed class FxImages : IDisposable
+	{
+		/** 256 x 16: every gray level 0..255, one per column. */
+		public IntPtr Gray;
+		/**
+		 * 256 x 64, eight 8-row bands over x = 0..255: gray, red, green and blue
+		 * ramps, a full hue sweep, a desaturated (s 0.5, v 0.75) and a dark
+		 * (v 0.4) hue sweep, and (x, 255 - x, 128).
+		 */
+		public IntPtr Ramps;
+		/**
+		 * 64 x 48: a hard black/white step edge, a 1-pixel checkerboard, a
+		 * 4-pixel red/blue checkerboard, and a lone black pixel plus 1-pixel
+		 * green lines on white.
+		 */
+		public IntPtr Edge;
+		/** 32 x 32: a transparent border around an opaque red square crossed by a half-transparent blue bar. */
+		public IntPtr Alpha;
+		/** 96 x 48: two "eyes" (white, red pupils) on skin tone, plus a red patch outside both. */
+		public IntPtr Eyes;
+
+		public FxImages()
+		{
+			Gray = FxBitmap(256, 16, delegate (int x, int y) { return FxGray(x); });
+			Ramps = FxBitmap(256, 64, delegate (int x, int y)
+			{
+				uint v = (uint)x;
+				switch (y / 8)
+				{
+					case 0: return FxGray(x);
+					case 1: return 0xFF000000u | (v << 16);
+					case 2: return 0xFF000000u | (v << 8);
+					case 3: return 0xFF000000u | v;
+					case 4: return FxHsv(x * 360.0 / 256, 1, 1);
+					case 5: return FxHsv(x * 360.0 / 256, 0.5, 0.75);
+					case 6: return FxHsv(x * 360.0 / 256, 1, 0.4);
+					default: return 0xFF000000u | (v << 16) | ((255 - v) << 8) | 128u;
+				}
+			});
+			Edge = FxBitmap(64, 48, delegate (int x, int y)
+			{
+				if (y < 24 && x < 32) { return x < 16 ? 0xFF000000u : 0xFFFFFFFFu; }
+				if (y < 24) { return ((x + y) % 2 == 0) ? 0xFF000000u : 0xFFFFFFFFu; }
+				if (x < 32) { return ((x / 4 + y / 4) % 2 == 0) ? 0xFFE03020u : 0xFF3050D0u; }
+				if (x == 48 && y == 36) { return 0xFF000000u; }
+				if (y == 30 || x == 40) { return 0xFF20A040u; }
+				return 0xFFFFFFFFu;
+			});
+			Alpha = FxBitmap(32, 32, delegate (int x, int y)
+			{
+				if (y >= 14 && y < 18 && x >= 4 && x < 28) { return 0x803050D0u; }
+				return (x >= 8 && x < 24 && y >= 8 && y < 24) ? 0xFFE03020u : 0x00000000u;
+			});
+			Eyes = FxBitmap(96, 48, delegate (int x, int y)
+			{
+				for (int e = 0; e < 2; e++)
+				{
+					int dx = x - (24 + 48 * e), dy = y - 24, d2 = dx * dx + dy * dy;
+					if (d2 <= 36) { return e == 0 ? 0xFFD02020u : 0xFFC03850u; }
+					if (d2 <= 144) { return 0xFFF4F0EAu; }
+				}
+				if (x >= 44 && x < 52 && y >= 40) { return 0xFFE02018u; }
+				return 0xFFD8A888u;
+			});
+		}
+
+		public void Dispose()
+		{
+			FxApi.GdipDisposeImage(Gray); FxApi.GdipDisposeImage(Ramps); FxApi.GdipDisposeImage(Edge);
+			FxApi.GdipDisposeImage(Alpha); FxApi.GdipDisposeImage(Eyes);
+		}
+	}
+
+	const int FxW = 304, FxH = 208;
+
+	/**
+	 * The standard layout: every test image drawn 1:1 through the same
+	 * effect, 24 pixels apart (room for an expanded blur), on a tinted
+	 * backdrop so blurred-in transparency shows.
+	 */
+	static void FxLayout(IntPtr g, FxImages im, IntPtr effect)
+	{
+		FxFill(g, FxBackdrop, 0, 0, FxW, FxH);
+		FxDrawAt(g, im.Gray, effect, 256, 16, 24, 16);
+		FxDrawAt(g, im.Ramps, effect, 256, 64, 24, 48);
+		FxDrawAt(g, im.Edge, effect, 64, 48, 24, 136);
+		FxDrawAt(g, im.Alpha, effect, 32, 32, 120, 144);
+	}
+
+	/** A standard-layout case through the effect `makeEffect` builds (no effect when it is null). */
+	static void FxStandardCase(string name, FxImages im, int emfType, Func<IntPtr> makeEffect)
+	{
+		FxCase(name, FxW, FxH, emfType, delegate (IntPtr g)
+		{
+			IntPtr effect = makeEffect == null ? IntPtr.Zero : makeEffect();
+			try { FxLayout(g, im, effect); }
+			finally { if (effect != IntPtr.Zero) { FxApi.GdipDeleteEffect(effect); } }
+		});
+	}
+
+	static void FxParamCase(string name, FxImages im, Guid guid, byte[] parameters)
+	{
+		FxStandardCase("plus-effect-" + name, im, FxEmfPlusOnly, delegate { return FxEffect(guid, parameters); });
+	}
+
+	/** ColorLUTParams: four 256-entry tables in the order B, G, R, A. */
+	static byte[] FxLut(Func<int, int> b, Func<int, int> g, Func<int, int> r, Func<int, int> a)
+	{
+		var lut = new byte[1024];
+		for (int v = 0; v < 256; v++)
+		{
+			lut[v] = (byte)b(v); lut[256 + v] = (byte)g(v); lut[512 + v] = (byte)r(v); lut[768 + v] = (byte)a(v);
+		}
+		return lut;
+	}
+
+	static void FxBlurCases(FxImages im)
+	{
+		// BlurParams { float radius; BOOL expandEdge; }.
+		FxParamCase("blur-r1", im, FxBlur, EprCat(EprF(1), EprI(0)));
+		FxParamCase("blur-r2p5", im, FxBlur, EprCat(EprF(2.5f), EprI(0)));
+		FxParamCase("blur-r3", im, FxBlur, EprCat(EprF(3), EprI(0)));
+		FxParamCase("blur-r3-expand", im, FxBlur, EprCat(EprF(3), EprI(1)));
+		FxParamCase("blur-r10", im, FxBlur, EprCat(EprF(10), EprI(0)));
+		FxParamCase("blur-r10-expand", im, FxBlur, EprCat(EprF(10), EprI(1)));
+		// A source sub-rectangle: pixels outside it must not bleed in, and an
+		// expanded blur grows the sub-rectangle, not the whole image.
+		foreach (bool expand in new[] { false, true })
+		{
+			bool ex = expand;
+			FxCase("plus-effect-blur-r4-subrect" + (ex ? "-expand" : ""), 160, 112, FxEmfPlusOnly, delegate (IntPtr g)
+			{
+				IntPtr effect = FxEffect(FxBlur, EprCat(EprF(4), EprI(ex ? 1 : 0)));
+				FxFill(g, FxBackdrop, 0, 0, 160, 112);
+				FxDrawImage(g, im.Edge, effect, 8, 4, 40, 36, 1, 0, 0, 1, 24, 24);
+				FxDrawImage(g, im.Ramps, effect, 96, 0, 32, 64, 1, 0, 0, 1, 104, 24);
+				FxApi.GdipDeleteEffect(effect);
+			});
+		}
+		// Scaled and rotated destinations: is the radius in source or destination pixels?
+		FxCase("plus-effect-blur-r3-scale2", 176, 128, FxEmfPlusOnly, delegate (IntPtr g)
+		{
+			IntPtr effect = FxEffect(FxBlur, EprCat(EprF(3), EprI(0)));
+			FxFill(g, FxBackdrop, 0, 0, 176, 128);
+			FxDrawImage(g, im.Edge, effect, 0, 0, 64, 48, 2, 0, 0, 2, 24, 16);
+			FxApi.GdipDeleteEffect(effect);
+		});
+		FxCase("plus-effect-blur-r3-rotate30", 160, 128, FxEmfPlusOnly, delegate (IntPtr g)
+		{
+			IntPtr effect = FxEffect(FxBlur, EprCat(EprF(3), EprI(1)));
+			FxFill(g, FxBackdrop, 0, 0, 160, 128);
+			FxDrawImage(g, im.Edge, effect, 0, 0, 64, 48, 0.8660254f, 0.5f, -0.5f, 0.8660254f, 60, 24);
+			FxApi.GdipDeleteEffect(effect);
+		});
+		// The same draw recorded EmfPlusDual: GDI fallback records beside the EMF+ ones.
+		FxStandardCase("plus-effect-blur-r3-dual", im, FxEmfPlusDual, delegate { return FxEffect(FxBlur, EprCat(EprF(3), EprI(0))); });
+	}
+
+	static void FxSharpenCases(FxImages im)
+	{
+		// SharpenParams { float radius; float amount; }.
+		float[][] ps = { new[] { 0.5f, 100f }, new[] { 1f, 50f }, new[] { 2f, 0f }, new[] { 3f, 100f }, new[] { 6f, 30f } };
+		foreach (float[] p in ps) { FxParamCase("sharpen-r" + FxNum(p[0]) + "-a" + FxNum(p[1]), im, FxSharpen, EprF(p[0], p[1])); }
+	}
+
+	static void FxToneCases(FxImages im)
+	{
+		int[][] bc = { new[] { 50, 0 }, new[] { -80, 0 }, new[] { 0, 50 }, new[] { 0, -50 }, new[] { 0, 100 }, new[] { 0, -100 }, new[] { 30, 40 } };
+		foreach (int[] p in bc) { FxParamCase("brightnesscontrast-b" + FxNum(p[0]) + "-c" + FxNum(p[1]), im, FxBrightnessContrast, EprI(p[0], p[1])); }
+
+		int[][] cb = { new[] { 60, 0, 0 }, new[] { 0, -40, 0 }, new[] { 0, 0, 80 }, new[] { -100, 50, -20 }, new[] { 100, 100, 100 } };
+		foreach (int[] p in cb) { FxParamCase("colorbalance-cr" + FxNum(p[0]) + "-mg" + FxNum(p[1]) + "-yb" + FxNum(p[2]), im, FxColorBalance, EprI(p[0], p[1], p[2])); }
+
+		int[][] hsl = { new[] { 90, 0, 0 }, new[] { -120, 0, 0 }, new[] { 180, 0, 0 }, new[] { 0, 60, 0 }, new[] { 0, -100, 0 }, new[] { 0, 0, 50 }, new[] { 0, 0, -50 }, new[] { 30, -30, 20 } };
+		foreach (int[] p in hsl) { FxParamCase("hsl-h" + FxNum(p[0]) + "-s" + FxNum(p[1]) + "-l" + FxNum(p[2]), im, FxHueSaturationLightness, EprI(p[0], p[1], p[2])); }
+
+		// LevelsParams: highlight (default 100), midtone, shadow (default 0).
+		int[][] lv = { new[] { 80, 0, 0 }, new[] { 100, 0, 20 }, new[] { 100, 50, 0 }, new[] { 100, -50, 0 }, new[] { 90, -30, 10 } };
+		foreach (int[] p in lv) { FxParamCase("levels-h" + FxNum(p[0]) + "-m" + FxNum(p[1]) + "-s" + FxNum(p[2]), im, FxLevels, EprI(p[0], p[1], p[2])); }
+
+		int[][] tint = { new[] { 0, 50 }, new[] { 120, 100 }, new[] { -90, 30 }, new[] { 60, -50 }, new[] { 180, 100 } };
+		foreach (int[] p in tint) { FxParamCase("tint-h" + FxNum(p[0]) + "-a" + FxNum(p[1]), im, FxTint, EprI(p[0], p[1])); }
+
+		// ColorCurveParams: CurveAdjustments, CurveChannel (0 all, 1 red, 2 green, 3 blue), adjustValue.
+		string[] adj = { "exposure", "density", "contrast", "highlight", "shadow", "midtone", "whitesat", "blacksat" };
+		string[] channels = { "", "-red", "-green", "-blue" };
+		int[][] cc = {
+			new[] { 0, 0, 64 }, new[] { 0, 0, -64 }, new[] { 1, 0, 64 }, new[] { 1, 0, -64 },
+			new[] { 2, 0, 50 }, new[] { 2, 0, -50 }, new[] { 3, 0, 50 }, new[] { 3, 0, -50 },
+			new[] { 4, 0, 50 }, new[] { 4, 0, -50 }, new[] { 5, 0, 50 }, new[] { 5, 0, -50 },
+			new[] { 6, 0, 200 }, new[] { 7, 0, 60 },
+			new[] { 0, 1, 64 }, new[] { 5, 2, -50 }, new[] { 2, 3, 50 },
+		};
+		foreach (int[] p in cc) { FxParamCase("colorcurve-" + adj[p[0]] + "-" + FxNum(p[2]) + channels[p[1]], im, FxColorCurve, EprI(p[0], p[1], p[2])); }
+	}
+
+	static void FxMatrixLutCases(FxImages im)
+	{
+		// ColorMatrix: 5 x 5 row-major floats; the row vector [r g b a 1] times the matrix.
+		FxParamCase("colormatrix-grayscale", im, FxColorMatrix, EprF(
+			0.299f, 0.299f, 0.299f, 0, 0,
+			0.587f, 0.587f, 0.587f, 0, 0,
+			0.114f, 0.114f, 0.114f, 0, 0,
+			0, 0, 0, 1, 0,
+			0, 0, 0, 0, 1));
+		FxParamCase("colormatrix-sepia", im, FxColorMatrix, EprF(
+			0.393f, 0.349f, 0.272f, 0, 0,
+			0.769f, 0.686f, 0.534f, 0, 0,
+			0.189f, 0.168f, 0.131f, 0, 0,
+			0, 0, 0, 1, 0,
+			0, 0, 0, 0, 1));
+		FxParamCase("colormatrix-swap-translate", im, FxColorMatrix, EprF(
+			0, 1, 0, 0, 0,
+			0, 0, 1, 0, 0,
+			1, 0, 0, 0, 0,
+			0, 0, 0, 1, 0,
+			0.1f, -0.2f, 0.3f, 0, 1));
+		FxParamCase("colormatrix-invert", im, FxColorMatrix, EprF(
+			-1, 0, 0, 0, 0,
+			0, -1, 0, 0, 0,
+			0, 0, -1, 0, 0,
+			0, 0, 0, 1, 0,
+			1, 1, 1, 0, 1));
+		FxParamCase("colormatrix-alpha-half", im, FxColorMatrix, EprF(
+			1, 0, 0, 0, 0,
+			0, 1, 0, 0, 0,
+			0, 0, 1, 0, 0,
+			0, 0, 0, 0.5f, 0,
+			0, 0, 0, 0, 1));
+
+		Func<int, int> id = delegate (int v) { return v; };
+		FxParamCase("colorlut-mixed", im, FxColorLut, FxLut(
+			id,
+			delegate (int v) { return (int)Math.Round(255 * Math.Sqrt(v / 255.0)); },
+			delegate (int v) { return 255 - v; },
+			id));
+		Func<int, int> poster = delegate (int v) { return (v / 64) * 85; };
+		FxParamCase("colorlut-posterize", im, FxColorLut, FxLut(poster, poster, poster, id));
+		FxParamCase("colorlut-alpha", im, FxColorLut, FxLut(id, id, id, delegate (int v) { return v >= 128 ? 255 - (255 - v) / 4 : v / 2; }));
+	}
+
+	static void FxRedEyeCases(FxImages im)
+	{
+		// Areas (left, top, right, bottom) in the effected image's pixels: one
+		// list for the eyes image, one for the colour ramps drawn below it.
+		int[][] eyeAreas = { new[] { 12, 12, 36, 36 }, new[] { 12, 12, 36, 36, 60, 12, 84, 36 }, new[] { 0, 0, 96, 48 } };
+		int[][] rampAreas = { new[] { 12, 12, 36, 36 }, new[] { 12, 12, 36, 36, 60, 12, 84, 36 }, new[] { 0, 0, 256, 64 } };
+		string[] names = { "left", "both", "whole" };
+		for (int i = 0; i < names.Length; i++)
+		{
+			int[] ea = eyeAreas[i], ra = rampAreas[i];
+			FxCase("plus-effect-redeye-" + names[i], FxW, 160, FxEmfPlusOnly, delegate (IntPtr g)
+			{
+				FxFill(g, FxBackdrop, 0, 0, FxW, 160);
+				IntPtr effect = FxRedEyeEffect(ea);
+				FxDrawAt(g, im.Eyes, effect, 96, 48, 24, 16);
+				FxApi.GdipDeleteEffect(effect);
+				effect = FxRedEyeEffect(ra);
+				FxDrawAt(g, im.Ramps, effect, 256, 64, 24, 80);
+				FxApi.GdipDeleteEffect(effect);
+			});
+		}
+	}
+
+	static void EmfPlusEffectCases()
+	{
+		// GdiplusStartup is reference counted: System.Drawing has usually
+		// started GDI+ already, but this keeps the flat API usable on its own.
+		IntPtr token;
+		var input = new FxStartupInput(); input.GdiplusVersion = 1;
+		FxOk(FxApi.GdiplusStartup(out token, ref input, IntPtr.Zero), "GdiplusStartup");
+		FxFailures.Clear();
+		using (var im = new FxImages())
+		{
+			FxStandardCase("plus-effect-none-identity", im, FxEmfPlusOnly, null);
+			FxBlurCases(im);
+			FxSharpenCases(im);
+			FxToneCases(im);
+			FxMatrixLutCases(im);
+			FxRedEyeCases(im);
+		}
+		if (FxFailures.Count > 0)
+		{
+			Console.WriteLine(FxFailures.Count + " plus-effect case(s) failed:");
+			foreach (string f in FxFailures) { Console.WriteLine("  " + f); }
+		}
+	}
+
 	static void EmfRecordCases()
 	{
 		ErGeometryCases();
@@ -5402,5 +5987,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "gdiplus-extra") { GpxLinearGradientCases(); GpxPathFillModeCases(); GpxSmoothingCases(); GpxImageCases(); GpxImageAttributeCases(); GpxNestedMetafileCases(); GpxTextureCases(); GpxPenTextCases(); }
 		if (which == "all" || which == "wmf-records") { WmfRecordCases(); }
 		if (which == "all" || which == "emf-records") { EmfRecordCases(); }
+		if (which == "all" || which == "halftone") { ErHalftoneCases(); }
+		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 	}
 }

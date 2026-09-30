@@ -66,13 +66,14 @@ import {
 	penIsCosmetic,
 	rectRasterPath,
 	roundRectRasterPath,
+	roundRectDeviceBeziers,
 	type ArcKind,
 } from './emf-gdi-raster-shapes';
 import { gdiStrokeAlign, paintGdiShape, penLineWidth, penScale } from './emf-gdi-shape-paint';
 import { invertAffine } from './emf-plus-exact-fill';
 import { isExactRop2Bitwise } from './emf-rop2-exact';
 import type { CanvasContext, DrawState, EmfGdiReplayCtx } from './emf-types';
-import { angleArcFix, angleArcPieces, circularArcBezier, GdiRasterPath, type FixBox } from './gdi-raster';
+import { angleArcFix, angleArcPieces, circularArcBezier, ellipseBeziersBox, GdiRasterPath, type FixBox } from './gdi-raster';
 
 // ---------------------------------------------------------------------------
 // Small local helpers
@@ -95,6 +96,46 @@ function needsPathBasedRectangle(rCtx: EmfGdiReplayCtx): boolean {
 function rasterPathOf(rCtx: EmfGdiReplayCtx): GdiRasterPath {
 	rCtx.rasterPath ??= new GdiRasterPath();
 	return rCtx.rasterPath;
+}
+
+/** Keeps Canvas path brackets in Windows' point order and device precision. */
+function recordRectangle(rCtx: EmfGdiReplayCtx, box: FixBox, clockwise: boolean): void {
+	const path = rectRasterPath(box, clockwise);
+	const pts = path.figures[0].pts;
+	const c = gdiPathRecorder(rCtx);
+	c.moveTo(pts[0] / 16, pts[1] / 16);
+	for (let i = 2; i < pts.length; i += 2) c.lineTo(pts[i] / 16, pts[i + 1] / 16);
+	c.closePath();
+	rasterPathOf(rCtx).append(path);
+}
+
+function recordBezierShape(rCtx: EmfGdiReplayCtx, points: number[], stride: 6 | 8): void {
+	const c = gdiPathRecorder(rCtx);
+	c.moveTo(points[0] / 16, points[1] / 16);
+	for (let i = stride === 6 ? 2 : 0; i < points.length; i += stride) {
+		if (stride === 8) {
+			if (i > 0) c.lineTo(points[i] / 16, points[i + 1] / 16);
+		}
+		const k = stride === 8 ? i + 2 : i;
+		c.bezierCurveTo(points[k] / 16, points[k + 1] / 16, points[k + 2] / 16, points[k + 3] / 16, points[k + 4] / 16, points[k + 5] / 16);
+	}
+	c.closePath();
+}
+
+/**
+ * Before a drawing call that continues from the current position inside a
+ * path bracket (`LineTo`, `PolylineTo`, `ArcTo`, ...): starts a new figure
+ * there unless the open figure already ends there
+ * ({@link GdiRasterPath.continueAt}), in the Canvas geometry too.
+ */
+export function continueFigure(rCtx: EmfGdiReplayCtx): void {
+	const path = rasterPathOf(rCtx);
+	const [x, y] = currentFix(rCtx);
+	const before = path.figures.length;
+	path.continueAt(x, y);
+	if (path.figures.length !== before) {
+		gdiPathRecorder(rCtx).moveTo(x / 16, y / 16);
+	}
 }
 
 /** The pen's dash-pattern cursor shared by consecutive `LineTo` records. */
@@ -120,6 +161,18 @@ export function currentFix(rCtx: EmfGdiReplayCtx): [number, number] {
 		return [c.x, c.y];
 	}
 	return fixPoint(rCtx, state.curX, state.curY);
+}
+
+/**
+ * {@link fixBox} of the logical box with its corners ordered first
+ * (`left <= right`, `top <= bottom`): GDI builds the Rectangle, RoundRect
+ * and Ellipse of an inverted box as it does the upright one (Windows'
+ * `GetPath` in `GM_ADVANCED`, Wine `gdi32/tests/path.c`, `test_rectangle`,
+ * `test_roundrect`, `test_ellipse`), so only the arc direction and the
+ * world transform decide which way the path runs.
+ */
+function uprightFixBox(rCtx: EmfGdiReplayCtx, l: number, t: number, r: number, b: number): FixBox {
+	return fixBox(rCtx, Math.min(l, r), Math.min(t, b), Math.max(l, r), Math.max(t, b));
 }
 
 /** A logical extent `v` along the device x (`axis` 0) or y (`axis` 1) direction, in device FIX. */
@@ -174,6 +227,7 @@ function handleLineTo(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): 
 		const to = rotated ? gmapPoint(rCtx, lx, ly) : { x: gmx(rCtx, lx), y: gmy(rCtx, ly) };
 		const fixTo = fixPoint(rCtx, lx, ly);
 		if (inPath) {
+			continueFigure(rCtx);
 			gdiPathRecorder(rCtx).lineTo(to.x, to.y);
 			rasterPathOf(rCtx).lineTo(fixTo[0], fixTo[1]);
 		} else {
@@ -211,7 +265,8 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const t = view.getInt32(dataOff + 4, true);
 		const r = view.getInt32(dataOff + 8, true);
 		const b = view.getInt32(dataOff + 12, true);
-		const box = fixBox(rCtx, l, t, r, b);
+		const box = uprightFixBox(rCtx, l, t, r, b);
+		const clockwise = rCtx.state.arcDirection === 2;
 		if (!inPath) {
 			resetLineStyle(rCtx);
 		}
@@ -233,15 +288,14 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 				c.closePath();
 			};
 			if (inPath) {
-				appendRect(gdiPathRecorder(rCtx));
-				rasterPathOf(rCtx).append(rectRasterPath(box));
+				recordRectangle(rCtx, box, clockwise);
 			} else {
 				paintGdiShape(rCtx, {
 					build: (c: CanvasContext) => {
 						c.beginPath();
 						appendRect(c);
 					},
-					raster: () => rectRasterPath(box),
+					raster: () => rectRasterPath(box, clockwise),
 					rectangle: true,
 					fill: true,
 					stroke: true,
@@ -255,15 +309,14 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const w = gmw(rCtx, r - l);
 		const h = gmh(rCtx, b - t);
 		if (inPath) {
-			gdiPathRecorder(rCtx).rect(x, y, w, h);
-			rasterPathOf(rCtx).append(rectRasterPath(box));
+			recordRectangle(rCtx, box, clockwise);
 		} else if (needsPathBasedRectangle(rCtx)) {
 			paintGdiShape(rCtx, {
 				build: (c: CanvasContext) => {
 					c.beginPath();
 					c.rect(x, y, w, h);
 				},
-				raster: () => rectRasterPath(box),
+				raster: () => rectRasterPath(box, clockwise),
 				rectangle: true,
 				fill: true,
 				stroke: true,
@@ -430,10 +483,16 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 						gmh(rCtx, cornerH) / 2,
 						null,
 					);
-		const raster = (box = fixBox(rCtx, l, t, r, b)) => roundRectRasterPath(box, fixExtent(rCtx, cornerW, 0), fixExtent(rCtx, cornerH, 1));
+		const clockwise = rCtx.state.arcDirection === 2;
+		const raster = (box = uprightFixBox(rCtx, l, t, r, b)) =>
+			roundRectRasterPath(box, fixExtent(rCtx, cornerW, 0), fixExtent(rCtx, cornerH, 1), clockwise, cornerW === 0 || cornerH === 0);
 		if (inPath) {
-			drawRoundRect(gdiPathRecorder(rCtx));
-			rasterPathOf(rCtx).append(raster());
+			const box = uprightFixBox(rCtx, l, t, r, b);
+			if (cornerW === 0 || cornerH === 0) recordRectangle(rCtx, box, clockwise);
+			else {
+				recordBezierShape(rCtx, roundRectDeviceBeziers(box, fixExtent(rCtx, cornerW, 0), fixExtent(rCtx, cornerH, 1), clockwise), 8);
+				rasterPathOf(rCtx).append(raster(box));
+			}
 		} else {
 			resetLineStyle(rCtx);
 			paintGdiShape(rCtx, {
@@ -441,7 +500,7 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 					c.beginPath();
 					drawRoundRect(c);
 				},
-				raster: () => raster(curvedFixBox(rCtx, l, t, r, b)),
+				raster: () => raster(curvedFixBox(rCtx, l, t, r, b, true)),
 				roundPen: true,
 				fill: true,
 				stroke: true,
@@ -460,8 +519,8 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
  * ellipses at identity need exactly the quarter pixel, 150 of 150 under
  * random scales need none).
  */
-function curvedFixBox(rCtx: EmfGdiReplayCtx, l: number, t: number, r: number, b: number): FixBox {
-	const box = fixBox(rCtx, l, t, r, b);
+function curvedFixBox(rCtx: EmfGdiReplayCtx, l: number, t: number, r: number, b: number, upright = false): FixBox {
+	const box = upright ? uprightFixBox(rCtx, l, t, r, b) : fixBox(rCtx, l, t, r, b);
 	if (rCtx.state.penStyle !== 5) {
 		return box;
 	}
@@ -488,6 +547,7 @@ function handleEllipse(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number):
 		const t = view.getInt32(dataOff + 4, true);
 		const r = view.getInt32(dataOff + 8, true);
 		const b = view.getInt32(dataOff + 12, true);
+		const clockwise = rCtx.state.arcDirection === 2;
 		const params = hasWorldRotation(rCtx)
 			? gdiEllipseParams(rCtx, (l + r) / 2, (t + b) / 2, Math.abs(r - l) / 2, Math.abs(b - t) / 2)
 			: {
@@ -498,8 +558,9 @@ function handleEllipse(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number):
 					rotation: 0,
 				};
 		if (inPath) {
-			gdiPathRecorder(rCtx).ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, 0, Math.PI * 2);
-			rasterPathOf(rCtx).append(ellipseRasterPath(fixBox(rCtx, l, t, r, b)));
+			const box = uprightFixBox(rCtx, l, t, r, b);
+			recordBezierShape(rCtx, ellipseBeziersBox(box, clockwise), 6);
+			rasterPathOf(rCtx).append(ellipseRasterPath(box, clockwise));
 		} else {
 			resetLineStyle(rCtx);
 			paintGdiShape(rCtx, {
@@ -507,7 +568,7 @@ function handleEllipse(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number):
 					c.beginPath();
 					c.ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, 0, Math.PI * 2);
 				},
-				raster: () => ellipseRasterPath(curvedFixBox(rCtx, l, t, r, b)),
+				raster: () => ellipseRasterPath(curvedFixBox(rCtx, l, t, r, b, true), clockwise),
 				roundPen: true,
 				fill: true,
 				stroke: true,
@@ -574,6 +635,9 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			from: currentFix(rCtx),
 		});
 		if (inPath) {
+			if (isArcTo) {
+				continueFigure(rCtx);
+			}
 			build(gdiPathRecorder(rCtx));
 			const a = rasterArgs();
 			arcRasterPath(a.box, a.s, a.e, clockwise, kind, a.from, rasterPathOf(rCtx));
@@ -668,11 +732,9 @@ function handleAngleArc(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number)
 		}
 	}
 	const e: [number, number] = [fixPts[fixPts.length - 2], fixPts[fixPts.length - 1]];
-	/** Appends the line and arc(s) to `path`, starting from `from` when given. */
-	const buildRaster = (path: GdiRasterPath, from: [number, number] | null): void => {
-		if (from) {
-			path.moveTo(from[0], from[1]);
-		}
+	/** Appends the line from the current position `from` and the arc(s) to `path`. */
+	const buildRaster = (path: GdiRasterPath, from: [number, number]): void => {
+		path.continueAt(from[0], from[1]);
 		path.addBeziers(fixPts, false);
 	};
 	const params = gdiEllipseParams(rCtx, cx, cy, radius, radius);
@@ -687,9 +749,9 @@ function handleAngleArc(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number)
 		c.ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, -a0, clockwise ? -a0 + span : -a0 - span, !clockwise);
 	};
 	if (inPath) {
-		const rec = gdiPathRecorder(rCtx);
-		buildCanvas(rec);
-		buildRaster(rasterPathOf(rCtx), rasterPathOf(rCtx).figures.length === 0 ? currentFix(rCtx) : null);
+		continueFigure(rCtx);
+		buildCanvas(gdiPathRecorder(rCtx));
+		buildRaster(rasterPathOf(rCtx), currentFix(rCtx));
 	} else {
 		resetLineStyle(rCtx);
 		const from = currentFix(rCtx);

@@ -4,3 +4,5 @@ site/
 *.tsbuildinfo
 .DS_Store
 .claude/worktrees/
+docs/.vitepress/dist/
+docs/.vitepress/cache/

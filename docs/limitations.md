@@ -1,0 +1,48 @@
+# Limitations
+
+Output is compared with images rendered by Windows. The exact per-fixture bounds are in `src/gdi-parity.fixture.test.ts`. Known differences:
+
+## Color adjustment and image effects
+
+- The `HALFTONE` stretch mode reproduces Windows' halftone engine for 32-bit output. An enlargement smooths isolated pixels and then takes the nearest source pixel. A reduction averages each pixel's footprint and then sharpens. All seven plain `HALFTONE` fixtures (2x, 3x, 0.5x, 0.65x and 1.37x) match exactly. A stretch that enlarges one axis and reduces the other has not been compared with Windows output.
+- `EMR_SETCOLORADJUSTMENT` is applied to the source of `HALFTONE` `StretchBlt` and `StretchDIBits` calls, as in GDI. Windows does not publish its adjustment formulas. The converter uses a model fitted to two Windows captures: contrast and brightness on CIE L*, colorfulness and red-green tint on u'v' chromaticity, with gamma as the source encoding, so a gamma on its own changes nothing. Windows also dithers the adjusted colors over 32 levels per channel, and that pattern is not reproduced. On the fixtures, 0% to 15.1% of pixels differ by more than 24. The log filter uses an unverified curve, and the illuminant is ignored.
+- EMF+ image effects (`SerializableObject`) are applied to the image's pixels before it is drawn. MS-EMFPLUS does not specify the algorithms, so they were measured against the effected bitmaps GDI+ itself writes into its recordings (`src/emf-plus-image-effects.fixture.test.ts`). Color matrix, lookup table, brightness/contrast, color balance, levels and sharpen match GDI+ exactly. Blur matches to within one level (GDI+ blurs along rows only, plus a vertical blur of the top row, and the converter does the same). Color curves use complete native lookups for all eight adjustments and every legal intensity, matching all 256 levels. Levels also handles inverted and equal thresholds and the full midtone range; a sweep of 258,560 values retains one one-level rounding difference. Hue/saturation/lightness uses GDI+'s integer HSL, but GDI+'s hue rounding is only partly reproduced: lightness and saturation changes differ on under 1% of pixels, and a hue rotation is more than two levels off on 0.3% to 32% of pixels (up to 11 levels). Tint is within two levels (three on 0.07% of pixels). Red-eye correction is an approximation: GDI+ detects pupils and repaints them with a texture, which is not reproduced (up to 17% of pixels differ on the fixtures).
+- EmfPlusDual recordings add a processed bitmap fallback after the effect draw. EmfPlusOnly recordings carry the effect and original source without that fallback. Both types have been regenerated and tested: 74 cases each, plus an explicit Dual blur case. Only recordings expose the HSL and red-eye algorithm differences directly. Deferred PNG and SVG draws preserve their effects and cropped source mapping.
+- An effect is applied to the draw's source rectangle only, reading one more column and row, as GDI+ does. A blur with `expandEdge` blurs transparency in at the edges but, as in GDI+, draws nothing beyond the source rectangle. MS-EMFPLUS requires pixel source units; malformed non-pixel records do not apply effects.
+- GDI+ records a color curve effect under the lookup table's identifier, and its own playback then draws the image without the effect. The converter does the same.
+- An effect is skipped when the image cannot be decoded to pixels. PNG, BMP, JPEG, GIF and TIFF have bundled decoders. Animated GIF and multipage TIFF initially draw their first frame/page, as GDI+ does. The bundled JPEG decoder uses different chroma reconstruction from Windows: on the native ramp fixture the maximum difference is 19 levels and the mean is 4.75 across RGBA. A canvas backend remains preferred when available. Other encoded formats may need a browser or `@napi-rs/canvas`.
+
+## Pen transforms
+
+EMF+ pen transforms (uniform, non-uniform and skewed) match GDI+ exactly on the 17 pen-transform fixtures. That includes dashes, which GDI+ lays out along the path in world space at the untransformed pen width. Native fixtures verify dashes under uniform and non-uniform scales, including antialiasing. GDI+ rejects singular pen transforms; the converter ignores such malformed transform data. Square, round, diamond and arrow anchor caps use their native shapes; the new centered-cap fixtures match every pixel with and without antialiasing.
+
+## Text
+
+- The Windows text fixtures have a few glyph edge differences and a `PolyTextOut` C1 control glyph difference, under 0.1% of pixels. Bounds are in `src/emf-text-records.fixture.test.ts`.
+- ANSI text is decoded with the host's `TextDecoder` for common Windows code pages. Johab and OEM CP437 use bundled Windows mappings; other unsupported encodings fall back to Windows-1252.
+- Vertical `ETO_PDY` advances are supported with or without the `fonts` option.
+- Without `fonts`, SVG text measurements are estimates. Supply the matching fonts for exact justification.
+
+## Wide pens and paths
+
+- Flat-capped GDI pens 7 px and wider can differ by a few pixels at round joins.
+- Dashed wide Bezier curves follow `WidenPath`, which Windows' direct drawing does not match exactly. The difference is at most 0.2% of pixels on the fixtures.
+- `EMR_WIDENPATH` does not reproduce the extra inner join triangles that GDI's `WidenPath` emits. This is only visible when the widened outline is stroked.
+- EMF+ 1-pixel antialiased lines can differ by one antialiasing sample at their ends, and some closed widened outlines by one sample along an edge.
+- Inset and compound pens on closed figures are approximate.
+
+## GM_COMPATIBLE recordings
+
+EMF files do not record the graphics mode. Windows plays back RoundRect, Arc, Chord, Pie and null-pen Ellipse records differently from how a GM_COMPATIBLE application drew them on screen. The converter follows Windows playback.
+
+## EMF+
+
+- Rotated `HighQualityBicubic` `DrawImage` edge pixels differ (0.14%).
+- There are one-level differences at exact half-level `Blend` knots.
+- A few pixels differ in a metafile nested in `DrawImage` under a scale transform.
+
+## WMF
+
+- Fractional `PS_INSIDEFRAME` rectangles now match the 1.0–2.9 px width sweep exactly. Wider half-pixel widths retain a 0.39% residual in the dedicated fixture; curved boxes need further native comparisons.
+- Mirrored `LAYOUT_RTL` cosmetic and wide line fixtures match Windows exactly.
+- Metric map modes default to a 96 dpi reference device. Set `wmfReferenceDpi` to a number or `{ x, y }` when the original physical-device resolution is known. Metafiles do not always record that information.

@@ -14,7 +14,7 @@ Windows metafiles are recorded GDI and GDI+ drawing calls, commonly embedded in 
 | **EMF**  | Enhanced Metafile (32-bit GDI) | Bounds-based scaling    |
 | **EMF+** | GDI+ extension embedded in EMF | World transform matrix  |
 
-<samp>**[▶️ Live demo](https://christophervr.github.io/emf-converter/)** · **[📦 npm](https://www.npmjs.com/package/emf-converter)**</samp>
+[Documentation and live demo](https://christophervr.github.io/emf-converter/) · [npm](https://www.npmjs.com/package/emf-converter)
 
 ---
 
@@ -27,11 +27,11 @@ Windows metafiles are recorded GDI and GDI+ drawing calls, commonly embedded in 
 - **Complete WMF playback**: bitmaps, clipping, regions, mapping modes, palettes, flood fills, and embedded EMF comments, played as Windows' `PlayMetaFile` plays them.
 - Many correctness fixes found by the new fixtures (see the changelog).
 
-## Demo
+## Documentation and demo
 
-Drop an `.emf` or `.wmf` file into the browser demo to see the PNG or SVG output, download it, or copy it as a TSX component:
+The documentation site at **https://christophervr.github.io/emf-converter/** includes a live demo: drop an `.emf` or `.wmf` file to see the PNG or SVG output, download it, or copy it as a TSX component.
 
-**https://christophervr.github.io/emf-converter/**
+The site is built with VitePress from the `docs/` directory. Run it locally with `bun run docs:dev`.
 
 ## Install
 
@@ -158,7 +158,6 @@ Without `fonts`, text is drawn by the host's canvas font engine (supply `fontFam
 | `maxWidth`           | `number`                              | None              | Maximum output width in pixels (aspect ratio preserved) |
 | `maxHeight`          | `number`                              | None              | Maximum output height in pixels |
 | `dpiScale`           | `number`                              | `1`               | Resolution multiplier; clamped to `4` |
-| `wmfReferenceDpi`    | `number \| { x: number; y: number }`    | `96`              | WMF playback device density for placeable sizing and metric mapping; supply the reference device's density to reproduce its physical scale |
 | `maxCanvasDimension` | `number`                              | `8192`            | Hard cap on output width/height in pixels |
 | `maxRecords`         | `number`                              | `200000`/`500000` | Records processed per stream before replay stops (EMF+ uses the higher default unless overridden) |
 | `gdiAntialias`       | `boolean`                             | `false` (PNG)     | `true` smooths every shape edge with Canvas antialiasing instead of reproducing Windows' own GDI/GDI+ rasterisation |
@@ -197,13 +196,13 @@ A three-phase pipeline: **parse → replay → export**. The header parser reads
 
 Everything below is verified against output painted by Windows itself; `src/gdi-parity.fixture.test.ts` holds the per-fixture bounds.
 
-- **GDI shapes** (`gdi-raster.ts`, `gdi-raster-widen.ts`): 28.4 fixed-point geometry; GDI's fill rule (ALTERNATE/WINDING); one-pixel lines by GDI's diamond rule with its tie-breaks; GDI's own Bezier flattener, ellipse, rounded-rectangle, arc (GDI's trigonometry table and `SetArcDirection`), chord and pie construction; cosmetic dash styles (dash 18/6, dot 3/3, ...) and geometric dashes; wide pens widened from GDI's own pen polygons with every cap and join and the miter limit; rotated and skewed world transforms. Pixel-exact on the shape fixtures.
+- **GDI shapes** (`gdi-raster.ts`, `gdi-raster-widen.ts`): 28.4 fixed-point geometry; GDI's fill rule (ALTERNATE/WINDING); one-pixel lines by GDI's diamond rule with its tie-breaks; GDI's own Bezier flattener, ellipse, rounded-rectangle, arc (GDI's trigonometry table and `SetArcDirection`), chord and pie construction; cosmetic dash styles (dash 18/6, dot 3/3, ...) and geometric dashes; wide pens widened from GDI's own pen polygons with every cap and join and the miter limit; rotated and skewed world transforms. Pixel-exact on the shape fixtures. A path bracket's GDI geometry has the points, point types, figure starts and direction that Windows' `GetPath` reports (checked against the Windows data in Wine's `gdi32` path tests).
 - **Raster operations**: all 256 ROP3 codes for `BitBlt`/`StretchBlt`/`StretchDIBits`/`PatBlt`, exact per bit against the destination, brush and source, with GDI's stretch modes, mirrored rectangles and rotated destinations (each device pixel mapped back to one source texel). Every `SetROP2` mode, including the bitwise AND/OR/XOR family, for shapes, paths and pattern-brush fills.
 - **Brushes**: hatch, monochrome and DIB pattern brushes anchored to the brush origin, with the background mode; GDI+ solid, hatch, texture (bilinear, WrapMode-aware, as GDI+ samples them), linear gradients (GDI+'s own interpolation table: preset colours, blend shapes, gamma correction, every WrapMode) and path gradients (true boundary-shaped falloff, every WrapMode).
 - **Clipping**: every GDI and GDI+ region combine mode exact for every clip (vector where possible, otherwise scan-converted to pixel regions, which is how GDI stores them), path clips with their fill mode, and region offsets.
-- **EMF+**: fills, pens and clips follow the recorded `SmoothingMode` with GDI+'s own fill rasteriser (8 x 4-sample antialiasing, blend arithmetic) and pen widener (joins, caps, dash caps, compound lines, inset alignment), including nonuniform and skewed pen transforms; `DrawImage` with every InterpolationMode/PixelOffsetMode kernel, ImageAttributes wrap modes, drawn in record order under the live clip; colour-matrix, colour-balance and lookup-table image effects in PNG and SVG; embedded metafiles replayed as vectors; continuation records reassembled; compressed textures and images decoded before replay.
+- **EMF+**: fills, pens and clips follow the recorded `SmoothingMode` with GDI+'s own fill rasteriser (8 x 4-sample antialiasing, blend arithmetic) and pen widener (joins, caps, dash caps, compound lines, inset alignment); `DrawImage` with every InterpolationMode/PixelOffsetMode kernel, ImageAttributes wrap modes, drawn in record order under the live clip; embedded metafiles replayed as vectors; continuation records reassembled; compressed textures and images decoded before replay.
 - **Text**: see [Exact text](#exact-text).
-- **WMF**: played as `PlayMetaFile` plays it (GM_COMPATIBLE whole-pixel rules, mapping modes, bitmaps, pattern brushes, clipping and regions, palettes, flood fills, text spacing and justification, right-to-left layout); an EMF embedded in `MFCOMMENT` escapes is played instead, as Windows does.
+- **WMF**: fractional `PS_INSIDEFRAME` rectangles retain a small residual at some wider half-pixel widths. The mirrored line fixtures match Windows exactly. Metric map modes default to a 96 dpi reference device; `wmfReferenceDpi` accepts a scalar or `{ x, y }` to reproduce another device.
 
 ### Supported records
 
@@ -213,14 +212,15 @@ Everything below is verified against output painted by Windows itself; `src/gdi-
 
 ## Limitations
 
-Everything is measured against output painted by Windows itself; `src/gdi-parity.fixture.test.ts` holds the exact per-fixture bounds.
+Everything is measured against output painted by Windows itself; `src/gdi-parity.fixture.test.ts` holds the exact per-fixture bounds. Open work items are tracked in [docs/outstanding-work.md](docs/outstanding-work.md).
 
-- **Colour adjustment and image effects**: `EMR_SETCOLORADJUSTMENT` is read but not yet applied, and the `HALFTONE` stretch mode is not bit-exact. EMF+ colour-matrix, colour-balance, lookup-table, colour-curve and levels effects are applied. Colour curves use complete native Windows lookups; arbitrary fractional colour matrices and levels retain one-level rounding differences. Blur, sharpen, brightness/contrast, hue/saturation/lightness, red-eye correction and tint effects remain unsupported.
-- **Text**: ANSI, multi-string and small-text records render; the Windows text fixtures retain a few glyph-edge differences and a `PolyTextOut` C1 control-glyph difference (under 0.1% of pixels; bounds in `src/emf-text-records.fixture.test.ts`). ANSI decoding uses the host's `TextDecoder` for common Windows code pages, with built-in Johab and OEM CP437 tables for EMF and WMF; other encodings unavailable in the host fall back to Windows-1252. Vertical `ETO_PDY` advances work with both the font engine and Canvas/SVG text. Without `fonts`, SVG text measurements use deterministic estimates, so precise justification requires supplying the matching fonts.
+- **Colour adjustment and image effects**: all eleven EMF+ image effects are supported. Complete native tables cover every legal ColorCurve intensity. Deferred draws retain their effects. JPEG, GIF and TIFF have bundled decoders for environments without Canvas. HSL, tint, red-eye, blur, sharpen and GDI colour adjustment retain measured differences; see [the detailed limitations](docs/limitations.md) and the native fixture bounds.
+- **Pen transforms**: EMF+ pen transforms (uniform, nonuniform and skewed) match GDI+ exactly on the 17 pen-transform fixtures, including dashes, which GDI+ lays out along the path in world space at the untransformed pen width. Native fixtures verify dashes under both uniform and non-uniform scales. GDI+ rejects singular pen transforms; the converter ignores such malformed transform data. Square, round, diamond and arrow anchor caps use their native shapes; the new centered-cap fixtures match every pixel with and without antialiasing.
+- **Text**: ANSI, multi-string and small-text records now render; the Windows text fixtures retain a few glyph-edge differences and a `PolyTextOut` C1 control-glyph difference (under 0.1% of pixels; bounds in `src/emf-text-records.fixture.test.ts`). ANSI decoding uses the host's `TextDecoder` for common Windows code pages; Johab and OEM CP437 use bundled Windows mappings. Vertical `ETO_PDY` advances work with and without the `fonts` engine. Without `fonts`, SVG text measurements use deterministic estimates, so precise justification requires supplying the matching fonts.
 - **Wide pens and paths**: flat-capped GDI pens 7 px and wider can differ by a few pixels at round joins, and dashed wide Bezier curves follow `WidenPath` (which Windows' direct drawing does not quite match); at most 0.2% of pixels on the fixtures. `EMR_WIDENPATH` does not reproduce the extra inner join triangles GDI's own `WidenPath` emits (visible only when the widened outline is itself stroked). EMF+ 1-pixel antialiased lines can differ by one antialiasing sample at their ends, some closed widened outlines by one sample along an edge, and Inset or compound pens on closed figures are approximate.
 - **GM_COMPATIBLE recordings**: EMF files do not record the graphics mode, and Windows plays RoundRect, Arc, Chord, Pie and null-pen Ellipse records back differently from how a GM_COMPATIBLE application drew them on screen; the converter follows Windows' playback.
 - **Small EMF+ residuals**: rotated `HighQualityBicubic` `DrawImage` edge pixels (0.14%), one-level differences at exact half-level `Blend` knots, and a few pixels of a metafile nested in `DrawImage` under a scale.
-- **WMF**: fractional `PS_INSIDEFRAME` rectangle centres use subpixel fitting; wide half-width boundaries and curved inside-frame boxes retain small pixel differences. WMF does not identify its playback device: the converter defaults to 96 dpi; `wmfReferenceDpi` configures the device density when it is known.
+- **WMF**: `PS_INSIDEFRAME` boxes can come out a pixel short at non-integer scales, right-to-left (`LAYOUT_RTL`) layouts differ by single pixels on mirrored diagonals, and metric map modes assume a 96 dpi reference device (Windows derives them from the physical display, so its own output varies per machine).
 
 ## License
 

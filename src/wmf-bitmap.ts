@@ -348,6 +348,10 @@ export function wmfSetDibToDev(p: WmfPlayer, d: number, end: number): void {
 	const hv = new DataView(bmi.buffer);
 	const fullH = hv.getInt32(8, true);
 	hv.setInt32(8, fullH < 0 ? -scanCount : scanCount, true);
-	const [ox, oy] = deviceDest(p, dx, dy, 0, 0);
+	const [mx, oy] = deviceDest(p, dx, dy, 0, 0);
+	// Under LAYOUT_RTL the destination rectangle is mirrored, the bits are
+	// not: the mapped origin is the rectangle's right edge (Windows,
+	// Wine `gdi32/tests/bitmap.c`, `test_SetDIBitsToDevice`).
+	const ox = p.layout & 1 ? mx - w : mx;
 	playStretchDibits(p, 0x00cc0020, ox, oy + (sy + h - hi), w, hi - lo, sx, lo - startScan, w, hi - lo, { bmi, bits: dib.bits }, true);
 }
