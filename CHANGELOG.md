@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.6) - 2026-09-30
+
+### Bug Fixes
+
+- Decode explicitly one-dimensional Group 3 TIFF strips ([c1111cc](https://github.com/ChristopherVR/emf-converter/commit/c1111cc9a65d4e186b3e1a4a4b20fa6b4da2ca7d))
+
 ## [4.4.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.5) - 2026-09-30
 
 ### Testing
