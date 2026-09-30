@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.4) - 2026-09-30
+
+### Bug Fixes
+
+- Match native RoundRect paths and image effect filtering ([3a917e4](https://github.com/ChristopherVR/emf-converter/commit/3a917e498f7448e1dba5a1b3e2049cde34a9e83d))
+
+### Testing
+
+- Avoid redundant Levels LUT computation ([96d8bec](https://github.com/ChristopherVR/emf-converter/commit/96d8bece4e71fe3c90a5069912447d1af12d3390))
+
 ## [4.4.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.3) - 2026-09-30
 
 ### Bug Fixes
