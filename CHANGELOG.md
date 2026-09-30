@@ -9,6 +9,7 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 ### Bug Fixes
 
 - Match native widened ellipse outlines and inner triangles ([89fe52f](https://github.com/ChristopherVR/emf-converter/commit/89fe52f204a3a76bfda3ac3a76e089818ee6bd02))
+- Retain fractional inside-frame widths on WMF curves ([dc5a3b1](https://github.com/ChristopherVR/emf-converter/commit/dc5a3b1b4fc67eff8050e72822987b3f2220e2cb))
 
 ## [4.4.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.6) - 2026-09-30
 
