@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.5) - 2026-09-30
+
+### Testing
+
+- Capture native colour and wide-path baselines with provenance ([e021c10](https://github.com/ChristopherVR/emf-converter/commit/e021c1017f450e26326635634c6a55c18b44b809))
+
 ## [4.4.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.4) - 2026-09-30
 
 ### Bug Fixes
