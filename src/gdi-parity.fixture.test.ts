@@ -1078,11 +1078,10 @@ const EMF_PLUS_ONLY_EFFECT_CASES: ParityCase[] = EMF_PLUS_EFFECT_CASES
 		name: c.name.replace('plus-effect-', 'plus-only-effect-'),
 		// Only recordings expose the effect directly, without Dual's baked
 		// fallback painting over it. These bounds measure the real algorithm.
-		tolerance: c.name.includes('-tint-') ? 3 : c.name.includes('-hsl-') || c.name === 'plus-effect-sharpen-r3-a100' ? 2 : 1,
+		tolerance: c.name.includes('-hsl-') ? (c.name === 'plus-effect-hsl-h0-s60-l0' || c.name === 'plus-effect-hsl-h30-sn30-l20' ? 1 : 0)
+			: c.name.includes('-tint-') ? 3 : c.name === 'plus-effect-sharpen-r3-a100' ? 2 : 1,
 		maxMismatch: c.name.includes('-redeye-') ? 0.068
-			: c.name === 'plus-effect-hsl-h30-sn30-l20' ? 0.127
-			: c.name === 'plus-effect-hsl-h180-s0-l0' ? 0.065
-			: c.name.includes('-hsl-') ? 0.03
+			: c.name.includes('-hsl-') ? 0
 			: c.name === 'plus-effect-sharpen-r3-a100' ? 0.00013 : c.maxMismatch,
 	}));
 

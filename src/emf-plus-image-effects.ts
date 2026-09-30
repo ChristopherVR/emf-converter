@@ -26,9 +26,8 @@
  * - `ColorCurve` uses complete native 256-entry tables for every legal
  *   adjustment and intensity ({@link curveAdjustmentLut}).
  * - A broader Levels sweep has one one-level difference in 258,560 values.
- * - `HueSaturationLightness` works in GDI+'s integer HSL; GDI+'s hue
- *   rounding is only partly reproduced, so a hue rotation is a few levels
- *   off on some colours.
+ * - `HueSaturationLightness` reproduces native hue quantization across all
+ *   integer angles. Mixed-colour/control sweeps retain one-level rounding.
  * - `Tint` is within two levels on nearly every pixel.
  * - `RedEyeCorrection` remains an approximation.
  *
@@ -342,16 +341,15 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
 	return [r + m, g + m, b + m];
 }
 
-/** GDI+'s hue units: 43 per 60-degree sextant, 258 for the whole circle. */
+/** Native hue rotates on 255 indices; reconstruction uses 43-unit sextants. */
 const HUE_SEXTANT = 43;
-const HUE_CIRCLE = 6 * HUE_SEXTANT;
+const HUE_CIRCLE = 255;
 
 /**
  * GDI+'s integer hue of an RGB colour whose channels are not all equal
- * (measured): 43 units per sextant, the position in the sextant
- * `floor(43 x / (max - min))` counted up from red (0), green (87) or blue
- * (172) toward the next primary, or down from 86, 171 or 256 toward the
- * previous one.
+ * (measured): 43 units per sextant, with byte-domain primary offsets
+ * 0, 86 and 170. Descending sectors truncate the complementary difference
+ * directly, which differs from subtracting a truncated ascending fraction.
  */
 function gdipHue(r: number, g: number, b: number): number {
 	const max = Math.max(r, g, b);
@@ -361,15 +359,16 @@ function gdipHue(r: number, g: number, b: number): number {
 		return f(g - b);
 	}
 	// At a green/blue maximum tie GDI+ takes the blue branch (cyan's
-	// hue is 128, not 130); the distinction remains after rotation.
+	// hue is 127, not 129); the distinction remains after rotation.
 	if (max === b && b !== r) {
-		return r >= g ? 172 + f(r - g) : 171 - f(g - r);
+		return r >= g ? 170 + f(r - g) : 127 + f(b - g);
 	}
 	if (max === g) {
-		return b >= r ? 87 + f(b - r) : 86 - f(r - b);
+		return b >= r ? 86 + f(b - r) : 43 + f(g - r);
 	}
 	const t = f(b - g);
-	return (256 - t - (t >= 40 ? 1 : 0)) % 256;
+	const q = (256 - t - (t >= 40 ? 1 : 0)) % 256;
+	return q - Math.floor((q + 42) / 86);
 }
 
 /**
@@ -377,11 +376,11 @@ function gdipHue(r: number, g: number, b: number): number {
  * (measured): lightness is `(max + min) >> 1` (a full-intensity colour tops
  * out at 254) plus `2.55 * lightness` levels; saturation, the usual HSL
  * saturation, is scaled by `1 + saturation / 100`; the hue ({@link gdipHue})
- * rotates by `hue * 258 / 360` units (positive: red toward yellow). The
+ * rotates by round(`hue * 255 / 360`) indices (positive: red toward yellow).
+ * Reconstruction skips three indices in the 258-unit sextant domain. The
  * colour is rebuilt from the rounded HSL maximum and minimum, the middle
- * channel truncated. Lightness and saturation match GDI+ exactly; hue is
- * within a level or two on most colours but GDI+ rounds some hues
- * differently (a few levels near sextant boundaries).
+ * channel truncated. Saturated colours match all 361 native rotation
+ * angles exactly; mixed colours and controls retain one-level rounding.
  */
 export function applyHueSaturationLightness(
 	src: Uint8ClampedArray,
@@ -404,11 +403,12 @@ export function applyHueSaturationLightness(
 			continue;
 		}
 		const sum = max + min;
-		const s = clamp(((max - min) / (sum <= 255 ? sum : 510 - sum)) * sMul, 0, 1);
+		const s = Math.fround(clamp(((max - min) / (sum <= 255 ? sum : 510 - sum)) * sMul, 0, 1));
 		const hi = l <= 127 ? l * (1 + s) : l + s * (255 - l);
 		const m1 = l <= 127 ? 2 * l - Math.trunc(hi) : Math.round(2 * l - hi);
 		const m2 = 2 * l - m1;
-		const q = (((gdipHue(r, g, b) + shift) % HUE_CIRCLE) + HUE_CIRCLE) % HUE_CIRCLE;
+		const index = (((gdipHue(r, g, b) + shift) % HUE_CIRCLE) + HUE_CIRCLE) % HUE_CIRCLE;
+		const q = index + Math.floor((index + 41) / 85);
 		const sextant = Math.min(5, Math.floor(q / HUE_SEXTANT));
 		const f = (q - sextant * HUE_SEXTANT) / HUE_SEXTANT;
 		const up = Math.trunc(m1 + (m2 - m1) * f);

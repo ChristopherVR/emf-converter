@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { inflateSync } from 'node:zlib';
+import { inflateSync, gunzipSync } from 'node:zlib';
 import { nativeCurveLookup } from './emf-plus-image-curves';
 import { describe, expect, it } from 'vitest';
-import { applyImageEffect as applyNativeEffect, applyBlur, applySharpen, parseSerializableObject as parseImageEffect, levelsLut, sharpenGain, type EmfPlusImageEffect } from './emf-plus-image-effects';
+import { applyImageEffect as applyNativeEffect, applyBlur, applySharpen, applyHueSaturationLightness, parseSerializableObject as parseImageEffect, levelsLut, sharpenGain, type EmfPlusImageEffect } from './emf-plus-image-effects';
 const applyImageEffect = (source: Uint8ClampedArray, effect: EmfPlusImageEffect) => applyNativeEffect(source, 16, 16, effect)!;
 const greyRamp = Uint8ClampedArray.from(Array.from({ length: 1024 }, (_, i) => i % 4 === 3 ? 255 : Math.floor(i / 4)));
 
@@ -30,6 +30,27 @@ function nativeCase(name: string) {
 }
 
 describe('EMF+ image effects', () => {
+	it('matches native hue quantization across every integer angle and bounds mixed HSL controls', () => {
+		const source = new Uint8ClampedArray(readFileSync(new URL('./__fixtures__/gdi/effect-hue-source.bin', import.meta.url)));
+		const expected = gunzipSync(readFileSync(new URL('./__fixtures__/gdi/effect-hue-sweep.bin.gz', import.meta.url)));
+		const settings = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-hue-settings.json', import.meta.url), 'utf8')) as number[][];
+		expect(settings).toHaveLength(543);
+		expect(expected.length).toBe(settings.length * source.length);
+		settings.forEach(([hue, saturation, lightness], setting) => {
+			const actual = applyHueSaturationLightness(source, hue, saturation, lightness);
+			let maximum = 0, saturatedMaximum = 0;
+			for (let i = 0; i < source.length; i++) {
+				// BitmapApplyEffect makes alpha opaque; DrawImage preserves it,
+				// as independently verified by the recorded Dual/Only fixtures.
+				if (i % 4 === 3) { if (actual[i] !== source[i]) throw new Error('HSL changed source alpha'); continue; }
+				const difference = Math.abs(actual[i] - expected[setting * source.length + i]);
+				maximum = Math.max(maximum, difference);
+				if (i < 1536 * 4) saturatedMaximum = Math.max(saturatedMaximum, difference);
+			}
+			expect(maximum, `h=${hue} s=${saturation} l=${lightness}`).toBeLessThanOrEqual(1);
+			if (setting < 361) expect(saturatedMaximum, `hue=${hue}`).toBe(0);
+		});
+	});
 	it('bounds native large-radius sharpen across all captured amounts', () => {
 		const sweep = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-sharpen-sweep.json', import.meta.url), 'utf8'));
 		for (let r = 0; r < sweep.radii.length; r++) {

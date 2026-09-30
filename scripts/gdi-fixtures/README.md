@@ -28,7 +28,7 @@ Additional diagnostic groups:
 - `image-codecs-extra`: odd-width bilevel TIFF captures with uncompressed, PackBits and CCITT Group 3/4 compression.
 - `illuminant-tables`: large raw native samples, excluded from `all`. `halftone-dither-grey-samples.bin` contains 256 × 64 bytes, indexed by grey level then `(sourceY + 5) % 8`, `(sourceX + 5) % 8`; bytes are the nearest output index on the 32-level channel scale. `illuminant-colour-samples-N.bin` contains 32³ RGB triples, indexed by `(r * 32 + g) * 32 + b`, for inputs `floor(channel * 255 / 31)`, sampled at source cell offset (11,11). These captures are specific to the probe layout: using them as universal conversion tables fails independent chart comparisons.
 
-These standalone probe modes must be invoked separately from comma-separated drawing groups: `path-probe`, `wide-path-probe`, `wide-outline-probe`, `image-codecs`, `image-codecs-extra`, `image-codecs-advanced`, `image-effects`, `image-effect-sharpen`, `image-effect-large-blur`, `image-effect-tables`.
+These standalone probe modes must be invoked separately from comma-separated drawing groups: `path-probe`, `wide-path-probe`, `wide-outline-probe`, `image-codecs`, `image-codecs-extra`, `image-codecs-advanced`, `image-effects`, `image-effect-sharpen`, `image-effect-large-blur`, `image-effect-hue`, `image-effect-tables`.
 
 Every generator run also writes `environment-<groups>.json`. It records SHA-256 hashes of the generated references, installed system/user font files and native drawing libraries, plus Windows version, screen DPI and runner image. Compare manifests before accepting regenerated text fixtures; older captures have no recoverable environment manifest. Temporary image-effect tables keep their manifest in the requested temporary directory.
 
@@ -112,5 +112,7 @@ sweep. `emfplus-effects` records metafiles for playback parity.
 `path-probe` captures native `GetPath` coordinates for the RoundRect sequence at whole-pixel and 1/16-pixel precision. `image-effect-sharpen` captures the sharpen amount sweep (0–100), blur/sharpen at 19 radii from 0.25 through 255, and blur ramps/colour impulses across seven bitmap dimensions.
 
 `image-effect-large-blur` captures ramps and colour impulses at 22 radii on nine bitmap dimensions, plus impulse rows at every quarter radius from 16 through 255 to identify native reduction transitions.
+
+`image-effect-hue` captures all 361 integer hue angles plus 182 saturation/lightness combinations on 1,536 saturated colours and 1,024 seeded mixed colours with varying alpha. Source bytes, setting triples and gzip-compressed output cover 1,390,080 colour/setting pairs. BitmapApplyEffect makes alpha opaque; the regression compares RGB and separately checks that DrawImage's effect preserves source alpha, as verified by the recorded fixtures.
 
 `image-codecs-advanced` requires Python and Pillow >= 10.2. It encodes odd-sized Deflate TIFF strips (both compression tags and a horizontal predictor), uncompressed/Deflate tiles, RGB/YCbCr JPEG strips and tiles, and standalone 4:4:4/4:2:2/4:2:0, progressive, RGB and greyscale JPEG. Windows GDI+ then decodes every encoded file into its PNG reference. `codec-advanced-encoder.json` records the Python, Pillow, libtiff and JPEG encoder versions; the normal environment manifest associates both encoded files and native references with their hashes.

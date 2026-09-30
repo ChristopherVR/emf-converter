@@ -200,6 +200,37 @@ public static class ImageEffectProbe
 		}
 		File.WriteAllText(Path.Combine(dir,"effect-blur-factors.json"),scan.Append(']').ToString());
 	}
+	public static void HueSweep(string dir)
+	{
+		const int width = 2560;
+		var settings = new System.Collections.Generic.List<int[]>();
+		for(int hue=-180;hue<=180;hue++)settings.Add(new int[]{hue,0,0});
+		foreach(int hue in new int[]{-180,-120,-90,-60,-30,-1,0,1,30,60,90,120,180}) foreach(int saturation in new int[]{-100,-30,0,60,100}) foreach(int lightness in new int[]{-50,0,50})
+			if(saturation!=0 || lightness!=0)settings.Add(new int[]{hue,saturation,lightness});
+		byte[] source = new byte[width * 4], results = new byte[settings.Count * width * 4];
+		for (int sector = 0; sector < 6; sector++) for (int value = 0; value < 256; value++) {
+			int[][] rgb = {new int[]{255,value,0},new int[]{255-value,255,0},new int[]{0,255,value},new int[]{0,255-value,255},new int[]{value,0,255},new int[]{255,0,255-value}};
+			int offset = (sector * 256 + value) * 4;
+			for(int channel=0;channel<3;channel++)source[offset+channel]=(byte)rgb[sector][channel];source[offset+3]=255;
+		}
+		var random = new Random(729);
+		for(int x=1536;x<width;x++) {for(int channel=0;channel<3;channel++) source[x*4+channel]=(byte)random.Next(256);source[x*4+3]=(byte)new int[]{0,64,128,200,255}[x%5];}
+		using(var init = new Bitmap(1,1)) for(int index=0;index<settings.Count;index++) {
+			IntPtr bitmap=IntPtr.Zero,effect=IntPtr.Zero;
+			try {
+				Check(GdipCreateBitmapFromScan0(width,1,0,0x26200a,IntPtr.Zero,out bitmap));
+				for(int x=0;x<width;x++) {int o=x*4;Check(GdipBitmapSetPixel(bitmap,x,0,unchecked((int)0xff000000)|(source[o]<<16)|(source[o+1]<<8)|source[o+2]));}
+				byte[] parameters=new byte[12];Buffer.BlockCopy(settings[index],0,parameters,0,12);
+				Check(GdipCreateEffect(new Guid("8b2dd6c3-eb07-4d87-a5f0-7108e26a9c5f"),out effect));
+				Check(GdipSetEffectParameters(effect,parameters,12));Check(GdipBitmapApplyEffect(bitmap,effect,IntPtr.Zero,false,IntPtr.Zero,IntPtr.Zero));
+				Buffer.BlockCopy(Pixels(bitmap,width,1),0,results,index*width*4,width*4);
+			} finally {if(effect!=IntPtr.Zero)GdipDeleteEffect(effect);if(bitmap!=IntPtr.Zero)GdipDisposeImage(bitmap);}
+		}
+		File.WriteAllBytes(Path.Combine(dir,"effect-hue-source.bin"),source);
+		var json=new System.Text.StringBuilder("[");for(int i=0;i<settings.Count;i++){if(i>0)json.Append(',');json.Append('[').Append(settings[i][0]).Append(',').Append(settings[i][1]).Append(',').Append(settings[i][2]).Append(']');}
+		File.WriteAllText(Path.Combine(dir,"effect-hue-settings.json"),json.Append(']').ToString());
+		using(var file=File.Create(Path.Combine(dir,"effect-hue-sweep.bin.gz"))) using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress)) zip.Write(results,0,results.Length);
+	}
 	static void BlurSamples(string dir,string file,int[][] sizes,float[] radii)
 	{
 		var json = new System.Text.StringBuilder("[");

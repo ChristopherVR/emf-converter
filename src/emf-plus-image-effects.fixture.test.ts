@@ -119,18 +119,18 @@ const CURVE: EffectCase[] = [
 
 /**
  * HueSaturationLightness in GDI+'s integer HSL: lightness and saturation
- * changes match; a hue rotation is within a few levels (GDI+ rounds some
- * hues differently, mostly near sextant boundaries).
+ * rotation fixtures match exactly; saturation/mixed controls retain
+ * one-level rounding differences.
  */
 const HSL: EffectCase[] = [
 	exact('hsl-h0-sn100-l0'), // 37.500% before
-	within('hsl-h0-s0-ln50'), // 87.463%, 0.098% one level off now
-	bounded('hsl-h0-s0-l50', 0, 0.0015), // 87.463%, 0.098% (4 levels at most)
-	bounded('hsl-h0-s60-l0', 0, 0.01), // 76.298%, 0.879% (6 levels at most)
-	bounded('hsl-hn120-s0-l0', 0, 0.0035), // 51.270%, 0.293% (6 levels at most)
-	bounded('hsl-h90-s0-l0', 2, 0.07), // 58.720%, 10.189% (6.120% beyond 2 levels, 11 at most)
-	bounded('hsl-h180-s0-l0', 2, 0.17), // 54.000%, 26.656% (16.305% beyond 2 levels, 6 at most)
-	bounded('hsl-h30-sn30-l20', 2, 0.33), // 87.333%, 57.874% (31.966% beyond 2 levels, 6 at most)
+	exact('hsl-h0-s0-ln50'),
+	exact('hsl-h0-s0-l50'),
+	within('hsl-h0-s60-l0'),
+	exact('hsl-hn120-s0-l0'),
+	exact('hsl-h90-s0-l0'),
+	exact('hsl-h180-s0-l0'),
+	within('hsl-h30-sn30-l20'),
 ];
 
 /** Tint: toward luma plus the tint chroma scaled by the largest channel, a fitted chroma scale. */
