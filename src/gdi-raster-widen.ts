@@ -195,6 +195,11 @@ function halfPixel(v: number): number {
  * bias along the segment's (normalised) direction.
  */
 export function flatVector(width: number, dx0: number, dy0: number): Pt {
+	return perpendicularVectors(width, dx0, dy0).v;
+}
+
+/** Rounded stroke sides and the unrounded tangent point used to select pen arcs. */
+function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt; ray: Pt } {
 	let dx = dx0;
 	let dy = dy0;
 	const flip = dx < 0 || (dx === 0 && dy < 0);
@@ -228,9 +233,9 @@ export function flatVector(width: number, dx0: number, dy0: number): Pt {
 	const ox = off ? sgn * off[0] : 0;
 	const oy = off ? sgn * off[1] : 0;
 	const r = (v: number) => 8 * Math.floor((v + 4) / 8);
-	const vx = r(D[0] + (B[0] - D[0]) * w + 0.5 * Math.sign(dy) + ox);
-	const vy = r(D[1] + (B[1] - D[1]) * w + 0.5 * Math.sign(dx) + oy);
-	return flip ? [-vx, -vy] : [vx, vy];
+	const x = D[0] + (B[0] - D[0]) * w, y = D[1] + (B[1] - D[1]) * w;
+	const vx = r(x + 0.5 * Math.sign(dy) + ox), vy = r(y + 0.5 * Math.sign(dx) + oy);
+	return { v: flip ? [-vx, -vy] : [vx, vy], ray: flip ? [-x, -y] : [x, y] };
 }
 
 /** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
@@ -263,6 +268,8 @@ interface Seg {
 	R: number;
 	/** Right perpendicular (`flatVector`). */
 	v: Pt;
+	/** Unrounded pen boundary point, before the stroke-side rounding bias. */
+	vRaw: Pt;
 	/** Square-cap extension. */
 	e: Pt;
 	curveEnd: boolean;
@@ -301,7 +308,8 @@ class Outliner {
 		const d = drawDir ?? [dx, dy];
 		const [L, R] = drawVertices(this.pen, d[0], d[1]);
 		const perpendicular = this.opts.roundCurveJoins && drawDir ? drawDir : [dx, dy];
-		return { dx, dy, L, R, v: flatVector(this.opts.width, perpendicular[0], perpendicular[1]), e: squareExtension(this.opts.width, dx, dy), curveEnd: !!drawDir };
+		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1]);
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, dx, dy), curveEnd: !!drawDir };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -404,7 +412,9 @@ class Outliner {
 			if (this.rr) {
 				this.walk(p, s[from], s[to], false, false);
 			} else {
-				const A = this.capSide(s, from);
+				// Choose arc vertices before rounding the perpendicular onto the
+				// half-pixel grid; rounding can move a boundary past a pen vertex.
+				const A: Pt = from === 'R' ? s.vRaw : [-s.vRaw[0], -s.vRaw[1]];
 				this.wedge(p, A, [-A[0], -A[1]], true, false);
 			}
 			this.push(p, this.capSide(s, to));
@@ -432,6 +442,8 @@ class Outliner {
 		const join = this.opts.roundCurveJoins ? 'round' : this.opts.join;
 		let sa = this.joinSide(a, side);
 		let sb = this.joinSide(b, side);
+		const rayA: Pt = side === 'R' ? a.vRaw : [-a.vRaw[0], -a.vRaw[1]];
+		const rayB: Pt = side === 'R' ? b.vRaw : [-b.vRaw[0], -b.vRaw[1]];
 	if (this.opts.roundCurveJoins && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
 			// At the boundary of two ellipse cubics, these styles use the
 			// true tangent's perpendicular rather than a pen support vertex.
@@ -456,10 +468,10 @@ class Outliner {
 					this.walk(p, Da, Db, false, incl);
 				} else {
 					const anti = sa[0] === -sb[0] && sa[1] === -sb[1];
-					this.wedge(p, sa, sb, !anti, !anti);
+					this.wedge(p, rayA, rayB, !anti, !anti);
 				}
 			} else if (join === 'miter') {
-				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit);
+				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit, side);
 				if (m) {
 					this.push(p, m);
 				}
@@ -476,7 +488,7 @@ class Outliner {
 			if (join === 'round' && cap === 'flat' && !this.opts.roundCurveJoins) {
 				// Flat-capped round joins loop round the pen on the inner side too.
 				this.push(p, sb);
-				this.wedge(p, sb, sa, false, false);
+				this.wedge(p, rayB, rayA, false, false);
 				this.push(p, sa);
 				this.pts.push([p[0], p[1]]);
 			}
@@ -745,7 +757,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
  * `sa + t * da` and `sb + u * db` meet, or `null` when the miter would be
  * longer than `limit` half widths (GDI then bevels).
  */
-function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number): Pt | null {
+function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number, side: 'L' | 'R'): Pt | null {
 	const den = da[0] * db[1] - da[1] * db[0];
 	if (den === 0) {
 		return null;
@@ -755,8 +767,14 @@ function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number
 	const t = (wx * db[1] - wy * db[0]) / den;
 	const mx = sa[0] + da[0] * t;
 	const my = sa[1] + da[1] * t;
-	if (Math.hypot(mx, my) > (limit * width) / 2) {
+	const x = Math.sign(mx) * Math.floor(Math.abs(mx) + 0.5);
+	const y = Math.sign(my) * Math.floor(Math.abs(my) + 0.5);
+	// GDI tests its left-side miter in whole device pixels, rounding the FIX
+	// components upward. The right side tests the negated vector, which
+	// rounds its components downward. Emitted vertices retain FIX precision.
+	const pixel = side === 'L' ? Math.ceil : Math.floor;
+	if (Math.hypot(pixel(x / 16), pixel(y / 16)) > (limit * width) / 32) {
 		return null;
 	}
-	return [Math.floor(mx + 0.5), Math.floor(my + 0.5)];
+	return [x, y];
 }
