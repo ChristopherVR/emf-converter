@@ -285,7 +285,8 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
  *   The native ramp/checker captures still retain colour and edge differences;
  *   this branch is approximate (bounds in the parity tests).
  *
- * Pixels outside `src` read as black.
+ * Direct StretchDIBits skips the enlargement pre-filter. Isolated gamma/log
+ * curves are applied after sampling/sharpening. Pixels outside `src` read as black.
  */
 export function stretchHalftone(
 	src: Pixels,
@@ -296,6 +297,8 @@ export function stretchHalftone(
 	dw: number,
 	dh: number,
 	adjust?: (rgb: Int32Array) => void,
+	adjustAfterSampling = false,
+	directDib = false,
 ): Pixels {
 	const W = Math.max(0, Math.round(Math.abs(dw)));
 	const H = Math.max(0, Math.round(Math.abs(dh)));
@@ -328,10 +331,10 @@ export function stretchHalftone(
 	const enlarging = W >= SW && H >= SH && (W > SW || H > SH);
 	const reducing = W < SW && H < SH;
 	const mixed = (W > SW && H < SH) || (W < SW && H > SH);
-	if (enlarging) {
+	if (enlarging && !directDib) {
 		halftoneDespeckle(rect, SW, SH);
 	}
-	if (adjust) {
+	if (adjust && !adjustAfterSampling) {
 		adjust(rect);
 	}
 	const cols = halftoneAxis(0, SW, W, flipX);
@@ -393,6 +396,7 @@ export function stretchHalftone(
 			}
 		}
 	}
+	if (adjust && adjustAfterSampling) adjust(out);
 	for (let i = 0, o = 0; i < W * H; i++, o += 3) {
 		data[i * 4] = out[o];
 		data[i * 4 + 1] = out[o + 1];

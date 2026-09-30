@@ -912,6 +912,8 @@ const EMF_RECORD_CASES: ParityCase[] = [
 const halftone = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
 const adjusted = (name: string, maxMismatch: number): ParityCase => ({ name, ext: 'emf', tolerance: 24, maxMismatch });
 const HALFTONE_CASES: ParityCase[] = [
+	...['default', 'gamma', 'gamma-rgb', 'log', 'illuminant-6'].map(name => halftone(`emfrec-ca-control-${name}`)),
+	halftone('emfrec-ca-control-dib', 0.0075), // 0.738%, max 2 levels (before 10.776%)
 	halftone('emfrec-coloradjustment-off'), // measured 0% (1.048% before)
 	adjusted('emfrec-coloradjustment', 0.08), // measured 7.886% (6.644% before; mean channel error 2.48 -> 2.15)
 	halftone('emfrec-halftone-ramp-2x'),

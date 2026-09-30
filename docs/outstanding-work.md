@@ -26,17 +26,13 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
   - Saturated reds pick up some blue, and saturated blues too much green.
   - Windows' ordered dither (32 levels per channel) is not reproduced; its threshold matrix is unknown.
 - **The fitted parameters trade two fixtures against each other.** `emfrec-coloradjustment` went from 6.6% to 7.9% of pixels off by more than 24, in exchange for large gains on the newer `emfrec-halftone-*-ca` fixtures.
-- **No fixtures yet:**
-  - the log filter;
-  - the illuminant (ignored);
-  - gamma-only adjustment;
-  - `StretchDIBits` under HALFTONE.
+- **Isolated controls:** native `color-adjustment-controls` captures now cover the log filter, uniform/per-channel gamma, all eight illuminants and `StretchDIBits` under HALFTONE. Gamma and log-filter StretchBlt fixtures match exactly, including reduction. The log curve matches all 256 native input levels for grey and RGB channels. Illuminants other than device-default/D65 remain ignored; their native references now expose the difference. Direct DIB enlargement skips StretchBlt's pre-smoothing; the unadjusted fixture retains 0.74% mismatches (at most two levels), and adjusted DIB/colour-band boundaries still need work.
 - **Mixed-axis stretching:** eight native `halftone-mixed` cases now cover ramp/checker enlargement on one axis and reduction on the other, with and without colour adjustment. Interpolation and directional sharpening reduce the unadjusted mismatch from 22.3–47.1% to 3.5–23.6% at zero tolerance. Colour and edge differences remain; the horizontal ramp enlargement is within one level everywhere.
 - **Enlargement pre-smoothing:** the rule that smooths isolated pixels before an enlargement was inferred from checkerboard fixtures. It is not a known algorithm, so test it on more inputs.
 
 ## GDI path geometry
 
-- **RoundRect control points:** four GM_COMPATIBLE `RoundRect` control points in Wine's `test_roundrect` data (#33, #38, #102, #113) are one unit off. A fresh native `GetPath` capture confirms those four differences; `path-probe` regenerates it. See `OFF_BY_ONE` in `src/gdi-path-wine.test.ts`.
+- **RoundRect control points:** compatible-mode vertical-control rounding now fixes #33 and #38. Two horizontal controls under a mirrored viewport (#102, #113) remain one unit off the native `GetPath` capture; `path-probe` regenerates it. See `OFF_BY_ONE` in `src/gdi-path-wine.test.ts`.
 - **Existing residuals with no ground truth yet:**
   - `WidenPath` inner join triangles;
   - wide round joins;

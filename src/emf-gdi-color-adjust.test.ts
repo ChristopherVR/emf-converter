@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 
 import { fixturePath } from './__fixtures__/gdi-parity-harness';
+import { decodePng } from './png-decoder';
 import {
 	EMR_BITBLT,
 	EMR_RESTOREDC,
@@ -88,6 +89,16 @@ describe('readColorAdjustment', () => {
 });
 
 describe('colorAdjustmentMapper', () => {
+	it('matches all 256 native log-filter levels on grey and each colour channel', async () => {
+		const reference = (await decodePng(new Uint8Array(readFileSync(fixturePath('emfrec-ca-control-log-ramp.png')))))!;
+		const map = colorAdjustmentMapper({ ...DEFAULT_COLOR_ADJUSTMENT, flags: CA_LOG_FILTER });
+		for (const [y, mask] of [[8, 0x010101], [16, 0x010000], [24, 0x000100], [32, 0x000001]]) {
+			for (let value = 0; value < 256; value++) {
+				const offset = (y * reference.width + 5 + 2 * value) * 4;
+				expect(channels(map(value * mask))).toEqual(Array.from(reference.data.subarray(offset, offset + 3)));
+			}
+		}
+	});
 	it('leaves every colour unchanged under the default adjustment', () => {
 		expect(isIdentityColorAdjustment(DEFAULT_COLOR_ADJUSTMENT)).toBe(true);
 		expect(isIdentityColorAdjustment({ ...DEFAULT_COLOR_ADJUSTMENT, illuminant: 3 })).toBe(true);
@@ -102,8 +113,8 @@ describe('colorAdjustmentMapper', () => {
 		expect(adjust({ flags: CA_NEGATIVE }, 0x10c0f0)).toBe(0xef3f0f);
 	});
 
-	it('treats the gammas as the source encoding: alone they change nothing', () => {
-		expect(adjust({ redGamma: 20000, greenGamma: 5000, blueGamma: 10000 }, 0x808080)).toBe(0x808080);
+	it('applies standalone channel gammas once, as in the native captures', () => {
+		expect(adjust({ redGamma: 20000, greenGamma: 5000, blueGamma: 10000 }, 0x808080)).toBe(0x40b580);
 		// With contrast they decide where the channel sits on the L* curve.
 		const [r, g] = channels(adjust({ redGamma: 25000, contrast: 30 }, 0x808080));
 		expect(r).toBeLessThan(g);
@@ -166,7 +177,7 @@ describe('colorAdjustmentMapper', () => {
 	it('lifts dark tones under CA_LOG_FILTER, keeping black and white', () => {
 		expect(adjust({ flags: CA_LOG_FILTER }, 0x000000)).toBe(0x000000);
 		expect(adjust({ flags: CA_LOG_FILTER }, 0xffffff)).toBe(0xffffff);
-		expect(channels(adjust({ flags: CA_LOG_FILTER }, 0x202020))[0]).toBe(Math.round(255 * Math.log10(1 + (9 * 32) / 255)));
+		expect(channels(adjust({ flags: CA_LOG_FILTER }, 0x202020))[0]).toBe(77); // native log-ramp level 32
 	});
 
 	it('approximates the Windows output of the emfrec-coloradjustment fixture', () => {

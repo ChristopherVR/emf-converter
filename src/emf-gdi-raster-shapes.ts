@@ -167,9 +167,9 @@ function boxFrame(box: FixBox): { l: number; t: number; r: number; b: number } {
  * (degenerate) Beziers (Windows' `GetPath`, Wine `gdi32/tests/path.c`,
  * `test_roundrect`).
  */
-export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, clockwise = false): number[] {
+export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, clockwise = false, compatible = false): number[] {
 	const f = boxFrame(box);
-	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch);
+	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch, compatible);
 	const map = frameMapper(box, f.l, f.t, f.r - f.l, f.b - f.t);
 	const pts: number[] = [];
 	for (let i = 0; i < q.length; i += 2) {
@@ -178,9 +178,9 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, cloc
 	return pts;
 }
 
-export function roundRectRasterPath(box: FixBox, cw: number, ch: number, clockwise = false, rectangle = false): GdiRasterPath {
+export function roundRectRasterPath(box: FixBox, cw: number, ch: number, clockwise = false, rectangle = false, compatible = false): GdiRasterPath {
 	if (rectangle) return rectRasterPath(box, clockwise);
-	const pts = roundRectDeviceBeziers(box, cw, ch, clockwise);
+	const pts = roundRectDeviceBeziers(box, cw, ch, clockwise, compatible);
 	const path = new GdiRasterPath();
 	for (let c = 0; c < 4; c++) {
 		const o = c * 8;

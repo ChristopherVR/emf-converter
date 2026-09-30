@@ -219,7 +219,7 @@ export const wmfShapePath = {
 			return null;
 		}
 		const [cw, ch] = compatCorner(p, w, h);
-		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0);
+		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, true);
 	},
 	ellipse(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
 		const box = compatBox(p, l, t, r, b, { curved: true });
@@ -282,7 +282,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 			c.ellipse(cr.x + ex, cr.y + ey, ex, ey, 0, 2 * q, 3 * q);
 			c.closePath();
 		},
-		raster: () => roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0),
+		raster: () => roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, true),
 		roundPen: true,
 		fill: true,
 		stroke: true,

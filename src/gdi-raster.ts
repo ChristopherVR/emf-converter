@@ -669,9 +669,10 @@ export function flattenBezierPath(pts: ArrayLike<number>): number[] {
  * when the box is flat on either). Fitted against `GetPath`
  * output (595 of 600 random fractional boxes exact; the rest differ by one
  * FIX, 1/16 pixel, in a corner end point, which never occurs for integer
- * device coordinates).
+ * device coordinates). `compatible` selects the nearest FIX vertical
+ * control used by GM_COMPATIBLE; GM_ADVANCED rounds that distance down.
  */
-export function roundRectCorners(l: number, t: number, r: number, b: number, cw: number, ch: number): number[] {
+export function roundRectCorners(l: number, t: number, r: number, b: number, cw: number, ch: number, compatible = false): number[] {
 	const w = r - l;
 	const h = b - t;
 	let ew = Math.min(Math.abs(cw), w);
@@ -685,7 +686,9 @@ export function roundRectCorners(l: number, t: number, r: number, b: number, cw:
 	const hy = Math.floor(h / 2) - Math.floor((h - eh) / 2);
 	const topX = Math.floor(r - ew / 2);
 	const hx = r - topX;
-	const q = [r, t + hy, r, t + hy - Math.floor(KAPPA * hy), r - hx + Math.ceil(KAPPA * hx), t, topX, t];
+	const verticalControl = compatible ? Math.round(KAPPA * hy) : Math.floor(KAPPA * hy);
+	const horizontalControl = Math.ceil(KAPPA * hx);
+	const q = [r, t + hy, r, t + hy - verticalControl, r - hx + horizontalControl, t, topX, t];
 	const mx = (x: number) => l + r - x;
 	const my = (y: number) => t + b - y;
 	return [

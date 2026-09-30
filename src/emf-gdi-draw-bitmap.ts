@@ -23,7 +23,7 @@ import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } f
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { applyColorAdjustment, colorAdjustRgb } from './emf-gdi-color-adjust';
+import { applyColorAdjustment, colorAdjustRgb, isChannelOnlyColorAdjustment } from './emf-gdi-color-adjust';
 import { gdiDevicePixelX, gdiDevicePixelY, gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
 import { paletteEntries } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
@@ -113,7 +113,10 @@ function drawSourceMapped(
 	const dTop = Math.min(req.dy, req.dy + req.dh) - offsetY;
 	const px =
 		mode === HALFTONE
-			? stretchHalftone(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, decoded.adjust)
+			? stretchHalftone(
+				decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh,
+				decoded.adjust, decoded.adjustAfterSampling, req.dibOrigin === 'bottom-left',
+			)
 			: stretchGdi(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, mode);
 	if (px.width === 0 || px.height === 0) {
 		return;
@@ -134,6 +137,7 @@ interface DecodedSource {
 	pixels: ImageData;
 	/** The DC's colour adjustment, for a HALFTONE StretchBlt / StretchDIBits. */
 	adjust?: (rgb: Int32Array) => void;
+	adjustAfterSampling?: boolean;
 }
 
 /**
@@ -141,7 +145,9 @@ interface DecodedSource {
  * source of a StretchBlt / StretchDIBits (`req.stretch`) under the HALFTONE
  * stretch mode carries the DC's colour adjustment (`adjust`,
  * `emf-gdi-color-adjust.ts`), which the halftone stretch applies to the
- * source between its despeckle filter and resampling; BitBlt never goes
+ * source between its despeckle filter and resampling for combined
+ * adjustments, or after sampling/sharpening for isolated channel curves.
+ * Direct StretchDIBits skips the enlargement pre-filter. BitBlt never goes
  * through the halftone engine, so it has none.
  */
 function decodeSource(
@@ -168,7 +174,7 @@ function decodeSource(
 		sy = image.height - sy - req.sh;
 	}
 	return {
-		decoded: { pixels: image, adjust },
+		decoded: { pixels: image, adjust, adjustAfterSampling: isChannelOnlyColorAdjustment(ca) },
 		req: { ...req, sy },
 	};
 }

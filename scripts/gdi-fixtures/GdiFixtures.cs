@@ -5371,6 +5371,57 @@ public static class GdiFixtures
 		ReleaseDC(IntPtr.Zero, screen);
 	}
 
+	/** Isolated colour-adjustment controls and the StretchDIBits HALFTONE path. */
+	static void ErColorAdjustmentControls()
+	{
+		GdiCase("emfrec-ca-control-log-ramp", 528, 48, delegate (IntPtr hdc) {
+			Stripes(hdc, 528, 48);
+			var ca = new byte[24]; BitConverter.GetBytes((ushort)24).CopyTo(ca, 0);
+			BitConverter.GetBytes((ushort)2).CopyTo(ca, 2);
+			for (int i = 6; i <= 10; i += 2) BitConverter.GetBytes((ushort)10000).CopyTo(ca, i);
+			BitConverter.GetBytes((ushort)10000).CopyTo(ca, 14);
+			if (!ErApi.SetColorAdjustment(hdc, ca)) throw new Exception("SetColorAdjustment log ramp");
+			SetStretchBltMode(hdc, 4); SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+			var bmi = new BITMAPINFOHEADER(); bmi.biSize = 40; bmi.biWidth = 256; bmi.biHeight = -16; bmi.biPlanes = 1; bmi.biBitCount = 32;
+			var bits = new byte[256 * 16 * 4];
+			for (int y = 0; y < 16; y++) for (int x = 0; x < 256; x++) {
+				int o = (y * 256 + x) * 4;
+				bits[o] = (byte)(y < 4 || y >= 12 ? x : 0);
+				bits[o + 1] = (byte)(y < 4 || y >= 8 && y < 12 ? x : 0);
+				bits[o + 2] = (byte)(y < 8 ? x : 0);
+			}
+			StretchDIBits(hdc, 5, 5, 512, 32, 0, 0, 256, 16, bits, ref bmi, 0, 0x00CC0020);
+		});
+		IntPtr screen = GetDC(IntPtr.Zero);
+		try {
+			foreach (string setting in new[] { "default", "gamma", "gamma-rgb", "log", "illuminant-1", "illuminant-2", "illuminant-3", "illuminant-4", "illuminant-5", "illuminant-6", "illuminant-7", "illuminant-8", "dib", "dib-adjusted" }) {
+				string selected = setting;
+				GdiCase("emfrec-ca-control-" + selected, 96, 64, delegate (IntPtr hdc) {
+					Stripes(hdc, 96, 64);
+					var ca = new byte[24];
+					BitConverter.GetBytes((ushort)24).CopyTo(ca, 0);
+					BitConverter.GetBytes((ushort)(selected == "log" ? 2 : 0)).CopyTo(ca, 2);
+					BitConverter.GetBytes((ushort)(selected.StartsWith("illuminant-") ? int.Parse(selected.Substring(11)) : 0)).CopyTo(ca, 4);
+					BitConverter.GetBytes((ushort)(selected.StartsWith("gamma") ? 15000 : 10000)).CopyTo(ca, 6);
+					BitConverter.GetBytes((ushort)(selected == "gamma-rgb" ? 20000 : selected == "gamma" ? 15000 : 10000)).CopyTo(ca, 8);
+					BitConverter.GetBytes((ushort)(selected == "gamma-rgb" ? 25000 : selected == "gamma" ? 15000 : 10000)).CopyTo(ca, 10);
+					BitConverter.GetBytes((ushort)10000).CopyTo(ca, 14);
+					if (selected == "dib-adjusted") BitConverter.GetBytes((short)30).CopyTo(ca, 16);
+					if (!ErApi.SetColorAdjustment(hdc, ca)) throw new Exception("SetColorAdjustment: " + selected);
+					SetStretchBltMode(hdc, 4); SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+					if (selected.StartsWith("dib")) {
+						BITMAPINFOHEADER bmi; byte[] bits = SourceDibBits(20, 16, out bmi);
+						StretchDIBits(hdc, 5, 5, 60, 48, 0, 0, 20, 16, bits, ref bmi, 0, 0x00CC0020);
+						StretchDIBits(hdc, 70, 5, 13, 11, 0, 0, 20, 16, bits, ref bmi, 0, 0x00CC0020);
+					} else using (var src = SourceBitmap(screen, 20, 16)) {
+						StretchBlt(hdc, 5, 5, 60, 48, src.Dc, 0, 0, 20, 16, 0x00CC0020);
+						StretchBlt(hdc, 70, 5, 13, 11, src.Dc, 0, 0, 20, 16, 0x00CC0020);
+					}
+				});
+			}
+		} finally { ReleaseDC(IntPtr.Zero, screen); }
+	}
+
 	/** HALFTONE StretchBlt of a ramp and a checkerboard at 2x, 0.5x and 1.37x, each plain and under SetColorAdjustment. */
 	static void ErHalftoneCases(bool mixed = false)
 	{
@@ -5989,6 +6040,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "emf-records") { EmfRecordCases(); }
 		if (which == "all" || which == "halftone") { ErHalftoneCases(); }
 		if (which == "all" || which == "halftone-mixed") { ErHalftoneCases(true); }
+		if (which == "all" || which == "color-adjustment-controls") { ErColorAdjustmentControls(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 	}
 }

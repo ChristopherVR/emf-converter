@@ -20,8 +20,8 @@
  *      `white = ReferenceWhite / 10000`.
  *   3. Gamma per channel: `v = v ^ gamma`, `gamma = Gamma / 10000`, taken
  *      as the encoding of the source, so it is undone at the end (step 6):
- *      a gamma on its own changes nothing, it only moves where the other
- *      adjustments act.
+ *      this fitted encoding applies to combined perceptual adjustments.
+ *      Isolated gamma instead raises the sampled output channel once.
  *   4. Colorfulness and RedGreenTint in CIE 1976 u'v' (BT.709 primaries,
  *      D65 white), keeping the luminance Y: the chromaticity's offset from
  *      the white point is scaled by `1 + 1.335 c / 100` (`1 + c / 100`
@@ -34,7 +34,7 @@
  *      grey ramp of the halftone fixtures (contrast 30, brightness -20,
  *      gamma 1.5) is within a few levels of this.
  *   6. Back through the gamma (`v ^ (1 / gamma)`), then `CA_LOG_FILTER`:
- *      `v = log10(1 + 9v)` (not measured).
+ *      `v = log2(1 + 7v) / 3`, measured across all 256 input levels.
  *
  * Windows then dithers: every channel is quantised to one of 32 levels
  * (`n * 255 / 31`) with an ordered threshold per source pixel and the
@@ -71,6 +71,13 @@ export const DEFAULT_COLOR_ADJUSTMENT: Readonly<GdiColorAdjustment> = {
 	colorfulness: 0,
 	redGreenTint: 0,
 };
+
+/** Isolated channel curves are applied to the sampled/sharpened colour by Windows. */
+export function isChannelOnlyColorAdjustment(ca: GdiColorAdjustment | undefined): boolean {
+	return !!ca && (ca.flags & ~CA_LOG_FILTER) === 0 && (ca.illuminant === 0 || ca.illuminant === 6) &&
+		ca.referenceBlack === 0 && ca.referenceWhite === 10000 &&
+		ca.contrast === 0 && ca.brightness === 0 && ca.colorfulness === 0 && ca.redGreenTint === 0;
+}
 
 /**
  * Reads a COLORADJUSTMENT at `off`, or returns null when a field is outside
@@ -178,6 +185,23 @@ const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
  * formulas). Returns packed `0xRRGGBB` for packed `0xRRGGBB`.
  */
 export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => number {
+	// Native isolated gamma captures apply the exponent once. The perceptual
+	// model below is fitted for combined contrast/chroma adjustments and must
+	// not cancel a standalone gamma by decoding it again at the output.
+	if (ca.referenceBlack === 0 && ca.referenceWhite === 10000 &&
+		ca.contrast === 0 && ca.brightness === 0 && ca.colorfulness === 0 && ca.redGreenTint === 0) {
+		const tables = [ca.redGamma, ca.greenGamma, ca.blueGamma].map(gamma => {
+			const table = new Uint8Array(256);
+			for (let i = 0; i < 256; i++) {
+				const input = (ca.flags & CA_NEGATIVE) !== 0 ? 255 - i : i;
+				let value = (input / 255) ** (gamma / 10000);
+				if ((ca.flags & CA_LOG_FILTER) !== 0) value = Math.log2(1 + 7 * value) / 3;
+				table[i] = Math.round(value * 255);
+			}
+			return table;
+		});
+		return rgb => (tables[0][(rgb >> 16) & 255] << 16) | (tables[1][(rgb >> 8) & 255] << 8) | tables[2][rgb & 255];
+	}
 	const black = ca.referenceBlack / 10000;
 	const span = Math.max(1e-6, ca.referenceWhite / 10000 - black);
 	const gammas = [ca.redGamma / 10000, ca.greenGamma / 10000, ca.blueGamma / 10000];
@@ -203,7 +227,7 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 	const out = (v: number, c: number): number => {
 		v = clamp01(fromLightness(slope * lightness(clamp01(v)) + offset)) ** (1 / gammas[c]);
 		if (log) {
-			v = Math.log10(1 + 9 * v);
+			v = Math.log2(1 + 7 * v) / 3;
 		}
 		return Math.round(v * 255);
 	};

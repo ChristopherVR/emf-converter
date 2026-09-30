@@ -618,13 +618,12 @@ const cases: Array<{ name: string; run: () => number[]; expected: number[] }> = 
 
 /**
  * Points still one unit off Windows (all within Wine's own 2-unit fudge):
- * two vertical and two horizontal Bezier controls of `GM_COMPATIBLE`
- * RoundRect corners (`RoundRect(60, 60, 35, 45, 5, 2)`, and
- * `RoundRect(20, 20, 40, 40, 15, 12)` under a (-2, 2) viewport extent),
+ * two horizontal Bezier controls of `GM_COMPATIBLE` RoundRect corners
+ * (`RoundRect(20, 20, 40, 40, 15, 12)` under a (-2, 2) viewport extent),
  * where no single rounding rule fits every case in the data.
  */
 const OFF_BY_ONE: Record<string, number[]> = {
-	test_roundrect: [33, 38, 102, 113],
+	test_roundrect: [102, 113],
 };
 
 describe('GDI path geometry against Windows (Wine gdi32/tests/path.c)', () => {
