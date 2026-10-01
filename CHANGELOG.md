@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.2) - 2026-10-01
+
+### Documentation
+
+- Record measured red-eye behaviour ([0e0ff50](https://github.com/ChristopherVR/emf-converter/commit/0e0ff509334016577451010a0315782ad4620824))
+
 ## [4.6.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.1) - 2026-10-01
 
 ### Documentation
