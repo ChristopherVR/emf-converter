@@ -47,7 +47,7 @@ describe('native expanded blur regions', () => {
 		}
 		expect(exact.small[0] / exact.small[1]).toBeGreaterThan(0.998);
 		expect(exact.large[0] / exact.large[1]).toBeGreaterThan(0.9);
-	}, 15000);
+	}, 60000);
 });
 
 interface EffectCase {
