@@ -288,11 +288,13 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
  *   footprint in 16.16 fixed point ({@link halftoneAxis}), rounded half
  *   up, and the reduced image is then sharpened ({@link halftoneSharpen}),
  *   which is what turns `#F0D010` next to a darker stripe into `#F7DD03`.
- * - Mixed-axis stretching with a 2x enlargement and at least a 2x reduction
- *   reduces first, then sharpens each axis separately
- *   (the reduced axis first), clamping/truncating after each pass. Only then
- *   does it interpolate on the enlarging axis, rounding half up. Other ratios,
- *   tiny buffers and full colour adjustment retain an approximate path.
+ * - Mixed-axis stretching with an enlarged axis and an axis reduced by at least 2x
+ *   reduces first, then sharpens each axis separately (the reduced axis first),
+ *   clamping/truncating after each pass. Only then does it interpolate on the
+ *   enlarging axis, rounding half up. Milder reductions pick the nearest source
+ *   pixel. Native captures match exactly for 2x enlargement; other enlargement
+ *   ratios, tiny buffers and full colour adjustment retain residual differences
+ *   (`halftone-mixed.fixture.test.ts`).
  *
  * Direct StretchDIBits skips the enlargement pre-filter. Isolated gamma/log
  * curves are applied after sampling/sharpening. Pixels outside `src` read as black.
@@ -348,7 +350,7 @@ export function stretchHalftone(
 	// colour adjustment also retains its previous sampling path.
 	const nativeMixed = mixed && (!adjust || adjustAfterSampling)
 		&& Math.min(SW, W) >= 2 && Math.min(SH, H) >= 2
-		&& ((W === SW * 2 && H * 2 <= SH) || (H === SH * 2 && W * 2 <= SW));
+		&& ((W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW));
 	if ((enlarging || nearestMixed) && !directDib) {
 		halftoneDespeckle(rect, SW, SH);
 	}
