@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.5) - 2026-10-01
+
+### Bug Fixes
+
+- Reproduce native odd-size edge handling in the halftone despeckle ([dc34961](https://github.com/ChristopherVR/emf-converter/commit/dc349611d5b89b1a692c1cd36e07b0770ab73fca))
+
 ## [4.6.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.4) - 2026-10-01
 
 ### Bug Fixes
