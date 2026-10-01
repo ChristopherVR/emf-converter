@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.7](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.7) - 2026-10-01
+
+### Features
+
+- Model HALFTONE mixed-axis enlargement and reduction weights from native captures ([d0fc972](https://github.com/ChristopherVR/emf-converter/commit/d0fc9727faaa1a89db3194fc31c928d9e0c03d62))
+
+### Other
+
+- Merge mixed-axis area-resample model with odd-size despeckle edges ([cf89cc6](https://github.com/ChristopherVR/emf-converter/commit/cf89cc68ceb5ede90cf6d2aabdc1c24ec1ca15b7))
+
 ## [4.6.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.6) - 2026-10-01
 
 ### Bug Fixes
