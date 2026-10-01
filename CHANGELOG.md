@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.6) - 2026-10-01
+
+### Bug Fixes
+
+- Fit flattened-pen perpendicular rounding per pen edge against native WidenPath ([8dc0b35](https://github.com/ChristopherVR/emf-converter/commit/8dc0b3587667d902271e58bc8287a9280c981188))
+
 ## [4.6.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.5) - 2026-10-01
 
 ### Bug Fixes
