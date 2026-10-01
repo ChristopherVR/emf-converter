@@ -46,9 +46,8 @@ describe('bundled image codecs without a canvas backend', () => {
 		expect([decoded.width, decoded.height]).toEqual([37, 19]);
 		let max = 0, sum = 0;
 		for (let i = 0; i < decoded.data.length; i++) { const difference = Math.abs(decoded.data[i] - reference.data[i]); max = Math.max(max, difference); sum += difference; }
-		const rgbJpeg = variant.includes('jpeg-rgb'), ycbcrJpeg = variant.includes('jpeg-ycbcr');
-		expect(max).toBeLessThanOrEqual(rgbJpeg ? 1 : ycbcrJpeg ? 4 : 0);
-		expect(sum / decoded.data.length).toBeLessThanOrEqual(rgbJpeg ? 0.1 : ycbcrJpeg ? 0.4 : 0);
+		expect(max).toBeLessThanOrEqual(0);
+		expect(sum / decoded.data.length).toBeLessThanOrEqual(0);
 		expect(encoded).toEqual(original);
 	});
 	it.each(['444', '422', '420', 'progressive', 'rgb', 'grey'])('matches native JPEG %s reconstruction on odd-sized images', async (variant) => {
@@ -88,8 +87,8 @@ describe('bundled image codecs without a canvas backend', () => {
 		}
 		// Pixel-centred chroma reconstruction leaves small JPEG rounding
 		// differences; lossless GIF and TIFF must match byte for byte.
-		expect(max).toBeLessThanOrEqual(kind === 'jpeg' ? 2 : 0);
-		expect(sum / decoded.data.length).toBeLessThanOrEqual(kind === 'jpeg' ? 0.4 : 0);
+		expect(max).toBeLessThanOrEqual(0);
+		expect(sum / decoded.data.length).toBeLessThanOrEqual(0);
 		const { convertMetafileToSvg } = await import('./index');
 		const svg = (await convertMetafileToSvg(embeddedImage(encoded)))!;
 		const image = /data:image\/png;base64,([A-Za-z0-9+/=]+)/.exec(svg);
