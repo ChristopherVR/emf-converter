@@ -278,40 +278,102 @@ const SPECKLE_OVERSHOOT = 4;
  * axes become 3/4 red + 1/4 blue, while the blue ones (whose sharpening
  * stays in range) keep their colour; ramps, bands and ordinary edges do not
  * change. `px` is RGB triples, `w` x `h`, changed in place.
+ *
+ * An odd size leaves an unpaired last column / row. Where such a pixel
+ * differs from the one before it, Windows blurs it across the edge instead
+ * of along it, so a lone final pixel of a 2-pixel-block pattern gets 3/4 of
+ * itself instead of the mirrored half; the despeckled pixel beside an
+ * unpaired pixel that was itself left alone blurs with that pixel's smoothed
+ * value (native 13/16 mixes, 7/8 beside both a last column and a last row).
+ * This reproduces native 2-pixel-block and one-pixel-checker captures of odd
+ * sizes; other patterns and a lone corner pixel that natively stays unchanged
+ * remain approximate.
  */
 export function halftoneDespeckle(px: Int32Array, w: number, h: number): void {
 	const src = px.slice();
 	const at = (x: number, y: number, c: number): number => src[(y * w + x) * 3 + c];
 	const over = (v: number): boolean => v < -SPECKLE_OVERSHOOT * 4 || v > (255 + SPECKLE_OVERSHOOT) * 4;
-	for (let y = 0; y < h; y++) {
-		const up = y > 0 ? y - 1 : Math.min(h - 1, y + 1);
-		const down = y < h - 1 ? y + 1 : Math.max(0, y - 1);
-		for (let x = 0; x < w; x++) {
-			const left = x > 0 ? x - 1 : Math.min(w - 1, x + 1);
-			const right = x < w - 1 ? x + 1 : Math.max(0, x - 1);
-			let hClip = 0;
-			let vClip = 0;
-			let alternating = 0;
-			for (let c = 0; c < 3; c++) {
-				const v = at(x, y, c);
-				const axial = Math.max(Math.abs(v - at(left, y, c)), Math.abs(v - at(right, y, c)),
-					Math.abs(v - at(x, up, c)), Math.abs(v - at(x, down, c)));
-				const diagonal = Math.min(Math.abs(v - at(left, up, c)), Math.abs(v - at(right, up, c)),
-					Math.abs(v - at(left, down, c)), Math.abs(v - at(right, down, c)));
-				if (diagonal < axial) alternating++;
-				// 4 * (v + (2v - a - b) / 4), kept in integers.
-				if (over(6 * v - at(left, y, c) - at(right, y, c))) {
-					hClip++;
-				}
-				if (over(6 * v - at(x, up, c) - at(x, down, c))) {
-					vClip++;
-				}
+	// An odd size leaves the last column / row unpaired.
+	const loneX = w > 2 && w % 2 === 1 ? w - 1 : -1;
+	const loneY = h > 2 && h % 2 === 1 ? h - 1 : -1;
+	const mirror = (i: number, n: number, d: number): number => {
+		const j = i + d;
+		return j < 0 || j >= n ? i - d : j;
+	};
+	const vBlur = (x: number, y: number, c: number): number =>
+		(at(x, mirror(y, h, -1), c) + 2 * at(x, y, c) + at(x, mirror(y, h, 1), c) + 2) >> 2;
+	const hBlur = (x: number, y: number, c: number): number =>
+		(at(mirror(x, w, -1), y, c) + 2 * at(x, y, c) + at(mirror(x, w, 1), y, c) + 2) >> 2;
+	// What the neighbours of an unpaired last column / row see: the pixel
+	// smoothed across the other axis (the corner repeats itself past the edge).
+	const differs = (x0: number, y0: number, x1: number, y1: number): boolean =>
+		at(x0, y0, 0) !== at(x1, y1, 0) || at(x0, y0, 1) !== at(x1, y1, 1) || at(x0, y0, 2) !== at(x1, y1, 2);
+	// A last-column / last-row pixel is unpaired when it differs from the one before it.
+	const loneColumn = (y: number): boolean => loneX > 0 && differs(loneX, y, loneX - 1, y);
+	const loneRow = (x: number): boolean => loneY > 0 && differs(x, loneY, x, loneY - 1);
+	const loneColumnValue = (y: number, c: number): number =>
+		y === loneY && loneRow(loneX) ? (at(loneX, y - 1, c) + 3 * at(loneX, y, c) + 2) >> 2 : vBlur(loneX, y, c);
+	const loneRowValue = (x: number, c: number): number =>
+		x === loneX && loneColumn(loneY) ? (at(x - 1, loneY, c) + 3 * at(x, loneY, c) + 2) >> 2 : hBlur(x, loneY, c);
+	const speckled = (x: number, y: number): boolean => {
+		// The unpaired last column / row repeats itself past the edge here.
+		const up = mirror(y, h, -1);
+		const down = mirror(y, h, 1);
+		const left = mirror(x, w, -1);
+		const right = mirror(x, w, 1);
+		let hClip = 0;
+		let vClip = 0;
+		let alternating = 0;
+		for (let c = 0; c < 3; c++) {
+			const v = at(x, y, c);
+			const axial = Math.max(Math.abs(v - at(left, y, c)), Math.abs(v - at(right, y, c)),
+				Math.abs(v - at(x, up, c)), Math.abs(v - at(x, down, c)));
+			const diagonal = Math.min(Math.abs(v - at(left, up, c)), Math.abs(v - at(right, up, c)),
+				Math.abs(v - at(left, down, c)), Math.abs(v - at(right, down, c)));
+			if (diagonal < axial) alternating++;
+			// 4 * (v + (2v - a - b) / 4), kept in integers.
+			if (over(6 * v - at(left, y, c) - at(right, y, c))) {
+				hClip++;
 			}
-			if (hClip < 2 || vClip < 2 || alternating < 2) {
+			if (over(6 * v - at(x, up, c) - at(x, down, c))) {
+				vClip++;
+			}
+		}
+		return hClip >= 2 && vClip >= 2 && alternating >= 2;
+	};
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			if (!speckled(x, y)) {
 				continue;
 			}
+			const left = mirror(x, w, -1);
+			const right = mirror(x, w, 1);
+			const up = mirror(y, h, -1);
+			const down = mirror(y, h, 1);
+			// Beside an unpaired last column / row that is itself left alone,
+			// the blur sees that pixel's smoothed value instead of its own.
+			const lonelyColumn = x === loneX && loneColumn(y);
+			const lonelyRow = y === loneY && loneRow(x);
+			const nearLoneX = x === loneX - 1 && loneX > 0 && loneColumn(y) && !speckled(loneX, y);
+			const nearLoneY = y === loneY - 1 && loneY > 0 && loneRow(x) && !speckled(x, loneY);
+			// The corner repeats itself past the edge when the lone column /
+			// row beside it was left alone, else it mirrors.
+			const cornerRepeats = lonelyColumn && lonelyRow && (!speckled(x, y - 1) || !speckled(x - 1, y));
 			for (let c = 0; c < 3; c++) {
-				px[(y * w + x) * 3 + c] = (at(left, y, c) + 2 * at(x, y, c) + at(right, y, c) + 2) >> 2;
+				const v = at(x, y, c);
+				let r: number;
+				if (lonelyColumn && lonelyRow) {
+					r = cornerRepeats ? (at(left, y, c) + 3 * v + 2) >> 2 : hBlur(x, y, c);
+				} else {
+					// The unpaired column is blurred across, the unpaired row along.
+					let sum = lonelyColumn
+						? at(x, up, c) + 2 * v + at(x, down, c)
+						: at(left, y, c) + 2 * v + at(right, y, c);
+					if (nearLoneX) sum += loneColumnValue(y, c) - at(loneX, y, c);
+					if (nearLoneY) sum += loneRowValue(x, c) - at(x, loneY, c);
+					r = (sum + 2) >> 2;
+				}
+				px[(y * w + x) * 3 + c] = r;
 			}
 		}
 	}
