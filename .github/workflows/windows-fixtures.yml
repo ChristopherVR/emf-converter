@@ -93,7 +93,7 @@ jobs:
 
       - name: Upload fixtures artifact
         if: steps.collect.outputs.count != '0'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: windows-fixtures-${{ github.run_id }}
           path: ${{ runner.temp }}/windows-fixtures/
