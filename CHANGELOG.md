@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.4) - 2026-10-01
+
+### Bug Fixes
+
+- Form Blend knots in truncating float32 arithmetic ([e33574a](https://github.com/ChristopherVR/emf-converter/commit/e33574a550ed8e7e833e0c6283e6e4ed0e8940d4))
+
 ## [4.6.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.3) - 2026-10-01
 
 ### Bug Fixes
