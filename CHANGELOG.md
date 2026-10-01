@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.15](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.15) - 2026-10-01
+
+### Bug Fixes
+
+- Match native mixed-axis halftone stretch for 2x enlargement with reduction ([e830ed5](https://github.com/ChristopherVR/emf-converter/commit/e830ed58e667064dfde4e0cea9af209376dbc8cc))
+
+### Documentation
+
+- Describe native mixed-axis halftone coverage ([dbf33df](https://github.com/ChristopherVR/emf-converter/commit/dbf33dffa2a71880c62419c8a1172f41ee52adbb))
+
 ## [4.4.14](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.14) - 2026-10-01
 
 ### Bug Fixes
