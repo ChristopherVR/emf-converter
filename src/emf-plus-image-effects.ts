@@ -541,19 +541,20 @@ function mirror(p: number, n: number): number {
 }
 
 /**
- * GDI+'s blur of a `w` x `h` straight RGBA buffer: every channel (alpha
- * included, colour not premultiplied) convolved along each row with
+ * GDI+'s small-radius blur of a `w` x `h` straight RGBA buffer: every channel
+ * (alpha included, colour not premultiplied) convolved along each row with
  * {@link blurKernel}, with rounded horizontal pixels before the vertical
- * pass. Below radius 20, native filtering visits ceil(h / w) leading
- * rows starting at `vRow`. Edges reflect unless the radius reaches that
- * axis's size, when they clamp; `vZeroAbove` reads transparency above the
- * source rectangle. Reduced large-radius buffers filter every row. Returns floats.
+ * pass. Every product is kept to 1/256 of a level before it is summed.
+ * Native filtering visits `verticalRows` (default ceil(h / w)) leading rows
+ * starting at `vRow`. Edges reflect unless the radius reaches that axis's
+ * size, when they clamp; `vZeroAbove` reads transparency above the source
+ * rectangle. Returns floats.
  */
-function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false, fullVertical = false, edgeWidth = w, edgeHeight = h, verticalRows = Math.ceil(h / w)): Float64Array {
+function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false, verticalRows = Math.ceil(h / w)): Float64Array {
 	const k = blurKernel(radius);
 	const taps = (k.length - 1) / 2;
-	const horizontalIndex = taps >= edgeWidth ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
-	const verticalIndex = taps >= edgeHeight ? (y: number) => Math.max(0, Math.min(h - 1, y)) : (y: number) => mirror(y, h);
+	const horizontalIndex = taps >= w ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
+	const verticalIndex = taps >= h ? (y: number) => Math.max(0, Math.min(h - 1, y)) : (y: number) => mirror(y, h);
 	const out = new Float64Array(w * h * 4);
 	for (let y = 0; y < h; y++) {
 		const row = y * w * 4;
@@ -564,17 +565,17 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 			let s3 = 0;
 			for (let j = -taps; j <= taps; j++) {
 				const p = row + horizontalIndex(x + j) * 4;
-				const kw = k[j + taps];
-				s0 += kw * src[p];
-				s1 += kw * src[p + 1];
-				s2 += kw * src[p + 2];
-				s3 += kw * src[p + 3];
+				const kw = k[j + taps] * 256;
+				s0 += Math.round(kw * src[p]);
+				s1 += Math.round(kw * src[p + 1]);
+				s2 += Math.round(kw * src[p + 2]);
+				s3 += Math.round(kw * src[p + 3]);
 			}
 			const o = row + x * 4;
-			out[o] = Math.round(s0);
-			out[o + 1] = Math.round(s1);
-			out[o + 2] = Math.round(s2);
-			out[o + 3] = Math.round(s3);
+			out[o] = Math.floor((s0 + 128) / 256);
+			out[o + 1] = Math.floor((s1 + 128) / 256);
+			out[o + 2] = Math.floor((s2 + 128) / 256);
+			out[o + 3] = Math.floor((s3 + 128) / 256);
 		}
 	}
 	if (taps > 0 && vRow >= 0 && vRow < h) {
@@ -582,7 +583,7 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 		// Native small-radius filtering visits ceil(height / width) leading
 		// rows. Tall and narrow probes expose the extra rows hidden by square
 		// and landscape fixtures.
-		const endRow = fullVertical ? h : Math.min(h, vRow + verticalRows);
+		const endRow = Math.min(h, vRow + verticalRows);
 		for (let row = vRow; row < endRow; row++) {
 			const col = new Float64Array(w * 4);
 			for (let j = -taps; j <= taps; j++) {
@@ -592,7 +593,7 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 				}
 				const base = verticalIndex(yy) * w * 4;
 				for (let i = 0; i < w * 4; i++) {
-					col[i] += k[j + taps] * horizontal[base + i];
+					col[i] += Math.round(k[j + taps] * horizontal[base + i] * 256) / 256;
 				}
 			}
 			out.set(col, row * w * 4);
@@ -606,57 +607,99 @@ function blurReduction(radius: number): number {
 	return radius < 20 ? 1 : radius < 40 ? 2 : radius <= 80 ? 4 : radius < 160 ? 8 : 16;
 }
 
-/** Large native blurs reduce in powers of two, filter both axes, then interpolate. */
-function effectBlur(src: Uint8ClampedArray, width: number, height: number, radius: number, expanded = false): Float64Array {
+/** The samples one axis of a large blur reduces, with transparent reduced samples added around them. */
+interface BlurSpan {
+	start: number;
+	size: number;
+	pad: number;
+}
+
+/**
+ * One axis of a large-radius blur over `lanes` rows (or columns) of
+ * `length` samples, four channels each. Per lane and channel the samples of
+ * `span` (default all) are reduced by `factor` (the floor of each block's
+ * mean, a partial last block averaged over its own samples), filtered with
+ * the reduced kernel and enlarged back to `length` samples. `get` reads sample
+ * `i` of lane `lane`, channel `c`; `put` stores the enlarged sample.
+ * `edgeLength` is the number of samples that picks the edge mode: kernels as
+ * wide as it clamp at the ends, narrower ones reflect.
+ */
+function blurAxis(
+	length: number,
+	lanes: number,
+	factor: number,
+	k: Float64Array,
+	edgeLength: number,
+	get: (i: number, lane: number, c: number) => number,
+	put: (i: number, lane: number, c: number, v: number) => void,
+	span: BlurSpan = { start: 0, size: length, pad: 0 },
+): void {
+	const inner = Math.ceil(span.size / factor);
+	const n = inner + 2 * span.pad;
+	const taps = (k.length - 1) / 2;
+	const index = taps >= edgeLength ? (i: number) => clamp(i, 0, n - 1) : (i: number) => mirror(i, n);
+	const reduced = new Float64Array(n);
+	const filtered = new Float64Array(n);
+	const k256 = k.map((w) => w * 256);
+	for (let lane = 0; lane < lanes; lane++) for (let c = 0; c < 4; c++) {
+		for (let b = span.pad; b < span.pad + inner; b++) {
+			const from = span.start + (b - span.pad) * factor;
+			const end = Math.min(span.start + span.size, from + factor);
+			let sum = 0;
+			for (let i = from; i < end; i++) sum += get(i, lane, c);
+			reduced[b] = Math.floor(sum / (end - from));
+		}
+		// Every product is kept to 1/256 of a level, then the sum rounds half up.
+		for (let b = 0; b < n; b++) {
+			let sum = 0;
+			if (b >= taps && b + taps < n) {
+				for (let j = 0; j < k256.length; j++) sum += Math.round(k256[j] * reduced[b - taps + j]);
+			} else {
+				for (let j = 0; j < k256.length; j++) sum += Math.round(k256[j] * reduced[index(b - taps + j)]);
+			}
+			filtered[b] = Math.floor((sum + 128) / 256);
+		}
+		for (let i = 0; i < length; i++) {
+			// Beyond the outer reduced samples the line through the two nearest continues.
+			const p = (i - span.start + 0.5) / factor - 0.5 + span.pad;
+			const a = clamp(Math.floor(p), 0, Math.max(0, n - 2));
+			const t = p - a;
+			put(i, lane, c, clamp(Math.floor((1 - t) * filtered[a] + t * filtered[Math.min(n - 1, a + 1)] + 1e-9), 0, 255));
+		}
+	}
+}
+
+/**
+ * Large native blurs (radius 20 and above) filter each axis separately:
+ * every row is reduced horizontally, filtered and enlarged back to full width,
+ * then every column of those rows is reduced vertically, filtered and
+ * enlarged. Reduction and enlargement truncate; filtering sums products kept to
+ * 1/256 of a level and rounds half up. Against native noise, photo-like,
+ * rectangle, block and one-dimensional images at radii 25-100, 99.6-99.9% of
+ * interior pixels are exact (the rest one level off). `region`, an expanded
+ * blur's source rectangle inside its transparent padding, is reduced from its
+ * own origin so that its partial blocks are not averaged with padding.
+ */
+function effectBlur(src: Uint8ClampedArray, width: number, height: number, radius: number, region?: { x: number; y: number; w: number; h: number }): Float64Array {
 	const factor = blurReduction(radius);
 	// Native partial blocks on very small buffers use a different edge path.
-	if (factor === 1 || ((width < 4 || height < 4) && (width % factor !== 0 || height % factor !== 0))) {
+	if (factor === 1) {
 		return gdipBlur(src, width, height, radius);
 	}
-	const w = Math.ceil(width / factor);
-	const h = Math.ceil(height / factor);
-	const reduced = new Uint8ClampedArray(w * h * 4);
-	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-		const x1 = Math.min(width, (x + 1) * factor), y1 = Math.min(height, (y + 1) * factor);
-		const count = (x1 - x * factor) * (y1 - y * factor);
-		for (let c = 0; c < 4; c++) {
-			let sum = 0;
-			for (let yy = y * factor; yy < y1; yy++) for (let xx = x * factor; xx < x1; xx++) sum += src[(yy * width + xx) * 4 + c];
-			reduced[(y * w + x) * 4 + c] = Math.floor(sum / count);
-		}
-	}
+	const k = blurKernel(radius / factor);
+	const pad = region ? Math.ceil(Math.ceil(radius) / factor) : 0;
+	const spanX = region ? { start: region.x, size: region.w, pad } : undefined;
+	const spanY = region ? { start: region.y, size: region.h, pad } : undefined;
 	// Native edge-mode selection counts complete blocks, although the buffer
 	// retains a partial final block. Odd dimensions expose this distinction.
-	const filtered = gdipBlur(reduced, w, h, radius / factor, 0, false, true, Math.floor(width / factor), Math.floor(height / factor));
-	// A plain blur interpolates the unrounded vertical pass: horizontally, then
-	// vertically, truncating each step (native noise sweeps at radius 20-100
-	// stay within two levels, mean 0.06-0.13). The expanded-edge path keeps its
-	// earlier rounded form, which its fractional-rectangle captures were fitted to.
-	if (!expanded) {
-		const out = new Float64Array(src.length);
-		for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-			const px = clamp((x + 0.5) / factor - 0.5, 0, w - 1), py = clamp((y + 0.5) / factor - 0.5, 0, h - 1);
-			const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy;
-			const x1 = Math.min(w - 1, ix + 1), y1 = Math.min(h - 1, iy + 1);
-			for (let c = 0; c < 4; c++) {
-				const at = (xx: number, yy: number) => filtered[(yy * w + xx) * 4 + c];
-				const top = Math.floor((1 - fx) * at(ix, iy) + fx * at(x1, iy));
-				const bottom = Math.floor((1 - fx) * at(ix, y1) + fx * at(x1, y1));
-				out[(y * width + x) * 4 + c] = Math.floor((1 - fy) * top + fy * bottom);
-			}
-		}
-		return out;
-	}
-	// Native filtering rounds the vertical pass before enlargement too.
-	for (let i = 0; i < filtered.length; i++) filtered[i] = Math.round(filtered[i]);
+	const rows = new Uint8Array(src.length);
+	blurAxis(width, height, factor, k, Math.floor(width / factor), (i, lane, c) => src[(lane * width + i) * 4 + c], (i, lane, c, v) => {
+		rows[(lane * width + i) * 4 + c] = v;
+	}, spanX);
 	const out = new Float64Array(src.length);
-	for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-		const px = clamp((x + 0.5) / factor - 0.5, 0, w - 1), py = clamp((y + 0.5) / factor - 0.5, 0, h - 1);
-		const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy;
-		const a = (iy * w + ix) * 4, b = (iy * w + Math.min(w - 1, ix + 1)) * 4;
-		const d = (Math.min(h - 1, iy + 1) * w + ix) * 4, e = (Math.min(h - 1, iy + 1) * w + Math.min(w - 1, ix + 1)) * 4;
-		for (let c = 0; c < 4; c++) out[(y * width + x) * 4 + c] = Math.round((1 - fy) * ((1 - fx) * filtered[a + c] + fx * filtered[b + c]) + fy * ((1 - fx) * filtered[d + c] + fx * filtered[e + c]));
-	}
+	blurAxis(height, width, factor, k, Math.floor(height / factor), (i, lane, c) => rows[(i * width + lane) * 4 + c], (i, lane, c, v) => {
+		out[(i * width + lane) * 4 + c] = v;
+	}, spanY);
 	return out;
 }
 
@@ -804,7 +847,10 @@ function copyBlock(
  * A rectangle reaching either edge copies image pixels throughout the
  * grown buffer and starts at the buffer's top. Small-radius vertical row
  * counts use the source region's dimensions, before adding transparent
- * padding. Large radii reduce and filter both axes, including the padding.
+ * padding. Large radii reduce and filter both axes. A cropped region is
+ * reduced from its own corner, so a partial block at its far edge averages
+ * only its own pixels, and transparent reduced samples are added around it;
+ * a rectangle reaching an edge reduces the whole grown buffer from its corner.
  */
 function expandedBlur(
 	rgba: Uint8ClampedArray,
@@ -830,7 +876,10 @@ function expandedBlur(
 		const gy1 = Math.min(height, y1 + r);
 		copyBlock(rgba, width, gx0, gy0, gx1 - gx0, gy1 - gy0, buf, bw, gx0 - (x0 - r), gy0 - (y0 - r));
 	}
-	const blurred = blurReduction(radius) > 1 ? effectBlur(buf, bw, bh, radius, true) : gdipBlur(buf, bw, bh, radius, cropped ? r : 0, cropped, false, bw, bh, Math.ceil((y1 - y0) / (x1 - x0)));
+	const blurred =
+		blurReduction(radius) > 1
+			? effectBlur(buf, bw, bh, radius, cropped ? { x: r, y: r, w: x1 - x0, h: y1 - y0 } : undefined)
+			: gdipBlur(buf, bw, bh, radius, cropped ? r : 0, cropped, Math.ceil((y1 - y0) / (x1 - x0)));
 	const w = x1 - x0;
 	const out = new Uint8ClampedArray(w * (y1 - y0) * 4);
 	for (let y = 0; y < y1 - y0; y++) {

@@ -3388,6 +3388,10 @@
                        {
                            "name":  "effect-blur-large.json",
                            "sha256":  "8e15e93fe7e9a40491ea5ea320d669e7572f24331a48ce15648e8c3940eb8caa"
+                       },
+                       {
+                           "name":  "effect-blur-noise.json",
+                           "sha256":  "87a3b0cd3f5c49cf5f3e230bb33d3361c95953fade808970f762b5d8deceac38"
                        }
                    ]
 }

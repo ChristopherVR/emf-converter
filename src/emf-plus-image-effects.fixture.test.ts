@@ -24,6 +24,8 @@ describe('native expanded blur regions', () => {
 	it('bounds 504 draws across radii, edge positions, fractional rectangles and alpha', async () => {
 		const cases = await readBakedEffects('effect-blur-expanded');
 		expect(cases).toHaveLength(504);
+		// Share of compared pixels that match exactly, for radii below and from 20.
+		const exact = { small: [0, 0], large: [0, 0] };
 		for (const { source, effect, srcRect, baked } of cases) {
 			expect(effect.kind).toBe('blur');
 			if (effect.kind !== 'blur') throw new Error('not a blur capture');
@@ -33,13 +35,18 @@ describe('native expanded blur regions', () => {
 			let maximum = 0;
 			for (let yy = 0; yy < Math.ceil(h); yy++) for (let xx = 0; xx < Math.ceil(w); xx++) {
 				const i = (yy * region.width + xx) * 4, j = (yy * baked.width + xx) * 4;
-				maximum = Math.max(maximum, Math.abs(region.rgba[i + 3] - baked.data[j + 3]));
+				let pixel = Math.abs(region.rgba[i + 3] - baked.data[j + 3]);
 				if (region.rgba[i + 3] || baked.data[j + 3]) for (let ch = 0; ch < 3; ch++) {
-					maximum = Math.max(maximum, Math.abs(region.rgba[i + ch] - baked.data[j + ch]));
+					pixel = Math.max(pixel, Math.abs(region.rgba[i + ch] - baked.data[j + ch]));
 				}
+				maximum = Math.max(maximum, pixel);
+				exact[effect.radius < 20 ? 'small' : 'large'][0] += pixel === 0 ? 1 : 0;
+				exact[effect.radius < 20 ? 'small' : 'large'][1]++;
 			}
-			expect(maximum, `radius ${effect.radius}, rectangle ${srcRect}`).toBeLessThanOrEqual(effect.radius < 20 ? 1 : fractional ? 11 : 3);
+			expect(maximum, `radius ${effect.radius}, rectangle ${srcRect}`).toBeLessThanOrEqual(effect.radius < 20 || fractional ? 1 : 2);
 		}
+		expect(exact.small[0] / exact.small[1]).toBeGreaterThan(0.998);
+		expect(exact.large[0] / exact.large[1]).toBeGreaterThan(0.9);
 	}, 15000);
 });
 

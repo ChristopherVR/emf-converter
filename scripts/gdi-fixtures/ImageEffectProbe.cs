@@ -245,6 +245,46 @@ public static class ImageEffectProbe
 		File.WriteAllText(Path.Combine(dir,"effect-tint-settings.json"),json.Append(']').ToString());File.WriteAllBytes(Path.Combine(dir,"effect-tint-source.bin"),source);
 		using(var file=File.Create(Path.Combine(dir,"effect-tint-sweep.bin.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(results,0,results.Length);
 	}
+	// Deterministic RGBA noise shared with src/emf-plus-image-effect.test.ts: a 31-bit LCG, one draw per channel (alpha only when asked).
+	static byte[] Noise(int width, int height, bool alpha, int seed)
+	{
+		int s = seed; byte[] data = new byte[width * height * 4];
+		Func<int> next = () => { s = unchecked(s * 1103515245 + 12345) & 0x7fffffff; return (s >> 16) & 255; };
+		for (int i = 0; i < width * height; i++) { data[i*4] = (byte)next(); data[i*4+1] = (byte)next(); data[i*4+2] = (byte)next(); data[i*4+3] = alpha ? (byte)next() : (byte)255; }
+		return data;
+	}
+	static byte[] Blurred(byte[] rgba, int width, int height, float radius)
+	{
+		IntPtr bitmap = IntPtr.Zero, effect = IntPtr.Zero;
+		try {
+			Check(GdipCreateBitmapFromScan0(width, height, 0, 0x26200a, IntPtr.Zero, out bitmap));
+			for (int i = 0; i < width * height; i++) { int o = i * 4; Check(GdipBitmapSetPixel(bitmap, i % width, i / width, (rgba[o+3] << 24) | (rgba[o] << 16) | (rgba[o+1] << 8) | rgba[o+2])); }
+			byte[] parameters = new byte[8]; Buffer.BlockCopy(new float[] {radius, 0}, 0, parameters, 0, 8);
+			Check(GdipCreateEffect(new Guid("633c80a4-1843-482b-9ef2-be2834c5fdd4"), out effect));
+			Check(GdipSetEffectParameters(effect, parameters, (uint)parameters.Length));
+			Check(GdipBitmapApplyEffect(bitmap, effect, IntPtr.Zero, false, IntPtr.Zero, IntPtr.Zero));
+			return Pixels(bitmap, width, height);
+		} finally {
+			if (effect != IntPtr.Zero) GdipDeleteEffect(effect);
+			if (bitmap != IntPtr.Zero) GdipDisposeImage(bitmap);
+		}
+	}
+	/// Blur of two-dimensional noise (alpha too in some cases) at odd sizes and radii on every reduction factor.
+	public static void NoiseBlur(string dir)
+	{
+		object[][] cases = {
+			new object[]{40,30,25f,false}, new object[]{51,37,40f,false}, new object[]{64,64,100f,false}, new object[]{33,77,60f,true}, new object[]{48,48,200f,false},
+			new object[]{20,20,81f,true}, new object[]{100,12,30f,false}, new object[]{9,9,25f,false}, new object[]{24,24,20f,false}, new object[]{70,45,159.5f,true} };
+		var json = new System.Text.StringBuilder("[");
+		using (var init = new Bitmap(1,1)) for (int i = 0; i < cases.Length; i++) {
+			int width = (int)cases[i][0], height = (int)cases[i][1]; float radius = (float)cases[i][2]; bool alpha = (bool)cases[i][3]; int seed = 1000 + i;
+			byte[] expected = Blurred(Noise(width, height, alpha, seed), width, height, radius);
+			if (i > 0) json.Append(',');
+			json.Append("{\"width\":").Append(width).Append(",\"height\":").Append(height).Append(",\"radius\":").Append(radius.ToString(System.Globalization.CultureInfo.InvariantCulture))
+			.Append(",\"alpha\":").Append(alpha ? "true" : "false").Append(",\"seed\":").Append(seed).Append(",\"expected\":\"").Append(Convert.ToBase64String(expected)).Append("\"}");
+		}
+		File.WriteAllText(Path.Combine(dir, "effect-blur-noise.json"), json.Append(']').ToString());
+	}
 	static void BlurSamples(string dir,string file,int[][] sizes,float[] radii)
 	{
 		var json = new System.Text.StringBuilder("[");

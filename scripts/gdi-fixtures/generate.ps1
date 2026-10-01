@@ -75,6 +75,7 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -
         [ImageEffectProbe]::BlurDimensions($outDir)
     } elseif ($Which -eq 'image-effect-large-blur') {
         [ImageEffectProbe]::LargeBlur($outDir)
+        [ImageEffectProbe]::NoiseBlur($outDir)
     } elseif ($Which -eq 'image-effect-hue') {
         [ImageEffectProbe]::HueSweep($outDir)
     } elseif ($Which -eq 'image-effect-tint') {

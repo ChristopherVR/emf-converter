@@ -75,7 +75,7 @@ describe('EMF+ image effects', () => {
 				const expected = Buffer.from(sweep.expected[r * sweep.amounts.length + a], 'base64');
 				let maxDiff = 0;
 				for (let i = 0; i < actual.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
-				expect(maxDiff, `radius=${sweep.radii[r]} amount=${sweep.amounts[a]}`).toBeLessThanOrEqual(sweep.radii[r] === 255 ? 0 : 4);
+				expect(maxDiff, `radius=${sweep.radii[r]} amount=${sweep.amounts[a]}`).toBe(0);
 			}
 		}
 	});
@@ -94,10 +94,40 @@ describe('EMF+ image effects', () => {
 				const expected = Buffer.from(c[pattern], 'base64');
 				let maxDiff = 0;
 				for (let i = 0; i < actual.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
-				const bound = c.radius < 20 ? (pattern === 'impulse' ? 0 : 1) : pattern === 'impulse' ? (c.width % 2 ? 8 : 3) : 7;
+				const bound = pattern === 'impulse' ? 0 : c.radius < 20 ? 1 : 2;
 				expect(maxDiff, `${c.width}x${c.height} radius=${c.radius} ${pattern}`).toBeLessThanOrEqual(bound);
 			}
 		}
+	});
+	it('matches native blur of two-dimensional noise on every reduction factor', () => {
+		// The noise is the probe's (scripts/gdi-fixtures/ImageEffectProbe.cs): a 31-bit LCG, one draw per channel.
+		const noise = (width: number, height: number, alpha: boolean, seed: number): Uint8ClampedArray => {
+			let state = seed;
+			const next = (): number => {
+				state = (Math.imul(state, 1103515245) + 12345) & 0x7fffffff;
+				return (state >>> 16) & 255;
+			};
+			const data = new Uint8ClampedArray(width * height * 4);
+			for (let i = 0; i < width * height; i++) data.set([next(), next(), next(), alpha ? next() : 255], i * 4);
+			return data;
+		};
+		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-noise.json', import.meta.url), 'utf8'));
+		expect(cases).toHaveLength(10);
+		let exact = 0, total = 0;
+		for (const c of cases) {
+			const actual = applyBlur(noise(c.width, c.height, c.alpha, c.seed), c.width, c.height, c.radius);
+			const expected = Buffer.from(c.expected, 'base64');
+			let maxDiff = 0, same = 0;
+			for (let i = 0; i < actual.length; i++) {
+				maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
+				same += actual[i] === expected[i] ? 1 : 0;
+			}
+			expect(maxDiff, `${c.width}x${c.height} radius=${c.radius}`).toBeLessThanOrEqual(2);
+			expect(same / actual.length, `${c.width}x${c.height} radius=${c.radius}`).toBeGreaterThan(0.995);
+			exact += same;
+			total += actual.length;
+		}
+		expect(exact / total).toBeGreaterThan(0.998);
 	});
 	it('follows native blur reduction transitions at all 957 quarter radii', () => {
 		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-factors.json', import.meta.url), 'utf8'));
@@ -109,7 +139,7 @@ describe('EMF+ image effects', () => {
 			const expected = Buffer.from(c.row, 'base64');
 			let maxDiff = 0;
 			for (let i = 0; i < expected.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
-			expect(maxDiff, `radius=${c.radius}`).toBeLessThanOrEqual(c.radius < 20 ? 1 : 3);
+			expect(maxDiff, `radius=${c.radius}`).toBeLessThanOrEqual(c.radius < 20 ? 0 : 2);
 		}
 	});
 	it('matches native blur across tall, narrow and square buffers through radius 16', () => {
