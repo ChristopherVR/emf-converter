@@ -9,6 +9,11 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 ### Bug Fixes
 
 - Fit flattened-pen perpendicular rounding per pen edge against native WidenPath ([8dc0b35](https://github.com/ChristopherVR/emf-converter/commit/8dc0b3587667d902271e58bc8287a9280c981188))
+- Match native PS_INSIDEFRAME widening for fractional widths and filled curves ([16cf4ce](https://github.com/ChristopherVR/emf-converter/commit/16cf4ce5a1ac31e9d92e3b922a34df4aa3b44040))
+
+### Other
+
+- Merge WMF inside-frame work with the flat-pen sector table ([408d732](https://github.com/ChristopherVR/emf-converter/commit/408d73229ff4dad956c23fec0f955d89dcb7fa48))
 
 ## [4.6.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.5) - 2026-10-01
 
