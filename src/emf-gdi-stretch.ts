@@ -200,38 +200,113 @@ export function halftoneAxis(start: number, srcLen: number, dstLen: number, reve
 	return taps;
 }
 
-/** Width of the Gaussian that rounds the corners of the interpolation tent. */
-const SOFT_TENT_SIGMA = 0.25;
-const SOFT_TENT_STEPS = 31;
-const SOFT_TENT_SPAN = 3;
-const softTentCache = new Map<number, number>();
+/**
+ * HALFTONE source taps along one axis of a mixed-axis stretch. Enlarging (or
+ * 1:1) is {@link halftoneAxis}'s nearest pixel. Reducing, destination pixel
+ * `i` covers the exact span `[i * src / dst, (i + 1) * src / dst)` and takes
+ * every source pixel it overlaps with a 16.16 weight: the overlap share
+ * rounded up, except for the first (lowest source index) tap, which takes
+ * whatever remains so the weights sum to exactly 65536. The stretch carries
+ * these fractions through its sharpening pass, so the split decides which side
+ * of an integer boundary an exact result (a 3x reduction) lands on; measured
+ * against native captures the first tap is the one that ends up the lightest.
+ * Weights that are exact in 16.16 (a 16 -> 5 reduction) stay exact.
+ */
+export function halftoneReduceTaps(srcLen: number, dstLen: number, reverse: boolean): HalftoneTaps[] {
+	if (dstLen >= srcLen) return halftoneAxis(0, srcLen, dstLen, reverse);
+	const taps: HalftoneTaps[] = [];
+	for (let i = 0; i < dstLen; i++) {
+		// Spans in units of 1 / dstLen source pixels: pixel k covers [k * dstLen, (k + 1) * dstLen).
+		const from = i * srcLen;
+		const to = (i + 1) * srcLen;
+		const run: HalftoneTaps = [];
+		let rest = 0;
+		for (let k = Math.floor(from / dstLen); k * dstLen < to; k++) {
+			const overlap = Math.min(to, (k + 1) * dstLen) - Math.max(from, k * dstLen);
+			if (overlap <= 0) continue;
+			const w = Math.ceil((overlap * FIX) / srcLen);
+			run.push([k, w]);
+			if (run.length > 1) rest += w;
+		}
+		if (run.length > 1) run[0][1] = FIX - rest;
+		taps.push(run);
+	}
+	if (reverse) taps.reverse();
+	return taps;
+}
 
 /**
- * Interpolation weight of a source sample `d` source pixels away, when a
- * mixed-axis stretch enlarges by anything but exactly 2x. Measured against
- * native impulse responses, Windows' kernel is the linear tent with its
- * corners rounded (a ~0.25-pixel Gaussian), independent of the enlargement
- * ratio. It matches the captures to within about a quarter of a level on
- * average; the exact mechanism is not documented.
+ * Smooth part of the enlargement kernel, sampled every 0.05 source pixels
+ * from the centre outwards (zero beyond 1 pixel). Measured: fitted jointly to
+ * native linear responses for 44 enlargement ratios.
  */
-export function softTent(d: number): number {
-	const key = Math.round(d * 1024);
-	const cached = softTentCache.get(key);
-	if (cached !== undefined) {
-		return cached;
-	}
-	let sum = 0;
+const ENLARGE_KERNEL = [
+	0.7598, 0.7276, 0.6829, 0.6528, 0.6106, 0.5745, 0.5362, 0.4955, 0.4570, 0.4121, 0.3762,
+	0.3233, 0.2741, 0.2260, 0.1822, 0.1412, 0.1021, 0.0685, 0.0382, 0.0138, 0,
+];
+/** Height of the unit box (|u| < 0.5) added to {@link ENLARGE_KERNEL}. */
+const ENLARGE_BOX = 0.2429;
+const ENLARGE_STEP = 0.05;
+
+/** Unnormalised enlargement kernel weight at `u` source pixels from the centre. */
+function enlargeKernel(u: number): number {
+	const edge = u / ENLARGE_STEP;
+	const i = Math.floor(edge);
+	const smooth = i >= ENLARGE_KERNEL.length - 1 ? 0
+		: ENLARGE_KERNEL[i] + (ENLARGE_KERNEL[i + 1] - ENLARGE_KERNEL[i]) * (edge - i);
+	return smooth + ENLARGE_BOX * (Math.abs(u - 0.5) < 1e-9 ? 0.5 : u < 0.5 ? 1 : 0);
+}
+
+/**
+ * Taps (source index, weight) for each of `dst` pixels when a mixed-axis
+ * HALFTONE stretch enlarges an axis of `src` (already sharpened) samples by
+ * anything but exactly 2x.
+ *
+ * Measured against native impulse and random-data responses, Windows first
+ * resamples the samples to destination resolution by the area each
+ * destination pixel covers of each source pixel, then smooths that row with a
+ * symmetric destination-space FIR. Its taps are {@link enlargeKernel} (roughly
+ * 0.25 * box(|u| < 0.5) + 0.75 * triangle(|u| < 1)) sampled at the tap's
+ * distance `u = k / ratio` in source pixels and normalised to sum to 1;
+ * indices beyond the row replicate its edge pixels. The model reproduces the
+ * captured linear responses to within measurement noise for enlargements from
+ * 2.1x to 40x.
+ */
+export function halftoneEnlargeTaps(src: number, dst: number): HalftoneTaps[] {
+	const ratio = dst / src;
+	const reach = Math.ceil((ENLARGE_KERNEL.length - 1) * ENLARGE_STEP * ratio);
+	const fir: number[] = [];
 	let total = 0;
-	const half = (SOFT_TENT_STEPS - 1) / 2;
-	for (let i = -half; i <= half; i++) {
-		const x = (i / half) * SOFT_TENT_SPAN * SOFT_TENT_SIGMA;
-		const g = Math.exp(-(x * x) / (2 * SOFT_TENT_SIGMA * SOFT_TENT_SIGMA));
-		total += g;
-		sum += g * Math.max(0, 1 - Math.abs(key / 1024 + x));
+	for (let k = 0; k <= reach; k++) {
+		const w = enlargeKernel(k / ratio);
+		fir.push(w);
+		total += k === 0 ? w : 2 * w;
 	}
-	const value = sum / total;
-	softTentCache.set(key, value);
-	return value;
+	// The source pixels (and their share) under every destination pixel.
+	const cover: HalftoneTaps[] = [];
+	for (let x = 0; x < dst; x++) {
+		const lo = x / ratio;
+		const hi = (x + 1) / ratio;
+		const run: HalftoneTaps = [];
+		for (let j = Math.max(0, Math.floor(lo)); j < Math.min(src, hi); j++) {
+			const overlap = Math.min(hi, j + 1) - Math.max(lo, j);
+			if (overlap > 0) run.push([j, overlap * ratio]);
+		}
+		cover.push(run);
+	}
+	const taps: HalftoneTaps[] = [];
+	for (let x = 0; x < dst; x++) {
+		const weights = new Map<number, number>();
+		for (let k = -reach; k <= reach; k++) {
+			const w = fir[Math.abs(k)] / total;
+			if (w === 0) continue;
+			for (const [j, v] of cover[Math.max(0, Math.min(dst - 1, x + k))]) {
+				weights.set(j, (weights.get(j) ?? 0) + w * v);
+			}
+		}
+		taps.push([...weights.entries()]);
+	}
+	return taps;
 }
 
 /**
@@ -416,11 +491,14 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
  *   which is what turns `#F0D010` next to a darker stripe into `#F7DD03`.
  * - Mixed-axis stretching with an enlarged axis and an axis reduced by at least 2x
  *   reduces first, then sharpens each axis separately (the reduced axis first),
- *   clamping/truncating after each pass. Only then does it interpolate on the
- *   enlarging axis, rounding half up. Milder reductions pick the nearest source
- *   pixel. Native captures match exactly for 2x enlargement; other enlargement
- *   ratios, tiny buffers and full colour adjustment retain residual differences
- *   (`halftone-mixed.fixture.test.ts`).
+ *   clamping/truncating after each pass. Only then does it enlarge: an exact
+ *   2x is plain linear interpolation, any other ratio is {@link halftoneEnlargeTaps}
+ *   (area resampling plus a destination-space smoothing FIR). Both end in
+ *   rounding half up. The reduction carries its 16.16 weights
+ *   ({@link halftoneReduceTaps}) through the sharpening. Milder reductions pick
+ *   the nearest source pixel. Native captures match exactly for most sizes;
+ *   exact-tie patterns, single-row destinations and full colour adjustment
+ *   retain residual differences (`halftone-mixed.fixture.test.ts`).
  *
  * Direct StretchDIBits skips the enlargement pre-filter. Isolated gamma/log
  * curves are applied after sampling/sharpening. Pixels outside `src` read as black.
@@ -473,12 +551,11 @@ export function stretchHalftone(
 	const dithered = !!dither && !!adjust && !adjustAfterSampling;
 	const nearestMixed = mixed && (!adjust || adjustAfterSampling || dithered)
 		&& ((W < SW && W * 2 > SW) || (H < SH && H * 2 > SH));
-	// The separable filter is verified for a 2x enlargement and >=2x reduction.
-	// Other ratios have native filter-selection/phase differences. Keep their
-	// existing approximation until that branch is understood. Full fitted
-	// colour adjustment also retains its previous sampling path.
+	// Reduction by at least 2x on one axis and enlargement on the other follows the
+	// native reduce, sharpen, enlarge sequence. Milder reductions pick single source
+	// pixels instead. Full fitted colour adjustment also retains its previous
+	// sampling path.
 	const nativeMixed = mixed && (!adjust || adjustAfterSampling || dithered)
-		&& Math.min(SW, W) >= 2 && Math.min(SH, H) >= 2
 		&& ((W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW));
 	if ((enlarging || nearestMixed) && !directDib) {
 		halftoneDespeckle(rect, SW, SH);
@@ -499,8 +576,10 @@ export function stretchHalftone(
 	}
 	const sampleW = nativeMixed ? Math.min(SW, W) : W;
 	const sampleH = nativeMixed ? Math.min(SH, H) : H;
-	const cols = halftoneAxis(0, SW, sampleW, flipX);
-	const rows = halftoneAxis(0, SH, sampleH, flipY);
+	const axis = nativeMixed ? (n: number, d: number, r: boolean) => halftoneReduceTaps(n, d, r)
+		: (n: number, d: number, r: boolean) => halftoneAxis(0, n, d, r);
+	const cols = axis(SW, sampleW, flipX);
+	const rows = axis(SH, sampleH, flipY);
 	// Mixed-axis reduction keeps fractions until the first sharpening pass.
 	if (nearestMixed) {
 		const nearest = (taps: HalftoneTaps[], src: number, dst: number, reverse: boolean) => {
@@ -577,33 +656,25 @@ export function stretchHalftone(
 		}
 		const source = out;
 		out = new Int32Array(W * H * 3);
-		const axisTaps = (src: number, dst: number): [number, number][][] => {
-			const r: [number, number][][] = [];
-			for (let i = 0; i < dst; i++) {
-				if (src === dst) { r.push([[i, 1]]); continue; }
-				const raw = (i + 0.5) * src / dst - 0.5;
-				const pos = Math.max(0, Math.min(src - 1, raw));
-				const i0 = Math.floor(pos);
+			const axisTaps = (src: number, dst: number): HalftoneTaps[] => {
+				if (src === dst) return Array.from({ length: dst }, (_, i): HalftoneTaps => [[i, 1]]);
 				// An exact 2x enlargement is plain linear interpolation.
-				if (dst === 2 * src) { r.push([[i0, 1 - (pos - i0)], [Math.min(src - 1, i0 + 1), pos - i0]]); continue; }
-				const taps: [number, number][] = [];
-				let total = 0;
-				for (let k = i0 - 2; k <= i0 + 3; k++) {
-					const w = softTent(raw - k);
-					taps.push([Math.max(0, Math.min(src - 1, k)), w]);
-					total += w;
+				if (dst === 2 * src) {
+					return Array.from({ length: dst }, (_, i): HalftoneTaps => {
+						const pos = Math.max(0, Math.min(src - 1, (i + 0.5) * src / dst - 0.5));
+						const i0 = Math.floor(pos);
+						return [[i0, 1 - (pos - i0)], [Math.min(src - 1, i0 + 1), pos - i0]];
+					});
 				}
-				r.push(taps.map(([k, w]) => [k, w / total] as [number, number]));
-			}
-			return r;
-		};
+				return halftoneEnlargeTaps(src, dst);
+			};
 		const xt = axisTaps(sampleW, W), yt = axisTaps(sampleH, H);
 		for (let y = 0; y < H; y++) {
 			for (let x = 0; x < W; x++) {
 				for (let c = 0; c < 3; c++) {
 					let v = 0;
 					for (const [yy, wy] of yt[y]) for (const [xx, wx] of xt[x]) v += source[(yy * sampleW + xx) * 3 + c] * wy * wx;
-					out[(y * W + x) * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + 0.5)));
+					out[(y * W + x) * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + 0.5 + 1e-7)));
 				}
 			}
 		}

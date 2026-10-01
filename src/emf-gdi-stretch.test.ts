@@ -5,7 +5,9 @@ import {
 	gdiNearest,
 	halftoneAxis,
 	halftoneDespeckle,
+	halftoneEnlargeTaps,
 	halftoneNearest,
+	halftoneReduceTaps,
 	halftoneSharpen,
 	stretchGdi,
 	stretchHalftone,
@@ -105,6 +107,47 @@ describe('halftoneAxis', () => {
 
 	it('walks the source backwards for a mirrored blit', () => {
 		expect(halftoneAxis(0, 2, 2, true)).toEqual([[[1, 1]], [[0, 1]]]);
+	});
+});
+
+describe('halftoneReduceTaps', () => {
+	it('splits an exact 3x reduction as 21844 + 21846 + 21846, the first tap lightest', () => {
+		expect(halftoneReduceTaps(12, 4, false)[1]).toEqual([[3, 21844], [4, 21846], [5, 21846]]);
+	});
+
+	it('keeps weights that are exact in 16.16 exact and always sums to 65536', () => {
+		// 16 -> 5: every destination pixel spans 3.2 source pixels.
+		expect(halftoneReduceTaps(16, 5, false)[1]).toEqual([[3, 16384], [4, 20480], [5, 20480], [6, 8192]]);
+		for (const taps of halftoneReduceTaps(17, 8, false)) {
+			expect(taps.reduce((sum, [, w]) => sum + w, 0)).toBe(65536);
+		}
+	});
+
+	it('picks one source pixel per destination pixel when enlarging, and mirrors by reversing the destination order', () => {
+		expect(halftoneReduceTaps(2, 4, false)).toEqual(halftoneAxis(0, 2, 4, false));
+		expect(halftoneReduceTaps(7, 3, true)).toEqual(halftoneReduceTaps(7, 3, false).reverse());
+	});
+});
+
+describe('halftoneEnlargeTaps', () => {
+	it('normalises every destination pixel and stays on the nearby source pixels', () => {
+		for (const [src, dst] of [[16, 43], [17, 46], [12, 32], [13, 35]]) {
+			const taps = halftoneEnlargeTaps(src, dst);
+			expect(taps).toHaveLength(dst);
+			taps.forEach((run, x) => {
+				expect(run.reduce((sum, [, w]) => sum + w, 0)).toBeCloseTo(1, 9);
+				const centre = (x + 0.5) * src / dst;
+				for (const [j] of run) expect(Math.abs(j + 0.5 - centre)).toBeLessThan(2.5);
+			});
+		}
+	});
+
+	it('is symmetric about the middle of the row', () => {
+		const taps = halftoneEnlargeTaps(16, 43);
+		for (let x = 0; x < 43; x++) {
+			const mirror = new Map(taps[42 - x].map(([j, w]) => [15 - j, w]));
+			for (const [j, w] of taps[x]) expect(mirror.get(j) ?? 0).toBeCloseTo(w, 9);
+		}
 	});
 });
 
