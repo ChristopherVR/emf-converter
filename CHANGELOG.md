@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.0) - 2026-10-01
+
+### Features
+
+- Reproduce Windows' halftone colour adjustment and its ordered dither ([552d504](https://github.com/ChristopherVR/emf-converter/commit/552d50429988a8eb8a79811512be34d84f56255b))
+
 ## [4.5.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.5.2) - 2026-10-01
 
 ### Build & CI
