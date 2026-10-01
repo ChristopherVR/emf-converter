@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.8](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.8) - 2026-10-01
+
+### Bug Fixes
+
+- Reproduce native large-radius blur axis by axis ([cd15995](https://github.com/ChristopherVR/emf-converter/commit/cd1599514b7c4e2f59420204dc73af645e78f528))
+
+### Testing
+
+- Allow the expanded blur sweep more time for the per-axis blur pipeline ([be24dc8](https://github.com/ChristopherVR/emf-converter/commit/be24dc88bfcd3ec88745c710c8b70158a8aadb7c))
+
 ## [4.6.7](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.7) - 2026-10-01
 
 ### Features
