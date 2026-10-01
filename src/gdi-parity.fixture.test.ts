@@ -908,19 +908,22 @@ const EMF_RECORD_CASES: ParityCase[] = [
  * 0.5x 27.527%, 1.37x 45.125%, ramp 0.5x 16.377%, 1.37x 35.353%,
  * coloradjustment-off 1.048%; ramp 2x was already exact.
  *
- * With an adjustment the residual is Windows' unpublished colour model
- * (fitted here in CIE L* and u'v') and its ordered dither over 32 levels
- * per channel, which is not reproduced (mismatch at tolerance 24; before:
- * checker 2x 63.486%, 0.5x 8.387%, 1.37x 49.762%, ramp 2x 50.126%, 0.5x
- * 25.217%, 1.37x 43.622%, coloradjustment 6.644%).
+ * With an adjustment the colour stages and the 32-level ordered dither are
+ * reproduced from native colour cubes (`emf-gdi-color-adjust.ts`,
+ * `emf-gdi-halftone-dither.ts`): the illuminant controls are pixel-exact and
+ * the combined adjustments differ by at most 3 levels (chroma rounding), up to
+ * 18 on the mixed-axis ramps (their interpolation kernel is approximate).
+ * The same cases were off by up to 224 levels (mismatch 8-24% at tolerance
+ * 24) with the earlier fitted model.
  */
 const halftone = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
-const adjusted = (name: string, maxMismatch: number): ParityCase => ({ name, ext: 'emf', tolerance: 24, maxMismatch });
+const adjusted = (name: string, maxMismatch: number, tolerance = 0): ParityCase => ({ name, ext: 'emf', tolerance, maxMismatch });
 const HALFTONE_CASES: ParityCase[] = [
-	...['default', 'gamma', 'gamma-rgb', 'log', 'illuminant-6'].map(name => halftone(`emfrec-ca-control-${name}`)),
+	...['default', 'gamma', 'gamma-rgb', 'log', ...[1, 2, 3, 4, 5, 6, 7, 8].map(i => `illuminant-${i}`)].map(name => halftone(`emfrec-ca-control-${name}`)),
+	halftone('emfrec-ca-control-dib-adjusted', 0.006), // 0.549%, max 3 (27.95% at tolerance 24 before)
 	halftone('emfrec-ca-control-dib', 0.0075), // 0.738%, max 2 levels (before 10.776%)
 	halftone('emfrec-coloradjustment-off'), // measured 0% (1.048% before)
-	adjusted('emfrec-coloradjustment', 0.08), // measured 7.886% (6.644% before; mean channel error 2.48 -> 2.15)
+	adjusted('emfrec-coloradjustment', 0.02), // measured 1.814%, max 3 levels (7.886% at tolerance 24 before)
 	halftone('emfrec-halftone-ramp-2x'),
 	halftone('emfrec-halftone-ramp-0p5x'),
 	halftone('emfrec-halftone-ramp-1p37x'),
@@ -933,16 +936,16 @@ const HALFTONE_CASES: ParityCase[] = [
 	halftone('emfrec-halftone-ramp-0p5x-2y', 0.178), // 17.698% (before 22.297%)
 	halftone('emfrec-halftone-checker-2x-0p5y', 0.237), // 23.629% (before 43.207%)
 	halftone('emfrec-halftone-checker-0p5x-2y', 0.226), // 22.498% (before 42.349%)
-	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.113),
-	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.155),
-	adjusted('emfrec-halftone-checker-2x-0p5y-ca', 0.140),
-	adjusted('emfrec-halftone-checker-0p5x-2y-ca', 0.131),
-	adjusted('emfrec-halftone-ramp-2x-ca', 0.17), // measured 15.132%
-	adjusted('emfrec-halftone-ramp-0p5x-ca', 0.105), // measured 9.275%
-	adjusted('emfrec-halftone-ramp-1p37x-ca', 0.15), // measured 13.140%
-	adjusted('emfrec-halftone-checker-2x-ca', 0), // measured 0%
-	adjusted('emfrec-halftone-checker-0p5x-ca', 0.06), // measured 5.054%
-	adjusted('emfrec-halftone-checker-1p37x-ca', 0), // measured 0%
+	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.055), // 5.023%, max 8
+	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.08), // 7.525%, max 18
+	adjusted('emfrec-halftone-checker-2x-0p5y-ca', 0.006), // 0.549%, max 2
+	adjusted('emfrec-halftone-checker-0p5x-2y-ca', 0.016), // 1.447%, max 2
+	adjusted('emfrec-halftone-ramp-2x-ca', 0.08), // 7.187%, max 3
+	adjusted('emfrec-halftone-ramp-0p5x-ca', 0.042), // 3.841%, max 3
+	adjusted('emfrec-halftone-ramp-1p37x-ca', 0.07), // 6.143%, max 3
+	adjusted('emfrec-halftone-checker-2x-ca', 0.07), // 6.037%, max 2
+	adjusted('emfrec-halftone-checker-0p5x-ca', 0.013), // 1.183%, max 2
+	adjusted('emfrec-halftone-checker-1p37x-ca', 0.065), // 5.737%, max 2
 ];
 
 /**

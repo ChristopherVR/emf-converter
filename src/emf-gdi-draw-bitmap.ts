@@ -23,10 +23,11 @@ import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } f
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { applyColorAdjustment, colorAdjustRgb, isChannelOnlyColorAdjustment } from './emf-gdi-color-adjust';
+import { applyColorAdjustment, colorAdjustRgb, isChannelOnlyColorAdjustment, splitColorAdjustment } from './emf-gdi-color-adjust';
 import { gdiDevicePixelX, gdiDevicePixelY, gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
 import { paletteEntries } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
+import { ditherStartX, ditherStartY } from './emf-gdi-halftone-dither';
 import { HALFTONE, stretchGdi, stretchHalftone } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
 import { drawBlendLayers, splitUnknownDestination, unknownDestination, type BlendLayer } from './emf-rop2-exact';
@@ -108,6 +109,8 @@ function drawSourceMapped(
 	offsetX: number,
 	offsetY: number,
 	mode: number,
+	brushOrgX: number,
+	brushOrgY: number,
 ): void {
 	const dLeft = Math.min(req.dx, req.dx + req.dw) - offsetX;
 	const dTop = Math.min(req.dy, req.dy + req.dh) - offsetY;
@@ -116,6 +119,10 @@ function drawSourceMapped(
 			? stretchHalftone(
 				decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh,
 				decoded.adjust, decoded.adjustAfterSampling, req.dibOrigin === 'bottom-left',
+				decoded.adjust && !decoded.adjustAfterSampling
+					? { startX: ditherStartX(Math.min(req.dx, req.dx + req.dw), brushOrgX), startY: ditherStartY(Math.min(req.dy, req.dy + req.dh), brushOrgY) }
+					: undefined,
+				decoded.curves,
 			)
 			: stretchGdi(decoded.pixels, req.sx, req.sy, req.sw, req.sh, req.dw, req.dh, mode);
 	if (px.width === 0 || px.height === 0) {
@@ -138,6 +145,8 @@ interface DecodedSource {
 	/** The DC's colour adjustment, for a HALFTONE StretchBlt / StretchDIBits. */
 	adjust?: (rgb: Int32Array) => void;
 	adjustAfterSampling?: boolean;
+	/** Per-channel curves applied to the sampled colour after a palette adjustment. */
+	curves?: (rgb: Int32Array) => void;
 }
 
 /**
@@ -168,13 +177,19 @@ function decodeSource(
 		return null;
 	}
 	const ca = rCtx.state.colorAdjustment;
-	const adjust = req.stretch && rCtx.state.stretchBltMode === HALFTONE && ca ? (rgb: Int32Array): void => colorAdjustRgb(rgb, ca) : undefined;
+	const halftone = req.stretch && rCtx.state.stretchBltMode === HALFTONE && ca;
+	const channelOnly = isChannelOnlyColorAdjustment(ca);
+	const split = halftone && !channelOnly ? splitColorAdjustment(ca) : undefined;
+	const adjust = halftone
+		? ((rgb: Int32Array): void => colorAdjustRgb(rgb, split?.palette ?? ca))
+		: undefined;
+	const curves = split?.curves;
 	let { sy } = req;
 	if (req.dibOrigin === 'bottom-left' && rCtx.view.getInt32(req.source.bmi + 8, true) > 0) {
 		sy = image.height - sy - req.sh;
 	}
 	return {
-		decoded: { pixels: image, adjust, adjustAfterSampling: isChannelOnlyColorAdjustment(ca) },
+		decoded: { pixels: image, adjust, adjustAfterSampling: channelOnly, curves: curves ? (rgb: Int32Array): void => colorAdjustRgb(rgb, curves) : undefined },
 		req: { ...req, sy },
 	};
 }
@@ -267,7 +282,7 @@ function runTernary(rCtx: EmfGdiReplayCtx, req: BlitRequest, index: number, uses
 		if (!decoded) {
 			return;
 		}
-		drawSourceMapped(layer.ctx, decoded.decoded, decoded.req, rect.x, rect.y, rCtx.state.stretchBltMode);
+		drawSourceMapped(layer.ctx, decoded.decoded, decoded.req, rect.x, rect.y, rCtx.state.stretchBltMode, rCtx.state.brushOrgX, rCtx.state.brushOrgY);
 		src = canvasGetImageData(layer.ctx, 0, 0, rect.w, rect.h);
 	}
 	const dst = canvasGetImageData(ctx, rect.x, rect.y, rect.w, rect.h);
@@ -547,7 +562,7 @@ function executeBlit(rCtx: EmfGdiReplayCtx, request: BlitRequest): void {
 		case 'copy': {
 			const decoded = decodeSource(rCtx, req);
 			if (decoded) {
-				drawSourceMapped(ctx, decoded.decoded, decoded.req, 0, 0, rCtx.state.stretchBltMode);
+				drawSourceMapped(ctx, decoded.decoded, decoded.req, 0, 0, rCtx.state.stretchBltMode, rCtx.state.brushOrgX, rCtx.state.brushOrgY);
 			}
 			return;
 		}

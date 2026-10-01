@@ -26,6 +26,13 @@ function Complete-Fixtures {
     $name = 'environment-' + ($Which -replace '[^a-zA-Z0-9-]', '-') + '.json'
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $Directory $name) -Groups $Which -Files $files
 }
+if ($Which -eq 'illuminant-cubes') {
+    if (!$TablesDir) { throw 'Pass a temporary output directory for the cubes' }
+    Add-Type -Path (Join-Path $here 'HalftoneColorProbe.cs')
+    $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $TablesDir)).Path
+    [HalftoneColorProbe]::IlluminantCubes($destination)
+    return
+}
 if ($Which -eq 'miter-limit-probe') {
     Add-Type -Path (Join-Path $here 'MiterProbe.cs')
     [MiterProbe]::Run($outDir)

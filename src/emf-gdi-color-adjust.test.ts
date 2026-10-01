@@ -101,7 +101,8 @@ describe('colorAdjustmentMapper', () => {
 	});
 	it('leaves every colour unchanged under the default adjustment', () => {
 		expect(isIdentityColorAdjustment(DEFAULT_COLOR_ADJUSTMENT)).toBe(true);
-		expect(isIdentityColorAdjustment({ ...DEFAULT_COLOR_ADJUSTMENT, illuminant: 3 })).toBe(true);
+		expect(isIdentityColorAdjustment({ ...DEFAULT_COLOR_ADJUSTMENT, illuminant: 6 })).toBe(true);
+		expect(isIdentityColorAdjustment({ ...DEFAULT_COLOR_ADJUSTMENT, illuminant: 3 })).toBe(false);
 		const map = colorAdjustmentMapper(DEFAULT_COLOR_ADJUSTMENT);
 		for (const c of [0x000000, 0xffffff, 0xf0d010, 0x9020b0, 0x10c0c0, 0x123456, 0x7f7f7f]) {
 			expect(map(c)).toBe(c);
@@ -127,15 +128,55 @@ describe('colorAdjustmentMapper', () => {
 		expect(adjust(ca, 0x808080)).toBe(0x808080);
 	});
 
-	it('scales L* about 50 for contrast and shifts it for brightness', () => {
-		// L* 50 is linear 0.184 (0x2f): contrast pivots there.
-		expect(adjust({ contrast: 100 }, 0x2f2f2f)).toBe(0x2f2f2f);
+	it('scales every channel by exp(0.0148885 c) for contrast and adds 0.95625 b for brightness', () => {
+		// Native palette captures: contrast 100 turns level 25 into 111 and 8 into 35,
+		// contrast -100 maps 255 to 58; brightness +-50 shifts by 48 (+-100 by 96).
+		expect(channels(adjust({ contrast: 100 }, 0x191919))).toEqual([111, 111, 111]);
+		expect(channels(adjust({ contrast: 100 }, 0x080808))).toEqual([35, 35, 35]);
 		expect(adjust({ contrast: 100 }, 0xc0c0c0)).toBe(0xffffff);
-		expect(channels(adjust({ contrast: 100 }, 0x202020))[0]).toBeLessThan(0x20);
-		expect(channels(adjust({ contrast: -100 }, 0x101010))[0]).toBeGreaterThan(0x10);
-		expect(channels(adjust({ contrast: -100 }, 0xe0e0e0))[0]).toBeLessThan(0xe0);
-		expect(adjust({ brightness: 100 }, 0x000000)).toBe(0x8a8a8a); // L* 78.5
-		expect(adjust({ brightness: -100 }, 0xcccccc)).toBe(0x040404);
+		expect(channels(adjust({ contrast: -100 }, 0xffffff))).toEqual([58, 58, 58]);
+		expect(channels(adjust({ brightness: 50 }, 0x000000))).toEqual([48, 48, 48]);
+		expect(channels(adjust({ brightness: -50 }, 0x3a3a3a))).toEqual([10, 10, 10]);
+		expect(adjust({ brightness: 100 }, 0x000000)).toBe(0x606060);
+		expect(adjust({ brightness: -100 }, 0xcccccc)).toBe(0x6c6c6c);
+		expect(adjust({ brightness: -100 }, 0x202020)).toBe(0x000000);
+	});
+
+	it('adds brightness after contrast and negates last', () => {
+		// Native cubes: contrast 40 then brightness 30; CA_NEGATIVE inverts the brightened colour.
+		const lifted = channels(adjust({ contrast: 40, brightness: 30 }, 0x404040));
+		expect(lifted[0]).toBe(Math.round(0x40 * Math.exp(0.0148885 * 40) + 0.95625 * 30));
+		expect(channels(adjust({ flags: CA_NEGATIVE, brightness: 30 }, 0x404040))[0]).toBe(255 - Math.round(0x40 + 0.95625 * 30));
+	});
+
+	it('maps palette colours through the native illuminant cubes', () => {
+		// Windows (IlluminantIndex 1, tungsten): pure primaries compress into the gamut instead of clipping.
+		const tungsten = { illuminant: 1 };
+		expect(channels(adjust(tungsten, 0x00ff00))).toEqual([0, 248, 159]);
+		expect(channels(adjust(tungsten, 0xff0000))).toEqual([255, 5, 45]);
+		expect(channels(adjust(tungsten, 0x0000ff))).toEqual([0, 21, 118]);
+		expect(channels(adjust(tungsten, 0x848484))).toEqual([132, 132, 132]);
+		expect(channels(adjust({ illuminant: 3 }, 0x00ff00))).toEqual([7, 251, 0]);
+		// D65 (6) and the device default leave colours alone.
+		expect(adjust({ illuminant: 6 }, 0x123456)).toBe(0x123456);
+		expect(adjust({ illuminant: 0 }, 0x123456)).toBe(0x123456);
+	});
+
+	it('scales chroma by 1 + c / 100, turns it by -0.6 degrees per tint unit and compresses the gamut', () => {
+		// Native: colorfulness -100 is the BT.709 grey (54, 182, 18 for the primaries).
+		expect(adjust({ colorfulness: -100 }, 0xff0000)).toBe(0x363636);
+		expect(adjust({ colorfulness: -100 }, 0x00ff00)).toBe(0xb6b6b6);
+		expect(adjust({ colorfulness: -100 }, 0x0000ff)).toBe(0x121212);
+		// Native: +50 on (123, 123, 255) gives (91, 91, 255): the blue is not clipped, the others fall.
+		const [r, g, b] = channels(adjust({ colorfulness: 50 }, 0x7b7bff));
+		expect(b).toBe(255);
+		expect(Math.abs(r - 91)).toBeLessThanOrEqual(1);
+		expect(g).toBe(r);
+		// Native: tint 50 turns pure green into (162, 224, 0).
+		const tinted = channels(adjust({ redGreenTint: 50 }, 0x00ff00));
+		expect(Math.abs(tinted[0] - 162)).toBeLessThanOrEqual(1);
+		expect(Math.abs(tinted[1] - 224)).toBeLessThanOrEqual(1);
+		expect(tinted[2]).toBe(0);
 	});
 
 	it('matches the Windows grey ramp of the halftone fixtures within three levels', () => {

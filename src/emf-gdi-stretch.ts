@@ -14,6 +14,8 @@
  * @module emf-gdi-stretch
  */
 
+import { ditherQuantize, ditherThreshold, type HalftoneDither } from './emf-gdi-halftone-dither';
+
 /** GDI stretch modes (EMR_SETSTRETCHBLTMODE). */
 export const BLACKONWHITE = 1;
 export const WHITEONBLACK = 2;
@@ -232,6 +234,34 @@ export function softTent(d: number): number {
 	return value;
 }
 
+/**
+ * Quantises RGB triples to the 32-level halftone palette with the ordered
+ * dither of {@link HalftoneDither}. `flipX` / `flipY` reverse the pattern's
+ * direction along that axis (the rows of a vertically mirrored source).
+ */
+function ditherPixels(
+	px: Int32Array | Float64Array,
+	w: number,
+	h: number,
+	dither: HalftoneDither,
+	flipX: boolean,
+	flipY: boolean,
+	phaseX?: ArrayLike<number>,
+	phaseY?: ArrayLike<number>,
+): void {
+	for (let y = 0; y < h; y++) {
+		const yy = phaseY ? phaseY[y] : flipY ? h - 1 - y : y;
+		for (let x = 0; x < w; x++) {
+			const xx = phaseX ? phaseX[x] : flipX ? w - 1 - x : x;
+			const threshold = ditherThreshold(dither.startX, dither.startY, xx, yy);
+			const o = (y * w + x) * 3;
+			px[o] = ditherQuantize(px[o], threshold);
+			px[o + 1] = ditherQuantize(px[o + 1], threshold);
+			px[o + 2] = ditherQuantize(px[o + 2], threshold);
+		}
+	}
+}
+
 /** Largest overshoot (in levels) a sharpened channel may have before it counts as clipped. */
 const SPECKLE_OVERSHOOT = 4;
 
@@ -344,6 +374,8 @@ export function stretchHalftone(
 	adjust?: (rgb: Int32Array) => void,
 	adjustAfterSampling = false,
 	directDib = false,
+	dither?: HalftoneDither,
+	curves?: (rgb: Int32Array) => void,
 ): Pixels {
 	const W = Math.max(0, Math.round(Math.abs(dw)));
 	const H = Math.max(0, Math.round(Math.abs(dh)));
@@ -376,19 +408,31 @@ export function stretchHalftone(
 	const enlarging = W >= SW && H >= SH && (W > SW || H > SH);
 	const reducing = W < SW && H < SH;
 	const mixed = (W > SW && H < SH) || (W < SW && H > SH);
-	const nearestMixed = mixed && (!adjust || adjustAfterSampling)
+	const dithered = !!dither && !!adjust && !adjustAfterSampling;
+	const nearestMixed = mixed && (!adjust || adjustAfterSampling || dithered)
 		&& ((W < SW && W * 2 > SW) || (H < SH && H * 2 > SH));
 	// The separable filter is verified for a 2x enlargement and >=2x reduction.
 	// Other ratios have native filter-selection/phase differences. Keep their
 	// existing approximation until that branch is understood. Full fitted
 	// colour adjustment also retains its previous sampling path.
-	const nativeMixed = mixed && (!adjust || adjustAfterSampling)
+	const nativeMixed = mixed && (!adjust || adjustAfterSampling || dithered)
 		&& Math.min(SW, W) >= 2 && Math.min(SH, H) >= 2
 		&& ((W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW));
 	if ((enlarging || nearestMixed) && !directDib) {
 		halftoneDespeckle(rect, SW, SH);
 	}
-	if (adjust && !adjustAfterSampling) {
+	// A combined adjustment quantises the source to 32 levels with an ordered
+	// dither first, then maps the quantised colour: at source resolution when
+	// enlarging, at output resolution otherwise (see emf-gdi-halftone-dither).
+	// A mixed-axis stretch dithers the source when the reduced axis has an even
+	// number of source pixels and the enlarged axis grows by a whole factor;
+	// otherwise Windows dithers the finished output.
+	const reducedEven = W < SW ? SW % 2 === 0 && H % SH === 0 : SH % 2 === 0 && W % SW === 0;
+	const ditherAtSource = dithered && ((W >= SW && H >= SH) || (nativeMixed && reducedEven));
+	if (ditherAtSource) {
+		ditherPixels(rect, SW, SH, dither!, false, flipY);
+	}
+	if (adjust && !adjustAfterSampling && (!dithered || ditherAtSource)) {
 		adjust(rect);
 	}
 	const sampleW = nativeMixed ? Math.min(SW, W) : W;
@@ -516,7 +560,19 @@ export function stretchHalftone(
 			}
 		}
 	}
+	if (dithered && !ditherAtSource) {
+		// A mixed-axis stretch below 2x reduction picks single source pixels; the
+		// dither pattern then follows the source pixel on the enlarged axis (and
+		// on a reduced x axis), the destination pixel otherwise.
+		const phase = (n: number, src: number, dst: number, selectSource: boolean): Int32Array =>
+			Int32Array.from({ length: n }, (_, i) => dst > src ? Math.floor((i * src) / dst)
+				: selectSource ? Math.max(0, Math.min(src - 1, Math.floor(((i + 1) * 2 * src - dst) / (2 * dst)))) : i);
+		ditherPixels(out as Int32Array, W, H, dither!, false, false,
+			nearestMixed ? phase(W, SW, W, true) : undefined, nearestMixed ? phase(H, SH, H, false) : undefined);
+		adjust!(out as Int32Array);
+	}
 	if (adjust && adjustAfterSampling) adjust(out as Int32Array);
+	if (curves && dithered) curves(out as Int32Array);
 	for (let i = 0, o = 0; i < W * H; i++, o += 3) {
 		data[i * 4] = out[o];
 		data[i * 4 + 1] = out[o + 1];

@@ -32,6 +32,7 @@ These standalone probe modes must be invoked separately from comma-separated dra
 
 Every generator run also writes `environment-<groups>.json`. It records SHA-256 hashes of the generated references, installed system/user font files and native drawing libraries, plus Windows version, screen DPI and runner image. Compare manifests before accepting regenerated text fixtures; older captures have no recoverable environment manifest. Temporary image-effect tables keep their manifest in the requested temporary directory.
 
+- `illuminant-cubes -TablesDir <dir>` (standalone): the colour Windows draws for every one of the 32^3 halftone palette colours under `IlluminantIndex` 1–5, 7 and 8 (`HalftoneColorProbe.cs`). `generate-illuminant-data.ts <dir>` turns them into `src/emf-gdi-illuminant-data.ts`; the same probe measured the colour-adjustment stage order and constants in `src/emf-gdi-color-adjust.ts` and the 66 x 65 dither in `src/emf-gdi-halftone-dither.ts`.
 - `halftone`: `emfrec-halftone-{ramp,checker}-{2x,0p5x,1p37x}[-ca]`, HALFTONE
   `StretchBlt` of a gray/RGB ramp and a checkerboard, each plain and under
   `SetColorAdjustment` (`-ca`).
