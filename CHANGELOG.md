@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.5.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.5.1) - 2026-10-01
+
+### Bug Fixes
+
+- Round the mixed-axis halftone interpolation kernel like Windows ([2ce6209](https://github.com/ChristopherVR/emf-converter/commit/2ce62093fa0dc496737ec377205d87289f66bc34))
+
 ## [4.5.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.5.0) - 2026-10-01
 
 ### Features
