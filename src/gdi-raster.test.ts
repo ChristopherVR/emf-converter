@@ -295,6 +295,23 @@ describe('widenPath', () => {
 		expect(squareExtension(48, 384, -448)).toEqual([16, -18]);
 	});
 
+	it('steps the side offset of a vertical fractional-width pen where native GDI does', () => {
+		// Native WidenPath (flat caps, miter joins), exact tie widths in FIX.
+		expect(flatVector(104, 0, 100)).toEqual([-56, 0]);
+		expect(flatVector(136, 0, 100)).toEqual([-64, 0]);
+		expect(flatVector(119, 0, 100)).toEqual([-64, 0]);
+		expect(flatVector(118, 0, 100)).toEqual([-56, 0]);
+		expect(flatVector(104, 100, 0)).toEqual([0, 56]);
+		expect(flatVector(136, 100, 0)).toEqual([0, 72]);
+	});
+
+	it('uses a circular pen polygon (equal half axes) for a fractional width', () => {
+		// 6.5 px: native cap vertices span 52 x 52, not 52 x 56.
+		const pen = penPolygon(104);
+		expect(Math.max(...pen.map((q) => q[0]))).toBe(52);
+		expect(Math.max(...pen.map((q) => q[1]))).toBe(52);
+	});
+
 	it('builds the exact outline of a round-pen polyline', () => {
 		const p = new GdiRasterPath();
 		p.moveTo(1600, 1600);

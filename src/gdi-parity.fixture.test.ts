@@ -735,27 +735,28 @@ const SMOOTHING_CASES: ParityCase[] = [
  * PALETTEINDEX colours; SetPixel and flood fills; the object table; escapes
  * and SetLayout; hand-assembled Win16 records Windows no longer plays; an
  * embedded EMF. Before this replay (the old canvas-only WMF path) these
- * measured 4.9% to 100% of pixels off. The residuals: `wmf-shapes*` (wide
- * pen corners of RoundRect/Ellipse, one arc end pixel, and in the 0.96
- * scale case curved PS_INSIDEFRAME boxes one pixel short),
- * `wmf-nonplaceable*`/`wmf-pixels*` (single pixels of the same arc and
- * wide-pen machinery), `wmf-embedded-emf` (the EMF path's own wide-pen
- * residual).
+ * measured 4.9% to 100% of pixels off. Now `wmf-shapes`, `wmf-shapes-twips`,
+ * `wmf-pixels*` and the PS_INSIDEFRAME rectangle, ellipse and RoundRect
+ * sweeps are pixel-exact; the residuals are `wmf-shapes-scaled` (0.158%:
+ * scattered pen-edge pixels of every row at the 0.96 scale),
+ * `wmf-insideframe-curved-chord/pie/arc` (a handful of pixels at one arc
+ * end), `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
+ * own wide-pen residual).
  */
 const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', tolerance: 0, maxMismatch });
 
 const WMF_RECORD_CASES: ParityCase[] = [
-	wmf('wmf-shapes', 0.001), // measured 0.073%
-	wmf('wmf-shapes-twips', 0.001), // measured 0.073%
-	wmf('wmf-shapes-scaled', 0.003), // measured 0.274%
+	wmf('wmf-shapes'), // measured 0%
+	wmf('wmf-shapes-twips'), // measured 0%
+	wmf('wmf-shapes-scaled', 0.0016), // measured 0.158%
 	wmf('wmf-insideframe-subpixel'),
-	wmf('wmf-insideframe-fractional', 0.004), // measured 0.385%: 6.5/7.5 px pen boundaries
-	wmf('wmf-insideframe-wide-subpixel', 0.004), // measured 0.385%: the same half-width ties
-	wmf('wmf-insideframe-curved-ellipse', 0.0011), // 0.109%, before 2.057%
-	wmf('wmf-insideframe-curved-roundrect', 0.0015), // 0.145%, before 2.785%
-	wmf('wmf-insideframe-curved-chord', 0.0016), // 0.156%, before 1.794%
-	wmf('wmf-insideframe-curved-pie', 0.0015), // 0.142%, before 1.666%
-	wmf('wmf-insideframe-curved-arc', 0.0004), // 0.039%, before 0.088%
+	wmf('wmf-insideframe-fractional'), // 0%, before 0.385% at the 6.5/7.5 px pens
+	wmf('wmf-insideframe-wide-subpixel'), // 0%, before 0.385%: the same half-width ties
+	wmf('wmf-insideframe-curved-ellipse'), // 0%, before 0.109% (2.057% before the fractional fit)
+	wmf('wmf-insideframe-curved-roundrect'), // 0%, before 0.145% (2.785% before the fractional fit)
+	wmf('wmf-insideframe-curved-chord', 0.00007), // 0.006%, before 0.156%: one arc end
+	wmf('wmf-insideframe-curved-pie', 0.00005), // 0.005%, before 0.142%: one arc end
+	wmf('wmf-insideframe-curved-arc', 0.00007), // 0.006%, before 0.039%: one arc end
 	wmf('wmf-map-anisotropic'),
 	wmf('wmf-map-isotropic'),
 	wmf('wmf-map-text'),
@@ -773,13 +774,13 @@ const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-patterns'),
 	wmf('wmf-legacy'),
 	wmf('wmf-palette'),
-	wmf('wmf-pixels', 0.0001), // measured 0.007%
-	wmf('wmf-pixels-twips', 0.0001), // measured 0.007%
+	wmf('wmf-pixels'), // measured 0%, before 0.007%
+	wmf('wmf-pixels-twips'), // measured 0%, before 0.007%
 	wmf('wmf-objects'),
 	wmf('wmf-escapes'),
 	wmf('wmf-layout-rtl'),
 	wmf('wmf-layout-rtl-lines'),
-	wmf('wmf-embedded-emf', 0.001), // measured 0.072%
+	wmf('wmf-embedded-emf', 0.0006), // measured 0.058%
 ];
 
 /**

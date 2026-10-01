@@ -44,6 +44,6 @@ EMF files do not record the graphics mode. Windows plays back RoundRect, Arc, Ch
 
 ## WMF
 
-- Fractional `PS_INSIDEFRAME` rectangles match the 1.0–2.9 px width sweep exactly. Wider half-pixel widths retain a 0.39% residual. Curved shapes retain fractional fitting and widening; native 0.5–10 px sweeps show 0.11–0.16% differences on closed curves and 0.039% on arcs.
+- `PS_INSIDEFRAME` rectangles, ellipses and rounded rectangles match the native 0.5–10 px half-pixel sweeps exactly. Chord, Pie and Arc keep a few pixels (0.005–0.006%) at one arc end of the 4.5 and 10 px pens. `wmf-shapes-scaled` (0.96 device scale) keeps 0.16% scattered pen-edge pixels.
 - Mirrored `LAYOUT_RTL` cosmetic and wide line fixtures match Windows exactly.
 - Metric map modes default to a 96 dpi reference device. Set `wmfReferenceDpi` to a number or `{ x, y }` when the original physical-device resolution is known. Metafiles do not always record that information.

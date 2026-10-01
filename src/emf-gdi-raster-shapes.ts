@@ -404,6 +404,23 @@ export interface RasterPaintOptions {
 	 * with round caps and joins whatever the pen's own (measured).
 	 */
 	roundPen?: boolean;
+	/** The shape was filled with a brush by a separate pass (its stroke is then widened without curve end tangents). */
+	filled?: boolean;
+}
+
+/**
+ * `path` without its Beziers' end tangents. GDI widens a shape it also
+ * fills with a brush from the flattened segments alone, where a stroke on
+ * its own (or `WidenPath`) takes the curves' end tangents (measured: the
+ * native Ellipse, RoundRect, Chord and Pie sweeps with PS_INSIDEFRAME pens).
+ */
+function withoutCurveTangents(path: GdiRasterPath): GdiRasterPath {
+	if (!path.figures.some((f) => f.tangents)) {
+		return path;
+	}
+	const plain = new GdiRasterPath();
+	plain.figures = path.figures.map((f) => ({ pts: f.pts, closed: f.closed, roundWiden: f.roundWiden }));
+	return plain;
 }
 
 /** Applies RTL's pixel-centre reflection to non-box WMF geometry. */
@@ -429,9 +446,11 @@ export function layoutRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, box
 export function paintRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, opts: RasterPaintOptions): boolean {
 	path = layoutRasterPath(rCtx, path, opts.rectangle || opts.roundPen);
 	const { ctx, state } = rCtx;
+	let filled = !!opts.filled;
 	if (opts.fill) {
 		const paint = brushPaint(rCtx);
 		if (paint) {
+			filled = true;
 			const fillPath = opts.fillPath ? layoutRasterPath(rCtx, opts.fillPath, opts.rectangle || opts.roundPen) : path;
 			const spans = fillPathSpans(fillPath, !!opts.winding);
 			paintSpansDeferred(rCtx, spans, paint, state.rop2);
@@ -444,7 +463,7 @@ export function paintRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, opts
 		if (!penIsWidened(rCtx)) {
 			return false;
 		}
-		const polys = widenPath(path, penWidenOptions(rCtx, opts));
+		const polys = widenPath(filled ? withoutCurveTangents(path) : path, penWidenOptions(rCtx, opts));
 		paintSpansDeferred(rCtx, fillPolygonSpans(polys, true), { kind: 'solid', rgb: rgbOf(state.penColor) }, state.rop2);
 		return true;
 	}

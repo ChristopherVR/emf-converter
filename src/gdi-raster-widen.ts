@@ -11,8 +11,8 @@
  *   one of Hobby's digital pens (`HOBBY`, vertices on the half-pixel grid);
  *   wider, it is GDI's flattened ellipse of the pen box, of which only the
  *   first half (right, then over the top) is flattened, the second half
- *   being its reflection through the centre, and whose vertical half axis
- *   snaps to whole pixels (`penPolygon`).
+ *   being its reflection through the centre, and whose two half axes are
+ *   equal (`penPolygon`; measured over fractional widths too).
  * - A segment's draw vertices are the pen vertices furthest to its left
  *   and right (`drawVertices`, with GDI's tie-break for segments parallel
  *   to a pen edge).
@@ -117,6 +117,33 @@ const HOBBY_LIMIT = 104;
  */
 const FLAT_VECTOR_OFFSET: Record<number, Pt> = { 7: [0, 0.5], 8: [0, 0.5], 9: [0.5, 0.5], 10: [0.5, 0] };
 
+/**
+ * The side offset (the perpendicular's x) GDI gives an exactly vertical
+ * segment of a flattened pen steps to `8 * m` (m = 7 ..) at a width of
+ * `16 * m - 7 - delta` FIX; character `m - 7` of this string is `delta`.
+ * Measured with `WidenPath` (flat caps, miter joins) at every width from
+ * 6 to 87 px in 1/16 px steps. The horizontal sides always step at
+ * `16 * m - 8`; the vertical ones step up to two units early in runs that
+ * follow no simple formula (half-pixel widths among them: 6.5 and 7.5 px
+ * round up, 8.5 and 9.5 px down), so this is a table.
+ */
+const VERTICAL_STEP_EARLY = '120002002002002002202200200200200220220020000022222220000002222220000002222220000';
+const VERTICAL_STEP_FIRST = 7;
+
+/** GDI's side offset (FIX) of a vertical segment for a flattened pen `width` FIX wide, or `undefined` outside the measured range. */
+function verticalSideOffset(width: number): number | undefined {
+	if (width < HOBBY_LIMIT || width > 1400) {
+		return undefined;
+	}
+	let m = VERTICAL_STEP_FIRST;
+	for (let i = 1; i < VERTICAL_STEP_EARLY.length; i++) {
+		if (width >= 16 * (i + VERTICAL_STEP_FIRST) - 7 - +VERTICAL_STEP_EARLY[i]) {
+			m = i + VERTICAL_STEP_FIRST;
+		}
+	}
+	return 8 * m;
+}
+
 const penCache = new Map<number, Pt[]>();
 
 /**
@@ -135,7 +162,7 @@ export function penPolygon(width: number): Pt[] {
 		pen = HOBBY[n - 1];
 	} else {
 		const rx = Math.ceil(width / 2);
-		const ry = 8 * Math.floor((width + 9) / 16);
+		const ry = rx;
 		const f = flattenBezierPath(ellipseBeziers(-rx, -ry, rx, ry));
 		// The flattened first half runs from (rx, 0) over the top to (-rx, 0).
 		const half: Pt[] = [];
@@ -234,7 +261,8 @@ function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt;
 	const oy = off ? sgn * off[1] : 0;
 	const r = (v: number) => 8 * Math.floor((v + 4) / 8);
 	const x = D[0] + (B[0] - D[0]) * w, y = D[1] + (B[1] - D[1]) * w;
-	const vx = r(x + 0.5 * Math.sign(dy) + ox), vy = r(y + 0.5 * Math.sign(dx) + oy);
+	const side = dx === 0 ? verticalSideOffset(width) : undefined;
+	const vx = side === undefined ? r(x + 0.5 * Math.sign(dy) + ox) : -side, vy = r(y + 0.5 * Math.sign(dx) + oy);
 	return { v: flip ? [-vx, -vy] : [vx, vy], ray: flip ? [-x, -y] : [x, y] };
 }
 
