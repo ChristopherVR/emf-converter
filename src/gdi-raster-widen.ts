@@ -53,7 +53,7 @@
  * with round joins 97.2%; 299 of 300 random dashed polylines. The residual
  * is GDI's inclusion of a pen vertex exactly at the end of a join or cap
  * arc (mostly for the flattened pens of 7 px and more), and the half-pixel
- * rounding of the perpendicular for 8 px pens.
+ * rounding of the perpendicular for 8 px pens (now fitted per pen edge, `FLAT_SECTOR_BIAS`).
  *
  * @module gdi-raster-widen
  */
@@ -110,12 +110,125 @@ const HOBBY: Pt[][] = [
 const HOBBY_LIMIT = 104;
 
 /**
- * Half-pixel offsets GDI adds to the perpendicular of a flattened pen of
- * this many whole pixels, per half of the pen (`+` for a draw vertex in the
- * flattened first half, `-` in the reflected half). Measured; widths not
- * listed use none.
+ * Rounding bias GDI applies to the perpendicular of a flattened pen, per
+ * pen-edge sector. The perpendicular is found on the pen edge that the
+ * segment's normal passes through; its x and y are shifted by a bias
+ * before the half-pixel rounding, and the bias differs from edge to edge
+ * (and from pen to pen) in a way no closed form was found for. Measured by
+ * sweeping the direction of a single flat-capped segment under every
+ * integer pen width from 7 to 100 px against native `WidenPath`; the table
+ * reproduces the rounded perpendicular for all but about 0.03% of 1.1
+ * million measured directions.
+ *
+ * Per width: the first sector key held in the tail, the pair for sector
+ * key 0, and the tail pairs for keys `first..2n-1`. The key is
+ * `2 * support vertex + (the lower neighbour is the interpolation partner
+ * ? 0 : 1)`. A pair is two characters, the x then the y bias. `a`..`m` are
+ * `(char code - 'a') / 2 - 1.5` FIX and `A`..`M` the same less 1/64 (a
+ * value landing exactly on a rounding boundary rounds down); `.` marks a
+ * sector no measured direction reached (the generic 0.5 rule applies).
  */
-const FLAT_VECTOR_OFFSET: Record<number, Pt> = { 7: [0, 0.5], 8: [0, 0.5], 9: [0.5, 0.5], 10: [0.5, 0] };
+const FLAT_SECTOR_BIAS: Record<number, [number, string, string]> = {
+	7: [9, 'cf..', 'edededEdcDcdcd'],
+	8: [9, 'dFee', 'ededededbdbdbd'],
+	9: [9, 'df..', 'ddddddddbDbdbd'],
+	10: [9, 'de..', 'dededeDebEbebE'],
+	11: [9, 'ce..', 'eeeeeeEececece'],
+	12: [13, 'ce..', 'eeeeeeeeeeeececEcecece'],
+	13: [17, 'ce..', 'eeeeededdddddeDebebebdbdcdcdce'],
+	14: [17, 'df..', 'ddedeeeededeeeedcDcebebecececd'],
+	15: [17, 'dF..', 'ddedeeeeeeeedeDdbdbecececececd'],
+	16: [17, 'ce..', 'eeeededededeeeeececebebebebece'],
+	17: [17, 'df..', 'ddedededededdeddbdbebdbdbdbdcd'],
+	18: [17, 'de..', 'deeededeededeeEdcDcecdcdbebece'],
+	19: [17, 'cf..', 'ededeeeedddddeDebEbecdcdbebecd'],
+	20: [17, 'ce..', 'eeeeddddeeeeddDdbdbdcecebdbdce'],
+	21: [17, 'dF..', 'ddddededededddDdbdbdcdcdcdcdbd'],
+	22: [17, 'ce..', 'eeeededeeeeedeDebebececebebece'],
+	23: [17, 'cf..', 'edededededededEdcDcdcdcdcdcdcD'],
+	24: [17, 'dF..', 'ddddddddddddddDdbdbdbdbdbdbdbd'],
+	25: [17, 'cE..', 'eeeeededededeeEecEcecdcdcdcdce'],
+	26: [17, 'cf..', 'ededdedeededdedebEbecdcdbebecd'],
+	27: [17, 'de..', 'dedeededdedeededcDcdbebecdcdbe'],
+	28: [17, 'cf..', 'ededddddeeeedeDebEbebebecdcdcd'],
+	29: [17, 'ce..', 'eeeeeeeededededebebebebececece'],
+	30: [17, 'dF..', 'dddddedeeeeeedEdcdcdcecebebebd'],
+	31: [17, 'de..', 'dedeededededdeDebebecdcdcdcdbe'],
+	32: [17, 'cf..', 'ededdededdddeeeecEcebdbdbebecd'],
+	33: [17, 'de..', 'dedeeeeeededddDdbdbdcdcdcecebe'],
+	34: [17, 'de..', 'dedeeeeeddddedEdcdcdbdbdcecebe'],
+	35: [17, 'cf..', 'ededededdededeDebebebebecdcdcd'],
+	36: [17, 'deee', 'eeeeeeeeddddddDdcdcdcdcDbebebe'],
+	37: [17, 'dF..', 'dddddededededdDdbdbdcecececebd'],
+	38: [17, 'ce..', 'eeeeddddddddeeEececebdbdbdbdce'],
+	39: [17, 'cF..', 'ededddddddddededcdcdbdbDbdbdcd'],
+	40: [17, 'de..', 'dededededdddddddbdbdbdbdbebebe'],
+	41: [17, 'ce..', 'eeeeeeeeeeeeeeEececececececece'],
+	42: [17, 'cf..', 'ededeeeedddddedebebebdbdcececd'],
+	43: [17, 'df..', 'ddddeeeededeedEdcdcdbebececebd'],
+	44: [17, 'cF..', 'ededdedeededdeDebebecdcdbebecd'],
+	45: [17, 'ce..', 'eeeededededeeeeecEcebebebebece'],
+	46: [17, 'dF..', 'ddddededddddedEdcDcdcdcdbdbdbd'],
+	47: [17, 'ce..', 'dedededededededececececececece'],
+	48: [25, 'cf..', 'ededeeeeeeeeededeeeeeeEecececececdcdcececececd'],
+	49: [25, 'cF..', 'ededddddededeeeeededdeDebebecdcdcececdcdbdbdcd'],
+	50: [25, 'ce..', 'eeeeddddededdededededeDebebebebebEbecdcdbdbdce'],
+	51: [25, 'ce..', 'eeeeededddddeeeededeeeEececebebececebdbdcdcdce'],
+	52: [25, 'ce..', 'eeeededededeededededeeEecececdcdcdcdbebebebece'],
+	53: [25, 'dF..', 'ddedeeeedddddddddedeeeEdcdcebebebdbDbdbdcececd'],
+	54: [25, 'dF..', 'ddedddddededededdddddEDdbdbebdbdcdcdcdcdbdbdcd'],
+	55: [25, 'dF..', 'ddeddedeeeeeeeeedededeDdbdbebebebebebebebebecd'],
+	56: [25, 'dE..', 'deeeeeeeededeeeededeeEedcdcebebecececdcdcecece'],
+	57: [25, 'de..', 'deeedddddddddedeededeeEdcDcecDcdcececdcdbdbDce'],
+	58: [25, 'dF..', 'ddedddddeeeedddddedeeeEdcdcebebebdbdcecebdbdcd'],
+	59: [33, 'cF..', 'ededdedeededddddeeeeeeeedddddeDebebebdbdcecececebdbdcdcdbebecd'],
+	60: [33, 'cf..', 'ededeeeeededededddddeeeeeeeedeDebebececececebdbdcdcdcdcdcececd'],
+	61: [33, 'ce..', 'eeeeeeeeddddeeeeeeeeddddeeeeeeeececececebdbdcecececebdbdcecece'],
+	62: [33, 'ce..', 'eeeeddddeeeeededededeeeeddddeeEecEcebdbdcececdcdcdcdcecebdbdce'],
+	63: [33, 'cf..', 'ededededeeeededededeeeeeeeeeeeEececececececebebEbebecececdcdcd'],
+	64: [33, 'cF..', 'ededeeeedddddedeeeeededeeeeedeDebebececebebececebebebdbdcececd'],
+	65: [33, 'df..', 'ddedededededddddddddeeeeeeeedeDdbdbececececebdbdbdbdcdcdcdcdcd'],
+	66: [33, 'de..', 'deeeededdedeeeeedddddededddddeDdbdbebdbdbebecdcdbebebebecdcdce'],
+	67: [33, 'de..', 'deeeddddddddededdddddededdddeeEdcDcebdbdbebebdbdcdcdbdbdbdbdce'],
+	68: [33, 'dE..', 'deeeeeeeeeeeeeeeddddeeeeeeeeeeEdcdcececececebdbdcecececececece'],
+	69: [33, 'df..', 'ddedededdedeeeeeddddededededdeDdbdbecdcdcdcdbdbdcecebebecdcdcd'],
+	70: [33, 'dF..', 'ddeddddddddddddddededededddddeDdbdbebdbdbebebebebdbdbdbdbdbDcd'],
+	71: [33, 'ce..', 'eeeeddddeeeededeeeeededeededdeDebebecdcdbebececebebececebdbdce'],
+	72: [33, 'ce..', 'eeeededededeededededddddddddeeEececebdbdbdbdcdcdcdcdbebebebece'],
+	73: [33, 'ce..', 'eeeeededededddddededdedeeeeeeeEececececebebecdcdbdbdcdcDcdcdce'],
+	74: [33, 'cf..', 'ededddddededededededdededddddeDebebebdbdbebecdcDcdcdcdcdbdbdcd'],
+	75: [33, 'cF..', 'ededdededededdddddddeeeedddddeDebebebdbdcececdcdcdcdbebebebecd'],
+	76: [33, 'ce..', 'eeeeeeeeeeeeeeeeeeeededeeeeedeDebebececebebecececececececececE'],
+	77: [33, 'ce..', 'eeeeeeeedededddddededdddedededEdcDcdcdcdbdbdbebebdbdbebececece'],
+	78: [33, 'de..', 'dedeededdedededeeeeeeeeededeedEdcdcdbebececececebebebebecdcdbe'],
+	79: [33, 'dF..', 'ddddddddededdededdddeeeeedededEdcDcdcdcdcecebdbdbebecdcdbdbdbd'],
+	80: [33, 'dF..', 'dddddededdddeeeeddddddddededddDdbdbdcdcdbdbdbdbDcecebdbdbebEbd'],
+	81: [33, 'de..', 'dedeeeeeeeeededeededeeeedededdDdbdbdbebecececdcdbebececececebe'],
+	82: [33, 'de..', 'dedeededdedeededdedededeedededEdcdcdcdcdbebebebecdcdbebecdcDbe'],
+	83: [33, 'de..', 'dededededddddededdddeeeededeeeEececebebececebdbdbebebdbdbebebe'],
+	84: [33, 'cF..', 'ededddddeeeeddddeeeeeeeeededeeEecececdcdcecebebecdcdcecebdbdcd'],
+	85: [33, 'cf..', 'ededdddddededddddddddedeeeeedeDebebececebebebdbdbdbdbebebdbdcd'],
+	86: [33, 'ce..', 'eeeeededddddeeeeeeeedededededeDebebebebebebebebebebebdbdcdcdce'],
+	87: [33, 'ce..', 'eeeeddddeeeeddddddddeeeeddddeeeececebdbdcecebdbDbdbdcecebdbdce'],
+	88: [33, 'ce..', 'eeeedededdddeeeeededededededeeeecececdcdcdcdcdcdcecebdbdbebece'],
+	89: [33, 'cF..', 'ededeeeeddddddddededdedededeeeEecEcebebEbebecdcdbdbdbdbdcececd'],
+	90: [33, 'dF..', 'ddddededeeeeededeeeedededededdDdbdbdbebebEbecececdcdcececdcdbd'],
+	91: [33, 'df..', 'ddddeeeededededeededdddddededdDdbdbdbebebdbdcdcdbebebebececebd'],
+	92: [33, 'de..', 'dedededeededdddddededededdddedEdcdcdbdbdbebebebebdbdcdcdbebebe'],
+	93: [33, 'de..', 'dededddddddddedeededeeeeeeeeededcdcdcececececdcdbebebdbdbdbdbe'],
+	94: [33, 'dF..', 'ddddeeeeddddeeeeddddeeeededeedEdcDcdbebececebdbDcecebdbdcecebd'],
+	95: [33, 'df..', 'ddddddddededeeeedddddededdddddDdbdbDbdbdbebecdcdbebecdcdbdbdbd'],
+	96: [33, 'cf..', 'ededeeeededeeeeedededdddeeeedeDebebececebdbdbebececebebecececd'],
+	97: [33, 'ce..', 'eeeedededededededdddeeeedddddeDebebebdbdcEcebdbdbebebEbebebece'],
+	98: [33, 'ce..', 'eeeeededededeeeeeeeededededeeeEececebebebebecececececdcdcdcdce'],
+	99: [33, 'cf..', 'ededededddddddddddddededdedeeeEececebebecdcdbdbdbdbdbdbdcdcdcd'],
+	100: [33, 'cf..', 'ededdedeeeeededededeeeeeededdeDebebecdcdcecebebebebececebebecd'],
+};
+
+/** Decodes one `FLAT_SECTOR_BIAS` character. */
+function sectorBias(code: number): number {
+	return code >= 97 ? (code - 97) / 2 - 1.5 : (code - 65) / 2 - 1.5 - 1 / 64;
+}
 
 const penCache = new Map<number, Pt[]>();
 
@@ -228,13 +341,19 @@ function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt;
 	const [B, hB, hS] = hP >= hN ? [P, hP, hN] : [N, hN, hP];
 	const den = 2 * (bh - hB + (bh - hS));
 	const w = den === 0 ? 0 : (hB - hS) / den;
-	const off = width % 16 === 0 && width >= HOBBY_LIMIT ? FLAT_VECTOR_OFFSET[width / 16] : undefined;
-	const sgn = best < n / 2 ? 1 : -1;
-	const ox = off ? sgn * off[0] : 0;
-	const oy = off ? sgn * off[1] : 0;
 	const r = (v: number) => 8 * Math.floor((v + 4) / 8);
 	const x = D[0] + (B[0] - D[0]) * w, y = D[1] + (B[1] - D[1]) * w;
-	const vx = r(x + 0.5 * Math.sign(dy) + ox), vy = r(y + 0.5 * Math.sign(dx) + oy);
+	let cx = 0.5 * Math.sign(dy), cy = 0.5 * Math.sign(dx);
+	const table = width % 16 === 0 ? FLAT_SECTOR_BIAS[width / 16] : undefined;
+	if (table) {
+		const key = best * 2 + (hP >= hN ? 0 : 1);
+		const pair = key === 0 ? table[1].slice(0, 2) : key >= table[0] ? table[2].slice((key - table[0]) * 2, (key - table[0]) * 2 + 2) : '..';
+		if (pair[0] !== '.') {
+			cx = sectorBias(pair.charCodeAt(0));
+			cy = sectorBias(pair.charCodeAt(1));
+		}
+	}
+	const vx = r(x + cx), vy = r(y + cy);
 	return { v: flip ? [-vx, -vy] : [vx, vy], ray: flip ? [-x, -y] : [x, y] };
 }
 

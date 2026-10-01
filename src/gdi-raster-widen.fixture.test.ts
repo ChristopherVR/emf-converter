@@ -30,7 +30,7 @@ it('bounds the remaining fill differences across all 2,136 native wide paths', (
 		const expected = fillPolygonSpans(nativePolygons(c.expected), true);
 		if (actual.length !== expected.length || actual.data.subarray(0, actual.length * 3).some((v, i) => v !== expected.data[i])) differences++;
 	}
-	expect(differences).toBeLessThanOrEqual(68);
+	expect(differences).toBeLessThanOrEqual(2);
 });
 
 describe('native miter limits', () => {
