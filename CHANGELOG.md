@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.9](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.9) - 2026-10-01
+
+### Documentation
+
+- Refresh outstanding work for the Blend, colour adjustment and halftone results ([1701b7c](https://github.com/ChristopherVR/emf-converter/commit/1701b7c45f124e428b145bd8dce79e1be75eebfe))
+
 ## [4.6.8](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.8) - 2026-10-01
 
 ### Bug Fixes
