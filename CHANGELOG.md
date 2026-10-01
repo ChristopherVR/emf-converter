@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.16](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.16) - 2026-10-01
+
+### Bug Fixes
+
+- Extend native mixed halftone pipeline to all enlargement ratios ([2419ea9](https://github.com/ChristopherVR/emf-converter/commit/2419ea99328fce4071ba7ce5f93e4cd40451cb15))
+
 ## [4.4.15](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.15) - 2026-10-01
 
 ### Bug Fixes
