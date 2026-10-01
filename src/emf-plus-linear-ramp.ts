@@ -35,8 +35,8 @@
  *   f + 128) >> 8`. Interpolation is on premultiplied colours, as GDI+
  *   blends a translucent gradient (and as Canvas does).
  *
- * That reproduces GDI+ bit for bit apart from exact rounding ties, where
- * GDI+'s float arithmetic can land a hair either side of one half.
+ * That reproduces GDI+ bit for bit. A `Blend` knot is formed in truncating
+ * float32 arithmetic (see `mixBlend`), which decides every exact half-level tie.
  *
  * {@link linearRampSampler} paints the brush per device pixel this way
  * (used for raster fills, `emf-plus-exact-fill.ts`); {@link linearRampStops}
@@ -141,18 +141,55 @@ function mix(c0: readonly number[], c1: readonly number[], f: number): [number, 
 	];
 }
 
+const f32Buffer = new Float32Array(1);
+const f32Bits = new Int32Array(f32Buffer.buffer);
+
+/** `x` truncated toward zero to float32 (GDI+ forms a `Blend` knot with truncating float32 arithmetic). */
+function truncF32(x: number): number {
+	const r = Math.fround(x);
+	if (Math.abs(r) > Math.abs(x)) {
+		f32Buffer[0] = r;
+		f32Bits[0] -= 1;
+		return f32Buffer[0];
+	}
+	return r;
+}
+
 /**
- * Blend of the end colours at blend factor `f` the way GDI+ forms a
- * `Blend` knot: each end's share is truncated in 8.8 fixed point, with
- * `1 - f` held as a float32, so a factor landing exactly on a half level
- * rounds the way GDI+'s float arithmetic tips it (the 4,352-ramp native
- * sweep retains 4,664 one-level channel differences; preset colours and plain
- * gradients round their exact value half up instead). The result is in
- * 1/256 levels' precision; {@link buildLinearRampTable} rounds it half up.
+ * The `Blend` factor at `t` as GDI+ forms it: every operation is a float32
+ * one that truncates (rounds toward zero) instead of rounding to nearest, so
+ * a factor that is exactly 0.5 in theory (reached from a position of 0.1)
+ * can land a float32 step or two below it.
+ */
+function blendFactor(positions: readonly number[], factors: readonly number[], t: number): number {
+	const n = Math.min(positions.length, factors.length);
+	if (n === 0) {
+		return t;
+	}
+	if (t <= positions[0]) {
+		return factors[0];
+	}
+	for (let i = 1; i < n; i++) {
+		if (t <= positions[i]) {
+			const span = truncF32(positions[i] - positions[i - 1]);
+			const s = span > 0 ? truncF32(truncF32(t - positions[i - 1]) / span) : 1;
+			return truncF32(factors[i - 1] + truncF32(truncF32(factors[i] - factors[i - 1]) * s));
+		}
+	}
+	return factors[n - 1];
+}
+
+/**
+ * Blend of the end colours at blend factor `f` (from {@link blendFactor}) the
+ * way GDI+ forms a `Blend` knot: `c0 * (1 - f) + c1 * f` in truncating
+ * float32 arithmetic on the 0..255 premultiplied channels. This reproduces
+ * all 4,352 native `Blend` ramps exactly, including every half-level tie
+ * (which tips by the truncation of each product and of the sum). The result
+ * is the float32 sum; {@link buildLinearRampTable} rounds it half up.
  */
 function mixBlend(c0: readonly number[], c1: readonly number[], f: number): [number, number, number, number] {
-	const g = Math.fround(1 - f);
-	const ch = (a: number, b: number): number => (Math.trunc(a * 256 * g) + Math.trunc(b * 256 * f)) / 256;
+	const g = truncF32(1 - f);
+	const ch = (a: number, b: number): number => truncF32(truncF32(a * g) + truncF32(b * f));
 	return [ch(c0[0], c1[0]), ch(c0[1], c1[1]), ch(c0[2], c1[2]), ch(c0[3], c1[3])];
 }
 
@@ -177,7 +214,7 @@ function rampColorAt(ramp: EmfPlusLinearRamp, t: number): [number, number, numbe
 	const start = premultiplied(ramp.startArgb, gamma);
 	const end = premultiplied(ramp.endArgb, gamma);
 	if (ramp.blend && !gamma) {
-		return mixBlend(start, end, piecewise(ramp.blend.positions, ramp.blend.factors, t));
+		return mixBlend(start, end, blendFactor(ramp.blend.positions, ramp.blend.factors, t));
 	}
 	return mix(start, end, ramp.blend ? piecewise(ramp.blend.positions, ramp.blend.factors, t) : t);
 }

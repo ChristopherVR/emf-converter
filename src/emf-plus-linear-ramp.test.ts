@@ -63,7 +63,7 @@ describe('buildLinearRampTable', () => {
 			}
 		}
 		expect(maximum).toBeLessThanOrEqual(1);
-		expect(differences).toBeLessThanOrEqual(4664);
+		expect(differences).toBeLessThanOrEqual(0);
 	});
 
 	it('rounds a plain two-colour ramp to knots at k/16, halves up', () => {
