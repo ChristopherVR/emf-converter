@@ -178,11 +178,11 @@ function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox): [numb
 	const ux = 16 * p.kx;
 	const uy = 16 * p.ky;
 	if ((p.rCtx.state.penStyle & 0x0f) === PS_INSIDEFRAME && !penIsCosmetic(p.rCtx)) {
-		// GDI scales the original corner onto the inset box, retaining FIX
-		// fractions instead of using the other wide pens' even-pixel corners.
+		// GDI scales the original corner onto the inset box, truncating to
+		// whole FIX instead of using the other wide pens' even-pixel corners.
 		const penWidth = p.rCtx.state.penWidth * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) * 16;
 		const width = box.x1 - box.x0, height = box.y1 - box.y0;
-		return [Math.min(cw, width + penWidth) * width / (width + penWidth), Math.min(ch, height + penWidth) * height / (height + penWidth)];
+		return [Math.floor(Math.min(cw, width + penWidth) * width / (width + penWidth)), Math.floor(Math.min(ch, height + penWidth) * height / (height + penWidth))];
 	}
 	if (!penIsNull(p) && penIsCosmetic(p.rCtx)) {
 		// GDI constructs the corner on the original box, then scales it onto

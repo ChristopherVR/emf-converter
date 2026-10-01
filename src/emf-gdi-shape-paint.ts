@@ -562,7 +562,7 @@ export function paintGdiShape(rCtx: EmfGdiReplayCtx, shape: GdiShape): void {
 		return;
 	}
 	if ((cosmetic || penIsWidened(rCtx)) && (aliased || bitwise)) {
-		paintRasterPath(rCtx, getPath(), { fill: false, stroke: true, style: shape.style, rectangle: shape.rectangle, roundPen: shape.roundPen });
+		paintRasterPath(rCtx, getPath(), { fill: false, stroke: true, style: shape.style, rectangle: shape.rectangle, roundPen: shape.roundPen, filled: !!shape.fill && state.brushStyle !== 1 });
 		return;
 	}
 	const pattern = cosmeticPattern(rCtx);
