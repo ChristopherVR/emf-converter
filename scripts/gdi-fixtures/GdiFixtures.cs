@@ -5538,6 +5538,47 @@ public static class GdiFixtures
 		} finally { ReleaseDC(IntPtr.Zero, screen); }
 	}
 
+	/** Raw mixed-axis sampling, including odd sizes, clipping, impulses and mirrors. */
+	static void ErHalftoneMixedProbe()
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		var json = new StringBuilder("[");
+		try {
+			foreach (var size in new[] { new[] {16,12}, new[] {17,13}, new[] {3,2} })
+			for (int pattern=0; pattern<4; pattern++) {
+				int sw=size[0], sh=size[1];
+				using (var src=ErArgbSource(screen, sw, sh, delegate(int x, int y) {
+					if (pattern==0) return 0xFF000000u | (uint)((x*255/(sw-1))<<16 | (y*255/(sh-1))<<8 | ((x*31+y*13)&255));
+					if (pattern==1) return ((x+y)%2==0) ? 0xFF000000u : 0xFFFFFFFFu;
+					if (pattern==2) return ((x/2+y/2)%2==0) ? 0xFFE03020u : 0xFF3050D0u;
+					return (x==sw/2 && y==sh/2) ? 0xFFFFFFFFu : 0xFF203040u;
+				})) {
+					var input=new byte[sw*sh*4]; Marshal.Copy(src.Bits,input,0,input.Length);
+					foreach (var scale in new[] {new[] {2.0,0.5},new[] {1.5,0.7},new[] {2.7,0.33},new[] {2.0,2.0},new[] {1.5,1.5}})
+					for (int direction=0; direction<(scale[0]==scale[1]?1:2); direction++)
+					for (int mirror=0; mirror<4; mirror++) {
+						int dw=Math.Max(1,(int)Math.Round(sw*scale[direction])), dh=Math.Max(1,(int)Math.Round(sh*scale[1-direction]));
+						using (var dst=new Dib(screen,dw+4,dh+4)) {
+							if (SetStretchBltMode(dst.Dc,4)==0 || !SetBrushOrgEx(dst.Dc,0,0,IntPtr.Zero)) throw new Exception("HALFTONE setup failed");
+							bool mx=(mirror&1)!=0, my=(mirror&2)!=0;
+							if (!StretchBlt(dst.Dc,mx?dw+1:2,my?dh+1:2,mx?-dw:dw,my?-dh:dh,src.Dc,0,0,sw,sh,0x00CC0020) || !GdiFlush()) throw new Exception("HALFTONE stretch failed");
+							var pixels=new byte[dst.W*dst.H*4]; Marshal.Copy(dst.Bits,pixels,0,pixels.Length);
+							var output=new byte[dw*dh*3];
+							for(int y=0;y<dh;y++) for(int x=0;x<dw;x++) for(int c=0;c<3;c++) output[(y*dw+x)*3+c]=pixels[((y+2)*dst.W+x+2)*4+2-c];
+							if (json.Length>1) json.Append(',');
+							json.AppendFormat("{{\"sw\":{0},\"sh\":{1},\"dw\":{2},\"dh\":{3},\"pattern\":{4},\"mirror\":{5},\"input\":\"{6}\",\"output\":\"{7}\"}}",sw,sh,dw,dh,pattern,mirror,Convert.ToBase64String(input),Convert.ToBase64String(output));
+						}
+						}
+				}
+			}
+		} finally { ReleaseDC(IntPtr.Zero,screen); }
+		json.Append(']');
+		using (var file=File.Create(Path.Combine(outDir,"halftone-mixed-samples.json.gz")))
+		using (var gzip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress)) {
+			byte[] bytes=Encoding.UTF8.GetBytes(json.ToString()); gzip.Write(bytes,0,bytes.Length);
+		}
+	}
+
 	/** HALFTONE StretchBlt of a ramp and a checkerboard at 2x, 0.5x and 1.37x, each plain and under SetColorAdjustment. */
 	static void ErHalftoneCases(bool mixed = false)
 	{
@@ -6156,6 +6197,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "emf-records") { EmfRecordCases(); }
 		if (which == "all" || which == "halftone") { ErHalftoneCases(); }
 		if (which == "all" || which == "halftone-mixed") { ErHalftoneCases(true); }
+		if (which == "halftone-mixed-probe") { ErHalftoneMixedProbe(); }
 		if (which == "all" || which == "color-adjustment-controls") { ErColorAdjustmentControls(); }
 		if (which == "all" || which == "illuminant-charts") { ErIlluminantCharts(); }
 		if (which == "all" || which == "halftone-dither") { ErDitherCharts(); }

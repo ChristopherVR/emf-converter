@@ -173,11 +173,12 @@ export function halftoneAxis(start: number, srcLen: number, dstLen: number, reve
 	if (dstLen <= 0 || srcLen <= 0) {
 		return taps;
 	}
-	const at = (k: number): number => (reverse ? start + srcLen - 1 - k : start + k);
+	const at = (k: number): number => start + k;
 	if (dstLen >= srcLen) {
 		for (let i = 0; i < dstLen; i++) {
 			taps.push([[at(halftoneNearest(i, srcLen, dstLen)), 1]]);
 		}
+		if (reverse) taps.reverse();
 		return taps;
 	}
 	const step = Math.ceil((srcLen * FIX) / dstLen);
@@ -193,6 +194,7 @@ export function halftoneAxis(start: number, srcLen: number, dstLen: number, reve
 		}
 		taps.push(run);
 	}
+	if (reverse) taps.reverse();
 	return taps;
 }
 
@@ -225,8 +227,14 @@ export function halftoneDespeckle(px: Int32Array, w: number, h: number): void {
 			const right = x < w - 1 ? x + 1 : Math.max(0, x - 1);
 			let hClip = 0;
 			let vClip = 0;
+			let alternating = 0;
 			for (let c = 0; c < 3; c++) {
 				const v = at(x, y, c);
+				const axial = Math.max(Math.abs(v - at(left, y, c)), Math.abs(v - at(right, y, c)),
+					Math.abs(v - at(x, up, c)), Math.abs(v - at(x, down, c)));
+				const diagonal = Math.min(Math.abs(v - at(left, up, c)), Math.abs(v - at(right, up, c)),
+					Math.abs(v - at(left, down, c)), Math.abs(v - at(right, down, c)));
+				if (diagonal < axial) alternating++;
 				// 4 * (v + (2v - a - b) / 4), kept in integers.
 				if (over(6 * v - at(left, y, c) - at(right, y, c))) {
 					hClip++;
@@ -235,7 +243,7 @@ export function halftoneDespeckle(px: Int32Array, w: number, h: number): void {
 					vClip++;
 				}
 			}
-			if (hClip < 2 || vClip < 2) {
+			if (hClip < 2 || vClip < 2 || alternating < 2) {
 				continue;
 			}
 			for (let c = 0; c < 3; c++) {
@@ -280,10 +288,11 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
  *   footprint in 16.16 fixed point ({@link halftoneAxis}), rounded half
  *   up, and the reduced image is then sharpened ({@link halftoneSharpen}),
  *   which is what turns `#F0D010` next to a darker stripe into `#F7DD03`.
- * - Mixed-axis stretching uses linear interpolation on the enlarging axis,
- *   area averages on the reducing axis and sharpening along that axis only.
- *   The native ramp/checker captures still retain colour and edge differences;
- *   this branch is approximate (bounds in the parity tests).
+ * - Mixed-axis stretching with a 2x enlargement and at least a 2x reduction
+ *   reduces first, then sharpens each axis separately
+ *   (the reduced axis first), clamping/truncating after each pass. Only then
+ *   does it interpolate on the enlarging axis, rounding half up. Other ratios,
+ *   tiny buffers and full colour adjustment retain an approximate path.
  *
  * Direct StretchDIBits skips the enlargement pre-filter. Isolated gamma/log
  * curves are applied after sampling/sharpening. Pixels outside `src` read as black.
@@ -331,15 +340,39 @@ export function stretchHalftone(
 	const enlarging = W >= SW && H >= SH && (W > SW || H > SH);
 	const reducing = W < SW && H < SH;
 	const mixed = (W > SW && H < SH) || (W < SW && H > SH);
-	if (enlarging && !directDib) {
+	const nearestMixed = mixed && (!adjust || adjustAfterSampling)
+		&& ((W < SW && W * 2 > SW) || (H < SH && H * 2 > SH));
+	// The separable filter is verified for a 2x enlargement and >=2x reduction.
+	// Other ratios have native filter-selection/phase differences. Keep their
+	// existing approximation until that branch is understood. Full fitted
+	// colour adjustment also retains its previous sampling path.
+	const nativeMixed = mixed && (!adjust || adjustAfterSampling)
+		&& Math.min(SW, W) >= 2 && Math.min(SH, H) >= 2
+		&& ((W === SW * 2 && H * 2 <= SH) || (H === SH * 2 && W * 2 <= SW));
+	if ((enlarging || nearestMixed) && !directDib) {
 		halftoneDespeckle(rect, SW, SH);
 	}
 	if (adjust && !adjustAfterSampling) {
 		adjust(rect);
 	}
-	const cols = halftoneAxis(0, SW, W, flipX);
-	const rows = halftoneAxis(0, SH, H, flipY);
-	if (mixed) {
+	const sampleW = nativeMixed ? Math.min(SW, W) : W;
+	const sampleH = nativeMixed ? Math.min(SH, H) : H;
+	const cols = halftoneAxis(0, SW, sampleW, flipX);
+	const rows = halftoneAxis(0, SH, sampleH, flipY);
+	// Mixed-axis reduction keeps fractions until the first sharpening pass.
+	if (nearestMixed) {
+		const nearest = (taps: HalftoneTaps[], src: number, dst: number, reverse: boolean) => {
+			for (let i = 0; i < dst; i++) {
+				const index = reverse ? dst - 1 - i : i;
+				// Below 2x reduction, native sampling chooses the last source centre
+				// before the footprint's right edge. Mirrors reverse destination taps.
+				const k = dst < src ? Math.floor(((index + 1) * 2 * src - dst) / (2 * dst))
+					: halftoneNearest(index, src, dst);
+				taps[i] = [[Math.max(0, Math.min(src - 1, k)), 1]];
+			}
+		};
+		nearest(cols, SW, W, flipX); nearest(rows, SH, H, flipY);
+	} else if (mixed && !nativeMixed) {
 		const linear = (taps: HalftoneTaps[], src: number, dst: number, reverse: boolean) => {
 			if (dst <= src) return;
 			for (let i = 0; i < dst; i++) {
@@ -351,10 +384,12 @@ export function stretchHalftone(
 		};
 		linear(cols, SW, W, flipX); linear(rows, SH, H, flipY);
 	}
-	const out = new Int32Array(W * H * 3);
-	for (let y = 0; y < H; y++) {
+	let out: Int32Array | Float64Array = nativeMixed
+		? new Float64Array(sampleW * sampleH * 3)
+		: new Int32Array(W * H * 3);
+	for (let y = 0; y < sampleH; y++) {
 		const ys = rows[y];
-		for (let x = 0; x < W; x++) {
+		for (let x = 0; x < sampleW; x++) {
 			const xs = cols[x];
 			let r = 0;
 			let g = 0;
@@ -370,17 +405,53 @@ export function stretchHalftone(
 					b += rect[i + 2] * w;
 				}
 			}
-			const o = (y * W + x) * 3;
-			// Uniform-axis averages round half up; mixed-axis averages round ties down.
-			out[o] = mixed ? Math.ceil(r / total - 0.5) : Math.floor((2 * r + total) / (2 * total));
-			out[o + 1] = mixed ? Math.ceil(g / total - 0.5) : Math.floor((2 * g + total) / (2 * total));
-			out[o + 2] = mixed ? Math.ceil(b / total - 0.5) : Math.floor((2 * b + total) / (2 * total));
+			const o = (y * sampleW + x) * 3;
+			const round = (value: number) => nativeMixed ? value / total
+				: mixed ? Math.ceil(value / total - 0.5) : Math.floor((2 * value + total) / (2 * total));
+			out[o] = round(r);
+			out[o + 1] = round(g);
+			out[o + 2] = round(b);
 		}
 	}
 	if (reducing) {
-		halftoneSharpen(out, W, H);
+		halftoneSharpen(out as Int32Array, W, H);
 	}
-	if (mixed) {
+	if (nativeMixed) {
+		const reduceHorizontal = W < SW;
+		for (const horizontal of [reduceHorizontal, !reduceHorizontal]) {
+			const source = out;
+			out = new Int32Array(source.length);
+			const at = (x: number, y: number, c: number) =>
+				source[(Math.max(0, Math.min(sampleH - 1, y)) * sampleW + Math.max(0, Math.min(sampleW - 1, x))) * 3 + c];
+			for (let y = 0; y < sampleH; y++) {
+				for (let x = 0; x < sampleW; x++) {
+					for (let c = 0; c < 3; c++) {
+						const v = at(x, y, c);
+						const sum = horizontal ? at(x - 1, y, c) + at(x + 1, y, c) : at(x, y - 1, c) + at(x, y + 1, c);
+						out[(y * sampleW + x) * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + (2 * v - sum) / 4)));
+					}
+				}
+			}
+		}
+		const source = out;
+		out = new Int32Array(W * H * 3);
+		for (let y = 0; y < H; y++) {
+			const py = Math.max(0, Math.min(sampleH - 1, (y + 0.5) * sampleH / H - 0.5));
+			const y0 = Math.floor(py), fy = py - y0;
+			for (let x = 0; x < W; x++) {
+				const px = Math.max(0, Math.min(sampleW - 1, (x + 0.5) * sampleW / W - 0.5));
+				const x0 = Math.floor(px), fx = px - x0;
+				for (let c = 0; c < 3; c++) {
+					const at = (xx: number, yy: number) => source[(yy * sampleW + xx) * 3 + c];
+					const x1 = Math.min(sampleW - 1, x0 + 1), y1 = Math.min(sampleH - 1, y0 + 1);
+					const top = at(x0, y0) * (1 - fx) + at(x1, y0) * fx;
+					const bottom = at(x0, y1) * (1 - fx) + at(x1, y1) * fx;
+					out[(y * W + x) * 3 + c] = Math.floor(top * (1 - fy) + bottom * fy + 0.5);
+				}
+			}
+		}
+	}
+	if (mixed && !nativeMixed && !nearestMixed) {
 		const source = out.slice();
 		const at = (x: number, y: number, c: number) =>
 			source[(Math.max(0, Math.min(H - 1, y)) * W + Math.max(0, Math.min(W - 1, x))) * 3 + c];
@@ -388,15 +459,13 @@ export function stretchHalftone(
 			for (let x = 0; x < W; x++) {
 				for (let c = 0; c < 3; c++) {
 					const v = at(x, y, c);
-					const sum = W < SW
-						? at(x - 1, y, c) + at(x + 1, y, c)
-						: at(x, y - 1, c) + at(x, y + 1, c);
+					const sum = W < SW ? at(x - 1, y, c) + at(x + 1, y, c) : at(x, y - 1, c) + at(x, y + 1, c);
 					out[(y * W + x) * 3 + c] = Math.max(0, Math.min(255, v + Math.floor((2 * v - sum) / 4)));
 				}
 			}
 		}
 	}
-	if (adjust && adjustAfterSampling) adjust(out);
+	if (adjust && adjustAfterSampling) adjust(out as Int32Array);
 	for (let i = 0, o = 0; i < W * H; i++, o += 3) {
 		data[i * 4] = out[o];
 		data[i * 4 + 1] = out[o + 1];
