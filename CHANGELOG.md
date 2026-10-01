@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.4.14](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.14) - 2026-10-01
+
+### Bug Fixes
+
+- Match native miter limits and pen arc endpoint selection ([2947640](https://github.com/ChristopherVR/emf-converter/commit/29476404370dd37cced789a588bf0f81b34d8da8))
+
 ## [4.4.13](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.13) - 2026-09-30
 
 ### Bug Fixes
