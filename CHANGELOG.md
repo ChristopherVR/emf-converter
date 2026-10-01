@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.1) - 2026-10-01
+
+### Documentation
+
+- Describe odd-size halftone enlargement edge ([1f87000](https://github.com/ChristopherVR/emf-converter/commit/1f870004c390dc042b083bcd1394ffadcf7249aa))
+
 ## [4.6.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.0) - 2026-10-01
 
 ### Features
