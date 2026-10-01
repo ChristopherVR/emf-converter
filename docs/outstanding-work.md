@@ -24,19 +24,13 @@ Sharpen strength now uses the native rational amount curve, quantized to 1/64 wi
 
 ## EMF+ gradients
 
-The `gradient-blend-probe` capture covers 4,352 three-point Blend ramps with opaque and translucent endpoints. All 295,936 premultiplied channel values are within one level; 4,664 differ. Native weight interpolation and rounding remain unresolved. This capture bounds the remaining differences without claiming exact Blend arithmetic.
+Nothing outstanding: `buildLinearRampTable` reproduces all 4,352 native three-point Blend ramps (opaque and translucent) exactly; GDI+ forms each knot in float32 arithmetic that truncates toward zero.
 
 ## GDI color adjustment and HALFTONE
 
-- **`EMR_SETCOLORADJUSTMENT` formulas** are fitted to the Windows fixtures and still approximate:
-  - Saturated reds pick up some blue, and saturated blues too much green.
-  - Windows' ordered dither (32 levels per channel) is not reproduced; its threshold matrix is unknown.
-- **The fitted parameters trade two fixtures against each other.** `emfrec-coloradjustment` went from 6.6% to 7.9% of pixels off by more than 24, in exchange for large gains on the newer `emfrec-halftone-*-ca` fixtures.
-- **Isolated controls:** native `color-adjustment-controls` captures now cover the log filter, uniform/per-channel gamma, all eight illuminants and `StretchDIBits` under HALFTONE. Gamma and log-filter StretchBlt fixtures match exactly, including reduction. The log curve matches all 256 native input levels for grey and RGB channels. Illuminants other than device-default/D65 remain ignored; their native references now expose the difference. Direct DIB enlargement skips StretchBlt's pre-smoothing; the unadjusted fixture retains 0.74% mismatches (at most two levels), and adjusted DIB/colour-band boundaries still need work.
-- **Mixed-axis stretching:** eight native `halftone-mixed` cases now cover ramp/checker enlargement on one axis and reduction on the other, with and without colour adjustment. Interpolation and directional sharpening reduce the unadjusted mismatch from 22.3–47.1% to 3.5–23.6% at zero tolerance. A later sweep against 384 native captures (96 sizes x patterns x mirrors) matches 78 of the 96 combinations byte for byte; non-2x enlargements now use measured area resampling plus a smoothing FIR and the reduction uses 16.16 weights. Colour and edge differences remain; the horizontal ramp enlargement is within one level everywhere.
-- **Enlargement pre-smoothing:** the rule that smooths isolated pixels before an enlargement was inferred from checkerboard fixtures. It is not a known algorithm, so test it on more inputs.
-
-Native `illuminant-charts` now capture 256 greys, primaries and mixed colours for all nine illuminant settings. `halftone-dither` captures all 256 grey levels at three destination/brush origins. The larger `illuminant-tables` probe records raw grey-phase and colour-cube samples; those samples do not generalize to the smaller charts as lookup tables. A universal dither or illuminant transform remains unresolved.
+- **Colour adjustment** is reproduced from native colour cubes: curve stages (gamma, reference black/white, contrast, brightness, log, negative) are exact, illuminants 1-5, 7 and 8 use native cubes, and colorfulness/tint scale and turn u'v' chroma exactly. Windows' 66x65 ordered dither over 32 levels per channel is reproduced. Remaining: about a fifth of colorfulness/tint channels are one level off (an intermediate rounding step is unidentified), and the dither origin is measured only for unmirrored blits (a vertically mirrored enlargement and rotated or skewed destinations are not reproduced).
+- **Mixed-axis stretching:** 82 of the 96 native size/pattern combinations are byte-exact. Remaining: exact-tie patterns (alternating 0/255 checker at `17x13->8x26`, `17x13->6x35`; `16x12->43x4` pattern 2), single-row destinations such as `3x2->6x1`, and the odd-size edge rules below.
+- **Enlargement pre-smoothing (despeckle):** inferred from checkerboard and 2-pixel-block fixtures, not a known algorithm. Odd-size edges are fitted for those two pattern families only; shifted blocks, 3-pixel blocks, black/white 2-pixel blocks and the left/top edges of odd sizes still differ, and random binary images mismatch heavily even at even sizes.
 
 ## GDI path geometry
 
