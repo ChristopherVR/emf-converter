@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.5.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.5.2) - 2026-10-01
+
+### Build & CI
+
+- **deps:** Bump actions/upload-artifact (#18) ([aeada3f](https://github.com/ChristopherVR/emf-converter/commit/aeada3f3238daf917a8c367008d0c5ccdea4303b))
+
 ## [4.5.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.5.1) - 2026-10-01
 
 ### Bug Fixes
