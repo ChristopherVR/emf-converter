@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.6.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.3) - 2026-10-01
+
+### Bug Fixes
+
+- Interpolate large-radius blur from the unrounded filtered buffer ([ba16e7c](https://github.com/ChristopherVR/emf-converter/commit/ba16e7c66aad2da317b84259fec7aadf7401c345))
+
 ## [4.6.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.2) - 2026-10-01
 
 ### Documentation
