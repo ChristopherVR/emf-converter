@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.5.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.5.0) - 2026-10-01
+
+### Features
+
+- Bit-exact libjpeg-compatible JPEG decoder ([205581f](https://github.com/ChristopherVR/emf-converter/commit/205581f00bd62c9bc47f8eb64c0eb8d810e7de2a))
+
 ## [4.4.16](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.4.16) - 2026-10-01
 
 ### Bug Fixes
