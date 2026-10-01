@@ -607,7 +607,7 @@ function blurReduction(radius: number): number {
 }
 
 /** Large native blurs reduce in powers of two, filter both axes, then interpolate. */
-function effectBlur(src: Uint8ClampedArray, width: number, height: number, radius: number): Float64Array {
+function effectBlur(src: Uint8ClampedArray, width: number, height: number, radius: number, expanded = false): Float64Array {
 	const factor = blurReduction(radius);
 	// Native partial blocks on very small buffers use a different edge path.
 	if (factor === 1 || ((width < 4 || height < 4) && (width % factor !== 0 || height % factor !== 0))) {
@@ -628,6 +628,25 @@ function effectBlur(src: Uint8ClampedArray, width: number, height: number, radiu
 	// Native edge-mode selection counts complete blocks, although the buffer
 	// retains a partial final block. Odd dimensions expose this distinction.
 	const filtered = gdipBlur(reduced, w, h, radius / factor, 0, false, true, Math.floor(width / factor), Math.floor(height / factor));
+	// A plain blur interpolates the unrounded vertical pass: horizontally, then
+	// vertically, truncating each step (native noise sweeps at radius 20-100
+	// stay within two levels, mean 0.06-0.13). The expanded-edge path keeps its
+	// earlier rounded form, which its fractional-rectangle captures were fitted to.
+	if (!expanded) {
+		const out = new Float64Array(src.length);
+		for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+			const px = clamp((x + 0.5) / factor - 0.5, 0, w - 1), py = clamp((y + 0.5) / factor - 0.5, 0, h - 1);
+			const ix = Math.floor(px), iy = Math.floor(py), fx = px - ix, fy = py - iy;
+			const x1 = Math.min(w - 1, ix + 1), y1 = Math.min(h - 1, iy + 1);
+			for (let c = 0; c < 4; c++) {
+				const at = (xx: number, yy: number) => filtered[(yy * w + xx) * 4 + c];
+				const top = Math.floor((1 - fx) * at(ix, iy) + fx * at(x1, iy));
+				const bottom = Math.floor((1 - fx) * at(ix, y1) + fx * at(x1, y1));
+				out[(y * width + x) * 4 + c] = Math.floor((1 - fy) * top + fy * bottom);
+			}
+		}
+		return out;
+	}
 	// Native filtering rounds the vertical pass before enlargement too.
 	for (let i = 0; i < filtered.length; i++) filtered[i] = Math.round(filtered[i]);
 	const out = new Float64Array(src.length);
@@ -811,7 +830,7 @@ function expandedBlur(
 		const gy1 = Math.min(height, y1 + r);
 		copyBlock(rgba, width, gx0, gy0, gx1 - gx0, gy1 - gy0, buf, bw, gx0 - (x0 - r), gy0 - (y0 - r));
 	}
-	const blurred = blurReduction(radius) > 1 ? effectBlur(buf, bw, bh, radius) : gdipBlur(buf, bw, bh, radius, cropped ? r : 0, cropped, false, bw, bh, Math.ceil((y1 - y0) / (x1 - x0)));
+	const blurred = blurReduction(radius) > 1 ? effectBlur(buf, bw, bh, radius, true) : gdipBlur(buf, bw, bh, radius, cropped ? r : 0, cropped, false, bw, bh, Math.ceil((y1 - y0) / (x1 - x0)));
 	const w = x1 - x0;
 	const out = new Uint8ClampedArray(w * (y1 - y0) * 4);
 	for (let y = 0; y < y1 - y0; y++) {
