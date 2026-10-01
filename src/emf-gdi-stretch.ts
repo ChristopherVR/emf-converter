@@ -198,6 +198,40 @@ export function halftoneAxis(start: number, srcLen: number, dstLen: number, reve
 	return taps;
 }
 
+/** Width of the Gaussian that rounds the corners of the interpolation tent. */
+const SOFT_TENT_SIGMA = 0.25;
+const SOFT_TENT_STEPS = 31;
+const SOFT_TENT_SPAN = 3;
+const softTentCache = new Map<number, number>();
+
+/**
+ * Interpolation weight of a source sample `d` source pixels away, when a
+ * mixed-axis stretch enlarges by anything but exactly 2x. Measured against
+ * native impulse responses, Windows' kernel is the linear tent with its
+ * corners rounded (a ~0.25-pixel Gaussian), independent of the enlargement
+ * ratio. It matches the captures to within about a quarter of a level on
+ * average; the exact mechanism is not documented.
+ */
+export function softTent(d: number): number {
+	const key = Math.round(d * 1024);
+	const cached = softTentCache.get(key);
+	if (cached !== undefined) {
+		return cached;
+	}
+	let sum = 0;
+	let total = 0;
+	const half = (SOFT_TENT_STEPS - 1) / 2;
+	for (let i = -half; i <= half; i++) {
+		const x = (i / half) * SOFT_TENT_SPAN * SOFT_TENT_SIGMA;
+		const g = Math.exp(-(x * x) / (2 * SOFT_TENT_SIGMA * SOFT_TENT_SIGMA));
+		total += g;
+		sum += g * Math.max(0, 1 - Math.abs(key / 1024 + x));
+	}
+	const value = sum / total;
+	softTentCache.set(key, value);
+	return value;
+}
+
 /** Largest overshoot (in levels) a sharpened channel may have before it counts as clipped. */
 const SPECKLE_OVERSHOOT = 4;
 
@@ -437,18 +471,33 @@ export function stretchHalftone(
 		}
 		const source = out;
 		out = new Int32Array(W * H * 3);
+		const axisTaps = (src: number, dst: number): [number, number][][] => {
+			const r: [number, number][][] = [];
+			for (let i = 0; i < dst; i++) {
+				if (src === dst) { r.push([[i, 1]]); continue; }
+				const raw = (i + 0.5) * src / dst - 0.5;
+				const pos = Math.max(0, Math.min(src - 1, raw));
+				const i0 = Math.floor(pos);
+				// An exact 2x enlargement is plain linear interpolation.
+				if (dst === 2 * src) { r.push([[i0, 1 - (pos - i0)], [Math.min(src - 1, i0 + 1), pos - i0]]); continue; }
+				const taps: [number, number][] = [];
+				let total = 0;
+				for (let k = i0 - 2; k <= i0 + 3; k++) {
+					const w = softTent(raw - k);
+					taps.push([Math.max(0, Math.min(src - 1, k)), w]);
+					total += w;
+				}
+				r.push(taps.map(([k, w]) => [k, w / total] as [number, number]));
+			}
+			return r;
+		};
+		const xt = axisTaps(sampleW, W), yt = axisTaps(sampleH, H);
 		for (let y = 0; y < H; y++) {
-			const py = Math.max(0, Math.min(sampleH - 1, (y + 0.5) * sampleH / H - 0.5));
-			const y0 = Math.floor(py), fy = py - y0;
 			for (let x = 0; x < W; x++) {
-				const px = Math.max(0, Math.min(sampleW - 1, (x + 0.5) * sampleW / W - 0.5));
-				const x0 = Math.floor(px), fx = px - x0;
 				for (let c = 0; c < 3; c++) {
-					const at = (xx: number, yy: number) => source[(yy * sampleW + xx) * 3 + c];
-					const x1 = Math.min(sampleW - 1, x0 + 1), y1 = Math.min(sampleH - 1, y0 + 1);
-					const top = at(x0, y0) * (1 - fx) + at(x1, y0) * fx;
-					const bottom = at(x0, y1) * (1 - fx) + at(x1, y1) * fx;
-					out[(y * W + x) * 3 + c] = Math.floor(top * (1 - fy) + bottom * fy + 0.5);
+					let v = 0;
+					for (const [yy, wy] of yt[y]) for (const [xx, wx] of xt[x]) v += source[(yy * sampleW + xx) * 3 + c] * wy * wx;
+					out[(y * W + x) * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + 0.5)));
 				}
 			}
 		}

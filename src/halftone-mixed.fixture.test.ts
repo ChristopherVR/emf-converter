@@ -37,4 +37,17 @@ describe('native mixed-axis HALFTONE captures', () => {
 		}
 		expect(checked).toBeGreaterThan(200);
 	});
+
+	it('keeps the remaining approximate ratios within a fraction of a level on average', () => {
+		let sum = 0;
+		let count = 0;
+		for (const s of samples) {
+			const expected = Buffer.from(s.output, 'base64');
+			const actual = render(s);
+			for (let i = 0; i < expected.length; i++) sum += Math.abs(expected[i] - actual[i]);
+			count += expected.length;
+		}
+		// 0.285 measured across all 384 captures (0.656 with plain linear interpolation).
+		expect(sum / count).toBeLessThan(0.3);
+	});
 });
