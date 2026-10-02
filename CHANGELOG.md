@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.7.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.7.0) - 2026-10-02
+
+### Features
+
+- **gdi:** Replace the halftone despeckle heuristic with the measured two-by-two checker algorithm ([8d8e774](https://github.com/ChristopherVR/emf-converter/commit/8d8e774324a1ec762d670348bd14e624f5f6a432))
+
 ## [4.6.9](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.9) - 2026-10-01
 
 ### Documentation
