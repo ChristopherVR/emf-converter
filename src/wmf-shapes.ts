@@ -52,6 +52,8 @@ interface CompatBoxOptions {
 	exclusive?: boolean;
 	/** An Ellipse/RoundRect/Chord/Pie (a null pen changes their box). */
 	curved?: boolean;
+	/** An Arc, too: any curved shape's inside-frame pen takes half its width rounded down on the left (a Rectangle's, up). */
+	roundFrame?: boolean;
 }
 
 /**
@@ -90,14 +92,19 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 	if ((p.rCtx.state.penStyle & 0x0f) === PS_INSIDEFRAME) {
 		const w = Math.round(penDeviceWidth(p.rCtx) / p.kx);
 		if (w > 1) {
+			// The pen width in whole FIX of a device pixel along each axis (not the isotropic width), split about the
+			// edges: the top and bottom each take half rounded up; on the horizontal axis a Rectangle takes half rounded
+			// up on the left and down on the right, any curved shape half rounded down on both (native GetPath, 1,200
+			// boxes of every parity at five scales).
 			const matrix = gdiDeviceMatrix(p.rCtx);
-			const rawWidth = p.rCtx.state.penWidth * Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2])) / p.kx;
+			const wx = Math.round((Math.abs(p.rCtx.state.penWidth * matrix[0]) / p.kx) * 16);
+			const wy = Math.round((Math.abs(p.rCtx.state.penWidth * matrix[3]) / p.ky) * 16);
 			box.x1 += Math.round(ux);
 			box.y1 += Math.round(uy);
-			box.x0 += Math.round(rawWidth * ux / 2);
-			box.y0 += Math.round(rawWidth * uy / 2);
-			box.x1 -= Math.round(rawWidth * ux / 2);
-			box.y1 -= Math.round(rawWidth * uy / 2);
+			box.x0 += Math.round(((opts.curved || opts.roundFrame ? Math.floor(wx / 2) : Math.ceil(wx / 2)) * ux) / 16);
+			box.y0 += Math.round((Math.ceil(wy / 2) * uy) / 16);
+			box.x1 -= Math.round((Math.floor(wx / 2) * ux) / 16);
+			box.y1 -= Math.round((Math.ceil(wy / 2) * uy) / 16);
 		}
 	}
 	return box;
@@ -325,7 +332,7 @@ function compatArc(
 	xe: number,
 	ye: number,
 ): { box: CompatBox; s: [number, number]; e: [number, number] } | null {
-	const box = compatBox(p, l, t, r, b, { curved: kind === 'chord' || kind === 'pie' });
+	const box = compatBox(p, l, t, r, b, { curved: kind === 'chord' || kind === 'pie', roundFrame: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return null;
 	}

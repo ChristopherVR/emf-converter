@@ -552,6 +552,15 @@ export interface FixBox {
 	exy: number;
 	eyx: number;
 	eyy: number;
+	/**
+	 * The vertical edges really lie half a FIX further in (an odd
+	 * `PS_INSIDEFRAME` pen width on an Ellipse or RoundRect, measured in
+	 * `GM_ADVANCED`): the box is the one rounded down on the left and up on
+	 * the right, and the first half of the path (an Ellipse's points 0 to 5 and
+	 * 12, a RoundRect's 1 to 6 and 8 and 15) is a FIX to the right of where that
+	 * box puts it. Honoured by {@link ellipseBeziersBox} and the RoundRect path.
+	 */
+	halfX?: boolean;
 }
 
 /** The axis-aligned {@link FixBox} for the inclusive box `l..r` x `t..b` (FIX). */
@@ -637,6 +646,12 @@ function ellipsePoints(box: FixBox, cwControls: boolean): number[] {
 	P(hCtl, full);
 	P(full, rightLower);
 	P(full, vMidHi);
+	if (box.halfX) {
+		// The first half of the path, a FIX to the right.
+		for (const k of [0, 1, 2, 3, 4, 5, 12]) {
+			out[2 * k]++;
+		}
+	}
 	return out;
 }
 

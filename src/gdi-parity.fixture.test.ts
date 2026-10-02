@@ -326,6 +326,18 @@ const RASTER_CASES: ParityCase[] = [
 	raster('raster-wide-joins'), // was 0.991%
 	raster('raster-dash-geometric'), // was 3.943%
 	raster('raster-wide-extra', 0.0012), // measured 0.114% (65 pixels), before 0.155%
+	// PS_INSIDEFRAME pens of 1 to 16 px on every box shape (EMF playback pulls the shape's box in by the pen width):
+	// 16% to 35% of the pixels were off before; the Polygon is the control, which the pen leaves alone.
+	raster('emf-insideframe-rect'),
+	raster('emf-insideframe-ellipse'),
+	raster('emf-insideframe-roundrect'),
+	raster('emf-insideframe-arc'),
+	raster('emf-insideframe-chord'),
+	raster('emf-insideframe-pie'),
+	raster('emf-insideframe-polygon'),
+	// The same shapes under a 1.37 world scale: an odd pen width (in 1/16 pixel) puts the vertical edges on half a
+	// 1/16 pixel, which the Ellipse and RoundRect paths model, the Arc, Chord and Pie paths do not.
+	raster('emf-insideframe-scaled', 0.0006), // measured 0.047% (80 pixels), before 0.096% with the box alone
 ];
 
 /**
@@ -737,7 +749,7 @@ const SMOOTHING_CASES: ParityCase[] = [
  * measured 4.9% to 100% of pixels off. Now `wmf-shapes`, `wmf-shapes-twips`,
  * `wmf-pixels*` and the PS_INSIDEFRAME rectangle, ellipse and RoundRect
  * sweeps, including the inside-frame Chord, Pie and Arc, are pixel-exact;
- * the residuals are `wmf-shapes-scaled` (0.017%: 15 pixels of the
+ * the residuals are `wmf-shapes-scaled` (0.014%: 12 pixels of the
  * inside-frame row and the Pies at the 0.96 scale),
  * `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
  * own wide-pen residual).
@@ -747,7 +759,7 @@ const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', 
 const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-shapes'), // measured 0%
 	wmf('wmf-shapes-twips'), // measured 0%
-	wmf('wmf-shapes-scaled', 0.0002), // measured 0.017% (15 pixels), before 0.027% and 0.158%
+	wmf('wmf-shapes-scaled', 0.00015), // measured 0.014% (12 pixels), before 0.017%, 0.027% and 0.158%
 	wmf('wmf-roundrect-corners'), // 0%, before 500+ pixels: wide-pen and null-pen corners scale onto the drawn box
 	wmf('wmf-roundrect-corners-scaled'), // 0%, before 813+ pixels
 	wmf('wmf-insideframe-subpixel'),
