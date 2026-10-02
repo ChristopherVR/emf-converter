@@ -39,7 +39,6 @@ EMF files do not record the graphics mode. Windows plays back RoundRect, Arc, Ch
 ## EMF+
 
 - Rotated `HighQualityBicubic` `DrawImage` edge pixels differ (0.14%).
-- A few pixels differ in a metafile nested in `DrawImage` under a scale transform.
 
 ## WMF
 
