@@ -565,11 +565,12 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const inset = insideFrameInset(rCtx, unframed);
 		const framed = inset ? insetFixBox(unframed, inset) : unframed;
 		// The corner ellipse is scaled onto an inside-frame pen's smaller box.
-		const cornerFixW = fixExtent(rCtx, cornerW, 0);
-		const cornerFixH = fixExtent(rCtx, cornerH, 1);
+		const devM = gdiDeviceMatrix(rCtx);
+		const cornerFixW = inset ? Math.abs(cornerW * devM[0]) * 16 : fixExtent(rCtx, cornerW, 0);
+		const cornerFixH = inset ? Math.abs(cornerH * devM[3]) * 16 : fixExtent(rCtx, cornerH, 1);
 		const cornerOnFrame = (fix: number, size: number, framedSize: number): number => (inset && size !== 0 ? Math.floor((Math.min(fix, size) * framedSize) / size) : fix);
-		const cw = cornerOnFrame(cornerFixW, Math.abs(unframed.exx), Math.abs(framed.exx));
-		const ch = cornerOnFrame(cornerFixH, Math.abs(unframed.eyy), Math.abs(framed.eyy));
+		const cw = cornerOnFrame(cornerFixW, Math.abs((r - l) * devM[0]) * 16, Math.abs(framed.exx));
+		const ch = cornerOnFrame(cornerFixH, Math.abs((b - t) * devM[3]) * 16, Math.abs(framed.eyy));
 		// Rotated/skewed: build in LOGICAL space and map every point (Bezier
 		// control points included) through the full affine. Otherwise the
 		// device mapping is a plain per-axis scale + offset, so build directly

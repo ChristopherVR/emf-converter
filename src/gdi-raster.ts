@@ -751,6 +751,11 @@ export const tableSin = (angle: number): number => polygonTrig(angle)[1];
 export function angleArcPieces(startDeg: number, sweepDeg: number): Array<{ from: number; to: number; first: boolean }> {
 	const out: Array<{ from: number; to: number; first: boolean }> = [];
 	const arc = (from: number, to: number): void => {
+		if (Math.abs(to - from) < 90) {
+			// Less than a right angle is one Bezier, across a multiple of 90 degrees or not (native GetPath).
+			out.push({ from, to, first: true });
+			return;
+		}
 		const lo = Math.min(from, to);
 		const hi = Math.max(from, to);
 		const pieces = Math.floor(hi / 90) - Math.floor(lo / 90) + 1;
@@ -815,7 +820,8 @@ export function angleArcFix(box: FixBox, startDeg: number, sweepDeg: number): nu
 	const E = ellipseBeziers(l, t, l + w, t + h);
 	const Ecw = clockwiseEllipseBeziersBox(axisBox(l, t, l + w, t + h));
 	const start = (startDeg * Math.PI) / 180;
-	const out: number[] = [Math.round(cx + (w / 2) * tableCos(start)), Math.round(cy - (h / 2) * tableSin(start))];
+	const startUnit = Math.abs(sweepDeg) <= 3 ? [Math.cos(start), Math.sin(start)] : polygonTrig(start);
+	const out: number[] = [Math.round(cx + (w / 2) * startUnit[0]), Math.round(cy - (h / 2) * startUnit[1])];
 	for (const p of angleArcPieces(startDeg, sweepDeg)) {
 		const span = p.to - p.from;
 		if (!p.first && Math.abs(span) === 90 && p.from % 90 === 0) {
@@ -828,8 +834,9 @@ export function angleArcFix(box: FixBox, startDeg: number, sweepDeg: number): nu
 			}
 			continue;
 		}
-		for (const v of circularArcBezier(cx, cy, w / 2, h / 2, p.from, p.to)) {
-			out.push(Math.round(v));
+		const piece = unitPiece((p.from * Math.PI) / 180, (p.to * Math.PI) / 180, Math.abs(sweepDeg) <= 3);
+		for (let i = 0; i < 6; i += 2) {
+			out.push(Math.round(cx + (w / 2) * piece.ctrl[i]), Math.round(cy - (h / 2) * piece.ctrl[i + 1]));
 		}
 	}
 	return out;

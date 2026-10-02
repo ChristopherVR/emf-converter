@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-02T02:57:46.6569289Z",
+    "capturedAt":  "2026-10-02T04:10:05.3267884Z",
     "groups":  "arc-path-probe",
     "os":  "Microsoft Windows NT 10.0.26200.0",
     "build":  9457,
@@ -3381,6 +3381,10 @@
                   }
               ],
     "references":  [
+                       {
+                           "name":  "angle-arc-paths.json",
+                           "sha256":  "205c2c92e73b642c17a03a668f342bbe87ef1bec2b57507775428c914740c445"
+                       },
                        {
                            "name":  "arc-paths.json",
                            "sha256":  "5cbc2859e1443c98371204cf6bf802f445b1a45fca344806f0b9f3c2b3eb6cb6"

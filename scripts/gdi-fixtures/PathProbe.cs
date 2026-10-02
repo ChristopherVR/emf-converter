@@ -23,6 +23,7 @@ public static class PathProbe
 	[DllImport("gdi32.dll")] static extern bool Chord(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
 	[DllImport("gdi32.dll")] static extern bool Pie(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
 	[DllImport("gdi32.dll")] static extern int SetArcDirection(IntPtr dc, int direction);
+	[DllImport("gdi32.dll")] static extern bool AngleArc(IntPtr dc, int x, int y, uint r, float start, float sweep);
 	[DllImport("gdi32.dll")] static extern int SetMapMode(IntPtr dc, int mode);
 	[DllImport("gdi32.dll")] static extern int SetGraphicsMode(IntPtr dc, int mode);
 	[DllImport("gdi32.dll")] static extern bool SetViewportExtEx(IntPtr dc, int x, int y, IntPtr old);
@@ -166,6 +167,18 @@ public static class PathProbe
 				n++;
 			}
 			File.WriteAllText(Path.Combine(dir,"arc-precise.json"),precise.Append(']').ToString());
+			// AngleArc from the origin (the line from the current position (0, 0) comes first): circle of radius 15 to 214, whole-tenth-degree angles,
+			// sweeps up to a turn either way, a fifth of them up to a full turn and a seventh of them under 40 degrees.
+			var angle=new StringBuilder("[");var rng=new Random(2718);
+			for(int sample=0;sample<600;sample++) {
+				int ax=300+rng.Next(0,50),ay=300+rng.Next(0,50),ar=15+rng.Next(0,200);float start=rng.Next(0,3601)/10f,sweep=(rng.Next(0,7001)-3500)/10f;
+				if(sample%5==0)sweep=rng.Next(0,3601)/10f;
+				if(sample%7==0)sweep=(rng.Next(0,401)/10f)*(rng.Next(0,2)==0?-1:1);
+				SetMapMode(dc,1);BeginPath(dc);AngleArc(dc,ax,ay,(uint)ar,start,sweep);EndPath(dc);
+				if(angle.Length>1)angle.Append(',');
+				angle.Append("{\"x\":").Append(ax).Append(",\"y\":").Append(ay).Append(",\"radius\":").Append(ar).Append(",\"start\":").Append(start.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"sweep\":").Append(sweep.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+			}
+			File.WriteAllText(Path.Combine(dir,"angle-arc-paths.json"),angle.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
 	// One Arc, Chord or Pie under the given arc direction (1 counter-clockwise, 2 clockwise), read back as FIX `[x,y,type]` triples.

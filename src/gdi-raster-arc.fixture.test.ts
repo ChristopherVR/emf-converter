@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import nativeArcs from './__fixtures__/gdi/arc-paths.json';
 import nativeArcsClockwise from './__fixtures__/gdi/arc-paths-cw.json';
 import preciseArcs from './__fixtures__/gdi/arc-precise.json';
-import { approximateArcAngle, axisBox, polygonTrig } from './gdi-raster';
+import angleArcPaths from './__fixtures__/gdi/angle-arc-paths.json';
+import { angleArcFix, approximateArcAngle, axisBox, polygonTrig } from './gdi-raster';
 import { arcRasterPath } from './emf-gdi-raster-shapes';
 
 /** Drops consecutive repeats (Windows emits zero-length Beziers where an arc starts or ends exactly on a quadrant boundary). */
@@ -114,5 +115,35 @@ describe('the angle and trigonometry model behind GDI arcs', () => {
 		// Whole quarter turns are exact.
 		expect(polygonTrig(Math.PI / 2)).toEqual([0, 1]);
 		expect(polygonTrig(Math.PI)).toEqual([-1, 0]);
+	});
+});
+
+describe('native AngleArc paths', () => {
+	it('matches GetPath for 600 AngleArcs of every sweep: all but one exact, that one a FIX off', () => {
+		const arcs = angleArcPaths as Array<{ x: number; y: number; radius: number; start: number; sweep: number; expected: number[] }>;
+		expect(arcs).toHaveLength(600);
+		let exact = 0;
+		let largest = 0;
+		for (const c of arcs) {
+			const box = axisBox((c.x - c.radius) * 16, (c.y - c.radius) * 16, (c.x + c.radius) * 16, (c.y + c.radius) * 16);
+			const mine = angleArcFix(box, c.start, c.sweep);
+			// The path starts with a move to the current position (0, 0), then the line to the arc's start point.
+			const native: number[] = [];
+			for (let i = 3; i < c.expected.length; i += 3) {
+				native.push(c.expected[i], c.expected[i + 1]);
+			}
+			expect(mine).toHaveLength(native.length);
+			let worst = 0;
+			for (let i = 0; i < native.length; i++) {
+				worst = Math.max(worst, Math.abs(mine[i] - native[i]));
+			}
+			largest = Math.max(largest, worst);
+			if (worst === 0) {
+				exact++;
+			}
+		}
+		// Measured: 599 exact (before: 71, with 86 having a different number of Beziers and 112 more than a FIX off).
+		expect(exact).toBeGreaterThanOrEqual(598);
+		expect(largest).toBeLessThanOrEqual(1);
 	});
 });
