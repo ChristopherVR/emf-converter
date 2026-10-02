@@ -504,6 +504,57 @@ function halftoneKeepLast(px: Int32Array, w: number, h: number, rows: boolean): 
 }
 
 /**
+ * HALFTONE reduction of both axes: the rows are reduced first with
+ * {@link halftoneReduceTaps} and each result rounded half up to an integer,
+ * the columns are then reduced from those and kept unrounded, and the
+ * sharpening `floor(v + (4v - l - r - u - d) / 8)` (edge pixels standing in for
+ * missing neighbours, clamped to 0..255) works on that unrounded image.
+ * Reproduces native random-noise captures of 8 size pairs exactly (5,370
+ * channels). `rect` is RGB triples, `sw` x `sh`; returns `dw` x `dh` triples.
+ */
+function halftoneReduceBoth(rect: Int32Array, sw: number, sh: number, dw: number, dh: number, flipX: boolean, flipY: boolean): Int32Array {
+	const cols = halftoneReduceTaps(sw, dw, flipX);
+	const rows = halftoneReduceTaps(sh, dh, flipY);
+	const wide = new Int32Array(dw * sh * 3);
+	for (let y = 0; y < sh; y++) {
+		for (let x = 0; x < dw; x++) {
+			let total = 0;
+			for (const [, w] of cols[x]) total += w;
+			for (let c = 0; c < 3; c++) {
+				let sum = 0;
+				for (const [xx, w] of cols[x]) sum += rect[(y * sw + xx) * 3 + c] * w;
+				wide[(y * dw + x) * 3 + c] = Math.floor((2 * sum + total) / (2 * total));
+			}
+		}
+	}
+	const avg = new Float64Array(dw * dh * 3);
+	for (let y = 0; y < dh; y++) {
+		let total = 0;
+		for (const [, w] of rows[y]) total += w;
+		for (let x = 0; x < dw; x++) {
+			for (let c = 0; c < 3; c++) {
+				let sum = 0;
+				for (const [yy, w] of rows[y]) sum += wide[(yy * dw + x) * 3 + c] * w;
+				avg[(y * dw + x) * 3 + c] = sum / total;
+			}
+		}
+	}
+	const at = (x: number, y: number, c: number): number =>
+		avg[(Math.max(0, Math.min(dh - 1, y)) * dw + Math.max(0, Math.min(dw - 1, x))) * 3 + c];
+	const out = new Int32Array(dw * dh * 3);
+	for (let y = 0; y < dh; y++) {
+		for (let x = 0; x < dw; x++) {
+			for (let c = 0; c < 3; c++) {
+				const v = at(x, y, c);
+				const sum = at(x - 1, y, c) + at(x + 1, y, c) + at(x, y - 1, c) + at(x, y + 1, c);
+				out[(y * dw + x) * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + (4 * v - sum) / 8)));
+			}
+		}
+	}
+	return out;
+}
+
+/**
  * HALFTONE stretch, with the same argument conventions as
  * {@link stretchGdi}. Reproduces Windows' halftone engine on 32bpp output
  * (`emfrec-halftone-*` fixtures):
@@ -512,10 +563,11 @@ function halftoneKeepLast(px: Int32Array, w: number, h: number, rows: boolean): 
  *   source is first smoothed where it has exact two-by-two checkers
  *   ({@link halftoneDespeckle}) and then replicated, each destination pixel
  *   taking the source pixel under its centre ({@link halftoneNearest}).
- * - Reducing both axes, each destination pixel is the area average of its
- *   footprint in 16.16 fixed point ({@link halftoneAxis}), rounded half
- *   up, and the reduced image is then sharpened ({@link halftoneSharpen}),
- *   which is what turns `#F0D010` next to a darker stripe into `#F7DD03`.
+ * - Reducing both axes follows {@link halftoneReduceBoth}: the rows are
+ *   reduced with the 13-bit-share weights and rounded half up, the columns
+ *   are reduced from those unrounded, and the sharpening
+ *   ({@link halftoneSharpen}'s kernel, on the unrounded image) turns `#F0D010`
+ *   next to a darker stripe into `#F7DD03`.
  * - Mixed-axis stretching with an enlarged axis and an axis reduced by at least 2x
  *   reduces first, then sharpens each axis separately (the reduced axis first),
  *   clamping/truncating after each pass. Only then does it enlarge: an exact
@@ -654,7 +706,10 @@ export function stretchHalftone(
 	let out: Int32Array | Float64Array = nativeMixed
 		? new Float64Array(sampleW * sampleH * 3)
 		: new Int32Array(W * H * 3);
-	for (let y = 0; y < sampleH; y++) {
+	if (reducing) {
+		out = halftoneReduceBoth(rect, SW, SH, W, H, flipX, flipY);
+	}
+	for (let y = 0; !reducing && y < sampleH; y++) {
 		const ys = rows[y];
 		for (let x = 0; x < sampleW; x++) {
 			const xs = cols[x];
@@ -679,9 +734,6 @@ export function stretchHalftone(
 			out[o + 1] = round(g);
 			out[o + 2] = round(b);
 		}
-	}
-	if (reducing) {
-		halftoneSharpen(out as Int32Array, W, H);
 	}
 	if (nativeMixed) {
 		const reduceHorizontal = W < SW;

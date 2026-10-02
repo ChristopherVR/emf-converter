@@ -280,3 +280,21 @@ describe('stretchHalftone', () => {
 		expect(unpack(stretchHalftone(src, 0, 0, 4, 1, -4, 1))).toEqual([0xffffff, 0x0000ff, 0x00ff00, 0xff0000]);
 	});
 });
+
+describe('stretchHalftone both-axis reduction', () => {
+	it('reduces the rows to integers, the columns unrounded, then sharpens (native noise capture)', () => {
+		const rgb = [15,82,252,152,92,25,253,111,74,72,189,227,78,158,89,232,86,249,39,79,29,81,39,80,221,229,109,186,167,0,219,197,185,14,128,209,30,0,116,249,97,131,90,70,119,41,190,84,136,157,244,210,108,175,220,63,113,17,84,5,33,242,103,119,249,165,152,137,23,157,231,220,251,26,119,132,110,226,225,233,141,195,64,109,81,148,36,190,27,8,40,11,17,164,83,69,236,38,133,50,99,78,80,217,70];
+		const data = new Uint8ClampedArray(7 * 5 * 4);
+		for (let i = 0; i < 35; i++) {
+			data[i * 4] = rgb[i * 3];
+			data[i * 4 + 1] = rgb[i * 3 + 1];
+			data[i * 4 + 2] = rgb[i * 3 + 2];
+			data[i * 4 + 3] = 255;
+		}
+		const native = [63,77,164,240,136,11,120,198,194,82,101,174,139,62,100,90,118,103,113,211,163,232,108,185,108,75,97,83,172,90,120,166,61,117,69,46,189,53,94,170,103,156,123,161,83];
+		const result = stretchHalftone({ width: 7, height: 5, data }, 0, 0, 7, 5, 5, 3);
+		const rgbOut: number[] = [];
+		for (let i = 0; i < 15; i++) rgbOut.push(result.data[i * 4], result.data[i * 4 + 1], result.data[i * 4 + 2]);
+		expect(rgbOut).toEqual(native);
+	});
+});

@@ -922,8 +922,8 @@ const halftone = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'e
 const adjusted = (name: string, maxMismatch: number, tolerance = 0): ParityCase => ({ name, ext: 'emf', tolerance, maxMismatch });
 const HALFTONE_CASES: ParityCase[] = [
 	...['default', 'gamma', 'gamma-rgb', 'log', ...[1, 2, 3, 4, 5, 6, 7, 8].map(i => `illuminant-${i}`)].map(name => halftone(`emfrec-ca-control-${name}`)),
-	halftone('emfrec-ca-control-dib-adjusted', 0.006), // 0.549%, max 3 (27.95% at tolerance 24 before)
-	halftone('emfrec-ca-control-dib', 0.0075), // 0.738%, max 2 levels (before 10.776%)
+	halftone('emfrec-ca-control-dib-adjusted'), // 0% (0.549% before the two-pass reduction)
+	halftone('emfrec-ca-control-dib'), // 0% (0.738% before the two-pass reduction)
 	halftone('emfrec-coloradjustment-off'), // measured 0% (1.048% before)
 	halftone('emfrec-coloradjustment'), // measured 0% (1.814% before the unrounded palette levels)
 	// Flat colours under a colour adjustment, showing where the dither pattern starts: mirrored
@@ -943,10 +943,10 @@ const HALFTONE_CASES: ParityCase[] = [
 	halftone('emfrec-halftone-checker-1p37x'),
 	// Mixed-axis sampling now follows the measured interpolation and sharpening
 	// directions. Keep explicit bounds for the remaining colour/edge differences.
-	halftone('emfrec-halftone-ramp-2x-0p5y', 0.036), // 3.522%, max 1 level (before 47.136%)
-	halftone('emfrec-halftone-ramp-0p5x-2y', 0.178), // 17.698% (before 22.297%)
-	halftone('emfrec-halftone-checker-2x-0p5y', 0.237), // 23.629% (before 43.207%)
-	halftone('emfrec-halftone-checker-0p5x-2y', 0.226), // 22.498% (before 42.349%)
+	halftone('emfrec-halftone-ramp-2x-0p5y'), // 0% (3.522% before)
+	halftone('emfrec-halftone-ramp-0p5x-2y'), // 0% (17.698% before)
+	halftone('emfrec-halftone-checker-2x-0p5y'), // 0% (23.629% before)
+	halftone('emfrec-halftone-checker-0p5x-2y'), // 0% (22.498% before)
 	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.001), // 0.070%, max 4 (0.469% before the exact XYZ matrix)
 	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.0065), // 0.585% (1.282% before the exact XYZ matrix)
 	halftone('emfrec-halftone-checker-2x-0p5y-ca'), // 0% (0.549% before)
