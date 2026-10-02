@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.6) - 2026-10-02
+
+### Bug Fixes
+
+- **halftone:** Integer 13-bit enlargement weights and mirrored-axis order make all 96 mixed-axis captures exact ([646ea9e](https://github.com/ChristopherVR/emf-converter/commit/646ea9eafae094ba88660a0a719df3ba1b6803ae))
+- **halftone:** Refit the enlargement kernel table on about 410 native size pairs ([559b184](https://github.com/ChristopherVR/emf-converter/commit/559b1841c5aab6ab87e808fab93e6dbda230a973))
+
+### Other
+
+- Merge exact mixed-axis enlargement weights (96/96 native groups) ([dd1815f](https://github.com/ChristopherVR/emf-converter/commit/dd1815f0514458e1d9704542921e1dbdb197dfac))
+
 ## [4.8.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.5) - 2026-10-02
 
 ### Bug Fixes
