@@ -48,8 +48,9 @@ describe('native mixed-axis HALFTONE captures', () => {
 			for (let i = 0; i < expected.length; i++) sum += Math.abs(expected[i] - actual[i]);
 			count += expected.length;
 		}
-		// 0.228 measured across all 384 captures (0.285 before the area-resampling
-		// kernel and fixed-point reduction weights, 0.656 with plain linear interpolation).
-		expect(sum / count).toBeLessThan(0.24);
+		// 0.093 measured across all 384 captures (0.228 before the measured enlargement
+		// pre-smoothing, 0.285 before the area-resampling kernel and fixed-point reduction
+		// weights, 0.656 with plain linear interpolation).
+		expect(sum / count).toBeLessThan(0.1);
 	});
 });
