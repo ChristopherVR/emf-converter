@@ -229,32 +229,87 @@ describe('emf-plus-text-image-handlers', () => {
 
 		// -- DRAWDRIVERSTRING --
 		describe('eMFPLUS_DRAWDRIVERSTRING', () => {
-			it('draws a driver string with glyph positions', () => {
-				const rCtx = makeRCtx();
-				rCtx.objectTable.set(0, {
-					kind: 'plus-font',
-					emSize: 12,
-					flags: 0,
-					family: 'Arial',
-				});
-				const d = 8;
-				const glyphCount = 2;
-				rCtx.view.setUint32(d, 0xff000000, true); // brush
-				// bytes 4..11: optionsFlags, reserved
-				rCtx.view.setUint32(d + 12, glyphCount, true);
-				// glyphs at d + 16 (UTF-16LE)
-				rCtx.view.setUint16(d + 16, 65, true); // 'A'
-				rCtx.view.setUint16(d + 18, 66, true); // 'B'
-				// positions at d + 20 (aligned to 4 bytes, already aligned)
-				rCtx.view.setFloat32(d + 20, 5, true); // gx
-				rCtx.view.setFloat32(d + 24, 15, true); // gy
-				rCtx.view.setFloat32(d + 28, 20, true); // gx2 (unused, we only use first)
-				rCtx.view.setFloat32(d + 32, 15, true); // gy2
+			/** A DrawDriverString record at `d`; returns its data size. */
+			function writeDriverString(
+				rCtx: EmfPlusReplayCtx,
+				d: number,
+				text: string,
+				positions: Array<[number, number]>,
+				options = 1,
+				matrix?: number[],
+			): number {
+				const v = rCtx.view;
+				v.setUint32(d, 0xff000000, true); // brush
+				v.setUint32(d + 4, options, true);
+				v.setUint32(d + 8, matrix ? 1 : 0, true);
+				v.setUint32(d + 12, text.length, true);
+				let o = d + 16;
+				for (let i = 0; i < text.length; i++, o += 2) {
+					v.setUint16(o, text.charCodeAt(i), true);
+				}
+				// Positions follow the glyphs directly, with no padding.
+				for (const [x, y] of positions) {
+					v.setFloat32(o, x, true);
+					v.setFloat32(o + 4, y, true);
+					o += 8;
+				}
+				for (const n of matrix ?? []) {
+					v.setFloat32(o, n, true);
+					o += 4;
+				}
+				return o - d;
+			}
 
-				handleEmfPlusTextImageRecord(rCtx, EMFPLUS_DRAWDRIVERSTRING, 0x8000, d, 36);
+			it('draws each glyph at its own position', () => {
+				const rCtx = makeRCtx();
+				rCtx.objectTable.set(0, { kind: 'plus-font', emSize: 12, flags: 0, family: 'Arial' });
+				const size = writeDriverString(rCtx, 8, 'AB', [[5, 15], [20, 15]]);
+				handleEmfPlusTextImageRecord(rCtx, EMFPLUS_DRAWDRIVERSTRING, 0x8000, 8, size);
 				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
-				expect(ctx.fillText).toHaveBeenCalledOnce();
-				expect(ctx.fillText.mock.calls[0][0]).toBe('AB');
+				expect(ctx.fillText.mock.calls).toEqual([['A', 5, 15], ['B', 20, 15]]);
+			});
+
+			it('reads the positions unpadded after an odd number of glyphs', () => {
+				const rCtx = makeRCtx(512);
+				rCtx.objectTable.set(0, { kind: 'plus-font', emSize: 12, flags: 0, family: 'Arial' });
+				const size = writeDriverString(rCtx, 8, 'ABC', [[5, 15], [20, 15], [35, 15]]);
+				handleEmfPlusTextImageRecord(rCtx, EMFPLUS_DRAWDRIVERSTRING, 0x8000, 8, size);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillText.mock.calls).toEqual([['A', 5, 15], ['B', 20, 15], ['C', 35, 15]]);
+			});
+
+			it('draws the whole run from the first position under RealizedAdvance', () => {
+				const rCtx = makeRCtx();
+				rCtx.objectTable.set(0, { kind: 'plus-font', emSize: 12, flags: 0, family: 'Arial' });
+				const size = writeDriverString(rCtx, 8, 'AB', [[5, 15], [0, 0]], 0x5);
+				handleEmfPlusTextImageRecord(rCtx, EMFPLUS_DRAWDRIVERSTRING, 0x8000, 8, size);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillText.mock.calls).toEqual([['AB', 5, 15]]);
+			});
+
+			it('skips glyph indices without the font engine', () => {
+				const rCtx = makeRCtx();
+				rCtx.objectTable.set(0, { kind: 'plus-font', emSize: 12, flags: 0, family: 'Arial' });
+				const size = writeDriverString(rCtx, 8, 'AB', [[5, 15], [20, 15]], 0);
+				handleEmfPlusTextImageRecord(rCtx, EMFPLUS_DRAWDRIVERSTRING, 0x8000, 8, size);
+				const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+				expect(ctx.fillText).not.toHaveBeenCalled();
+			});
+
+			it('applies the TransformMatrix for the record only', () => {
+				const scaleX = (matrix?: number[]): { a: unknown; world: TransformMatrix; before: TransformMatrix } => {
+					const rCtx = makeRCtx();
+					rCtx.objectTable.set(0, { kind: 'plus-font', emSize: 12, flags: 0, family: 'Arial' });
+					const before = [...rCtx.worldTransform] as TransformMatrix;
+					const size = writeDriverString(rCtx, 8, 'A', [[5, 15]], 1, matrix);
+					handleEmfPlusTextImageRecord(rCtx, EMFPLUS_DRAWDRIVERSTRING, 0x8000, 8, size);
+					const ctx = rCtx.ctx as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+					return { a: ctx.setTransform.mock.calls.at(-1)?.[0], world: rCtx.worldTransform, before };
+				};
+				const plain = scaleX();
+				const scaled = scaleX([2, 0, 0, 2, 10, 0]);
+				expect(scaled.a).toBe(2 * (plain.a as number));
+				expect(scaled.world).toEqual(scaled.before);
 			});
 
 			it('ignores if recDataSize < 16', () => {

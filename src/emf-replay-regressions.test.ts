@@ -302,3 +302,52 @@ describe('EMF+ SetClipRegion', () => {
 		expect(measure(img, isRed, 75).area).toBeGreaterThan(0.95);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// EMF+ DrawDriverString
+// ---------------------------------------------------------------------------
+
+describe('EMF+ DrawDriverString', () => {
+	/** EmfPlusObject: a 36 px Arial font (SizeUnit Pixel) in slot `id`. */
+	const font = (id: number) => {
+		const name = 'Arial';
+		const d = new Uint8Array(24 + name.length * 2);
+		const v = new DataView(d.buffer);
+		v.setUint32(0, 0xdbc01002, true);
+		v.setFloat32(4, 36, true);
+		v.setUint32(8, 2, true);
+		v.setUint32(20, name.length, true);
+		for (let i = 0; i < name.length; i++) {
+			v.setUint16(24 + i * 2, name.charCodeAt(i), true);
+		}
+		return plusComment(0x4008, id | (6 << 8), d);
+	};
+	/** Character codes (CmapLookup), one glyph every `step` px along the baseline; positions follow the glyphs unpadded. */
+	const driverString = (fontId: number, text: string, x: number, y: number, step: number) => {
+		const d = new Uint8Array(16 + text.length * 10);
+		const v = new DataView(d.buffer);
+		v.setUint32(0, 0xff000000, true);
+		v.setUint32(4, 1, true);
+		v.setUint32(12, text.length, true);
+		for (let i = 0; i < text.length; i++) {
+			v.setUint16(16 + i * 2, text.charCodeAt(i), true);
+			v.setFloat32(16 + text.length * 2 + i * 8, x + i * step, true);
+			v.setFloat32(16 + text.length * 2 + i * 8 + 4, y, true);
+		}
+		return plusComment(0x4036, fontId | 0x8000, d);
+	};
+	const isDark = (r: number, g: number, b: number, a: number) => a > 128 && r < 120 && g < 120 && b < 120;
+
+	it('draws the glyphs of an odd-length run', () => {
+		const img = render(
+			buildEmf(
+				[0, 0, 299, 199],
+				[plusHeader(false), font(1), driverString(1, 'HALLO', 110, 110, 26), plusComment(0x4002, 0)],
+			),
+		);
+		const text = measure(img, isDark, 100);
+		expect(text.area).toBeGreaterThan(0.005);
+		expect(text.cy).toBeGreaterThan(0.35);
+		expect(text.cy).toBeLessThan(0.55);
+	});
+});

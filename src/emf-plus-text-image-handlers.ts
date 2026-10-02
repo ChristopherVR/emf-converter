@@ -42,6 +42,7 @@ import {
 	ANTIALIASED_QUALITY,
 	CLEARTYPE_NATURAL_QUALITY,
 	NONANTIALIASED_QUALITY,
+	type GdiRealizedFont,
 	type LogFontSpec,
 } from './gdi-font-engine';
 import { gdiTextCoverage, paintGdiTextRun } from './gdi-text-render';
@@ -367,12 +368,138 @@ function rgbaToHex(c: string): string | null {
 	return /^#[0-9a-f]{6}$/i.test(c) ? c : null;
 }
 
+/** A GDI+ font realized by the GDI font engine for the current world transform. */
+interface PlusEngineFont {
+	realized: GdiRealizedFont;
+	/** The em height in device pixels. */
+	emPx: number;
+	/** The world-to-device matrix (unrotated, positive scales). */
+	m: TransformMatrix;
+	/** True for the hints that keep linear (unhinted) advances. */
+	unhinted: boolean;
+	/** Solid glyph colour (CSS hex), or null when the glyphs take the sampler's. */
+	color: string | null;
+	/** Brush colour per device pixel, for glyph coverage. */
+	sampler: DeviceBrushSampler | null;
+	/** Whether a solid colour still goes through glyph coverage (smoothed text). */
+	solidViaCoverage: boolean;
+	underline: boolean;
+	strikeOut: boolean;
+}
+
+/**
+ * Realizes `font` with the GDI font engine for the current world transform
+ * and TextRenderingHint, when fonts were supplied, the transform is
+ * unrotated and the font's unit is World or Pixel; null otherwise.
+ */
+function realizePlusEngineFont(
+	rCtx: EmfPlusReplayCtx,
+	font: EmfPlusFont,
+	paint: string | CanvasGradient | CanvasPattern,
+	brushSampler: DeviceBrushSampler | null,
+): PlusEngineFont | null {
+	const fonts = rCtx.fonts;
+	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
+	// A texture/gradient brush takes its glyph coverage from the engine and
+	// its colour from the brush sampler (raster output only).
+	const hint = rCtx.textRenderingHint ?? 0;
+	const graySmooth = hint === 3 || hint === 4 || hint === 5;
+	// Antialiased and ClearType text is blended the GDI+ way, with its text
+	// contrast (see applyTextContrast), so a solid colour goes through the
+	// coverage path too.
+	const solidViaCoverage = !!color && graySmooth && !isSvgContext(rCtx.ctx);
+	const sampler = isSvgContext(rCtx.ctx) ? null : solidViaCoverage ? solidSampler(cssColorToArgb(paint as string) ?? 0xff000000) : color ? null : brushSampler;
+	const unit = font.unit ?? 0;
+	if (!fonts || (!color && !sampler) || (unit !== 0 && unit !== 2)) {
+		return null;
+	}
+	const m = plusWorldMatrix(rCtx);
+	if (m[1] !== 0 || m[2] !== 0 || m[0] <= 0 || m[3] <= 0) {
+		return null;
+	}
+	const emPx = font.emSize * m[3];
+	const spec: LogFontSpec = {
+		face: font.family,
+		height: -Math.round(emPx),
+		width: 0,
+		weight: font.flags & 1 ? 700 : 400,
+		italic: (font.flags & 2) !== 0,
+		charSet: 1,
+		pitchAndFamily: 0,
+		quality: HINT_QUALITY[hint] ?? NONANTIALIASED_QUALITY,
+		unhinted: hint === 2 || hint === 4,
+		// AntiAlias ignores the font's gasp table (measured: Arial 16 px is
+		// grayscale there, but single-bit under AntiAliasGridFit, as in GDI).
+		ignoreGasp: hint === 4,
+	};
+	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
+	if (!realized) {
+		return null;
+	}
+	return {
+		realized,
+		emPx,
+		m,
+		unhinted: spec.unhinted === true,
+		color,
+		sampler,
+		solidViaCoverage,
+		underline: (font.flags & 4) !== 0,
+		strikeOut: (font.flags & 8) !== 0,
+	};
+}
+
+/**
+ * Paints one baseline-anchored glyph run (device pixels) with a realized
+ * engine font: a solid brush paints the glyphs directly; a texture or
+ * gradient brush, and smoothed text, take the engine's glyph coverage on a
+ * scratch canvas and the colour of every covered pixel from the brush.
+ */
+function paintPlusEngineRun(
+	rCtx: EmfPlusReplayCtx,
+	ef: PlusEngineFont,
+	run: { codes: number[]; glyphIndices: boolean; x: number; y: number; dx: number[] | null; dy: number[] | null },
+): boolean {
+	const base = {
+		...run,
+		textAlign: 0x18,
+		bkColor: '#ffffff',
+		bkMode: 1,
+		options: 0,
+		rect: null,
+		matrix: null,
+	};
+	if ((!ef.color || ef.solidViaCoverage) && ef.sampler) {
+		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: false, strikeOut: false });
+		if (!cov) {
+			return true;
+		}
+		const gamma = textGamma(rCtx.ext?.textContrast);
+		if (cov.channels === 1) {
+			applyTextContrast(cov.data, gamma);
+		}
+		return compositeBrushCoverage(
+			rCtx,
+			ef.sampler,
+			{ x: cov.x, y: cov.y, w: cov.width, h: cov.height },
+			cov.data,
+			cov.channels,
+			false,
+			cov.channels === 3 ? gamma : 1,
+		);
+	}
+	paintGdiTextRun(
+		rCtx.ctx,
+		ef.realized,
+		{ ...base, textColor: ef.color as string, underline: ef.underline, strikeOut: ef.strikeOut },
+		rCtx.fontFamilyMap,
+	);
+	return true;
+}
+
 /**
  * Draws an EmfPlusDrawString with the GDI font engine when fonts were
  * supplied, for near (left) alignment and an unrotated world transform.
- * A solid brush paints the glyphs directly; a texture or gradient brush
- * (`brushSampler`, raster output) takes the engine's glyph coverage on a
- * scratch canvas and the colour of every covered pixel from the brush.
  * Returns false, having drawn nothing, otherwise.
  */
 function drawPlusStringWithEngine(
@@ -386,48 +513,15 @@ function drawPlusStringWithEngine(
 	format?: EmfPlusStringFormat,
 	brushSampler: DeviceBrushSampler | null = null,
 ): boolean {
-	const fonts = rCtx.fonts;
-	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
-	// A texture/gradient brush takes its glyph coverage from the engine and
-	// its colour from the brush sampler (raster output only).
-	const hintNow = rCtx.textRenderingHint ?? 0;
-	const graySmooth = hintNow === 3 || hintNow === 4 || hintNow === 5;
-	// Antialiased and ClearType text is blended the GDI+ way, with its text
-	// contrast (see applyTextContrast), so a solid colour goes through the
-	// coverage path too.
-	const solidViaCoverage = !!color && graySmooth && !isSvgContext(rCtx.ctx);
-	const sampler = isSvgContext(rCtx.ctx) ? null : solidViaCoverage ? solidSampler(cssColorToArgb(paint as string) ?? 0xff000000) : color ? null : brushSampler;
-	const unit = font.unit ?? 0;
-	if (!fonts || (!color && !sampler) || alignment !== 0 || (unit !== 0 && unit !== 2)) {
+	if (alignment !== 0) {
 		return false;
 	}
-	const m = plusWorldMatrix(rCtx);
-	if (m[1] !== 0 || m[2] !== 0 || m[0] <= 0 || m[3] <= 0) {
+	const ef = realizePlusEngineFont(rCtx, font, paint, brushSampler);
+	if (!ef) {
 		return false;
 	}
-	const emPx = font.emSize * m[3];
-	const hint = rCtx.textRenderingHint ?? 0;
-	const quality = HINT_QUALITY[hint] ?? NONANTIALIASED_QUALITY;
-	const spec: LogFontSpec = {
-		face: font.family,
-		height: -Math.round(emPx),
-		width: 0,
-		weight: font.flags & 1 ? 700 : 400,
-		italic: (font.flags & 2) !== 0,
-		charSet: 1,
-		pitchAndFamily: 0,
-		quality,
-		unhinted: hint === 2 || hint === 4,
-		// AntiAlias ignores the font's gasp table (measured: Arial 16 px is
-		// grayscale there, but single-bit under AntiAliasGridFit, as in GDI).
-		ignoreGasp: hint === 4,
-	};
-	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
-	if (!realized) {
-		return false;
-	}
+	const { realized, emPx, m, unhinted } = ef;
 	const ttf = realized.ttf;
-	const unhinted = spec.unhinted === true;
 	// Grid-fitted hints put the baseline on a whole pixel; the others keep
 	// GDI+'s fractional one (rounded when the glyphs are placed).
 	const exactAscent = (emPx * ttf.winAscent) / ttf.unitsPerEm;
@@ -443,61 +537,76 @@ function drawPlusStringWithEngine(
 	// GenericTypographic; measured with MeasureString).
 	const tracking = format?.tracking ?? PLUS_DEFAULT_TRACKING;
 	const dx = unhinted ? codes.map((c) => realized.advance(realized.glyphIndex(c)) * tracking) : null;
-	if ((!color || solidViaCoverage) && sampler) {
-		// The engine's glyph coverage (mono, grayscale, or ClearType per
-		// channel) filled with the brush's colour per device pixel.
-		const cov = gdiTextCoverage(realized, {
-			codes,
-			glyphIndices: false,
-			x,
-			y,
-			dx,
-			dy: null,
-			textAlign: 0x18,
-			textColor: '#000000',
-			bkColor: '#ffffff',
-			bkMode: 1,
-			options: 0,
-			rect: null,
-			matrix: null,
-			underline: false,
-			strikeOut: false,
-		});
-		if (!cov) {
-			return true;
+	return paintPlusEngineRun(rCtx, ef, { codes, glyphIndices: false, x, y, dx, dy: null });
+}
+
+/** DriverStringOptionsCmapLookup: the glyph array holds character codes, not glyph indices. */
+const DRIVER_STRING_CMAP_LOOKUP = 0x1;
+/** DriverStringOptionsVertical: the glyphs run top to bottom. */
+const DRIVER_STRING_VERTICAL = 0x2;
+/** DriverStringOptionsRealizedAdvance: only the first position counts; the font's advances place the rest. */
+const DRIVER_STRING_REALIZED_ADVANCE = 0x4;
+
+/**
+ * Draws an EmfPlusDrawDriverString (MS-EMFPLUS 2.3.4.6) whose glyph
+ * baseline origins are given in world units (only the first one counts
+ * under RealizedAdvance); an optional TransformMatrix is already folded
+ * into the world transform. The GDI font engine draws the run when fonts
+ * were supplied (character codes or glyph indices); otherwise Canvas text
+ * draws the character codes glyph by glyph. Glyph indices cannot be drawn
+ * without the engine and are skipped.
+ */
+function drawPlusDriverString(
+	rCtx: EmfPlusReplayCtx,
+	recFlags: number,
+	brushVal: number,
+	font: EmfPlusFont,
+	codes: number[],
+	positions: Array<{ x: number; y: number }>,
+	options: number,
+): void {
+	const cmap = (options & DRIVER_STRING_CMAP_LOOKUP) !== 0;
+	const realizedAdvance = (options & DRIVER_STRING_REALIZED_ADVANCE) !== 0;
+	if (!(options & DRIVER_STRING_VERTICAL)) {
+		const paint = resolveBrushPaint(rCtx, recFlags, brushVal);
+		const ef = realizePlusEngineFont(rCtx, font, paint, rCtx.fonts ? deviceBrushSampler(rCtx, recFlags, brushVal) : null);
+		if (ef) {
+			const { m } = ef;
+			const dev = positions.map((p) => ({ x: m[0] * p.x + m[4], y: m[3] * p.y + m[5] }));
+			const step = (axis: 'x' | 'y'): number[] => dev.map((p, i) => (i + 1 < dev.length ? dev[i + 1][axis] - p[axis] : 0));
+			paintPlusEngineRun(rCtx, ef, {
+				codes,
+				glyphIndices: !cmap,
+				x: dev[0].x,
+				y: dev[0].y,
+				dx: realizedAdvance ? null : step('x'),
+				dy: realizedAdvance ? null : step('y'),
+			});
+			return;
 		}
-		const gamma = textGamma(rCtx.ext?.textContrast);
-		if (cov.channels === 1) {
-			applyTextContrast(cov.data, gamma);
-		}
-		return compositeBrushCoverage(
-			rCtx,
-			sampler,
-			{ x: cov.x, y: cov.y, w: cov.width, h: cov.height },
-			cov.data,
-			cov.channels,
-			false,
-			cov.channels === 3 ? gamma : 1,
-		);
 	}
-	paintGdiTextRun(rCtx.ctx, realized, {
-		codes,
-		glyphIndices: false,
-		x,
-		y,
-		dx,
-		dy: null,
-		textAlign: 0x18,
-		textColor: color as string,
-		bkColor: '#ffffff',
-		bkMode: 1,
-		options: 0,
-		rect: null,
-		matrix: null,
-		underline: (font.flags & 4) !== 0,
-		strikeOut: (font.flags & 8) !== 0,
-	}, rCtx.fontFamilyMap);
-	return true;
+	if (!cmap) {
+		emfWarn('DrawDriverString: glyph indices need the GDI font engine (no fonts supplied); skipped');
+		return;
+	}
+	const { ctx } = rCtx;
+	const bold = font.flags & 1 ? 'bold ' : '';
+	const italic = font.flags & 2 ? 'italic ' : '';
+	const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
+	const setFont = (): void => {
+		ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
+		ctx.textBaseline = 'alphabetic';
+		ctx.textAlign = 'left';
+	};
+	if (realizedAdvance) {
+		setFont();
+		fillPlusText(rCtx, recFlags, brushVal, String.fromCharCode(...codes), positions[0].x, positions[0].y, font.emSize);
+		return;
+	}
+	for (let i = 0; i < codes.length; i++) {
+		setFont();
+		fillPlusText(rCtx, recFlags, brushVal, String.fromCharCode(codes[i]), positions[i].x, positions[i].y, font.emSize);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -603,35 +712,42 @@ export function handleEmfPlusTextImageRecord(
 		}
 
 		case EMFPLUS_DRAWDRIVERSTRING: {
+			// Brush, DriverStringOptionsFlags, MatrixPresent, GlyphCount, then
+			// the glyphs (uint16 each) and their positions (PointF each),
+			// packed without padding, then the optional TransformMatrix.
 			if (recDataSize >= 16) {
 				const brushVal = view.getUint32(dataOff, true);
+				const options = view.getUint32(dataOff + 4, true);
+				const matrixPresent = view.getUint32(dataOff + 8, true) !== 0;
 				const glyphCount = view.getUint32(dataOff + 12, true);
-				const fontId = recFlags & 0xff;
-				const font = objectTable.get(fontId);
-
+				const font = objectTable.get(recFlags & 0xff);
 				const glyphsOff = dataOff + 16;
 				const posOff = glyphsOff + glyphCount * 2;
-				const alignedPosOff = (posOff + 3) & ~3;
-
+				const matrixOff = posOff + glyphCount * 8;
 				if (
 					glyphCount > 0 &&
 					glyphCount < 100000 &&
-					alignedPosOff + glyphCount * 8 <= dataOff + recDataSize &&
+					matrixOff + (matrixPresent ? 24 : 0) <= dataOff + recDataSize &&
 					font &&
 					font.kind === 'plus-font'
 				) {
-					const text = readUtf16LE(view, glyphsOff, glyphCount);
-					if (text.length > 0) {
-						const bold = font.flags & 1 ? 'bold ' : '';
-						const italic = font.flags & 2 ? 'italic ' : '';
-						const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
-						ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
-						ctx.textBaseline = 'alphabetic';
-						ctx.textAlign = 'left';
-
-						const gx = view.getFloat32(alignedPosOff, true);
-						const gy = view.getFloat32(alignedPosOff + 4, true);
-						fillPlusText(rCtx, recFlags, brushVal, text, gx, gy, font.emSize);
+					const codes: number[] = [];
+					const positions: Array<{ x: number; y: number }> = [];
+					for (let i = 0; i < glyphCount; i++) {
+						codes.push(view.getUint16(glyphsOff + i * 2, true));
+						positions.push({ x: view.getFloat32(posOff + i * 8, true), y: view.getFloat32(posOff + i * 8 + 4, true) });
+					}
+					const world = rCtx.worldTransform;
+					if (matrixPresent) {
+						const xf = [0, 4, 8, 12, 16, 20].map((k) => view.getFloat32(matrixOff + k, true)) as TransformMatrix;
+						if (xf.every(Number.isFinite)) {
+							rCtx.worldTransform = mulMatrix(world, xf);
+						}
+					}
+					try {
+						drawPlusDriverString(rCtx, recFlags, brushVal, font, codes, positions, options);
+					} finally {
+						rCtx.worldTransform = world;
 					}
 				}
 			}
