@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.4) - 2026-10-02
+
+### Bug Fixes
+
+- **emf-plus:** Form blur kernel weights in truncating float32 arithmetic so blur is exact ([da91506](https://github.com/ChristopherVR/emf-converter/commit/da915066be73631b095496a72db94617469d61ce))
+
+### Other
+
+- Merge pixel-exact float32 blur kernel ([145c8cd](https://github.com/ChristopherVR/emf-converter/commit/145c8cd3813fcbd22cf494f834ade65b3e0f1f34))
+
 ## [4.8.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.3) - 2026-10-02
 
 ### Bug Fixes
