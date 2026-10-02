@@ -4,11 +4,45 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.0) - 2026-10-02
+
+### Features
+
+- Model GDI+ red-eye correction as polar sectors around a redness centre ([02bf61f](https://github.com/ChristopherVR/emf-converter/commit/02bf61f10a82a87ea7fc52030fc31a974cd88348))
+
+### Bug Fixes
+
+- Apply the GDI+ blur centre weight as two rounded halves, pick edge modes by reduced size, leave a lone-sample tail pixel ([9b3f2ec](https://github.com/ChristopherVR/emf-converter/commit/9b3f2ec2e9f426b5dc306961be09abd9ff220505))
+- Enlarge only an expanded blur's own reduced samples, treat the buffer ends as transparent and continue a lone sample ([06a5427](https://github.com/ChristopherVR/emf-converter/commit/06a5427d735eab6c57f265f7b95c030408b50f24))
+- Close the single-row and exact-tie HALFTONE mixed-axis groups ([9a7c6b3](https://github.com/ChristopherVR/emf-converter/commit/9a7c6b3f1cf85f12c56c141232e4996739576338))
+- Reduce HALFTONE mixed-axis footprints with 13-bit cumulative shares ([c8b4cd1](https://github.com/ChristopherVR/emf-converter/commit/c8b4cd1be16af54baf5bcc1b48364ebfcbec2613))
+- Red-eye working radius from the left/top edge and flat weight for pure reds ([412ff84](https://github.com/ChristopherVR/emf-converter/commit/412ff846a17bfadfe42545de7ded81c30ea4f050))
+- Replace the flat-pen sector table with a closed perpendicular rule ([401037c](https://github.com/ChristopherVR/emf-converter/commit/401037c9767054ff1926f0d187ed2a7ca81701d7))
+- Reproduce native arc geometry and scaled WMF arcs and rounded rectangles ([d985456](https://github.com/ChristopherVR/emf-converter/commit/d985456e420c4ba2f84ad18104435296583ea2ca))
+- Scale WMF RoundRect corners onto the drawn box for wide and null pens ([c40a0d2](https://github.com/ChristopherVR/emf-converter/commit/c40a0d2b12da40aa7534f87532bf0ec4a3857795))
+- Widen curves with per-segment curve rules and fix flat round join arcs ([50e5274](https://github.com/ChristopherVR/emf-converter/commit/50e5274036501d5eedc40f69e699ea1775fd7fb5))
+
+### Other
+
+- Merge blur centre-weight, edge-mode and expanded-blur fixes ([9bb12be](https://github.com/ChristopherVR/emf-converter/commit/9bb12be5f918b30a6964c76698acccd12bcddad3))
+- Merge exact mixed-axis reduction shares and single-row collapse ([96769d2](https://github.com/ChristopherVR/emf-converter/commit/96769d21b2397999c9a7a6988b1233caaec51cb3))
+- Merge clean-room black-box red-eye model ([5d9523c](https://github.com/ChristopherVR/emf-converter/commit/5d9523c02f049dccf3a4ad5b4fb6c9b113645a5f))
+- Merge flat-pen rule, arc geometry, RoundRect corners and curve widening ([cea4520](https://github.com/ChristopherVR/emf-converter/commit/cea45206700f16c8e3333b2360705fb76c4af713))
+
 ## [4.7.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.7.0) - 2026-10-02
 
 ### Features
 
 - **gdi:** Replace the halftone despeckle heuristic with the measured two-by-two checker algorithm ([8d8e774](https://github.com/ChristopherVR/emf-converter/commit/8d8e774324a1ec762d670348bd14e624f5f6a432))
+- Reproduce the halftone dither origin for mirrored, mixed-axis, PlgBlt and rotated blits ([162e274](https://github.com/ChristopherVR/emf-converter/commit/162e2741ce328c8b521b45b0d01c44ef05677692))
+
+### Bug Fixes
+
+- Read palette levels unrounded in the colorfulness/tint stage and round before the curves ([00961d1](https://github.com/ChristopherVR/emf-converter/commit/00961d1120cab3a8c8f4e813a909cde70e382dc4))
+
+### Other
+
+- Merge colour adjustment rounding and dither-origin work ([50ba20a](https://github.com/ChristopherVR/emf-converter/commit/50ba20a6ec47622145bb062ff1cc262a4a6adc13))
 
 ## [4.6.9](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.6.9) - 2026-10-01
 
