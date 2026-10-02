@@ -737,10 +737,10 @@ const SMOOTHING_CASES: ParityCase[] = [
  * embedded EMF. Before this replay (the old canvas-only WMF path) these
  * measured 4.9% to 100% of pixels off. Now `wmf-shapes`, `wmf-shapes-twips`,
  * `wmf-pixels*` and the PS_INSIDEFRAME rectangle, ellipse and RoundRect
- * sweeps are pixel-exact; the residuals are `wmf-shapes-scaled` (0.158%:
- * scattered pen-edge pixels of every row at the 0.96 scale),
- * `wmf-insideframe-curved-chord/pie/arc` (a handful of pixels at one arc
- * end), `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
+ * sweeps, including the inside-frame Chord, Pie and Arc, are pixel-exact;
+ * the residuals are `wmf-shapes-scaled` (0.038%: 34 pixels of the wide-pen
+ * RoundRects, the inside-frame row and the Pies at the 0.96 scale),
+ * `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
  * own wide-pen residual).
  */
 const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', tolerance: 0, maxMismatch });
@@ -748,15 +748,15 @@ const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', 
 const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-shapes'), // measured 0%
 	wmf('wmf-shapes-twips'), // measured 0%
-	wmf('wmf-shapes-scaled', 0.0016), // measured 0.158%
+	wmf('wmf-shapes-scaled', 0.0004), // measured 0.038% (34 pixels), before 0.158%
 	wmf('wmf-insideframe-subpixel'),
 	wmf('wmf-insideframe-fractional'), // 0%, before 0.385% at the 6.5/7.5 px pens
 	wmf('wmf-insideframe-wide-subpixel'), // 0%, before 0.385%: the same half-width ties
 	wmf('wmf-insideframe-curved-ellipse'), // 0%, before 0.109% (2.057% before the fractional fit)
 	wmf('wmf-insideframe-curved-roundrect'), // 0%, before 0.145% (2.785% before the fractional fit)
-	wmf('wmf-insideframe-curved-chord', 0.00007), // 0.006%, before 0.156%: one arc end
-	wmf('wmf-insideframe-curved-pie', 0.00005), // 0.005%, before 0.142%: one arc end
-	wmf('wmf-insideframe-curved-arc', 0.00007), // 0.006%, before 0.039%: one arc end
+	wmf('wmf-insideframe-curved-chord'), // 0%, before 0.006% (0.156% before the arc ends)
+	wmf('wmf-insideframe-curved-pie'), // 0%, before 0.005% (0.142% before the arc ends)
+	wmf('wmf-insideframe-curved-arc'), // 0%, before 0.006% (0.039% before the arc ends)
 	wmf('wmf-map-anisotropic'),
 	wmf('wmf-map-isotropic'),
 	wmf('wmf-map-text'),

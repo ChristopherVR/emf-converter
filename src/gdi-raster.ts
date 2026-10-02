@@ -711,28 +711,62 @@ export function roundRectCorners(l: number, t: number, r: number, b: number, cw:
 const TRIG_STEP = (2 * Math.PI) / 128;
 
 /**
+ * The table's cosines over the first quarter turn, node `i` at
+ * `i * TRIG_STEP` (the sines are the same list read backwards). Measured by
+ * fitting arc end points on boxes up to 30,000 pixels wide: the nodes sit up
+ * to 5e-5 away from the true cosines, and the first quarter is mirrored
+ * onto the others.
+ */
+const TRIG_NODES = [
+	1, 0.99879566, 0.99518639, 0.98917961, 0.98079146, 0.97003981, 0.95695228, 0.94155978, 0.92389844, 0.90401145, 0.88194619,
+	0.85775575, 0.83149879, 0.80323775, 0.77303903, 0.74098864, 0.70710648, 0.67151859, 0.63435836, 0.59565849, 0.55552672,
+	0.51405765, 0.47135039, 0.42750875, 0.38263811, 0.33684632, 0.29024443, 0.24294646, 0.19505974, 0.14670808, 0.0980012,
+	0.04906089, 0,
+];
+
+/** The 129 entries (one turn and the first node again) of the cosine and sine tables. */
+const TRIG_TABLE = (() => {
+	const cos: number[] = [];
+	const sin: number[] = [];
+	for (let k = 0; k <= 128; k++) {
+		const q = k >> 5;
+		const i = k & 31;
+		const c = TRIG_NODES[i];
+		const s = TRIG_NODES[32 - i];
+		if (k === 128) {
+			cos.push(1);
+			sin.push(0);
+			continue;
+		}
+		cos.push([c, -s, -c, s][q]);
+		sin.push([s, c, -s, -c][q]);
+	}
+	return { cos, sin };
+})();
+
+/**
  * `cos`/`sin` the way GDI evaluates them for arcs: linear interpolation in a
  * 128-entry table per turn (so points sit slightly inside the true ellipse,
- * by up to 1 - cos(pi / 128) of the radius). Fitted against `GetPath`: arc
- * start points match GDI 793 of 800 times (767 with exact trigonometry),
- * the rest within 0.02 FIX of a rounding tie.
+ * by up to 1 - cos(pi / 128) of the radius). The nodes are the measured
+ * {@link TRIG_NODES}.
  */
-function tableTrig(fn: (a: number) => number): (a: number) => number {
+function tableTrig(table: number[]): (a: number) => number {
 	return (a: number) => {
 		let b = a % (2 * Math.PI);
 		if (b < 0) {
 			b += 2 * Math.PI;
 		}
-		const i = Math.floor(b / TRIG_STEP);
-		const f = b / TRIG_STEP - i;
-		return fn(i * TRIG_STEP) * (1 - f) + fn((i + 1) * TRIG_STEP) * f;
+		const x = b / TRIG_STEP;
+		const i = Math.min(127, Math.floor(x));
+		const f = x - i;
+		return table[i] * (1 - f) + table[i + 1] * f;
 	};
 }
 
 /** GDI's table cosine (see {@link tableTrig}). */
-export const tableCos = tableTrig(Math.cos);
+export const tableCos = tableTrig(TRIG_TABLE.cos);
 /** GDI's table sine (see {@link tableTrig}). */
-export const tableSin = tableTrig(Math.sin);
+export const tableSin = tableTrig(TRIG_TABLE.sin);
 
 /**
  * The Bezier pieces GDI builds for `AngleArc` (measured against `GetPath`),
@@ -839,6 +873,68 @@ export function angleArcFix(box: FixBox, startDeg: number, sweepDeg: number): nu
 	return out;
 }
 
+/** Arc pieces of this sweep or less use exact trigonometry instead of GDI's table (measured). */
+const SMALL_SWEEP = (3 * Math.PI) / 180;
+
+/**
+ * The Bezier GDI builds for the piece of an elliptical arc between a
+ * quadrant boundary (`boundary`, a multiple of a quarter turn) and the
+ * angle `free` within the same quadrant (radians, counter-clockwise, y up),
+ * on the ellipse centred (`cx`, `cy`) with half axes `rx`, `ry`. Measured
+ * against `GetPath` (Arc, 5,732 pieces on the four quadrants, both ends
+ * anchored, about 90% of control points exact and the rest one FIX off):
+ * the free end is the table-trigonometric ellipse point; the controls lie
+ * on the lines from each end to the intersection `X` of the two tangents,
+ * `kappa = 2/3 (1 - tan(sweep / 4)^2)` of the way, where `X` sits
+ * `tan(sweep / 2)` axis lengths along the boundary's tangent and
+ * `tan(sweep / 2) = (1 - cos) / sin` of the table values at the sweep.
+ * An arc that sweeps 3 degrees or less altogether (`smallArc`) uses exact trigonometry throughout;
+ * every piece of a longer arc uses the table, however short (measured).
+ *
+ * Returns unrounded FIX points: the boundary point (`anchor`), the free
+ * point and the control point at each.
+ */
+function anchoredPiece(
+	boundary: number,
+	free: number,
+	rx: number,
+	ry: number,
+	cx: number,
+	cy: number,
+	smallArc: boolean,
+): { anchor: [number, number]; free: [number, number]; cAnchor: [number, number]; cFree: [number, number] } {
+	const sweep = Math.abs(free - boundary);
+	const small = smallArc;
+	const cos = small ? Math.cos : tableCos;
+	const sin = small ? Math.sin : tableSin;
+	const anchor: [number, number] = [Math.round(cx + rx * Math.cos(boundary)), Math.round(cy - ry * Math.sin(boundary))];
+	const point: [number, number] = [cx + rx * cos(free), cy - ry * sin(free)];
+	let t: number;
+	let kappa: number;
+	if (small) {
+		t = Math.tan(sweep / 2);
+		kappa = (2 / 3) * (1 - Math.tan(sweep / 4) ** 2);
+	} else {
+		const c = tableCos(sweep);
+		const sn = tableSin(sweep);
+		t = (1 - c) / sn;
+		const q = t / (1 + Math.sqrt(1 + t * t));
+		kappa = (2 / 3) * (1 - q * q);
+	}
+	const dir = free > boundary ? 1 : -1;
+	// Unit tangent of increasing angle at the boundary: (-sin, -cos) on screen.
+	const tx = -Math.round(Math.sin(boundary));
+	const ty = -Math.round(Math.cos(boundary));
+	const length = tx !== 0 ? rx : ry;
+	const X: [number, number] = [anchor[0] + dir * tx * length * t, anchor[1] + dir * ty * length * t];
+	return {
+		anchor,
+		free: point,
+		cAnchor: [anchor[0] + kappa * (X[0] - anchor[0]), anchor[1] + kappa * (X[1] - anchor[1])],
+		cFree: [point[0] + kappa * (X[0] - point[0]), point[1] + kappa * (X[1] - point[1])],
+	};
+}
+
 /**
  * The open run of Beziers (`1 + 3n` points, flat FIX pairs) GDI builds for
  * `Arc`/`ArcTo`/`Chord`/`Pie` on the inclusive box `l..r` x `t..b` (FIX)
@@ -908,6 +1004,22 @@ export function arcBeziers(
 			continue;
 		}
 		const e = s > 0 ? Math.min(next, a1) : Math.max(next, a1);
+		const endOnBoundary = Math.abs(e / Q - Math.round(e / Q)) < 1e-9;
+		if (onBoundary !== endOnBoundary) {
+			// A piece with one end on a quadrant boundary (the usual first or last piece of an arc).
+			const piece = anchoredPiece(onBoundary ? a : e, onBoundary ? e : a, rx, ry, cx, cy, Math.abs(a1 - a0) <= SMALL_SWEEP);
+			if (onBoundary) {
+				out.push(...[piece.cAnchor, piece.cFree, piece.free].flatMap((q) => [Math.round(q[0]), Math.round(q[1])]));
+			} else {
+				if (out.length === 2) {
+					out[0] = Math.round(piece.free[0]);
+					out[1] = Math.round(piece.free[1]);
+				}
+				out.push(...[piece.cFree, piece.cAnchor, piece.anchor].flatMap((q) => [Math.round(q[0]), Math.round(q[1])]));
+			}
+			a = e;
+			continue;
+		}
 		const k = (4 / 3) * Math.tan((e - a) / 4);
 		out.push(
 			Math.round(px(a) - k * rx * tableSin(a)),

@@ -19,6 +19,9 @@ public static class PathProbe
 	[DllImport("gdi32.dll")] static extern int GetPath(IntPtr dc, [Out] Point[] points, [Out] byte[] types, int count);
 	[DllImport("gdi32.dll")] static extern bool RoundRect(IntPtr dc, int l, int t, int r, int b, int w, int h);
 	[DllImport("gdi32.dll")] static extern bool Ellipse(IntPtr dc, int l, int t, int r, int b);
+	[DllImport("gdi32.dll")] static extern bool Arc(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
+	[DllImport("gdi32.dll")] static extern bool Chord(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
+	[DllImport("gdi32.dll")] static extern bool Pie(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
 	[DllImport("gdi32.dll")] static extern int SetArcDirection(IntPtr dc, int direction);
 	[DllImport("gdi32.dll")] static extern int SetMapMode(IntPtr dc, int mode);
 	[DllImport("gdi32.dll")] static extern int SetGraphicsMode(IntPtr dc, int mode);
@@ -125,6 +128,27 @@ public static class PathProbe
 				}finally{SelectObject(dc,old);DeleteObject(pen);}
 			}
 			File.WriteAllText(Path.Combine(dir,"flat-pen-vectors.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
+	// Native GetPath of Arc/Chord/Pie on integer device boxes (GM_COMPATIBLE, counter-clockwise): random arcs, arcs from or to a quadrant boundary, and a 0.096 scale case.
+	public static void ArcPaths(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(6047);var json=new StringBuilder("[");
+		try {
+			for(int sample=0;sample<900;sample++) {
+				int kind=sample%3,w=12+random.Next(0,240),h=12+random.Next(0,240),l=50+random.Next(0,100),t=50+random.Next(0,100),r=l+w,b=t+h;
+				double a1=random.NextDouble()*Math.PI*2,a2=random.NextDouble()*Math.PI*2;
+				if(sample%3==1&&sample>=300){a1=Math.Floor(a1/(Math.PI/2))*(Math.PI/2);}
+				if(sample>=600){a2=Math.Floor(a2/(Math.PI/2))*(Math.PI/2);}
+				Func<double,int[]> pt=delegate(double a){double rad=0.5+random.NextDouble()*1.5;return new[]{(int)Math.Round(l+w/2.0+Math.Cos(a)*w/2.0*rad),(int)Math.Round(t+h/2.0-Math.Sin(a)*h/2.0*rad)};};
+				int[] p1=pt(a1),p2=pt(a2);
+				SetMapMode(dc,1);BeginPath(dc);
+				if(kind==0)Arc(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);else if(kind==1)Chord(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);else Pie(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+				EndPath(dc);
+				string path=ReadFixPath(dc);
+				if(json.Length>1)json.Append(',');
+				json.Append("{\"kind\":").Append(kind).Append(",\"box\":[").Append(l).Append(',').Append(t).Append(',').Append(r).Append(',').Append(b).Append("],\"radials\":[").Append(p1[0]).Append(',').Append(p1[1]).Append(',').Append(p2[0]).Append(',').Append(p2[1]).Append("],\"expected\":").Append(path).Append('}');
+			}
+			File.WriteAllText(Path.Combine(dir,"arc-paths.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
 }

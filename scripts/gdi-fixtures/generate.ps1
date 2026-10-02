@@ -61,9 +61,9 @@ if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra' -or $Which -eq
     Complete-Fixtures
     return
 }
-if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe' -or $Which -eq 'wide-outline-probe' -or $Which -eq 'flat-pen-probe') {
+if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe' -or $Which -eq 'wide-outline-probe' -or $Which -eq 'flat-pen-probe' -or $Which -eq 'arc-path-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    if ($Which -eq 'wide-path-probe') { [PathProbe]::Wide($outDir) } elseif ($Which -eq 'flat-pen-probe') { [PathProbe]::FlatVectors($outDir) } elseif ($Which -eq 'wide-outline-probe') { [PathProbe]::Outline($outDir) } else { [PathProbe]::Run($outDir) }
+    if ($Which -eq 'wide-path-probe') { [PathProbe]::Wide($outDir) } elseif ($Which -eq 'flat-pen-probe') { [PathProbe]::FlatVectors($outDir) } elseif ($Which -eq 'arc-path-probe') { [PathProbe]::ArcPaths($outDir) } elseif ($Which -eq 'wide-outline-probe') { [PathProbe]::Outline($outDir) } else { [PathProbe]::Run($outDir) }
     Complete-Fixtures
     return
 }

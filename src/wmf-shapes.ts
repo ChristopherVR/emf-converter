@@ -171,7 +171,7 @@ export function wmfRectangle(p: WmfPlayer, l: number, t: number, r: number, b: n
 }
 
 /** The device FIX extents of a compatible-mode RoundRect's corner ellipse (logical `w` x `h`). */
-function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox): [number, number] {
+function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox, logical: readonly [number, number, number, number]): [number, number] {
 	const m = gdiDeviceMatrix(p.rCtx);
 	const cw = Math.round(Math.abs(w * m[0]) * 16);
 	const ch = Math.round(Math.abs(h * m[3]) * 16);
@@ -188,8 +188,12 @@ function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox): [numb
 		// GDI constructs the corner on the original box, then scales it onto
 		// the box with its right/bottom pixel excluded. Retain fractional FIX
 		// extents until the corner's endpoints are rounded (native GetPath).
+		// The original is the unrounded device size of the logical box (at a
+		// non-integer scale that is not the rounded box plus a pixel).
 		const width = box.x1 - box.x0, height = box.y1 - box.y0;
-		return [Math.min(cw, width + ux) * width / (width + ux), Math.min(ch, height + uy) * height / (height + uy)];
+		const fullW = Math.abs((logical[2] - logical[0]) * m[0]) * 16 || width + ux;
+		const fullH = Math.abs((logical[3] - logical[1]) * m[3]) * 16 || height + uy;
+		return [Math.min(Math.abs(w * m[0]) * 16, fullW) * width / fullW, Math.min(Math.abs(h * m[3]) * 16, fullH) * height / fullH];
 	}
 	// Wide and null pens retain whole, even device-pixel corner extents
 	// (the wmf-shapes and wmf-shapes-scaled native captures).
@@ -215,7 +219,7 @@ export const wmfShapePath = {
 		if (box.x1 < box.x0 || box.y1 < box.y0) {
 			return null;
 		}
-		const [cw, ch] = compatCorner(p, w, h, box);
+		const [cw, ch] = compatCorner(p, w, h, box, [l, t, r, b]);
 		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx));
 	},
 	ellipse(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
@@ -254,7 +258,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
-	const [cw, ch] = compatCorner(p, w, h, box);
+	const [cw, ch] = compatCorner(p, w, h, box, [l, t, r, b]);
 	const cr = canvasRect(box);
 	paintGdiShape(p.rCtx, {
 		build: (c: CanvasContext) => {
@@ -330,13 +334,19 @@ function compatArc(
 		return null;
 	}
 	// The radials' angles are those on the box as given (its own centre and
-	// half axes): carry each radial point onto the box drawn, which keeps
-	// that angle for the arc code, which measures on the box it builds.
-	const raw = compatBox(p, l, t, r, b, { exclusive: false });
+	// half axes), measured on the logical coordinates before any rounding to
+	// device pixels (native `GetPath` at a 0.96 device scale): carry each
+	// radial point onto the box drawn, which keeps that angle for the arc
+	// code, which measures on the box it builds.
+	const m = gdiDeviceMatrix(p.rCtx);
+	const deviceFix = (x: number, y: number): [number, number] => [(m[0] * x + m[2] * y + m[4]) * 16, (m[1] * x + m[3] * y + m[5]) * 16];
+	const [ax, ay] = deviceFix(l, t);
+	const [bx, by] = deviceFix(r, b);
+	const raw = { x0: Math.min(ax, bx), x1: Math.max(ax, bx), y0: Math.min(ay, by), y1: Math.max(ay, by) };
 	const onBox = (v: number, r0: number, r1: number, b0: number, b1: number): number =>
 		(b0 + b1) / 2 + (r1 !== r0 ? ((v - (r0 + r1) / 2) * (b1 - b0)) / (r1 - r0) : v - (r0 + r1) / 2);
 	const radial = (x: number, y: number): [number, number] => {
-		const [fx, fy] = fixPoint(p.rCtx, x, y);
+		const [fx, fy] = deviceFix(x, y);
 		return [onBox(fx, raw.x0, raw.x1, box.x0, box.x1), onBox(fy, raw.y0, raw.y1, box.y0, box.y1)];
 	};
 	return { box, s: radial(xs, ys), e: radial(xe, ye) };
