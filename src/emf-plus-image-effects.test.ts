@@ -292,13 +292,19 @@ describe('RedEyeCorrection', () => {
 		expect(out[3 * 4 + 3]).toBe(255);
 	});
 
-	it('processes the areas one after another', () => {
+	it('processes the areas one after another, the second nudged by where the first was', () => {
 		const src = field(6, 12, [255, 0, 0]);
 		const both = apply(src, redEye([[0, 0, 6, 6], [0, 6, 6, 12]]), 6, 12);
 		const first = apply(src, redEye([[0, 0, 6, 6]]), 6, 12);
 		expect(both.slice(0, 6 * 6 * 4)).toEqual(first.slice(0, 6 * 6 * 4));
-		// The second area holds the same pixels, so it gets the same result.
-		expect(both.slice(6 * 6 * 4)).toEqual(first.slice(0, 6 * 6 * 4));
+		// The second area holds the same pixels but its centre is carried off by the first one's;
+		// these are GDI+'s own pixels for it (not the first area's 232,10,10 at its middle).
+		const at = (x: number, y: number): number[] => both.slice((y * 6 + x) * 4, (y * 6 + x) * 4 + 3);
+		expect(at(3, 8)).toEqual([232, 10, 10]);
+		expect(at(3, 9)).toEqual([229, 12, 12]);
+		expect(at(2, 9)).toEqual([232, 10, 10]);
+		expect(at(2, 10)).toEqual([248, 3, 3]);
+		expect(at(1, 8)).toEqual([250, 2, 2]);
 	});
 });
 

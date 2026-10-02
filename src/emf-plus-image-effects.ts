@@ -505,33 +505,47 @@ const TINT_FULL = 254;
  * Red-eye correction (MS-EMFPLUS 2.2.3.9), modelled from black-box
  * measurements only: GDI+'s `RedEyeCorrection` was driven through the public
  * flat API (`GdipCreateEffect`, `GdipBitmapApplyEffect`) with synthetic
- * bitmaps and its outputs recorded. No GDI+ binary was disassembled, debugged
- * or read; the model below reproduces those measurements, not GDI+'s code.
+ * bitmaps and its outputs recorded; the effect's internals were never
+ * disassembled, debugged, dumped or read, and nothing below comes from such
+ * analysis. The constants and rules reproduce those measurements (single-pixel
+ * and region perturbations, uniform fields, concentric and split scenes, and
+ * the native fixtures), not GDI+'s code.
  *
  * Measured structure, per area (areas run one after another):
  *
  * - **Redness** `x = R - max(G, B)`; pixels with `x <= 0` are untouched. A
- *   corrected pixel moves along a fixed direction, `R -= 0.6863 a`,
- *   `G += 0.3137 a`, `B += 0.3137 a` (rounded), by `a = x - rem`, where `rem`
- *   is the redness left over (`a = 0` when `rem >= x`). On a uniform field
- *   `rem = (1 - falloff(u)) x` for every colour, which tabulates the falloff.
- * - **Polar frame.** Pixels are binned into 60 sectors of 6 degrees (from +x
- *   towards +y) around a centre: the centroid, over the area's pixel centres,
- *   of the weight `x / (G + 0.225 B)` (clamped to 6; pixels with a denominator
- *   below 1 weigh the clamp). Only pixels nearer than `radius = min(cx, cy) -
- *   0.5` to the centre (its distance to the area's left or top edge) are
- *   processed, and only they are counted.
- * - **Sector mean.** `M` is the mean of `x` over a sector's counted pixels;
- *   an ordinary pixel keeps `rem = (1 - falloff(u)) M` with `u = distance /
- *   radius`. A uniform area is therefore only lightly desaturated near its
- *   middle, and sectors holding a strongly red blob (high `M`) are left alone.
- * - **Dark reds.** A pixel whose smaller of G and B is well below that
- *   sector's mean of the same (a pupil) is corrected harder: the falloff is
- *   raised to at least `0.49 (1 - ratio / 0.6)` for `ratio = min(G, B) / mean`.
+ *   corrected pixel moves along a fixed direction by `a = x - rest`
+ *   (`a = 0` when `rest >= x`): red falls by `a`, green and blue rise by
+ *   `a * 5 / 16` (each rounded separately; red by `a * 11 / 16`).
+ * - **Darkness** `D = G + 0.225 B`; its 30th and 70th percentiles over all of
+ *   the area's pixels (red or not) differ by the **spread** `S`.
+ * - **Centre.** The centroid of the pixels' weights, over pixel centres:
+ *   `x / D` for red pixels (`1 / 1.225` flat when `D < 1`), nothing for the
+ *   rest, uncapped. An area processed after another (one that held red) is
+ *   nudged: 0.81 times the previous area's final centroid, in image
+ *   coordinates, is added to the weighted coordinate sums (this is why the
+ *   second of two areas differs from the same area processed alone, and by
+ *   how much depends on where the first one was). A centroid farther from
+ *   the area's middle than `max(min(w, h) / 2, (w + h) / 6)` is discarded for
+ *   the middle itself.
+ * - **Radius.** `radius = min(e, f)` where, with `ax`, `ay` the centre in image
+ *   coordinates, `e` is the distance to the left or right edge (`cx - 0.5`,
+ *   or `w - cx + 0.5` once `round(cx) > w / 2`) and `f` the other axis'
+ *   absolute coordinate minus 0.5, the horizontal edge distance applying when
+ *   `ax > ay` and the vertical one otherwise. Pixels nearer than the radius to
+ *   the centre are processed, and only they are counted.
+ * - **Polar frame.** 60 sectors of 6 degrees (from +x towards +y); `M` is the
+ *   mean of `x` over a sector's counted pixels and `Dm` the mean of `D`.
+ * - **Rest.** `rest = (1 - F) M` with `F = max(m (1 - u)^2, (1 - D / Dm)^2 / 2)`
+ *   for `u = distance / radius`. The first term is `m = 1/4` for a uniform
+ *   area and rises by quantised steps with the spread (`1/2` from `S = 31.5`,
+ *   `0.661` from 50, `3/4` from 98.8); the second corrects pixels much darker
+ *   than their sector harder (pupils).
  *
- * Not reproduced: the pupils' own deterministic texture (a spread of a few
- * levels), the darkening GDI+ applies around bright desaturated blobs, and
- * the exact result where the centre falls on a sector boundary.
+ * Not reproduced: the exact fallback centre of the farthest-off areas, the
+ * quantised small-denominator weights of near-black reds, and sector
+ * assignment for pixels exactly on a sector edge when the centre is a
+ * rounding error away from it.
  */
 export function applyRedEyeCorrection(
 	src: Uint8ClampedArray,
@@ -540,47 +554,40 @@ export function applyRedEyeCorrection(
 	areas: EffectRect[],
 ): Uint8ClampedArray {
 	const out = new Uint8ClampedArray(src);
+	const carry = { x: 0, y: 0 };
 	for (const a of areas) {
-		correctRedEyeArea(out, width, clamp(a.left, 0, width), clamp(a.top, 0, height), clamp(a.right, 0, width), clamp(a.bottom, 0, height));
+		correctRedEyeArea(out, width, clamp(a.left, 0, width), clamp(a.top, 0, height), clamp(a.right, 0, width), clamp(a.bottom, 0, height), carry);
 	}
 	return out;
 }
 
-/** Cusp-shaped falloff of the correction away from the polar centre: `u = i / 128`, 1e-5 units, zero from `u = 0.9375`. */
-const RED_EYE_FALLOFF = new Float64Array(
-	[
-		24930, 24570, 24201, 23836, 23471, 23107, 22744, 22367, 21976, 21587, 21198, 20824, 20490, 20165, 19832, 19499, 19157, 18817, 18480, 18151,
-		17820, 17490, 17160, 16831, 16506, 16189, 15878, 15569, 15273, 14973, 14668, 14362, 14059, 13768, 13484, 13203, 12923, 12642, 12366, 12094,
-		11828, 11564, 11301, 11034, 10770, 10507, 10253, 10011, 9771, 9530, 9290, 9053, 8819, 8588, 8359, 8134, 7914, 7697, 7481, 7267, 7056, 6851,
-		6651, 6453, 6256, 6061, 5871, 5684, 5499, 5317, 5138, 4962, 4789, 4619, 4452, 4289, 4130, 3974, 3820, 3669, 3520, 3375, 3232, 3093, 2958,
-		2825, 2695, 2568, 2444, 2325, 2207, 2092, 1980, 1872, 1768, 1666, 1567, 1470, 1377, 1287, 1200, 1116, 1034, 956, 881, 808, 739, 674, 612,
-		541, 462, 381, 299, 220, 147, 85, 36, 3, 0,
-	].map((v) => v / 1e5),
-);
-
-function redEyeFalloff(u: number): number {
-	const t = u * 128;
-	const i = Math.floor(t);
-	if (i >= RED_EYE_FALLOFF.length - 1) {
-		return 0;
-	}
-	return RED_EYE_FALLOFF[i] + (t - i) * (RED_EYE_FALLOFF[i + 1] - RED_EYE_FALLOFF[i]);
-}
-
 const RED_EYE_SECTORS = 60;
 const RED_EYE_BLUE_WEIGHT = 0.225;
-const RED_EYE_WEIGHT_CAP = 6;
-/** Flat centroid weight of a red pixel with almost no green or blue (measured on lone pupils). */
-const RED_EYE_PURE_WEIGHT = RED_EYE_WEIGHT_CAP;
-const RED_EYE_DARK_STRENGTH = 0.49;
-const RED_EYE_DARK_RATIO = 0.6;
-/** Share of the redness removed that lands in green and blue (the rest leaves red). */
-const RED_EYE_GREEN_SHARE = 80 / 255;
+/** Centroid weight of a red pixel whose darkness is below 1 (almost no green or blue). */
+const RED_EYE_PURE_WEIGHT = 1 / (1 + RED_EYE_BLUE_WEIGHT);
+/** Share of the previous area's centroid carried into the next area's coordinate sums. */
+const RED_EYE_CARRY = 0.81;
+/** Share of the removed redness that lands in green and blue each (the rest leaves red). */
+const RED_EYE_GREEN_SHARE = 5 / 16;
+/** Spreads of darkness (30th to 70th percentile) from which the falloff term steps up, and the strengths. */
+const RED_EYE_SPREAD_STEPS = [31.5, 50, 98.78] as const;
+const RED_EYE_STRENGTHS = [0.25, 0.5, 0.661, 0.75] as const;
 
-function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y0: number, x1: number, y1: number): void {
+function correctRedEyeArea(
+	out: Uint8ClampedArray,
+	stride: number,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	carry: { x: number; y: number },
+): void {
 	const w = x1 - x0;
 	const h = y1 - y0;
 	const count = w * h;
+	if (!(count > 0)) {
+		return;
+	}
 	const redness = new Float64Array(count);
 	const dark = new Float64Array(count);
 	let sx = 0;
@@ -593,36 +600,47 @@ function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y
 			const g = out[i + 1];
 			const b = out[i + 2];
 			const k = y * w + x;
-			dark[k] = Math.min(g, b);
+			const d = g + RED_EYE_BLUE_WEIGHT * b;
+			dark[k] = d;
 			const v = r - Math.max(g, b);
 			if (v > 0) {
 				redness[k] = v;
-				const denominator = g + RED_EYE_BLUE_WEIGHT * b;
-				{
-					const weight = denominator >= 1 ? Math.min(RED_EYE_WEIGHT_CAP, v / denominator) : RED_EYE_PURE_WEIGHT;
-					sx += weight * (x + 0.5);
-					sy += weight * (y + 0.5);
-					sw += weight;
-				}
+				const weight = d >= 1 ? v / d : RED_EYE_PURE_WEIGHT;
+				sx += weight * (x + 0.5);
+				sy += weight * (y + 0.5);
+				sw += weight;
 			}
 		}
 	}
 	if (sw === 0) {
-		// Nothing weighable (no red, or only pure reds): the area's own centre.
-		if (!redness.some((v) => v > 0)) {
-			return;
-		}
-		sx = w / 2;
-		sy = h / 2;
-		sw = 1;
+		// Nothing red: untouched, and the next area is not influenced either.
+		return;
 	}
-	const cx = sx / sw;
-	const cy = sy / sw;
-	// The working radius is the distance from the centre to the area's left or top edge, whichever is nearer (never the right or bottom edge).
-	const radius = Math.min(cx, cy) - 0.5;
+	let cx = (sx + RED_EYE_CARRY * carry.x) / sw;
+	let cy = (sy + RED_EYE_CARRY * carry.y) / sw;
+	carry.x = x0 + cx;
+	carry.y = y0 + cy;
+	if (Math.hypot(cx - w / 2, cy - h / 2) >= Math.max(Math.min(w, h) / 2, (w + h) / 6)) {
+		cx = w / 2;
+		cy = h / 2;
+	}
+	// Edge distances: the nearer of the left/right (top/bottom) edge picked by the rounded centre; the other axis' absolute coordinate bounds the radius too.
+	const ax = x0 + cx;
+	const ay = y0 + cy;
+	const edgeX = Math.round(cx) > w / 2 ? w - cx + 0.5 : cx - 0.5;
+	const edgeY = Math.round(cy) > h / 2 ? h - cy + 0.5 : cy - 0.5;
+	const radius = ax > ay ? Math.min(edgeX, ay - 0.5) : Math.min(edgeY, ax - 0.5);
 	if (!(radius > 0)) {
 		return;
 	}
+	// Strength of the falloff term: stepped by the spread of darkness over the whole area.
+	const sorted = Float64Array.from(dark).sort();
+	const spread = sorted[Math.floor(0.7 * count)] - sorted[Math.floor(0.3 * count)];
+	let level = 0;
+	while (level < RED_EYE_SPREAD_STEPS.length && spread >= RED_EYE_SPREAD_STEPS[level]) {
+		level++;
+	}
+	const strength = RED_EYE_STRENGTHS[level];
 	const sector = new Uint8Array(count);
 	const distance = new Float64Array(count);
 	const sectorSum = new Float64Array(RED_EYE_SECTORS);
@@ -660,7 +678,8 @@ function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y
 			const mean = sectorSum[s] / sectorCount[s];
 			const meanDark = sectorDark[s] / sectorCount[s];
 			const ratio = meanDark > 0 ? dark[k] / meanDark : 1;
-			const falloff = Math.max(redEyeFalloff(distance[k] / radius), RED_EYE_DARK_STRENGTH * Math.max(0, 1 - ratio / RED_EYE_DARK_RATIO));
+			const u = distance[k] / radius;
+			const falloff = Math.max(strength * (1 - u) * (1 - u), 0.5 * Math.max(0, 1 - ratio) ** 2);
 			const rest = (1 - falloff) * mean;
 			if (rest >= v) {
 				continue;
