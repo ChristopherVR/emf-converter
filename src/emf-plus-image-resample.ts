@@ -31,9 +31,11 @@
  *   (so a reduction is prefiltered over the whole footprint). A weight is
  *   therefore the kernel's integral over the texel's box. At exactly 1:1 on
  *   an integer offset GDI+ copies texels unfiltered. GDI+'s high-quality path
- *   also applies the fractional part of an axis-aligned destination origin
- *   mirrored: an origin at `n + f` samples as if placed at `n + 1 - f`
- *   (confirmed at scales from 0.32 to 1.5 and offsets 0.1 to 2.3).
+ *   also applies the fractional part of an axis-aligned destination origin's
+ *   x mirrored: an x origin at `n + f` samples as if placed at `n + 1 - f`
+ *   (confirmed at scales from 0.32 to 1.5 and offsets 0.1 to 2.3). A
+ *   fractional y origin is used as given, rounded to 1/16 pixel; mirroring it
+ *   too left errors of up to 96 levels against native draws.
  *
  * A texel outside the source rectangle counts as transparent (GDI+'s
  * default clamp for `DrawImage`), so the kernel's overhang fades an edge
@@ -369,11 +371,13 @@ export function resampleImage(
 	const hq = kernel === 'hq-bilinear' || kernel === 'hq-bicubic';
 	const axisAligned = m[1] === 0 && m[2] === 0;
 	if (hq && axisAligned) {
-		// Mirror the fractional part of the destination origin (the device
-		// position of the source rectangle's top-left corner).
+		// Mirror the fractional part of the destination origin's x (the device
+		// position of the source rectangle's top-left corner). Only x is
+		// mirrored: GDI+ places a fractional y origin as given (measured against
+		// native draws at 24 origin/scale combinations, where mirroring y as well
+		// leaves errors of up to 96 levels).
 		const ox = m[0] * spec.srcX + m[4];
-		const oy = m[3] * spec.srcY + m[5];
-		m = [m[0], 0, 0, m[3], m[4] + mirroredOrigin(ox) - ox, m[5] + mirroredOrigin(oy) - oy];
+		m = [m[0], 0, 0, m[3], m[4] + mirroredOrigin(ox) - ox, m[5]];
 	}
 	const inv = invert(m);
 	if (!inv) {

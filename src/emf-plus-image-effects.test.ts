@@ -227,23 +227,23 @@ describe('HueSaturationLightness', () => {
 describe('Tint', () => {
 	const tint = (hue: number, amount: number): EmfPlusImageEffect => ({ kind: 'tint', hue, amount });
 
-	it('moves toward the luma plus the tint chroma scaled by the largest channel', () => {
-		// Grey 128, red: 128 + 128 * 0.985 * (0.7874, -0.2126, -0.2126) = (227.3, 101.2, 101.2).
+	it('adds the tint scaled by the largest channel, keeping the luma (native values)', () => {
+		// Grey 128 with red (254, 0, 0) scaled by 127/256 on red, luma kept: native (227, 101, 101).
 		expect(apply(px([128, 128, 128, 255]), tint(0, 100))).toEqual([227, 101, 101, 255]);
-		// Half the amount: half way there.
-		expect(apply(px([128, 128, 128, 255]), tint(0, 50))).toEqual([178, 115, 115, 255]);
+		// Half the amount: native (177, 114, 114).
+		expect(apply(px([128, 128, 128, 255]), tint(0, 50))).toEqual([177, 114, 114, 255]);
 	});
 
 	it('replaces other hues by the tint hue at full amount, keeping their luma', () => {
-		// Red 200: luma 42.5 plus 200 * 0.985 * green's chroma (0.2848) on green, the rest negative.
-		expect(apply(px([200, 0, 0, 255]), tint(120, 100))).toEqual([0, 99, 0, 255]);
+		// Red 200 has luma 42.2; green gets the tint on top, the rest is negative (native 0, 98, 0).
+		expect(apply(px([200, 0, 0, 255]), tint(120, 100))).toEqual([0, 98, 0, 255]);
 		expect(apply(px([0, 0, 200, 255]), tint(120, 100))).toEqual([0, 71, 0, 255]);
 	});
 
 	it('strengthens the complementary colour for a negative amount', () => {
-		// Yellow at -50 makes grey bluer and pushes red away from yellow (blue rises).
-		expect(apply(px([128, 128, 128, 255]), tint(60, -50))).toEqual([123, 123, 186, 255]);
-		expect(apply(px([200, 0, 0, 255]), tint(60, -50))).toEqual([255, 0, 70, 255]);
+		// Yellow at -50 makes grey bluer and pushes red away from yellow (blue rises); native values.
+		expect(apply(px([128, 128, 128, 255]), tint(60, -50))).toEqual([123, 123, 187, 255]);
+		expect(apply(px([200, 0, 0, 255]), tint(60, -50))).toEqual([255, 0, 71, 255]);
 	});
 
 	it('leaves alpha alone and is the identity at amount 0', () => {

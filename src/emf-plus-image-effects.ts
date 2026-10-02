@@ -25,10 +25,12 @@
  *   Larger radii use a different native algorithm, still approximated here.
  * - `ColorCurve` uses complete native 256-entry tables for every legal
  *   adjustment and intensity ({@link curveAdjustmentLut}).
- * - A broader Levels sweep has one one-level difference in 258,560 values.
- * - `HueSaturationLightness` reproduces native hue quantization across all
- *   integer angles. Mixed-colour/control sweeps retain one-level rounding.
- * - `Tint` is within two levels on nearly every pixel.
+ * - Levels reproduces the native table exactly (truncating float32 arithmetic): 258,560
+ *   sweep values and a further 2.6 million probe values match.
+ * - `HueSaturationLightness` is exact: the integer HSL pipeline matches the
+ *   native output for the whole RGB cube at every setting measured.
+ * - `Tint` is exact: the integer luma-preserving pipeline matches the whole
+ *   RGB cube at every amount.
  * - `RedEyeCorrection` is a sector model fitted to GDI+'s outputs alone, with
  *   its pupil texture left out ({@link applyRedEyeCorrection}). Its constants
  *   and structure come purely from black-box measurements: the public flat API
@@ -44,6 +46,7 @@
  */
 
 import { nativeCurveLookup } from './emf-plus-image-curves';
+import { truncF32 } from './emf-plus-linear-ramp';
 
 /** A rectangle in image pixels, right and bottom exclusive (a RECTL). */
 export interface EffectRect {
@@ -247,8 +250,8 @@ function midtoneGamma(t: number): number {
 		low = high;
 		high = (high + 100) / 2;
 	}
-	gamma = Math.abs(t) === 100 ? 10 : Math.min(10, gamma + (Math.abs(t) - low) / (high - low));
-	return Math.fround(t < 0 ? gamma : 1 / gamma);
+	gamma = Math.abs(t) === 100 ? 10 : Math.min(10, truncF32(gamma + truncF32(truncF32(Math.abs(t) - low) / truncF32(high - low))));
+	return t < 0 ? truncF32(gamma) : truncF32(1 / truncF32(gamma));
 }
 
 /**
@@ -283,6 +286,25 @@ export function curveAdjustmentLut(adjustment: number, intensity: number): Uint8
  * ({@link midtoneGamma}); halves round down.
  */
 export function levelsLut(highlight: number, midtone: number, shadow: number): Uint8Array {
+	if (highlight !== shadow) {
+		// GDI+ forms the whole table in float32 arithmetic that truncates
+		// toward zero; inverted ranges mirror the stretch and subtract from 255.
+		const forward = highlight > shadow;
+		const lo = truncF32((forward ? shadow : highlight) * 255 / 100);
+		const hi = truncF32((forward ? highlight : shadow) * 255 / 100);
+		const scale = truncF32(1 / truncF32(hi - lo));
+		const exponent = midtoneGamma(midtone);
+		const lut = new Uint8Array(256);
+		for (let v = 0; v < 256; v++) {
+			let level = clamp(truncF32(truncF32(v - lo) * scale), 0, 1);
+			if (midtone !== 0) {
+				level = truncF32(level ** exponent);
+			}
+			const out = forward ? truncF32(255 * level) : truncF32(255 - truncF32(255 * level));
+			lut[v] = clamp(Math.floor(out + 0.5), 0, 255);
+		}
+		return lut;
+	}
 	const base = shadow * 255 / 100 - (highlight === shadow && shadow < 50 ? 1 : 0);
 	const span = highlight === shadow ? 1 : (highlight - shadow) * 255 / 100;
 	const exponent = midtoneGamma(midtone);
@@ -335,17 +357,6 @@ export function applyColorMatrix(src: Uint8ClampedArray, m: number[]): Uint8Clam
 	return out;
 }
 
-/** HSL to RGB (0..1). */
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-	const c = (1 - Math.abs(2 * l - 1)) * s;
-	const hp = (((h % 360) + 360) % 360) / 60;
-	const x = c * (1 - Math.abs((hp % 2) - 1));
-	const m = l - c / 2;
-	const [r, g, b] =
-		hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
-	return [r + m, g + m, b + m];
-}
-
 /** Native hue rotates on 255 indices; reconstruction uses 43-unit sextants. */
 const HUE_SEXTANT = 43;
 const HUE_CIRCLE = 255;
@@ -377,15 +388,19 @@ function gdipHue(r: number, g: number, b: number): number {
 }
 
 /**
- * Hue/saturation/lightness (MS-EMFPLUS 2.2.3.7) in GDI+'s integer HSL
- * (measured): lightness is `(max + min) >> 1` (a full-intensity colour tops
- * out at 254) plus `2.55 * lightness` levels; saturation, the usual HSL
- * saturation, is scaled by `1 + saturation / 100`; the hue ({@link gdipHue})
- * rotates by round(`hue * 255 / 360`) indices (positive: red toward yellow).
- * Reconstruction skips three indices in the 258-unit sextant domain. The
- * colour is rebuilt from the rounded HSL maximum and minimum, the middle
- * channel truncated. Saturated colours match all 361 native rotation
- * angles exactly; mixed colours and controls retain one-level rounding.
+ * Hue/saturation/lightness (MS-EMFPLUS 2.2.3.7) in GDI+'s all-integer HSL,
+ * reproduced exactly (the whole 16.7 million colour cube at 20 settings, and
+ * the 1,390,080-pair sweep). Lightness `L` is `(max + min) >> 1`, saturation
+ * `S` is `floor(255 * (max - min) / min(max + min, 510 - max - min))`, and
+ * the hue ({@link gdipHue}) is an index on 255 steps. The lightness control
+ * adds `round(255 * floor(65536 * lightness / 100) / 65536)` levels to `L`;
+ * the saturation control multiplies `S` by `65536 + floor(65536 * saturation /
+ * 100)` in 16.16 fixed point, rounded. The hue control rotates the index by
+ * round(`hue * 255 / 360`) (positive: red toward yellow). The colour is
+ * rebuilt from `hi = floor(L * (255 + S) / 255)` (`L + S - floor(L * S /
+ * 255)` above 127) and `2L - hi`, the middle channel interpolated linearly
+ * with truncating integer division over 43 steps per sextant, skipping three
+ * indices in the 258-unit domain.
  */
 export function applyHueSaturationLightness(
 	src: Uint8ClampedArray,
@@ -395,29 +410,30 @@ export function applyHueSaturationLightness(
 ): Uint8ClampedArray {
 	const out = new Uint8ClampedArray(src);
 	const shift = Math.round((hue * HUE_CIRCLE) / 360);
-	const sMul = 1 + saturation / 100;
+	const satScale = 65536 + Math.floor((saturation * 65536) / 100);
+	const lightOffset = Math.round((255 * Math.floor((lightness * 65536) / 100)) / 65536);
 	for (let i = 0; i < src.length; i += 4) {
 		const r = src[i];
 		const g = src[i + 1];
 		const b = src[i + 2];
 		const max = Math.max(r, g, b);
 		const min = Math.min(r, g, b);
-		const l = clamp(Math.round((((max + min) >> 1) * 100 + 255 * lightness) / 100), 0, 255);
+		const l = clamp(((max + min) >> 1) + lightOffset, 0, 255);
 		if (max === min) {
 			out[i] = out[i + 1] = out[i + 2] = l;
 			continue;
 		}
 		const sum = max + min;
-		const s = Math.fround(clamp(((max - min) / (sum <= 255 ? sum : 510 - sum)) * sMul, 0, 1));
-		const hi = l <= 127 ? l * (1 + s) : l + s * (255 - l);
-		const m1 = l <= 127 ? 2 * l - Math.trunc(hi) : Math.round(2 * l - hi);
-		const m2 = 2 * l - m1;
+		const sat = clamp(Math.round((Math.floor(((max - min) * 255) / (sum <= 255 ? sum : 510 - sum)) * satScale) / 65536), 0, 255);
+		const hi = l <= 127 ? Math.floor((l * (255 + sat)) / 255) : l + sat - Math.floor((l * sat) / 255);
+		const m1 = 2 * l - hi;
+		const m2 = hi;
 		const index = (((gdipHue(r, g, b) + shift) % HUE_CIRCLE) + HUE_CIRCLE) % HUE_CIRCLE;
 		const q = index + Math.floor((index + 41) / 85);
 		const sextant = Math.min(5, Math.floor(q / HUE_SEXTANT));
-		const f = (q - sextant * HUE_SEXTANT) / HUE_SEXTANT;
-		const up = Math.trunc(m1 + (m2 - m1) * f);
-		const down = Math.trunc(m1 + (m2 - m1) * (1 - f));
+		const position = q - sextant * HUE_SEXTANT;
+		const up = m1 + Math.floor(((m2 - m1) * position) / HUE_SEXTANT);
+		const down = m1 + Math.floor(((m2 - m1) * (HUE_SEXTANT - position)) / HUE_SEXTANT);
 		const [nr, ng, nb] = [
 			[m2, up, m1],
 			[down, m2, m1],
@@ -433,44 +449,57 @@ export function applyHueSaturationLightness(
 	return out;
 }
 
-/** Rec. 709 luma weights, which GDI+'s Tint uses. */
-const LUMA_709 = [0.2126, 0.7152, 0.0722] as const;
-
-/** Fitted native chroma scale, now checked across 90 hue/amount settings. */
-const TINT_CHROMA_SCALE = 0.985;
-
 /**
- * Tint (MS-EMFPLUS 2.2.3.11), measured: each pixel moves `amount / 100` of
- * the way toward its own Rec. 709 luma plus the chroma of the fully
- * saturated colour at `hue` degrees (0 red, 120 green, -120 blue; GDI+'s
- * documentation counts from blue, but its red and blue are swapped) scaled
- * by the pixel's largest channel. A negative amount extrapolates away from
- * it, strengthening the complementary colour. Native Tint wraps its
- * quantized hue at 256, unlike HSL's 255-index rotation. A broader sweep
- * retains three levels at positive amounts and five at negative amounts;
- * the chroma scale and colour rounding remain approximate.
+ * Tint (MS-EMFPLUS 2.2.3.11) in GDI+'s integer arithmetic, reproduced
+ * exactly. Luma is `S = 54 r + 183 g + 19 b` (weights over 256, so 8.8 fixed
+ * point). The tint colour `T` is the full-intensity colour at `hue`, rebuilt
+ * like the HSL effect's (hue index from `hue * 255 / 360` rounded with sign and
+ * wrapped at 256, 43 steps a sextant, a maximum of 254). The amount becomes a
+ * signed weight `w = +-round(2.55 |amount|)` (halves toward zero). With `v`
+ * the pixel's largest channel and `u = (w * v) >> 8` (an arithmetic shift, so
+ * negative weights round down), each channel's 8.8 value is
+ * `x = (255 - w) c + T u` and the output is `(S + x - luma(x >> 8)) >> 8`: the
+ * tinted colour keeps the pixel's luma. Matches the whole 16.7 million-colour
+ * RGB cube at every amount and hue measured.
  */
 export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): Uint8ClampedArray {
 	// Signed half rounding makes -180 and +180 adjacent palette indices.
-	const index = (Math.round(hue * 255 / 360) + 256) % 256;
+	const index = (Math.round((hue * 255) / 360) + 256) % 256;
 	const q = (index + Math.floor((index + 41) / 85)) % 258;
-	const tint = hslToRgb(q * 60 / 43, 1, 0.5);
-	const ty = tint[0] * LUMA_709[0] + tint[1] * LUMA_709[1] + tint[2] * LUMA_709[2];
-	const chroma = tint.map((c) => (c - ty) * TINT_CHROMA_SCALE);
-	const a = amount / 100;
+	const sextant = Math.min(5, Math.floor(q / HUE_SEXTANT));
+	const position = q - sextant * HUE_SEXTANT;
+	const up = Math.floor((TINT_FULL * position) / HUE_SEXTANT);
+	const down = Math.floor((TINT_FULL * (HUE_SEXTANT - position)) / HUE_SEXTANT);
+	const [tr, tg, tb] = [
+		[TINT_FULL, up, 0],
+		[down, TINT_FULL, 0],
+		[0, TINT_FULL, up],
+		[0, down, TINT_FULL],
+		[up, 0, TINT_FULL],
+		[TINT_FULL, 0, down],
+	][sextant];
+	// Round-half-down of 2.55 |amount| in integers, keeping the sign.
+	const weight = Math.sign(amount) * Math.floor((255 * Math.abs(amount) + 49) / 100);
+	const original = 255 - weight;
 	const out = new Uint8ClampedArray(src);
 	for (let i = 0; i < src.length; i += 4) {
 		const r = src[i];
 		const g = src[i + 1];
 		const b = src[i + 2];
-		const y = r * LUMA_709[0] + g * LUMA_709[1] + b * LUMA_709[2];
-		const v = Math.max(r, g, b);
-		out[i] = Math.round((1 - a) * r + a * (y + v * chroma[0]));
-		out[i + 1] = Math.round((1 - a) * g + a * (y + v * chroma[1]));
-		out[i + 2] = Math.round((1 - a) * b + a * (y + v * chroma[2]));
+		const u = (weight * Math.max(r, g, b)) >> 8;
+		const x0 = original * r + tr * u;
+		const x1 = original * g + tg * u;
+		const x2 = original * b + tb * u;
+		const base = 54 * r + 183 * g + 19 * b - (54 * (x0 >> 8) + 183 * (x1 >> 8) + 19 * (x2 >> 8));
+		out[i] = (base + x0) >> 8;
+		out[i + 1] = (base + x1) >> 8;
+		out[i + 2] = (base + x2) >> 8;
 	}
 	return out;
 }
+
+/** Largest tint channel: the HSL effect's 255-level maximum is 254. */
+const TINT_FULL = 254;
 
 /**
  * Red-eye correction (MS-EMFPLUS 2.2.3.9), modelled from black-box

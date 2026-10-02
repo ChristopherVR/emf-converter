@@ -176,20 +176,20 @@ const HSL: EffectCase[] = [
 	exact('hsl-h0-sn100-l0'), // 37.500% before
 	exact('hsl-h0-s0-ln50'),
 	exact('hsl-h0-s0-l50'),
-	within('hsl-h0-s60-l0'),
+	exact('hsl-h0-s60-l0'),
 	exact('hsl-hn120-s0-l0'),
 	exact('hsl-h90-s0-l0'),
 	exact('hsl-h180-s0-l0'),
-	within('hsl-h30-sn30-l20'),
+	exact('hsl-h30-sn30-l20'),
 ];
 
-/** Tint: toward luma plus the tint chroma scaled by the largest channel, a fitted chroma scale. */
+/** Tint in GDI+'s integer luma-preserving arithmetic: exact. */
 const TINT: EffectCase[] = [
-	within('tint-h0-a50', 2), // 97.005% before, 60.543% now (0.130% beyond 1 level)
-	within('tint-h120-a100', 2), // 96.908%, 41.211% (0.651%)
-	within('tint-h180-a100', 2), // 96.908%, 54.325% (2.962%)
-	within('tint-hn90-a30', 2), // 97.005%, 73.889% (3.906%)
-	bounded('tint-h60-an50', 2, 0.001), // 93.066%, 51.493% (0.065% three levels off)
+	exact('tint-h0-a50'), // 97.005% before, 60.543% within 2 levels
+	exact('tint-h120-a100'), // 96.908% before
+	exact('tint-h180-a100'), // 96.908% before
+	exact('tint-hn90-a30'), // 97.005% before
+	exact('tint-h60-an50'), // 93.066% before
 ];
 
 /**

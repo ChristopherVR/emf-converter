@@ -9,18 +9,18 @@ Windows reference images come from `scripts/gdi-fixtures`. The **Windows fixture
 The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-only-effect-*`) are in the parity test. They have been regenerated on Windows with corrected metafile type constants. `src/emf-plus-image-effects.fixture.test.ts` also checks the effect algorithms against the effected bitmaps that GDI+ records into each fixture.
 
 - **Not exact yet:**
-  - HSL hue quantization now matches all 554,496 saturated-colour/angle pairs exactly. The broader 1,390,080-pair hue/saturation/lightness sweep retains at most one level on mixed colours and controls. All recorded pure rotation fixtures now match exactly; tone rounding remains.
-  - Tint's native 256-index palette and signed hue wrapping now match the broader probe; the 253,440-pair sweep retains at most three levels for positive amounts and five for negative amounts.
-  - Levels has one one-level rounding difference in the 258,560-value native sweep.
   - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
-  - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`).
+  - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`). It is the same far-edge fade as rotated `HighQualityBicubic` `DrawImage` (see below).
   - Large blur reproduces the native per-axis algorithm (reduce each row by the factor measured at all 957 quarter radii, filter with the centre weight applied as two rounded halves, enlarge, then the same for columns, with products kept to 1/256 of a level). Against native noise, ramps, impulses and one-dimensional images more than 99.97% of pixels are exact (the rest one level off); the ramp, impulse, 957-radius and two-pixel-wide captures are exact, as are sharpen at radii 32-255 and small-radius ramps and impulses. Unresolved: roughly 0.01% of pixels one level off where a float32 native kernel weight tips a product across a rounding tie (the exact float evaluation order is not found).
   - Expanded blur follows the native reduction (a cropped source rectangle reduces from its own corner, only its own samples are enlarged, samples beyond the buffer are transparent, a lone sample is continued toward a transparent neighbour). The 504-draw native capture (fourteen rectangles, twelve radii, opaque/translucent patterns) is within one level, with 99.998% of pixels exact at radius 20 and above and 99.99% below; 150 narrow and edge-reaching draws are exact.
-- **Still fitted:** Tint's chroma scale. It is now checked across 90 hue/amount combinations, but its colour conversion and rounding remain approximate.
 
 Sharpen strength now uses the native rational amount curve, quantized to 1/64 with half-down rounding. It matches every integer amount 0–100 and 19 radii when tested independently of blur convolution.
 
 - **JPEG rounding:** pixel-centred chroma reconstruction reduces the original native ramp's maximum error from 19 levels to two (mean 0.36). Odd-sized 4:4:4/4:2:2/4:2:0 and progressive JPEG are within three levels; RGB/greyscale JPEG are within one. GIF and lossless TIFF references remain exact, including offset/palette GIFs, LZW/multipage/bilevel TIFF, Deflate strips (both tags and horizontal prediction) and uncompressed/Deflate tiles. RGB JPEG TIFF strips and tiles are within one level; YCbCr JPEG TIFF is within four. The TIFF coverage target is now captured; JPEG IDCT/chroma rounding differences remain.
+
+## EMF+ rotated high-quality DrawImage
+
+A rotated or sheared `HighQualityBicubic`/`HighQualityBilinear` `DrawImage` (a 3-point destination) keeps a faded-edge difference (`gpx-image-rotated-highqualitybicubic`, 22 pixels over 8 levels; the effect fixture above shows the same). Measured against native draws of an opaque uniform image (`System.Drawing`, public API): the interior impulse response of a single texel matches within 5 levels, the coverage and edge position are right (no translation or scale of the sampling grid improves them), and the native alpha at the far (right and bottom) edge falls to zero at the edge, 15 to 17 levels below the area-integrated a = -1 cubic over the last 0.3 device pixels, while the top-left edges agree within 2 levels. Not explained by a different cubic parameter, a stretched kernel, two-pass scale-then-rotate, or an inclusive `(size - 1)` mapping. The rotated edge profile also depends slightly on position along the edge, so it is not purely a function of the distance to the edge.
 
 ## EMF+ gradients
 

@@ -603,8 +603,8 @@ const REGION_CLIP_CASES: ParityCase[] = [exact('gpx-clipregion')];
  * EMF+ followed the recorded SmoothingMode).
  */
 const NESTED_METAFILE_CASES: ParityCase[] = [
-	close('gpx-metafile-scaled', 0.002), // measured 0.065%
-	close('gpx-metafile-clip-zorder', 0.001), // measured 0.039%
+	exact('gpx-metafile-scaled'), // 0.065% before
+	exact('gpx-metafile-clip-zorder'), // 0.039% before
 ];
 
 /**
@@ -693,8 +693,8 @@ const PLUS_ALIASED_CASES: ParityCase[] = [
 	plusAliased('gpx-clippath-alternate', 0),
 	plusAliased('gpx-clippath-winding', 0),
 	plusAliased('gpx-lin-blend-ellipse', 0),
-	plusAliased('gpx-metafile-scaled', 0.002), // measured 0.065%
-	plusAliased('gpx-metafile-clip-zorder', 0.001), // measured 0.039%
+	{ ...exact('gpx-metafile-scaled'), options: { gdiAntialias: false } }, // 0.065% before
+	{ ...exact('gpx-metafile-clip-zorder'), options: { gdiAntialias: false } }, // 0.039% before
 	plusAliased('gpx-pen-texture', 0.001), // measured 0.019%
 	plusAliased('gpx-pen-lingrad', 0.001), // measured 0.019%
 	plusAliased('gpx-pen-pathgrad', 0.002), // measured 0.070%

@@ -43,10 +43,10 @@ describe('EMF+ image effects', () => {
 				if (i % 4 === 3) { if (actual[i] !== source[i] || actual[i] !== expected[setting * source.length + i]) throw new Error('Tint changed source alpha'); continue; }
 				maximum = Math.max(maximum, Math.abs(actual[i] - expected[setting * source.length + i]));
 			}
-			expect(maximum, `hue=${hue} amount=${amount}`).toBeLessThanOrEqual(amount === 0 ? 1 : amount > 0 ? 3 : amount === -50 ? 3 : 5);
+			expect(maximum, `hue=${hue} amount=${amount}`).toBe(0);
 		});
 	});
-	it('matches native hue quantization across every integer angle and bounds mixed HSL controls', () => {
+	it('matches native hue, saturation and lightness exactly across 1,390,080 colour/setting pairs', () => {
 		const source = new Uint8ClampedArray(readFileSync(new URL('./__fixtures__/gdi/effect-hue-source.bin', import.meta.url)));
 		const expected = gunzipSync(readFileSync(new URL('./__fixtures__/gdi/effect-hue-sweep.bin.gz', import.meta.url)));
 		const settings = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-hue-settings.json', import.meta.url), 'utf8')) as number[][];
@@ -62,7 +62,7 @@ describe('EMF+ image effects', () => {
 				maximum = Math.max(maximum, difference);
 				if (i < 1536 * 4) saturatedMaximum = Math.max(saturatedMaximum, difference);
 			}
-			expect(maximum, `h=${hue} s=${saturation} l=${lightness}`).toBeLessThanOrEqual(1);
+			expect(maximum, `h=${hue} s=${saturation} l=${lightness}`).toBe(0);
 			if (setting < 361) expect(saturatedMaximum, `hue=${hue}`).toBe(0);
 		});
 	});
@@ -243,8 +243,8 @@ describe('EMF+ image effects', () => {
 				if (diff) differences++;
 			}
 		});
-		expect(maximumDifference).toBeLessThanOrEqual(1);
-		expect(differences).toBe(1);
+		expect(maximumDifference).toBe(0);
+		expect(differences).toBe(0);
 	});
 	it('rejects truncated and nonfinite parameters', () => {
 		const { view } = nativeCase('matrix-swap');

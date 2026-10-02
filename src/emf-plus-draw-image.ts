@@ -223,6 +223,36 @@ export function registerNestedMetafileReplayer(fn: NestedMetafileReplayer): void
 }
 
 /**
+ * `toDevice` (nested source pixels to device pixels, from the destination
+ * parallelogram) re-scaled so the source rectangle's first and last pixel
+ * land on the destination's first and last pixel: each axis scales by
+ * `(destination length - 1) / (source length - 1)`, measured in device
+ * pixels, about the source rectangle's origin. Falls back to `toDevice` for
+ * a source or destination of one pixel or less.
+ */
+function inclusiveNestedMapping(
+	toDevice: TransformMatrix,
+	srcX: number,
+	srcY: number,
+	srcW: number,
+	srcH: number,
+): TransformMatrix {
+	const [a, b, c, d, e, f] = toDevice;
+	const lengthU = Math.hypot(a, b) * srcW;
+	const lengthV = Math.hypot(c, d) * srcH;
+	if (!(srcW > 1 && srcH > 1 && lengthU > 1 && lengthV > 1)) {
+		return toDevice;
+	}
+	const ku = ((lengthU - 1) / lengthU) * (srcW / (srcW - 1));
+	const kv = ((lengthV - 1) / lengthV) * (srcH / (srcH - 1));
+	const na = a * ku;
+	const nb = b * ku;
+	const nc = c * kv;
+	const nd = d * kv;
+	return [na, nb, nc, nd, e + (a - na) * srcX + (c - nc) * srcY, f + (b - nb) * srcX + (d - nd) * srcY];
+}
+
+/**
  * Draws an embedded metafile image by replaying its records straight into
  * the destination context, instead of rasterising it on its own and
  * scaling the bitmap: every shape stays exact at the destination scale (and
@@ -252,14 +282,18 @@ function drawNestedMetafile(
 	if (!size) {
 		return false;
 	}
-	// GDI+ scales a metafile's pixel grid about pixel CENTRES: the nested
-	// device point x lands at (x + 0.5) * scale - 0.5 plus the destination
-	// origin, so pixel centres map onto pixel centres (confirmed against the
-	// gpx-metafile-* fixtures, where every nested shape edge lands exactly
-	// where this puts it and nowhere else).
-	const toCanvas = mulMatrix(
-		[1, 0, 0, 1, -0.5, -0.5],
-		mulMatrix(mulMatrix(plusWorldMatrix(rCtx), source.toWorld(srcX, srcY, srcW, srcH)), [1, 0, 0, 1, 0.5, 0.5]),
+	// GDI+ maps a metafile's first pixel onto the destination origin and its
+	// last onto the destination's last pixel: the nested device point x lands
+	// at origin + x * (destination size - 1) / (source size - 1) (measured on
+	// the ellipse of gpx-metafile-scaled, which this places on every native
+	// pixel; scaling by the plain size ratio, as the pixel-centre mapping
+	// (x + 0.5) * scale - 0.5 does, leaves ten arc pixels wrong).
+	const toCanvas = inclusiveNestedMapping(
+		mulMatrix(plusWorldMatrix(rCtx), source.toWorld(srcX, srcY, srcW, srcH)),
+		srcX,
+		srcY,
+		srcW,
+		srcH,
 	);
 	const bytes = img.data.slice(0) as ArrayBuffer;
 	const caches = cached && cached.kind === 'metafile' ? cached.caches : undefined;

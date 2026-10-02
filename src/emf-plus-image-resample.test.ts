@@ -144,6 +144,15 @@ describe('GDI+ resampling kernels', () => {
 		expect(mirroredOrigin(5)).toBe(5);
 	});
 
+	it('places a fractional y origin of a high-quality axis-aligned draw as given (only x mirrors)', () => {
+		// Native GDI+ draws at origins (30, 10.6) and (30.3, 10.6) agree with an unmirrored y.
+		// A tiny shear turns off the axis-aligned mirroring, leaving x (an integer here) and y as given.
+		const column = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255]);
+		const draw = (shear: number): Uint8ClampedArray =>
+			resampleImage(column, 1, 3, { srcX: 0, srcY: 0, srcW: 1, srcH: 3, toDevice: [2, shear, 0, 3, 10, 5.625], kernel: 'hq-bicubic', halfPixelOffset: false }, { w: 100, h: 100 })!.rgba;
+		expect(Array.from(draw(0))).toEqual(Array.from(draw(1e-13)));
+	});
+
 	it('samples Half/HighQuality pixel centres against the recorder-shifted source rectangle', () => {
 		// GDI+ records a Half-mode draw of a 2x1 image as src (-0.5, -0.5, 2, 1).
 		const block = resampleImage(
