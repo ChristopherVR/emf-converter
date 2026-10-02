@@ -174,11 +174,15 @@ const TINT: EffectCase[] = [
 	bounded('tint-h60-an50', 2, 0.001), // 93.066%, 51.493% (0.065% three levels off)
 ];
 
-/** RedEyeCorrection: GDI+ repaints detected pupils with a texture; approximated. */
+/**
+ * RedEyeCorrection: the sector model of `applyRedEyeCorrection` against GDI+.
+ * Skin and the glow around pupils follow it closely; the pupils' own texture
+ * and the red-ramp bands (a 256 x 64 gradient test image) are approximate.
+ */
 const RED_EYE: EffectCase[] = [
-	bounded('redeye-left', 0, 0.011), // 3.659% before, 0.948% now
-	bounded('redeye-both', 0, 0.02), // 6.860%, 1.872%
-	bounded('redeye-whole', 0, 0.17), // 46.227%, 16.787%
+	bounded('redeye-left', 0, 0.0082), // 3.659% with the old fixed rule, 0.810% now
+	bounded('redeye-both', 0, 0.0159), // 6.860%, 1.586%
+	bounded('redeye-whole', 0, 0.0879), // 46.227%, 8.784%
 ];
 
 describe('EMF+ image effects against GDI+-computed bitmaps', () => {

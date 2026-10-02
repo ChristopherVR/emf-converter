@@ -252,10 +252,53 @@ describe('Tint', () => {
 });
 
 describe('RedEyeCorrection', () => {
-	it('replaces a strong red with the mean of green and blue inside the areas only, leaving skin tones', () => {
-		const src = px([200, 50, 60, 255], [50, 200, 60, 255], [200, 50, 60, 255], [216, 168, 136, 255]);
-		const effect: EmfPlusImageEffect = { kind: 'redEyeCorrection', areas: [{ left: 0, top: 0, right: 2, bottom: 1 }, { left: 3, top: 0, right: 4, bottom: 1 }] };
-		expect(apply(src, effect, 4)).toEqual([55, 50, 60, 255, 50, 200, 60, 255, 200, 50, 60, 255, 216, 168, 136, 255]);
+	const redEye = (areas: Array<[number, number, number, number]>): EmfPlusImageEffect => ({
+		kind: 'redEyeCorrection',
+		areas: areas.map(([left, top, right, bottom]) => ({ left, top, right, bottom })),
+	});
+	const field = (w: number, h: number, c: [number, number, number]): Uint8ClampedArray =>
+		px(...Array.from({ length: w * h }, () => [...c, 255] as [number, number, number, number]));
+
+	it('leaves pixels outside the areas, grey and green pixels alone', () => {
+		const src = px([200, 50, 60, 255], [50, 200, 60, 255], [128, 128, 128, 255], [216, 168, 136, 255]);
+		expect(apply(src, redEye([[1, 0, 3, 1]]), 4, 1)).toEqual(Array.from(src));
+	});
+
+	it('does nothing in areas too narrow to hold a working radius', () => {
+		const src = field(2, 8, [255, 0, 0]);
+		expect(apply(src, redEye([[0, 0, 2, 8]]), 2, 8)).toEqual(Array.from(src));
+	});
+
+	// The expected pixels below are GDI+'s own output for the same uniform fields
+	// (GdipBitmapApplyEffect on a 32bpp ARGB bitmap, whole bitmap as the area).
+	it('pulls a uniform red field toward grey around its middle, as GDI+ does', () => {
+		const out = apply(field(6, 6, [255, 0, 0]), redEye([[0, 0, 6, 6]]), 6, 6);
+		const at = (x: number, y: number): number[] => out.slice((y * 6 + x) * 4, (y * 6 + x) * 4 + 3);
+		expect(at(0, 0)).toEqual([255, 0, 0]);
+		expect(at(1, 1)).toEqual([254, 0, 0]);
+		expect(at(2, 1)).toEqual([249, 3, 3]);
+		expect(at(2, 2)).toEqual([232, 10, 10]);
+		expect(at(3, 3)).toEqual([232, 10, 10]);
+		expect(at(5, 3)).toEqual([255, 0, 0]);
+	});
+
+	it('removes redness from skin with the same colour direction, a few levels at most', () => {
+		const out = apply(field(8, 8, [216, 168, 136]), redEye([[0, 0, 8, 8]]), 8, 8);
+		const at = (x: number, y: number): number[] => out.slice((y * 8 + x) * 4, (y * 8 + x) * 4 + 3);
+		expect(at(3, 3)).toEqual([211, 170, 138]);
+		expect(at(2, 3)).toEqual([214, 169, 137]);
+		expect(at(1, 3)).toEqual([215, 168, 136]);
+		expect(at(0, 3)).toEqual([216, 168, 136]);
+		expect(out[3 * 4 + 3]).toBe(255);
+	});
+
+	it('processes the areas one after another', () => {
+		const src = field(6, 12, [255, 0, 0]);
+		const both = apply(src, redEye([[0, 0, 6, 6], [0, 6, 6, 12]]), 6, 12);
+		const first = apply(src, redEye([[0, 0, 6, 6]]), 6, 12);
+		expect(both.slice(0, 6 * 6 * 4)).toEqual(first.slice(0, 6 * 6 * 4));
+		// The second area holds the same pixels, so it gets the same result.
+		expect(both.slice(6 * 6 * 4)).toEqual(first.slice(0, 6 * 6 * 4));
 	});
 });
 
@@ -348,10 +391,16 @@ describe('applyImageEffectToRect', () => {
 	});
 
 	it('moves red-eye areas into the cropped region', () => {
-		const red = [200, 20, 20, 255];
-		const effect: EmfPlusImageEffect = { kind: 'redEyeCorrection', areas: [{ left: 2, top: 0, right: 3, bottom: 1 }] };
-		const region = applyImageEffectToRect(px(red, red, red), 3, 1, effect, rect(1, 0, 2, 1))!;
-		expect(reds(Array.from(region.rgba))).toEqual([200, 20]);
+		const red: [number, number, number, number] = [255, 0, 0, 255];
+		const src = px(...Array.from({ length: 6 * 6 }, () => red));
+		const effect: EmfPlusImageEffect = { kind: 'redEyeCorrection', areas: [{ left: 1, top: 1, right: 7, bottom: 7 }] };
+		const wide = new Uint8ClampedArray(7 * 7 * 4);
+		for (let i = 0; i < 49; i++) wide.set(red, i * 4);
+		// A 6x6 region at (1,1) of a 7x7 image: the area (1,1)-(7,7) becomes the region's whole 6x6 area.
+		const region = applyImageEffectToRect(wide, 7, 7, effect, rect(1, 1, 6, 6))!;
+		expect(Array.from(region.rgba.slice((2 * 6 + 2) * 4, (2 * 6 + 2) * 4 + 3))).toEqual([232, 10, 10]);
+		expect(Array.from(region.rgba.slice(0, 3))).toEqual([255, 0, 0]);
+		expect(src.length).toBe(6 * 6 * 4);
 	});
 });
 

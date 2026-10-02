@@ -29,7 +29,12 @@
  * - `HueSaturationLightness` reproduces native hue quantization across all
  *   integer angles. Mixed-colour/control sweeps retain one-level rounding.
  * - `Tint` is within two levels on nearly every pixel.
- * - `RedEyeCorrection` remains an approximation.
+ * - `RedEyeCorrection` is a sector model fitted to GDI+'s outputs alone, with
+ *   its pupil texture left out ({@link applyRedEyeCorrection}). Its constants
+ *   and structure come purely from black-box measurements: the public flat API
+ *   (`GdipBitmapApplyEffect` and friends) driven with synthetic bitmaps and
+ *   the results recorded. No GDI+ binary was disassembled, debugged or read,
+ *   and no disassembly-derived notes were used.
  *
  * All operations take straight (un-premultiplied) top-down RGBA and return
  * a new buffer; the input is never modified. A draw applies the effect to
@@ -468,11 +473,35 @@ export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): 
 }
 
 /**
- * Red-eye correction (MS-EMFPLUS 2.2.3.9), an approximation: inside each
- * area, a strongly red pixel (red at least twice both green and blue) gets
- * its red replaced by the mean of green and blue. GDI+ detects and repaints
- * whole pupils (a textured dark grey), which is not reproduced; skin and
- * other moderately red pixels are left alone, as GDI+ leaves them.
+ * Red-eye correction (MS-EMFPLUS 2.2.3.9), modelled from black-box
+ * measurements only: GDI+'s `RedEyeCorrection` was driven through the public
+ * flat API (`GdipCreateEffect`, `GdipBitmapApplyEffect`) with synthetic
+ * bitmaps and its outputs recorded. No GDI+ binary was disassembled, debugged
+ * or read; the model below reproduces those measurements, not GDI+'s code.
+ *
+ * Measured structure, per area (areas run one after another):
+ *
+ * - **Redness** `x = R - max(G, B)`; pixels with `x <= 0` are untouched. A
+ *   corrected pixel moves along a fixed direction, `R -= 0.6863 a`,
+ *   `G += 0.3137 a`, `B += 0.3137 a` (rounded), by `a = x - rem`, where `rem`
+ *   is the redness left over (`a = 0` when `rem >= x`). On a uniform field
+ *   `rem = (1 - falloff(u)) x` for every colour, which tabulates the falloff.
+ * - **Polar frame.** Pixels are binned into 60 sectors of 6 degrees (from +x
+ *   towards +y) around a centre: the centroid, over the area's pixel centres,
+ *   of the weight `x / (G + 0.225 B)` (ignored below a denominator of 1,
+ *   clamped to 10). Only pixels nearer than `radius = (min(width, height) - 1)
+ *   / 2` to the centre are processed, and only they are counted.
+ * - **Sector mean.** `M` is the mean of `x` over a sector's counted pixels;
+ *   an ordinary pixel keeps `rem = (1 - falloff(u)) M` with `u = distance /
+ *   radius`. A uniform area is therefore only lightly desaturated near its
+ *   middle, and sectors holding a strongly red blob (high `M`) are left alone.
+ * - **Dark reds.** A pixel whose smaller of G and B is well below that
+ *   sector's mean of the same (a pupil) is corrected harder: the falloff is
+ *   raised to at least `0.49 (1 - ratio / 0.6)` for `ratio = min(G, B) / mean`.
+ *
+ * Not reproduced: the pupils' own deterministic texture (a spread of a few
+ * levels), the darkening GDI+ applies around bright desaturated blobs, and
+ * the exact result where the centre falls on a sector boundary.
  */
 export function applyRedEyeCorrection(
 	src: Uint8ClampedArray,
@@ -482,23 +511,134 @@ export function applyRedEyeCorrection(
 ): Uint8ClampedArray {
 	const out = new Uint8ClampedArray(src);
 	for (const a of areas) {
-		const x0 = clamp(a.left, 0, width);
-		const x1 = clamp(a.right, 0, width);
-		const y0 = clamp(a.top, 0, height);
-		const y1 = clamp(a.bottom, 0, height);
-		for (let y = y0; y < y1; y++) {
-			for (let x = x0; x < x1; x++) {
-				const i = (y * width + x) * 4;
-				const r = out[i];
-				const g = out[i + 1];
-				const b = out[i + 2];
-				if (r >= 2 * g && r >= 2 * b && r > 64) {
-					out[i] = Math.round((g + b) / 2);
+		correctRedEyeArea(out, width, clamp(a.left, 0, width), clamp(a.top, 0, height), clamp(a.right, 0, width), clamp(a.bottom, 0, height));
+	}
+	return out;
+}
+
+/** Cusp-shaped falloff of the correction away from the polar centre: `u = i / 128`, 1e-5 units, zero from `u = 0.9375`. */
+const RED_EYE_FALLOFF = new Float64Array(
+	[
+		24930, 24570, 24201, 23836, 23471, 23107, 22744, 22367, 21976, 21587, 21198, 20824, 20490, 20165, 19832, 19499, 19157, 18817, 18480, 18151,
+		17820, 17490, 17160, 16831, 16506, 16189, 15878, 15569, 15273, 14973, 14668, 14362, 14059, 13768, 13484, 13203, 12923, 12642, 12366, 12094,
+		11828, 11564, 11301, 11034, 10770, 10507, 10253, 10011, 9771, 9530, 9290, 9053, 8819, 8588, 8359, 8134, 7914, 7697, 7481, 7267, 7056, 6851,
+		6651, 6453, 6256, 6061, 5871, 5684, 5499, 5317, 5138, 4962, 4789, 4619, 4452, 4289, 4130, 3974, 3820, 3669, 3520, 3375, 3232, 3093, 2958,
+		2825, 2695, 2568, 2444, 2325, 2207, 2092, 1980, 1872, 1768, 1666, 1567, 1470, 1377, 1287, 1200, 1116, 1034, 956, 881, 808, 739, 674, 612,
+		541, 462, 381, 299, 220, 147, 85, 36, 3, 0,
+	].map((v) => v / 1e5),
+);
+
+function redEyeFalloff(u: number): number {
+	const t = u * 128;
+	const i = Math.floor(t);
+	if (i >= RED_EYE_FALLOFF.length - 1) {
+		return 0;
+	}
+	return RED_EYE_FALLOFF[i] + (t - i) * (RED_EYE_FALLOFF[i + 1] - RED_EYE_FALLOFF[i]);
+}
+
+const RED_EYE_SECTORS = 60;
+const RED_EYE_BLUE_WEIGHT = 0.225;
+const RED_EYE_WEIGHT_CAP = 10;
+const RED_EYE_DARK_STRENGTH = 0.49;
+const RED_EYE_DARK_RATIO = 0.6;
+/** Share of the redness removed that lands in green and blue (the rest leaves red). */
+const RED_EYE_GREEN_SHARE = 80 / 255;
+
+function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y0: number, x1: number, y1: number): void {
+	const w = x1 - x0;
+	const h = y1 - y0;
+	const radius = (Math.min(w, h) - 1) / 2;
+	if (!(radius > 0)) {
+		return;
+	}
+	const count = w * h;
+	const redness = new Float64Array(count);
+	const dark = new Float64Array(count);
+	let sx = 0;
+	let sy = 0;
+	let sw = 0;
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = ((y0 + y) * stride + x0 + x) * 4;
+			const r = out[i];
+			const g = out[i + 1];
+			const b = out[i + 2];
+			const k = y * w + x;
+			dark[k] = Math.min(g, b);
+			const v = r - Math.max(g, b);
+			if (v > 0) {
+				redness[k] = v;
+				const denominator = g + RED_EYE_BLUE_WEIGHT * b;
+				if (denominator >= 1) {
+					const weight = Math.min(RED_EYE_WEIGHT_CAP, v / denominator);
+					sx += weight * (x + 0.5);
+					sy += weight * (y + 0.5);
+					sw += weight;
 				}
 			}
 		}
 	}
-	return out;
+	if (sw === 0) {
+		// Nothing weighable (no red, or only pure reds): the area's own centre.
+		if (!redness.some((v) => v > 0)) {
+			return;
+		}
+		sx = w / 2;
+		sy = h / 2;
+		sw = 1;
+	}
+	const cx = sx / sw;
+	const cy = sy / sw;
+	const sector = new Uint8Array(count);
+	const distance = new Float64Array(count);
+	const sectorSum = new Float64Array(RED_EYE_SECTORS);
+	const sectorDark = new Float64Array(RED_EYE_SECTORS);
+	const sectorCount = new Float64Array(RED_EYE_SECTORS);
+	const degrees = 180 / Math.PI;
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const dx = x + 0.5 - cx;
+			const dy = y + 0.5 - cy;
+			const k = y * w + x;
+			const d = Math.hypot(dx, dy);
+			distance[k] = d;
+			let angle = Math.atan2(dy, dx) * degrees;
+			if (angle < 0) {
+				angle += 360;
+			}
+			const s = Math.min(RED_EYE_SECTORS - 1, Math.floor(angle / 6));
+			sector[k] = s;
+			if (d < radius) {
+				sectorSum[s] += redness[k];
+				sectorDark[s] += dark[k];
+				sectorCount[s]++;
+			}
+		}
+	}
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const k = y * w + x;
+			const v = redness[k];
+			if (v <= 0 || distance[k] >= radius) {
+				continue;
+			}
+			const s = sector[k];
+			const mean = sectorSum[s] / sectorCount[s];
+			const meanDark = sectorDark[s] / sectorCount[s];
+			const ratio = meanDark > 0 ? dark[k] / meanDark : 1;
+			const falloff = Math.max(redEyeFalloff(distance[k] / radius), RED_EYE_DARK_STRENGTH * Math.max(0, 1 - ratio / RED_EYE_DARK_RATIO));
+			const rest = (1 - falloff) * mean;
+			if (rest >= v) {
+				continue;
+			}
+			const removed = v - rest;
+			const i = ((y0 + y) * stride + x0 + x) * 4;
+			out[i] = Math.round(out[i] - (1 - RED_EYE_GREEN_SHARE) * removed);
+			out[i + 1] = Math.round(out[i + 1] + RED_EYE_GREEN_SHARE * removed);
+			out[i + 2] = Math.round(out[i + 2] + RED_EYE_GREEN_SHARE * removed);
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------
