@@ -616,6 +616,8 @@ interface BlurSpan {
 	start: number;
 	size: number;
 	pad: number;
+	/** Reduced samples beyond the ends are transparent instead of reflecting or clamping (expanded blur). */
+	zeroOutside?: boolean;
 }
 
 /**
@@ -664,19 +666,35 @@ function blurAxis(
 			if (b >= taps && b + taps < n) {
 				for (let j = 0; j < k256.length; j++) sum += Math.round(k256[j] * reduced[b - taps + j]);
 			} else {
-				for (let j = 0; j < k256.length; j++) sum += Math.round(k256[j] * reduced[index(b - taps + j)]);
+				for (let j = 0; j < k256.length; j++) {
+					const at = b - taps + j;
+					sum += Math.round(k256[j] * (span.zeroOutside && (at < 0 || at >= n) ? 0 : reduced[index(at)]));
+				}
 			}
 			sum += 2 * Math.round(half * reduced[b]);
 			filtered[b] = Math.floor((sum + 128) / 256);
 		}
-		// A lone reduced sample has no line to continue: a single pixel beyond it stays as it was.
-		const written = n === 1 && length - Math.ceil(factor / 2) === 1 ? length - 1 : length;
-		for (let i = 0; i < written; i++) {
-			// Beyond the outer reduced samples the line through the two nearest continues.
-			const p = (i - span.start + 0.5) / factor - 0.5 + span.pad;
-			const a = clamp(Math.floor(p), 0, Math.max(0, n - 2));
+		// A lone reduced sample has no line to continue. Unpadded, a single pixel beyond it stays as it
+		// was; inside padding the pixel is empty and the line runs from the sample to a zero neighbour.
+		const lone = inner === 1 && span.pad > 0;
+		const skipped = inner === 1 && span.size - Math.ceil(factor / 2) === 1 ? span.start + span.size - 1 : -1;
+		for (let i = 0; i < length; i++) {
+			if (i === skipped) {
+				if (span.pad > 0) put(i, lane, c, 0);
+				continue;
+			}
+			// Only the span's own samples are enlarged (padding samples shape the filtering alone); beyond
+			// the outer ones the line through the two nearest continues.
+			const p = (i - span.start + 0.5) / factor - 0.5;
+			if (lone) {
+				// The sample sits at the middle of a full block, or just past the last pixel of a shorter one.
+				const distance = Math.abs(i - span.start - (Math.min(span.size, factor / 2) - 0.5)) / factor;
+				put(i, lane, c, clamp(Math.floor((1 + distance) * filtered[span.pad] + 1e-9), 0, 255));
+				continue;
+			}
+			const a = clamp(Math.floor(p), 0, Math.max(0, inner - 2));
 			const t = p - a;
-			put(i, lane, c, clamp(Math.floor((1 - t) * filtered[a] + t * filtered[Math.min(n - 1, a + 1)] + 1e-9), 0, 255));
+			put(i, lane, c, clamp(Math.floor((1 - t) * filtered[span.pad + a] + t * filtered[span.pad + Math.min(inner - 1, a + 1)] + 1e-9), 0, 255));
 		}
 	}
 }
@@ -691,9 +709,18 @@ function blurAxis(
  * images at radii 20-255, more than 99.97% of pixels are exact, the rest one
  * level off where a product lands within 0.0005 of a rounding tie. `region`, an expanded
  * blur's source rectangle inside its transparent padding, is reduced from its
- * own origin so that its partial blocks are not averaged with padding.
+ * own origin so that its partial blocks are not averaged with padding, and
+ * only its own reduced samples are enlarged. `expanded` makes reduced samples
+ * beyond the buffer transparent instead of reflecting or clamping them.
  */
-function effectBlur(src: Uint8ClampedArray, width: number, height: number, radius: number, region?: { x: number; y: number; w: number; h: number }): Float64Array {
+function effectBlur(
+	src: Uint8ClampedArray,
+	width: number,
+	height: number,
+	radius: number,
+	region?: { x: number; y: number; w: number; h: number },
+	expanded = false,
+): Float64Array {
 	const factor = blurReduction(radius);
 	// Native partial blocks on very small buffers use a different edge path.
 	if (factor === 1) {
@@ -701,8 +728,8 @@ function effectBlur(src: Uint8ClampedArray, width: number, height: number, radiu
 	}
 	const k = blurKernel(radius / factor);
 	const pad = region ? Math.ceil(Math.ceil(radius) / factor) : 0;
-	const spanX = region ? { start: region.x, size: region.w, pad } : undefined;
-	const spanY = region ? { start: region.y, size: region.h, pad } : undefined;
+	const spanX = region ? { start: region.x, size: region.w, pad, zeroOutside: true } : expanded ? { start: 0, size: width, pad: 0, zeroOutside: true } : undefined;
+	const spanY = region ? { start: region.y, size: region.h, pad, zeroOutside: true } : expanded ? { start: 0, size: height, pad: 0, zeroOutside: true } : undefined;
 	const rows = new Uint8Array(src);
 	blurAxis(width, height, factor, k, Math.ceil(width / factor), (i, lane, c) => src[(lane * width + i) * 4 + c], (i, lane, c, v) => {
 		rows[(lane * width + i) * 4 + c] = v;
@@ -862,6 +889,8 @@ function copyBlock(
  * reduced from its own corner, so a partial block at its far edge averages
  * only its own pixels, and transparent reduced samples are added around it;
  * a rectangle reaching an edge reduces the whole grown buffer from its corner.
+ * Either way only the rectangle's own reduced samples are enlarged, and
+ * reduced samples beyond the grown buffer are transparent.
  */
 function expandedBlur(
 	rgba: Uint8ClampedArray,
@@ -889,7 +918,7 @@ function expandedBlur(
 	}
 	const blurred =
 		blurReduction(radius) > 1
-			? effectBlur(buf, bw, bh, radius, cropped ? { x: r, y: r, w: x1 - x0, h: y1 - y0 } : undefined)
+			? effectBlur(buf, bw, bh, radius, cropped ? { x: r, y: r, w: x1 - x0, h: y1 - y0 } : undefined, true)
 			: gdipBlur(buf, bw, bh, radius, cropped ? r : 0, cropped, Math.ceil((y1 - y0) / (x1 - x0)));
 	const w = x1 - x0;
 	const out = new Uint8ClampedArray(w * (y1 - y0) * 4);
