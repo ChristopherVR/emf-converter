@@ -662,11 +662,21 @@ export function stretchHalftone(
 	// otherwise Windows dithers the finished output.
 	const reducedEven = W < SW ? SW % 2 === 0 && H % SH === 0 : SH % 2 === 0 && W % SW === 0;
 	const ditherAtSource = dithered && ((W >= SW && H >= SH) || (nativeMixed && reducedEven));
+	// Enlarging rows while reducing columns, Windows sharpens the last row against a
+	// further row that is the last source row replicated and dithered like any other
+	// (pattern row SH), not against the last row itself.
+	const extendRow = ditherAtSource && nativeMixed && W < SW && H > SH && !flipY;
+	if (extendRow) {
+		const bigger = new Int32Array((SH + 1) * SW * 3);
+		bigger.set(rect);
+		bigger.copyWithin(SH * SW * 3, (SH - 1) * SW * 3, SH * SW * 3);
+		rect = bigger;
+	}
 	if (ditherAtSource) {
 		// A vertically mirrored blit runs the pattern down the destination rows,
 		// shifted by the extra rows the stretch adds (H - SH), so a source row j
 		// sits at pattern row H - 1 - j.
-		ditherPixels(rect, SW, SH, dither!, false, false, undefined,
+		ditherPixels(rect, SW, extendRow ? SH + 1 : SH, dither!, false, false, undefined,
 			flipY ? Int32Array.from({ length: SH }, (_, j) => H - 1 - j) : undefined);
 	}
 	if (adjust && !adjustAfterSampling && (!dithered || ditherAtSource)) {
@@ -737,11 +747,40 @@ export function stretchHalftone(
 	}
 	if (nativeMixed) {
 		const reduceHorizontal = W < SW;
+		// The extension row reduced like the others (see `extendRow`); sharpened along x below.
+		let extension: Float64Array | Int32Array | undefined;
+		if (extendRow) {
+			const reduced = new Float64Array(sampleW * 3);
+			for (let x = 0; x < sampleW; x++) {
+				let total = 0;
+				const sums = [0, 0, 0];
+				for (const [xx, wx] of cols[x]) {
+					total += wx;
+					for (let c = 0; c < 3; c++) sums[c] += rect[(SH * SW + xx) * 3 + c] * wx;
+				}
+				for (let c = 0; c < 3; c++) reduced[x * 3 + c] = sums[c] / total;
+			}
+			extension = reduced;
+		}
 		for (const horizontal of [reduceHorizontal, !reduceHorizontal]) {
 			const source = out;
 			out = new Int32Array(source.length);
+			const ext = extension;
 			const at = (x: number, y: number, c: number) =>
-				source[(Math.max(0, Math.min(sampleH - 1, y)) * sampleW + Math.max(0, Math.min(sampleW - 1, x))) * 3 + c];
+				y >= sampleH && ext
+					? ext[Math.max(0, Math.min(sampleW - 1, x)) * 3 + c]
+					: source[(Math.max(0, Math.min(sampleH - 1, y)) * sampleW + Math.max(0, Math.min(sampleW - 1, x))) * 3 + c];
+			if (horizontal && ext) {
+				const next = new Int32Array(sampleW * 3);
+				for (let x = 0; x < sampleW; x++) {
+					for (let c = 0; c < 3; c++) {
+						const v = ext[x * 3 + c];
+						const sum = at(x - 1, sampleH, c) + at(x + 1, sampleH, c);
+						next[x * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + (2 * v - sum) / 4)));
+					}
+				}
+				extension = next;
+			}
 			for (let y = 0; y < sampleH; y++) {
 				for (let x = 0; x < sampleW; x++) {
 					for (let c = 0; c < 3; c++) {
