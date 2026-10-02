@@ -23,6 +23,7 @@ public static class PathProbe
 	[DllImport("gdi32.dll")] static extern bool Chord(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
 	[DllImport("gdi32.dll")] static extern bool Pie(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
 	[DllImport("gdi32.dll")] static extern int SetArcDirection(IntPtr dc, int direction);
+	[DllImport("gdi32.dll")] static extern bool AngleArc(IntPtr dc, int x, int y, uint r, float start, float sweep);
 	[DllImport("gdi32.dll")] static extern int SetMapMode(IntPtr dc, int mode);
 	[DllImport("gdi32.dll")] static extern int SetGraphicsMode(IntPtr dc, int mode);
 	[DllImport("gdi32.dll")] static extern bool SetViewportExtEx(IntPtr dc, int x, int y, IntPtr old);
@@ -130,9 +131,12 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"flat-pen-vectors.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
-	// Native GetPath of Arc/Chord/Pie on integer device boxes (GM_COMPATIBLE, counter-clockwise): random arcs, arcs from or to a quadrant boundary, and a 0.096 scale case.
+	// Native GetPath of Arc/Chord/Pie on integer device boxes (GM_COMPATIBLE): random arcs, arcs from or to a quadrant boundary, and a 0.096 scale case.
+	// arc-paths.json is counter-clockwise (the default arc direction); arc-paths-cw.json repeats every call under AD_CLOCKWISE; arc-precise.json adds arcs
+	// on a 40,000 px circle (radius 320,000 FIX), where one FIX is 3 millionths of the radius: single pieces from 0.3 to 85 degrees, arcs through every
+	// quadrant, nearly full turns and arcs starting and ending exactly on a quadrant boundary.
 	public static void ArcPaths(string dir) {
-		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(6047);var json=new StringBuilder("[");
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(6047);var json=new StringBuilder("[");var jsonCw=new StringBuilder("[");
 		try {
 			for(int sample=0;sample<900;sample++) {
 				int kind=sample%3,w=12+random.Next(0,240),h=12+random.Next(0,240),l=50+random.Next(0,100),t=50+random.Next(0,100),r=l+w,b=t+h;
@@ -141,15 +145,48 @@ public static class PathProbe
 				if(sample>=600){a2=Math.Floor(a2/(Math.PI/2))*(Math.PI/2);}
 				Func<double,int[]> pt=delegate(double a){double rad=0.5+random.NextDouble()*1.5;return new[]{(int)Math.Round(l+w/2.0+Math.Cos(a)*w/2.0*rad),(int)Math.Round(t+h/2.0-Math.Sin(a)*h/2.0*rad)};};
 				int[] p1=pt(a1),p2=pt(a2);
-				SetMapMode(dc,1);BeginPath(dc);
-				if(kind==0)Arc(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);else if(kind==1)Chord(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);else Pie(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
-				EndPath(dc);
-				string path=ReadFixPath(dc);
-				if(json.Length>1)json.Append(',');
-				json.Append("{\"kind\":").Append(kind).Append(",\"box\":[").Append(l).Append(',').Append(t).Append(',').Append(r).Append(',').Append(b).Append("],\"radials\":[").Append(p1[0]).Append(',').Append(p1[1]).Append(',').Append(p2[0]).Append(',').Append(p2[1]).Append("],\"expected\":").Append(path).Append('}');
+				string head="{\"kind\":"+kind+",\"box\":["+l+","+t+","+r+","+b+"],\"radials\":["+p1[0]+","+p1[1]+","+p2[0]+","+p2[1]+"],\"expected\":";
+				if(json.Length>1){json.Append(',');jsonCw.Append(',');}
+				json.Append(head).Append(ArcPath(dc,kind,l,t,r,b,p1[0],p1[1],p2[0],p2[1],1)).Append('}');
+				jsonCw.Append(head).Append(ArcPath(dc,kind,l,t,r,b,p1[0],p1[1],p2[0],p2[1],2)).Append('}');
 			}
 			File.WriteAllText(Path.Combine(dir,"arc-paths.json"),json.Append(']').ToString());
+			File.WriteAllText(Path.Combine(dir,"arc-paths-cw.json"),jsonCw.Append(']').ToString());
+			var precise=new StringBuilder("[");var rnd=new Random(3319);const int size=40000;
+			// radial point at 8 million pixels, rounded to a whole pixel, so the angle is known to ~1e-7 radians
+			Func<double,int[]> far=delegate(double deg){double a=deg*Math.PI/180;return new[]{(int)Math.Round(size/2.0+Math.Cos(a)*8e6),(int)Math.Round(size/2.0-Math.Sin(a)*8e6)};};
+			double[] sweeps={0.3,0.8,1.5,2.5,2.95,3.05,3.5,6,10,20,30,45,60,75,85,95,120,170,200,265,300,350,356,357.5,359,359.7};
+			int n=0;
+			foreach(double sweep in sweeps)for(int rep=0;rep<10;rep++){
+				double start=rep<2?(rep==0?0:90.0*rnd.Next(1,4)):rnd.NextDouble()*360;
+				int way=(n%4==3)?2:1;int kind=n%3;
+				int[] q1=far(start),q2=far(way==1?start+sweep:start-sweep);
+				if(rep==3){q2=far(Math.Floor((start+sweep)/90)*90);}
+				if(precise.Length>1)precise.Append(',');
+				precise.Append("{\"kind\":").Append(kind).Append(",\"clockwise\":").Append(way==2?"true":"false").Append(",\"box\":[0,0,").Append(size).Append(',').Append(size).Append("],\"radials\":[").Append(q1[0]).Append(',').Append(q1[1]).Append(',').Append(q2[0]).Append(',').Append(q2[1]).Append("],\"expected\":").Append(ArcPath(dc,kind,0,0,size,size,q1[0],q1[1],q2[0],q2[1],way)).Append('}');
+				n++;
+			}
+			File.WriteAllText(Path.Combine(dir,"arc-precise.json"),precise.Append(']').ToString());
+			// AngleArc from the origin (the line from the current position (0, 0) comes first): circle of radius 15 to 214, whole-tenth-degree angles,
+			// sweeps up to a turn either way, a fifth of them up to a full turn and a seventh of them under 40 degrees.
+			var angle=new StringBuilder("[");var rng=new Random(2718);
+			for(int sample=0;sample<600;sample++) {
+				int ax=300+rng.Next(0,50),ay=300+rng.Next(0,50),ar=15+rng.Next(0,200);float start=rng.Next(0,3601)/10f,sweep=(rng.Next(0,7001)-3500)/10f;
+				if(sample%5==0)sweep=rng.Next(0,3601)/10f;
+				if(sample%7==0)sweep=(rng.Next(0,401)/10f)*(rng.Next(0,2)==0?-1:1);
+				SetMapMode(dc,1);BeginPath(dc);AngleArc(dc,ax,ay,(uint)ar,start,sweep);EndPath(dc);
+				if(angle.Length>1)angle.Append(',');
+				angle.Append("{\"x\":").Append(ax).Append(",\"y\":").Append(ay).Append(",\"radius\":").Append(ar).Append(",\"start\":").Append(start.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"sweep\":").Append(sweep.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+			}
+			File.WriteAllText(Path.Combine(dir,"angle-arc-paths.json"),angle.Append(']').ToString());
 		}finally{DeleteDC(dc);}
+	}
+	// One Arc, Chord or Pie under the given arc direction (1 counter-clockwise, 2 clockwise), read back as FIX `[x,y,type]` triples.
+	static string ArcPath(IntPtr dc,int kind,int l,int t,int r,int b,int x1,int y1,int x2,int y2,int direction) {
+		SetMapMode(dc,1);SetArcDirection(dc,direction);BeginPath(dc);
+		if(kind==0)Arc(dc,l,t,r,b,x1,y1,x2,y2);else if(kind==1)Chord(dc,l,t,r,b,x1,y1,x2,y2);else Pie(dc,l,t,r,b,x1,y1,x2,y2);
+		EndPath(dc);SetArcDirection(dc,1);
+		return ReadFixPath(dc);
 	}
 	[DllImport("gdi32.dll")] static extern bool PolyBezier(IntPtr dc,Point[] points,uint count);
 	// Native WidenPath of wide curves: random Beziers, Arcs, Chords and Pies under flat/square/round caps and several joins, at the identity scale.

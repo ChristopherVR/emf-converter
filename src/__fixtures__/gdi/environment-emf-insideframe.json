@@ -1,7 +1,7 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-02T04:10:05.3267884Z",
-    "groups":  "arc-path-probe",
+    "capturedAt":  "2026-10-02T03:33:56.7317215Z",
+    "groups":  "emf-insideframe",
     "os":  "Microsoft Windows NT 10.0.26200.0",
     "build":  9457,
     "architecture":  "AMD64",
@@ -3382,20 +3382,68 @@
               ],
     "references":  [
                        {
-                           "name":  "angle-arc-paths.json",
-                           "sha256":  "205c2c92e73b642c17a03a668f342bbe87ef1bec2b57507775428c914740c445"
+                           "name":  "emf-insideframe-arc.emf",
+                           "sha256":  "bcfbef3cfd40e81584fc6ced05bbdc8a26f9a7e8f05d0e8a59237760458a9beb"
                        },
                        {
-                           "name":  "arc-paths.json",
-                           "sha256":  "5cbc2859e1443c98371204cf6bf802f445b1a45fca344806f0b9f3c2b3eb6cb6"
+                           "name":  "emf-insideframe-arc.png",
+                           "sha256":  "327600765e305174970410be3311626bb0b169278fd0760fcd71b40552502650"
                        },
                        {
-                           "name":  "arc-paths-cw.json",
-                           "sha256":  "10bf956976f47c19d1ba6e252eef2efdcaa9f3b174fb20534ad800a4a23fcc0d"
+                           "name":  "emf-insideframe-chord.emf",
+                           "sha256":  "5f0731f3c75aa296fc3183e2993b72477c4af9fded2e6b4626ada97f621e0df3"
                        },
                        {
-                           "name":  "arc-precise.json",
-                           "sha256":  "7538319ada670838e7308e3cb082ac4669e23c948ad63e9ed803196813ea2414"
+                           "name":  "emf-insideframe-chord.png",
+                           "sha256":  "5d2b752fdd6aa56bc3b7e171c6ee650aa0a67faf55417bd6f0c2d878df3681e8"
+                       },
+                       {
+                           "name":  "emf-insideframe-ellipse.emf",
+                           "sha256":  "ac8c2dc86a7dfa346debf16eb4ad0d3f6abc6b51e445645943fb19cd9cd9c4cf"
+                       },
+                       {
+                           "name":  "emf-insideframe-ellipse.png",
+                           "sha256":  "d045b74565a2d9a21d4d60e99551bd46c9adac0650dd1d41057115f091386e00"
+                       },
+                       {
+                           "name":  "emf-insideframe-pie.emf",
+                           "sha256":  "fe2f16c78b7c389192dd18c23c29e6c98cfaadc6aca5cd0663bb6b7930f5d8c5"
+                       },
+                       {
+                           "name":  "emf-insideframe-pie.png",
+                           "sha256":  "72f176df6ba087ac111c00eb6ebc34df862da37de75ccfeeca1a1be5de42d5a2"
+                       },
+                       {
+                           "name":  "emf-insideframe-polygon.emf",
+                           "sha256":  "83409d55ec9bd42147336e9fe8baae11f5a7d3e6ef4d19f7b9306368769ebbda"
+                       },
+                       {
+                           "name":  "emf-insideframe-polygon.png",
+                           "sha256":  "399f45ba697868ad307d355f638b973b1f36ba8b5d3cb612da77429422c9947e"
+                       },
+                       {
+                           "name":  "emf-insideframe-rect.emf",
+                           "sha256":  "20233eb3e6b1f4974c1d4cb659793bff8b6f92f4e53b91b9b54ba8c69b4f0de6"
+                       },
+                       {
+                           "name":  "emf-insideframe-rect.png",
+                           "sha256":  "77d7e6187a1c0d94df1637debef72acf69cee48885ca5b32bd20580ab0a4aa3b"
+                       },
+                       {
+                           "name":  "emf-insideframe-roundrect.emf",
+                           "sha256":  "f5363db6f839e8af9f901e4b78a139f6465bfb98b7dc509bebe19dbf255c7925"
+                       },
+                       {
+                           "name":  "emf-insideframe-roundrect.png",
+                           "sha256":  "e0d160e0faa6d73a8fef757908879148f9c4bd99749a9a6fcdf4881e75ae56bd"
+                       },
+                       {
+                           "name":  "emf-insideframe-scaled.emf",
+                           "sha256":  "f50d0781c5a38280015d5cb8f7706152be87b7584cf96ce195bea639d76190cf"
+                       },
+                       {
+                           "name":  "emf-insideframe-scaled.png",
+                           "sha256":  "318a363efb928f91565184b8f4429cfa5c032a1894414923f7c874d049302110"
                        }
                    ]
 }

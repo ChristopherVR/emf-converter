@@ -2491,6 +2491,71 @@ public static class GdiFixtures
 	// Wide pens beyond the small (Hobby) nibs: flattened-ellipse pens of 7 to
 	// 14 px on closed polygons, ellipses, Bezier curves, rectangles and
 	// dashed polylines, in both graphics modes (category "gdi-raster").
+	/**
+	 * PS_INSIDEFRAME pens (CreatePen style 6) of 1 to 16 pixels on every box shape: Windows shrinks the shape's box by
+	 * the pen's width so the whole pen lies inside it. One sheet per shape (category "emf-insideframe"), GM_ADVANCED like
+	 * the other raster sheets; a Polygon is the control, which an inside-frame pen leaves alone.
+	 */
+	static void EmfInsideFrameCases()
+	{
+		string[] shapes = { "rect", "ellipse", "roundrect", "arc", "chord", "pie", "polygon" };
+		foreach (string shape in shapes)
+		{
+			string kind = shape;
+			GdiCase("emf-insideframe-" + shape, 440, 180, delegate (IntPtr hdc)
+			{
+				Fill(hdc, 0, 0, 440, 180, Rgb(0xFF, 0xFF, 0xFF));
+				SetGraphicsMode(hdc, 2);
+				for (int i = 0; i < 16; i++)
+				{
+					int x = 4 + (i % 8) * 54, y = 4 + (i / 8) * 88;
+					int w = 44, h = 76;
+					IntPtr pen = CreatePen(6, i + 1, Rgb(0x10, 0x10, 0x60));
+					IntPtr brush = CreateSolidBrush(Palette[i % 8]);
+					SetArcDirection(hdc, 1);
+					WithObjects(hdc, pen, brush, delegate
+					{
+						if (kind == "rect") Rectangle(hdc, x, y, x + w, y + h);
+						else if (kind == "ellipse") Ellipse(hdc, x, y, x + w, y + h);
+						else if (kind == "roundrect") RoundRect(hdc, x, y, x + w, y + h, 18, 24);
+						else if (kind == "arc") Arc(hdc, x, y, x + w, y + h, x + w, y + 10, x + 4, y + h - 8);
+						else if (kind == "chord") Chord(hdc, x, y, x + w, y + h, x + w, y + 10, x + 4, y + h - 8);
+						else if (kind == "pie") Pie(hdc, x, y, x + w, y + h, x + w, y + 10, x + 4, y + h - 8);
+						else Polygon(hdc, new[] { new POINT { X = x + w / 2, Y = y }, new POINT { X = x + w, Y = y + h }, new POINT { X = x, Y = y + h - 20 } }, 3);
+					});
+				}
+			});
+		}
+		// The same shapes under a fractional world scale (1.37 with an offset), where pen widths and boxes fall on
+		// odd FIX: six shapes per row, pens of 2 to 9 logical units.
+		GdiCase("emf-insideframe-scaled", 420, 410, delegate (IntPtr hdc)
+		{
+			Fill(hdc, 0, 0, 420, 410, Rgb(0xFF, 0xFF, 0xFF));
+			SetGraphicsMode(hdc, 2);
+			XFORM xf = new XFORM { eM11 = 1.37f, eM12 = 0, eM21 = 0, eM22 = 1.37f, eDx = 3.3f, eDy = 2.6f };
+			SetWorldTransform(hdc, ref xf);
+			for (int row = 0; row < 8; row++)
+			{
+				for (int col = 0; col < 6; col++)
+				{
+					int x = 2 + col * 50, y = 4 + row * 36, w = 34 + (row * 5 + col * 3) % 12, h = 28 + (row * 7 + col * 5) % 6;
+					IntPtr pen = CreatePen(6, 2 + row, Rgb(0x10, 0x10, 0x60));
+					IntPtr brush = CreateSolidBrush(Palette[(row + col) % 8]);
+					int c = col;
+					WithObjects(hdc, pen, brush, delegate
+					{
+						if (c == 0) Rectangle(hdc, x, y, x + w, y + h);
+						else if (c == 1) Ellipse(hdc, x, y, x + w, y + h);
+						else if (c == 2) RoundRect(hdc, x, y, x + w, y + h, 12, 16);
+						else if (c == 3) Arc(hdc, x, y, x + w, y + h, x + w, y + 6, x + 3, y + h - 5);
+						else if (c == 4) Chord(hdc, x, y, x + w, y + h, x + w, y + 6, x + 3, y + h - 5);
+						else Pie(hdc, x, y, x + w, y + h, x + w, y + 6, x + 3, y + h - 5);
+					});
+				}
+			}
+		});
+	}
+
 	static void RasterWideExtraCases()
 	{
 		GdiCase("raster-wide-extra", 240, 240, delegate (IntPtr hdc)
@@ -6347,6 +6412,7 @@ public static class GdiFixtures
 		if (which == "illuminant-tables") { ErIlluminantTables(); }
 		if (which == "all" || which == "wmf-insideframe-curves") { WmfInsideFrameCurves(); }
 		if (which == "wmf-roundrect-corners") { WmfRoundRectCorners(); }
+		if (which == "emf-insideframe") { EmfInsideFrameCases(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 	}
 }

@@ -26,8 +26,9 @@ Additional diagnostic groups:
 - `illuminant-charts`: nine EMF/PNG pairs for 256 grey, primary and mixed colours, with the input colours in `illuminant-chart-colours.json` (packed RGB).
 - `halftone-dither`: 256 grey levels at three destination/brush origins.
 - `wmf-insideframe-curves`: 100 ellipse, RoundRect, chord, pie and arc cases with 0.5–10 px inside-frame pens.
+- `emf-insideframe`: `PS_INSIDEFRAME` pens of 1 to 16 px on a Rectangle, Ellipse, RoundRect, Arc, Chord, Pie and (as control) Polygon, drawn into an EMF in GM_ADVANCED and straight onto a bitmap (`emf-insideframe-<shape>`), plus the shapes under a 1.37 world scale (`emf-insideframe-scaled`).
 - `wmf-roundrect-corners`: wide-pen (3, 5 and 7 px) RoundRects with 25 corner sizes at the identity scale and at 0.96 (`wmf-roundrect-corners[-scaled]`).
-- `arc-path-probe`: native `GetPath` of 900 Arc, Chord and Pie calls (`arc-paths.json`: box, radial points and `[x, y, type]` triples in FIX).
+- `arc-path-probe`: native `GetPath` of 900 Arc, Chord and Pie calls (`arc-paths.json`: box, radial points and `[x, y, type]` triples in FIX), the same calls under `AD_CLOCKWISE` (`arc-paths-cw.json`) 600 AngleArcs (`angle-arc-paths.json`) and 260 arcs on a 40,000 px circle (`arc-precise.json`: radials 8 million pixels out, single pieces of 0.3 to 85 degrees, arcs through every quadrant, nearly full turns and boundary-aligned ends, a quarter of them clockwise).
 - `curve-dash-probe`: native `WidenPath` of 300 dashed wide pens (stock dash styles and user styles; round, square and flat caps) on Beziers and arcs (`curve-dash.json`).
 - `curve-widen-probe`: native `WidenPath` of 320 wide curves (Bezier, Arc, Chord, Pie) under flat, square and round caps and round, bevel and miter joins (`curve-widen.json`).
 - `image-codecs-extra`: odd-width bilevel TIFF captures with uncompressed, PackBits and CCITT Group 3/4 compression.
