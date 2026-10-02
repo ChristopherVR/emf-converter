@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.9](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.9) - 2026-10-02
+
+### Bug Fixes
+
+- **emf:** Apply the full GDI map-mode rules to window/viewport extents ([3f0817a](https://github.com/ChristopherVR/emf-converter/commit/3f0817ad6533e7d0335a8e93a469053a8ad41f75))
+- **emf+:** Accept single-leaf regions so SetClipRegion replaces the clip ([a57c7fe](https://github.com/ChristopherVR/emf-converter/commit/a57c7fe36d2dd525ba397319f79fd1fd01e07401))
+- **emf+:** Draw DrawDriverString glyphs at their own positions ([63c467e](https://github.com/ChristopherVR/emf-converter/commit/63c467ef1b195c07c9939b48f4dca3b9edc3b72b))
+
 ## [4.8.8](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.8) - 2026-10-02
 
 ### Bug Fixes
