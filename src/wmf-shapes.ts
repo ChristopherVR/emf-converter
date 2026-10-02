@@ -44,6 +44,8 @@ interface CompatBox {
 	y0: number;
 	x1: number;
 	y1: number;
+	/** See `FixBox.halfX`. */
+	halfX?: boolean;
 }
 
 /** How {@link compatBox} builds a box. */
@@ -54,6 +56,8 @@ interface CompatBoxOptions {
 	curved?: boolean;
 	/** An Arc, too: any curved shape's inside-frame pen takes half its width rounded down on the left (a Rectangle's, up). */
 	roundFrame?: boolean;
+	/** An Ellipse or RoundRect: an odd inside-frame width puts its vertical edges on half a FIX (`FixBox.halfX`). */
+	half?: boolean;
 }
 
 /**
@@ -74,7 +78,7 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 	const c = fixPoint(p.rCtx, r, b);
 	const ux = 16 * p.kx;
 	const uy = 16 * p.ky;
-	const box = {
+	const box: CompatBox = {
 		x0: Math.min(a[0], c[0]),
 		y0: Math.min(a[1], c[1]),
 		x1: Math.max(a[0], c[0]) - (exclusive ? Math.round(ux) : 0),
@@ -103,8 +107,14 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 			box.y1 += Math.round(uy);
 			box.x0 += Math.round(((opts.curved || opts.roundFrame ? Math.floor(wx / 2) : Math.ceil(wx / 2)) * ux) / 16);
 			box.y0 += Math.round((Math.ceil(wy / 2) * uy) / 16);
-			box.x1 -= Math.round((Math.floor(wx / 2) * ux) / 16);
+			// An odd width on an Ellipse or RoundRect: the box rounded down on the left and up on the right, its path's first
+			// half a FIX to the right (as in GM_ADVANCED, see `FixBox.halfX`).
+			const half = !!opts.half && wx % 2 === 1;
+			box.x1 -= Math.round(((half ? Math.ceil(wx / 2) : Math.floor(wx / 2)) * ux) / 16);
 			box.y1 -= Math.round((Math.ceil(wy / 2) * uy) / 16);
+			if (half) {
+				box.halfX = true;
+			}
 		}
 	}
 	return box;
@@ -112,7 +122,11 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 
 /** The {@link CompatBox} as the rasteriser's {@link FixBox}. */
 function fixBoxOf(box: CompatBox): FixBox {
-	return axisBox(box.x0, box.y0, Math.max(box.x0, box.x1), Math.max(box.y0, box.y1));
+	const fix = axisBox(box.x0, box.y0, Math.max(box.x0, box.x1), Math.max(box.y0, box.y1));
+	if (box.halfX) {
+		fix.halfX = true;
+	}
+	return fix;
 }
 
 /** Canvas-space corners of a {@link CompatBox} (FIX / 16). */
@@ -187,9 +201,12 @@ function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox, logica
 	if ((p.rCtx.state.penStyle & 0x0f) === PS_INSIDEFRAME && !penIsCosmetic(p.rCtx)) {
 		// GDI scales the original corner onto the inset box, truncating to
 		// whole FIX instead of using the other wide pens' even-pixel corners.
-		const penWidth = p.rCtx.state.penWidth * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) * 16;
+		// The corner and the original box are both the unrounded device extents (native GetPath, 600 RoundRects at five
+		// scales: 308 corners exact against 43 with the pen-width model).
 		const width = box.x1 - box.x0, height = box.y1 - box.y0;
-		return [Math.floor(Math.min(cw, width + penWidth) * width / (width + penWidth)), Math.floor(Math.min(ch, height + penWidth) * height / (height + penWidth))];
+		const fullW = Math.abs((logical[2] - logical[0]) * m[0]) * 16 || width;
+		const fullH = Math.abs((logical[3] - logical[1]) * m[3]) * 16 || height;
+		return [Math.floor((Math.min(Math.abs(w * m[0]) * 16, fullW) * width) / fullW), Math.floor((Math.min(Math.abs(h * m[3]) * 16, fullH) * height) / fullH)];
 	}
 	// GDI constructs the corner on the original box, then scales it onto the
 	// box with its right/bottom pixel excluded. A cosmetic pen retains
@@ -218,7 +235,7 @@ export const wmfShapePath = {
 		return box.x1 < box.x0 || box.y1 < box.y0 ? null : rectRasterPath(fixBoxOf(box), clockwiseOf(p));
 	},
 	roundRect(p: WmfPlayer, l: number, t: number, r: number, b: number, w: number, h: number): GdiRasterPath | null {
-		const box = compatBox(p, l, t, r, b, { curved: true });
+		const box = compatBox(p, l, t, r, b, { curved: true, half: true });
 		if (box.x1 < box.x0 || box.y1 < box.y0) {
 			return null;
 		}
@@ -226,7 +243,7 @@ export const wmfShapePath = {
 		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx));
 	},
 	ellipse(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
-		const box = compatBox(p, l, t, r, b, { curved: true });
+		const box = compatBox(p, l, t, r, b, { curved: true, half: true });
 		return box.x1 < box.x0 || box.y1 < box.y0 ? null : ellipseRasterPath(fixBoxOf(box), clockwiseOf(p));
 	},
 	/**
@@ -257,7 +274,7 @@ export const wmfShapePath = {
 
 /** `META_ROUNDRECT`: `w`, `h` are the corner ellipse's logical width and height. */
 export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: number, w: number, h: number): void {
-	const box = compatBox(p, l, t, r, b, { curved: true });
+	const box = compatBox(p, l, t, r, b, { curved: true, half: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
@@ -295,7 +312,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 
 /** `META_ELLIPSE`. */
 export function wmfEllipse(p: WmfPlayer, l: number, t: number, r: number, b: number): void {
-	const box = compatBox(p, l, t, r, b, { curved: true });
+	const box = compatBox(p, l, t, r, b, { curved: true, half: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
