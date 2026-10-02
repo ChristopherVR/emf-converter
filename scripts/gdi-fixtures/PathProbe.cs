@@ -151,4 +151,37 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"arc-paths.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
+	[DllImport("gdi32.dll")] static extern bool PolyBezier(IntPtr dc,Point[] points,uint count);
+	// Native WidenPath of wide curves: random Beziers, Arcs, Chords and Pies under flat/square/round caps and several joins, at the identity scale.
+	public static void CurveWiden(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(5171);var json=new StringBuilder("[");
+		int[][] styles={new[]{2,0},new[]{2,2},new[]{2,1},new[]{1,1},new[]{1,2},new[]{1,0},new[]{0,0},new[]{0,2}};
+		try {
+			for(int sample=0;sample<4*styles.Length*10;sample++) {
+				int kind=sample%4;int[] style=styles[(sample/4)%styles.Length];int width=7+random.Next(0,12);
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|style[0]*0x100|style[1]*0x1000),(uint)width,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					string head;
+					BeginPath(dc);
+					if(kind==0){
+						var p=new Point[4];for(int i=0;i<4;i++){p[i].X=40+random.Next(0,160);p[i].Y=40+random.Next(0,160);}
+						PolyBezier(dc,p,4);
+						head="\"kind\":\"bezier\",\"points\":["+string.Join(",",new[]{p[0].X,p[0].Y,p[1].X,p[1].Y,p[2].X,p[2].Y,p[3].X,p[3].Y})+"]";
+					} else {
+						int w=40+random.Next(0,120),h=40+random.Next(0,120),l=50+random.Next(0,60),t=50+random.Next(0,60);
+						Func<int[]> pt=delegate(){double a=random.NextDouble()*Math.PI*2,rad=0.6+random.NextDouble()*1.2;return new[]{(int)Math.Round(l+w/2.0+Math.Cos(a)*w/2.0*rad),(int)Math.Round(t+h/2.0-Math.Sin(a)*h/2.0*rad)};};
+						int[] p1=pt(),p2=pt();
+						if(kind==1)Arc(dc,l,t,l+w,t+h,p1[0],p1[1],p2[0],p2[1]);else if(kind==2)Chord(dc,l,t,l+w,t+h,p1[0],p1[1],p2[0],p2[1]);else Pie(dc,l,t,l+w,t+h,p1[0],p1[1],p2[0],p2[1]);
+						head="\"kind\":\""+(kind==1?"arc":kind==2?"chord":"pie")+"\",\"box\":["+l+","+t+","+(l+w)+","+(t+h)+"],\"radials\":["+p1[0]+","+p1[1]+","+p2[0]+","+p2[1]+"]";
+					}
+					EndPath(dc);if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append('{').Append(head).Append(",\"cap\":").Append(style[0]).Append(",\"join\":").Append(style[1]).Append(",\"width\":").Append(width).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			File.WriteAllText(Path.Combine(dir,"curve-widen.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
 }

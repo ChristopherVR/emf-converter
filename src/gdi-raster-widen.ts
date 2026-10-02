@@ -39,6 +39,12 @@
  *   square caps the stock styles shorten every dash by the pen width.
  * - The first and last flattened segment of a Bezier take their draw
  *   vertices from the curve's end tangents (`GdiFigure.tangents`).
+ * - The segments that come from a flattened curve (`GdiFigure.curveSegs`)
+ *   behave as a smooth curve whatever the pen's cap and join: their sides
+ *   rest on the pen's draw vertices, joins between two of them are always
+ *   round and drop the pen loop on the inner side, and a curve end's
+ *   perpendicular and square-cap extension follow its end tangent.
+ *   Between two cubics the longer end tangent is used for both.
  *
  * Callers apply two record-level rules measured on direct drawing: a
  * `Rectangle` stroked with a wide `CreatePen` pen uses miter joins, and an
@@ -308,6 +314,10 @@ interface Seg {
 	/** Square-cap extension. */
 	e: Pt;
 	curveEnd: boolean;
+	/** Squared length of the curve end tangent (0 without one): a short tangent from rounded control points is unreliable. */
+	tangentLength: number;
+	/** The segment is a piece of a flattened curve (the pen then rests on its support vertices). */
+	curve: boolean;
 }
 
 /** Builds one pen's outlines; `out` collects finished figures. */
@@ -315,7 +325,6 @@ class Outliner {
 	private readonly pen: Pt[];
 	private readonly n: number;
 	private readonly rr: boolean;
-	private readonly roundJoinSides: boolean;
 	private readonly originalRoundJoinSides: boolean;
 	private readonly maxX: number;
 	private pts: Pt[] = [];
@@ -328,7 +337,6 @@ class Outliner {
 		this.n = this.pen.length;
 		this.rr = opts.cap === 'round' && opts.join === 'round';
 		this.originalRoundJoinSides = opts.join === 'round' && opts.cap !== 'flat';
-		this.roundJoinSides = !!opts.roundCurveJoins || this.originalRoundJoinSides;
 		this.maxX = Math.max(...this.pen.map((q) => Math.abs(q[0])));
 	}
 
@@ -337,14 +345,15 @@ class Outliner {
 	 * `drawDir` (a curve's end tangent) only picks the draw vertices, the
 	 * perpendicular following the chord (measured on Bezier ends).
 	 */
-	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Pt): Seg {
+	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Pt, curve = false): Seg {
 		const dx = dir ? dir[0] : b[0] - a[0];
 		const dy = dir ? dir[1] : b[1] - a[1];
 		const d = drawDir ?? [dx, dy];
 		const [L, R] = drawVertices(this.pen, d[0], d[1]);
-		const perpendicular = this.opts.roundCurveJoins && drawDir ? drawDir : [dx, dy];
+		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
+		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1]);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, dx, dy), curveEnd: !!drawDir };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1]), curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -383,7 +392,7 @@ class Outliner {
 	 * vertex exactly on `A`'s ray is included when `startIncl`, one on `B`'s
 	 * ray when `endIncl`.
 	 */
-	private wedge(p: Pt, A: Pt, B: Pt, startIncl: boolean, endIncl: boolean): void {
+	private wedge(p: Pt, A: Pt, B: Pt, startIncl: boolean, endIncl: boolean, tail = -1): void {
 		const TWO = Math.PI * 2;
 		const aA = Math.atan2(A[1], A[0]);
 		const angleOf = (Q: Pt) => {
@@ -414,14 +423,23 @@ class Outliner {
 			}
 		}
 		list.sort((x, y) => x[0] - y[0]);
+		if (tail >= 0 && !list.some(([, k]) => k === tail)) {
+			list.push([Infinity, tail]);
+		}
 		for (const [, k] of list) {
 			this.penAt(p, k);
 		}
 	}
 
+	/** The pen's extreme-x vertex `k` that a steep segment `s` rests on, or -1 when the rule does not apply. */
+	private extremeTail(applies: boolean, k: number, s: Seg): number {
+		const q = this.pen[k];
+		return applies && Math.abs(s.dy) > Math.abs(s.dx) && Math.abs(q[0]) === this.maxX && q[1] === 0 ? k : -1;
+	}
+
 	/** Side offset of segment `s` at a join. */
 	private joinSide(s: Seg, side: 'L' | 'R'): Pt {
-		if (this.roundJoinSides) {
+		if (this.originalRoundJoinSides || s.curve) {
 			const q = this.pen[side === 'L' ? s.L : s.R];
 			return [halfPixel(q[0]), halfPixel(q[1])];
 		}
@@ -474,27 +492,30 @@ class Outliner {
 	 */
 	private join(p: Pt, a: Seg, b: Seg, side: 'L' | 'R', outer: boolean): void {
 		const { cap, width, miterLimit } = this.opts;
-		const join = this.opts.roundCurveJoins ? 'round' : this.opts.join;
+		const curveJoin = a.curve && b.curve;
+		const join = curveJoin ? 'round' : this.opts.join;
+		const roundSides = this.originalRoundJoinSides || curveJoin;
 		let sa = this.joinSide(a, side);
 		let sb = this.joinSide(b, side);
 		const rayA: Pt = side === 'R' ? a.vRaw : [-a.vRaw[0], -a.vRaw[1]];
 		const rayB: Pt = side === 'R' ? b.vRaw : [-b.vRaw[0], -b.vRaw[1]];
-	if (this.opts.roundCurveJoins && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
+		if (curveJoin && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
 			// At the boundary of two ellipse cubics, these styles use the
 			// true tangent's perpendicular rather than a pen support vertex.
-			sa = side === 'R' ? a.v : [-a.v[0], -a.v[1]];
-			sb = side === 'R' ? b.v : [-b.v[0], -b.v[1]];
+			// Both cubics describe the same tangent: the one with the longer arm is the reliable one.
+			const t = a.tangentLength >= b.tangentLength ? a : b;
+			sa = sb = side === 'R' ? t.v : [-t.v[0], -t.v[1]];
 		}
 		const Da = side === 'R' ? a.R : a.L;
 		const Db = side === 'R' ? b.R : b.L;
-		if (this.roundJoinSides && (Da === Db || (this.opts.roundCurveJoins && sa[0] === sb[0] && sa[1] === sb[1]))) {
+		if (roundSides && (Da === Db || (curveJoin && sa[0] === sb[0] && sa[1] === sb[1]))) {
 			this.push(p, sa);
 			return;
 		}
 		this.push(p, sa);
 		if (outer) {
 			if (join === 'round') {
-				if (this.roundJoinSides) {
+				if (roundSides) {
 					// The left side (walked backwards) keeps the pen's extreme
 					// vertex after a steep segment (measured).
 					const q = this.pen[Db];
@@ -504,7 +525,8 @@ class Outliner {
 				} else {
 					const anti = sa[0] === -sb[0] && sa[1] === -sb[1];
 					if (Da !== Db || anti) {
-						this.wedge(p, rayA, rayB, !anti, !anti);
+						// A vertex exactly on the second ray is left out, and the left side keeps a steep segment's extreme-x vertex.
+						this.wedge(p, rayA, rayB, !anti, false, this.extremeTail(side === 'L' && !anti, Db, b));
 					}
 				}
 			} else if (join === 'miter') {
@@ -515,19 +537,19 @@ class Outliner {
 			}
 		} else {
 			this.pts.push([p[0], p[1]]);
-			if (this.opts.roundCurveJoins && !this.originalRoundJoinSides) {
+			if (curveJoin && !this.originalRoundJoinSides) {
 				// Native WidenPath repeats this inner triangle. Filling hides
 				// the repetition; stroking the widened outline exposes it.
 				this.push(p, sb);
 				this.push(p, sa);
 				this.pts.push([p[0], p[1]]);
 			}
-			if (join === 'round' && cap === 'flat' && !this.opts.roundCurveJoins) {
+			if (join === 'round' && cap === 'flat' && !curveJoin) {
 				// Flat-capped round joins loop round the pen on the inner side too.
 				this.push(p, sb);
 				if (Da !== Db) {
 					// Two sides resting on the same pen vertex enclose no other vertex.
-					this.wedge(p, rayB, rayA, false, false);
+					this.wedge(p, rayB, rayA, false, false, this.extremeTail(side === 'L', Da, a));
 				}
 				this.push(p, sa);
 				this.pts.push([p[0], p[1]]);
@@ -563,17 +585,17 @@ class Outliner {
 	 * lets a single point stand for a zero-length dash along `dirs[0]`;
 	 * `draws` (curve end tangents) picks draw vertices only.
 	 */
-	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[]): void {
+	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[], curves?: boolean[]): void {
 		if (P.length < 2 && !dirs?.[0]) {
 			this.dot(P[0]);
 			return;
 		}
 		const segs: Seg[] = [];
 		for (let i = 0; i + 1 < P.length; i++) {
-			segs.push(this.seg(P[i], P[i + 1], dirs?.[i], draws?.[i]));
+			segs.push(this.seg(P[i], P[i + 1], dirs?.[i], draws?.[i], curves?.[i]));
 		}
 		if (segs.length === 0) {
-			const s = this.seg(P[0], P[0], dirs?.[0] as Pt, draws?.[0]);
+			const s = this.seg(P[0], P[0], dirs?.[0] as Pt, draws?.[0], curves?.[0]);
 			this.cap(P[0], s, true);
 			this.cap(P[0], s, false);
 			this.flush();
@@ -605,11 +627,11 @@ class Outliner {
 	}
 
 	/** Outlines a closed polygon (distinct consecutive points, not repeating the first). */
-	closed(P: Pt[], draws?: (Pt | undefined)[]): void {
+	closed(P: Pt[], draws?: (Pt | undefined)[], curves?: boolean[]): void {
 		const m = P.length;
 		const segs: Seg[] = [];
 		for (let i = 0; i < m; i++) {
-			segs.push(this.seg(P[i], P[(i + 1) % m], undefined, draws?.[i]));
+			segs.push(this.seg(P[i], P[(i + 1) % m], undefined, draws?.[i], curves?.[i]));
 		}
 		// Right side forward, starting at the second vertex.
 		for (let j = 1; j <= m; j++) {
@@ -738,11 +760,12 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 	const out: number[][] = [];
 	const dashed = !!opts.dashes && opts.dashes.length > 0;
 	for (const fig of path.figures) {
-		const outliner = new Outliner(fig.roundWiden ? { ...opts, roundCurveJoins: true } : opts, out);
+		const outliner = new Outliner(opts, out);
 		// Distinct points, and per remaining segment the curve tangent GDI
 		// widens it with (when it is a flattened Bezier's first or last).
 		let P: Pt[] = [];
 		const dirs: (Pt | undefined)[] = [];
+		const curves: boolean[] = [];
 		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
 			const q: Pt = [fig.pts[i], fig.pts[i + 1]];
 			const last = P[P.length - 1];
@@ -751,6 +774,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 			}
 			if (last) {
 				dirs.push(fig.tangents?.get(i / 2 - 1));
+				curves.push(!!fig.roundWiden || !!fig.curveSegs?.has(i / 2 - 1));
 			}
 			P.push(q);
 		}
@@ -779,14 +803,14 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 						pdraws.push(piece.draws[i - 1]);
 					}
 				}
-				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]]);
+				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]], pts.map(() => !!fig.roundWiden));
 			}
 		} else if (closed && P.length >= 3) {
-			outliner.closed(P, dirs);
+			outliner.closed(P, dirs, curves);
 		} else if (closed && P.length === 2) {
 			outliner.open([P[0], P[1], P[0]]);
 		} else {
-			outliner.open(P, undefined, dirs);
+			outliner.open(P, undefined, dirs, curves);
 		}
 	}
 	return out;

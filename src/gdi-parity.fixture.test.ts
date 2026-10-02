@@ -293,11 +293,10 @@ const ALIASED_CASES: ParityCase[] = [
  * every cap and join, rotated/mirrored/stretched/skewed blits, and a
  * 800-shape benchmark drawing, plus wide flattened-ellipse pens on closed
  * figures, curves and dashes (`raster-wide-extra`). Every one is exact at
- * tolerance 0 under `gdiAntialias: false` except `raster-wide-extra`'s two
- * Bezier curves: a 10 px flat-capped round-joined pen (GDI leaves out a pen
- * vertex at a few joins of the flattened curve) and a dashed 10 px curve
- * (GDI's direct dashed curve differs from its own `WidenPath`, which the
- * widener reproduces exactly).
+ * tolerance 0 under `gdiAntialias: false` except `raster-wide-extra`'s dashed
+ * 10 px Bezier and rectangle (65 pixels: Windows places a dash along a curved
+ * Bezier about 2% earlier than along the same polyline, which is not
+ * reproduced).
  */
 const raster = (name: string, maxMismatch = 0): ParityCase => ({
 	name,
@@ -326,7 +325,7 @@ const RASTER_CASES: ParityCase[] = [
 	raster('raster-wide-pens'), // was 0.420%
 	raster('raster-wide-joins'), // was 0.991%
 	raster('raster-dash-geometric'), // was 3.943%
-	raster('raster-wide-extra', 0.002), // measured 0.155%
+	raster('raster-wide-extra', 0.0012), // measured 0.114% (65 pixels), before 0.155%
 ];
 
 /**
@@ -859,10 +858,10 @@ const TEXT_CONTRAST_CASES: ParityCase[] = [
  * PaintRgn, ExtFloodFill, AngleArc, PolyDraw / PolyDraw16,
  * PolyPolyline16 and Flatten / Widen / AbortPath. Every one is pixel-exact
  * but for the wide-pen widener's known residual (`gdi-raster-widen.ts`):
- * `emfrec-anglearc` (a 7 px flat-capped miter pen along the arc; the
- * AngleArc path itself matches GDI's `GetPath` point for point),
+ * `emfrec-anglearc` (2 pixels of a 7 px flat-capped miter pen along the arc;
+ * the AngleArc path itself matches GDI's `GetPath` point for point),
  * `emfrec-path-flatten` (the same pen on a flattened curve) and the
- * WidenPath outlines.
+ * WidenPath outlines (16 pixels).
  */
 const emfrec = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
 
@@ -887,9 +886,9 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-polydraw32'),
 	emfrec('emfrec-polypolyline16'),
 	emfrec('emfrec-path-abort'),
-	emfrec('emfrec-anglearc', 0.001), // measured 0.062%
+	emfrec('emfrec-anglearc', 0.0001), // measured 0.0046% (2 pixels), before 0.062%
 	emfrec('emfrec-path-flatten', 0.0005), // measured 0.011%
-	emfrec('emfrec-path-widen', 0.002), // measured 0.157%
+	emfrec('emfrec-path-widen', 0.0004), // measured 0.034% (16 pixels), before 0.157%
 	emfrec('emfrec-path-widen-outline'), // ellipse curve sides and duplicated inner triangles
 ];
 

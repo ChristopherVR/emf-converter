@@ -1051,6 +1051,8 @@ export interface GdiFigure {
 	 * tangents at its ends; measured on ellipse outlines).
 	 */
 	tangents?: Map<number, [number, number]>;
+	/** Indices of the segments (keyed like `tangents`) that are pieces of a flattened Bezier. */
+	curveSegs?: Set<number>;
 }
 
 /**
@@ -1144,6 +1146,10 @@ export class GdiRasterPath {
 		};
 		const t0 = tangent(x0, y0, c1x, c1y, c2x, c2y, x3, y3);
 		const t1 = tangent(c2x, c2y, x3, y3, x3, y3, x3, y3) ?? tangent(c1x, c1y, x3, y3, x3, y3, x3, y3) ?? tangent(x0, y0, x3, y3, x3, y3, x3, y3);
+		f.curveSegs ??= new Set();
+		for (let k = first; k <= last; k++) {
+			f.curveSegs.add(k);
+		}
 		f.tangents ??= new Map();
 		if (t0) f.tangents.set(first, t0);
 		if (t1) f.tangents.set(last, t1);
@@ -1180,7 +1186,7 @@ export class GdiRasterPath {
 	/** Appends every figure of `other`. */
 	append(other: GdiRasterPath): void {
 		for (const f of other.figures) {
-			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents), roundWiden: f.roundWiden });
+			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents), curveSegs: f.curveSegs && new Set(f.curveSegs), roundWiden: f.roundWiden });
 		}
 		for (let i = 0; i < other.getPath.types.length; i++) {
 			this.log(other.getPath.pts[2 * i], other.getPath.pts[2 * i + 1], other.getPath.types[i]);
