@@ -16,6 +16,11 @@
  *
  *   1. `IlluminantIndex` 1..5, 7 and 8: a native colour cube (see
  *      {@link ILLUMINANT_CUBE_DATA}); 0 and 6 (D65) leave colours unchanged.
+ *      The cube is a linear map ({@link ILLUMINANT_MATRICES}, white stays
+ *      white) whose out-of-range results are gamut-compressed like the chroma
+ *      stage's. With colorfulness or tint Windows hands the unclamped matrix
+ *      output to stage 2 and compresses once at the end, so the cube is only
+ *      used when stage 2 is off.
  *   2. Colorfulness and RedGreenTint in CIE 1976 u'v' (BT.709 primaries, D65
  *      white), keeping Y: the chroma offset from white is scaled by
  *      `1 + c / 100` and turned by `-t * 0.6` degrees. A result outside
@@ -23,9 +28,10 @@
  *      largest to 255) rather than clipped. The stage reads the palette level
  *      unrounded (`255 n / 31`, not the rounded 8-bit entry) and its result is
  *      rounded to an integer before the curve stages below; with both
- *      the native cubes agree on all but about 0.2-0.5% of channels (one level).
- *      Strongly out-of-gamut blues (tint beyond about 50) are compressed less
- *      than the affine remap predicts, up to 24 levels at tint 100.
+ *      the native cubes agree on all but about 0.05-0.4% of channels (one level).
+ *      The turned u' is floored at 0 (a strongly rotated blue would
+ *      otherwise land at a negative u', i.e. a negative X), which is what
+ *      makes the gamut compression of blues at tint beyond about 50 match.
  *   3. Gamma per channel: `255 * (v / 255) ^ gamma`.
  *   4. Reference black / white: `(v - black) / (white - black)`.
  *   5. Contrast: `v * exp(0.0148885 * c)`.
@@ -97,6 +103,23 @@ function illuminantCube(index: number): Uint8Array | null {
 	}
 	return cube;
 }
+
+/**
+ * The linear part of each illuminant cube, fitted to the cube entries that
+ * Windows leaves uncompressed (17-25 thousand of 32768; each row sums to 1, so
+ * white stays white). The cube alone is the compressed result of this matrix;
+ * with colorfulness or tint the matrix output is carried on unclamped into the
+ * chroma stage, and the gamut is compressed once, at the end.
+ */
+const ILLUMINANT_MATRICES: Readonly<Record<number, readonly (readonly number[])[]>> = {
+	1: [[1.64737, -0.59174, -0.05494], [0.02963, 0.96126, 0.00881], [0.2911, 0.40189, 0.30769]],
+	2: [[1.22319, -0.17765, -0.04515], [0.00275, 0.99054, 0.00645], [0.05514, 0.12795, 0.81816]],
+	3: [[1.02833, -0.01775, -0.01086], [0.00861, 0.98431, 0.00728], [-0.01616, -0.0448, 1.05995]],
+	4: [[1.17271, -0.14059, -0.03174], [-0.00474, 1.00266, 0.00183], [0.05783, 0.14663, 0.79683]],
+	5: [[1.10431, -0.08327, -0.02067], [-0.00336, 1.0025, 0.00067], [0.03344, 0.09072, 0.87702]],
+	7: [[0.92515, 0.05628, 0.01822], [0.00318, 0.9967, 0.00034], [-0.02086, -0.06817, 1.08783]],
+	8: [[1.31275, -0.26259, -0.04977], [-0.00244, 0.99695, 0.00524], [0.10854, 0.23443, 0.65827]],
+};
 
 /** Whether `ca` selects an illuminant that changes colours. */
 function hasIlluminant(ca: GdiColorAdjustment): boolean {
@@ -224,11 +247,17 @@ const COLORFULNESS_SCALE = 1 / 100;
 /** RedGreenTint `t` turns the u'v' hue by `-t / 100 * 60` degrees. */
 const TINT_RADIANS = -Math.PI / 3;
 
-/** Linear sRGB / BT.709 primaries to CIE XYZ (D65 white). */
+/**
+ * Linear BT.709 / sRGB primaries to CIE XYZ, derived from the primaries
+ * (0.64, 0.33), (0.30, 0.60), (0.15, 0.06) and the D65 white (0.3127, 0.3290)
+ * with Y = 1. These 7-decimal values fit the native cubes several times better
+ * than the usual 4-decimal ones (whose rounding moves results by up to 0.03
+ * levels, enough to flip exact-half ties).
+ */
 const RGB_TO_XYZ = [
-	[0.4124, 0.3576, 0.1805],
-	[0.2126, 0.7152, 0.0722],
-	[0.0193, 0.1192, 0.9505],
+	[0.4123908, 0.3575843, 0.1804808],
+	[0.212639, 0.7151687, 0.0721923],
+	[0.0193308, 0.1191948, 0.9505322],
 ];
 const XYZ_TO_RGB = invert3(RGB_TO_XYZ);
 const WHITE = RGB_TO_XYZ.map((row) => row[0] + row[1] + row[2]);
@@ -267,13 +296,14 @@ function adjustChroma(r: number, g: number, b: number, scale: number, angle: num
 	const z = RGB_TO_XYZ[2][0] * r + RGB_TO_XYZ[2][1] * g + RGB_TO_XYZ[2][2] * b;
 	const d = x + 15 * y + 3 * z;
 	if (d <= 1e-9 || y <= 1e-9) {
-		return [r, g, b];
+		return [clamp255(r), clamp255(g), clamp255(b)];
 	}
 	const du = (4 * x) / d - WHITE_U;
 	const dv = (9 * y) / d - WHITE_V;
 	const cos = Math.cos(angle) * scale;
 	const sin = Math.sin(angle) * scale;
-	const u = WHITE_U + du * cos - dv * sin;
+	// A negative u' (negative X) is floored: Windows compresses strongly turned blues from that point.
+	const u = Math.max(0, WHITE_U + du * cos - dv * sin);
 	const v = Math.max(1e-6, WHITE_V + du * sin + dv * cos);
 	const x2 = (y * 9 * u) / (4 * v);
 	const z2 = (y * (12 - 3 * u - 20 * v)) / (4 * v);
@@ -297,6 +327,7 @@ function adjustChroma(r: number, g: number, b: number, scale: number, angle: num
  */
 export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => number {
 	const illuminant = illuminantCube(ca.illuminant);
+	const matrix = ILLUMINANT_MATRICES[ca.illuminant];
 	const gammas = [ca.redGamma / 10000, ca.greenGamma / 10000, ca.blueGamma / 10000];
 	const black = (ca.referenceBlack / 10000) * 255;
 	const span = Math.max(1e-6, (ca.referenceWhite / 10000) * 255 - black);
@@ -327,18 +358,20 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 	}
 	return (rgb: number): number => {
 		let c: [number, number, number] = [(rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff];
-		if (illuminant) {
+		if (chroma) {
+			// The chroma stage reads the palette level unrounded (255 n / 31),
+			// not the rounded 8-bit entry the curve stages see.
+			c = c.map(exactPaletteLevel) as [number, number, number];
+			if (matrix) {
+				// The illuminant's unclamped output feeds the chroma stage.
+				const [r, g, b] = c;
+				c = matrix.map(row => row[0] * r + row[1] * g + row[2] * b) as [number, number, number];
+			}
+			c = adjustChroma(c[0], c[1], c[2], scale, angle);
+			c = c.map(roundHalfUp) as [number, number, number];
+		} else if (illuminant) {
 			const mapped = lookupIlluminant(illuminant, c[0] / 255, c[1] / 255, c[2] / 255);
 			c = [mapped[0] * 255, mapped[1] * 255, mapped[2] * 255];
-		}
-		if (chroma) {
-			if (!illuminant) {
-				// The chroma stage reads the palette level unrounded (255 n / 31),
-				// not the rounded 8-bit entry the curve stages see.
-				c = c.map(exactPaletteLevel) as [number, number, number];
-			}
-			c = adjustChroma(clamp255(c[0]), clamp255(c[1]), clamp255(c[2]), scale, angle);
-			c = c.map(roundHalfUp) as [number, number, number];
 		}
 		return (curve(c[0], 0) << 16) | (curve(c[1], 1) << 8) | curve(c[2], 2);
 	};

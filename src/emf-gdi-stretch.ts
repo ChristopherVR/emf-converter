@@ -504,6 +504,57 @@ function halftoneKeepLast(px: Int32Array, w: number, h: number, rows: boolean): 
 }
 
 /**
+ * HALFTONE reduction of both axes: the rows are reduced first with
+ * {@link halftoneReduceTaps} and each result rounded half up to an integer,
+ * the columns are then reduced from those and kept unrounded, and the
+ * sharpening `floor(v + (4v - l - r - u - d) / 8)` (edge pixels standing in for
+ * missing neighbours, clamped to 0..255) works on that unrounded image.
+ * Reproduces native random-noise captures of 8 size pairs exactly (5,370
+ * channels). `rect` is RGB triples, `sw` x `sh`; returns `dw` x `dh` triples.
+ */
+function halftoneReduceBoth(rect: Int32Array, sw: number, sh: number, dw: number, dh: number, flipX: boolean, flipY: boolean): Int32Array {
+	const cols = halftoneReduceTaps(sw, dw, flipX);
+	const rows = halftoneReduceTaps(sh, dh, flipY);
+	const wide = new Int32Array(dw * sh * 3);
+	for (let y = 0; y < sh; y++) {
+		for (let x = 0; x < dw; x++) {
+			let total = 0;
+			for (const [, w] of cols[x]) total += w;
+			for (let c = 0; c < 3; c++) {
+				let sum = 0;
+				for (const [xx, w] of cols[x]) sum += rect[(y * sw + xx) * 3 + c] * w;
+				wide[(y * dw + x) * 3 + c] = Math.floor((2 * sum + total) / (2 * total));
+			}
+		}
+	}
+	const avg = new Float64Array(dw * dh * 3);
+	for (let y = 0; y < dh; y++) {
+		let total = 0;
+		for (const [, w] of rows[y]) total += w;
+		for (let x = 0; x < dw; x++) {
+			for (let c = 0; c < 3; c++) {
+				let sum = 0;
+				for (const [yy, w] of rows[y]) sum += wide[(yy * dw + x) * 3 + c] * w;
+				avg[(y * dw + x) * 3 + c] = sum / total;
+			}
+		}
+	}
+	const at = (x: number, y: number, c: number): number =>
+		avg[(Math.max(0, Math.min(dh - 1, y)) * dw + Math.max(0, Math.min(dw - 1, x))) * 3 + c];
+	const out = new Int32Array(dw * dh * 3);
+	for (let y = 0; y < dh; y++) {
+		for (let x = 0; x < dw; x++) {
+			for (let c = 0; c < 3; c++) {
+				const v = at(x, y, c);
+				const sum = at(x - 1, y, c) + at(x + 1, y, c) + at(x, y - 1, c) + at(x, y + 1, c);
+				out[(y * dw + x) * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + (4 * v - sum) / 8)));
+			}
+		}
+	}
+	return out;
+}
+
+/**
  * HALFTONE stretch, with the same argument conventions as
  * {@link stretchGdi}. Reproduces Windows' halftone engine on 32bpp output
  * (`emfrec-halftone-*` fixtures):
@@ -512,10 +563,11 @@ function halftoneKeepLast(px: Int32Array, w: number, h: number, rows: boolean): 
  *   source is first smoothed where it has exact two-by-two checkers
  *   ({@link halftoneDespeckle}) and then replicated, each destination pixel
  *   taking the source pixel under its centre ({@link halftoneNearest}).
- * - Reducing both axes, each destination pixel is the area average of its
- *   footprint in 16.16 fixed point ({@link halftoneAxis}), rounded half
- *   up, and the reduced image is then sharpened ({@link halftoneSharpen}),
- *   which is what turns `#F0D010` next to a darker stripe into `#F7DD03`.
+ * - Reducing both axes follows {@link halftoneReduceBoth}: the rows are
+ *   reduced with the 13-bit-share weights and rounded half up, the columns
+ *   are reduced from those unrounded, and the sharpening
+ *   ({@link halftoneSharpen}'s kernel, on the unrounded image) turns `#F0D010`
+ *   next to a darker stripe into `#F7DD03`.
  * - Mixed-axis stretching with an enlarged axis and an axis reduced by at least 2x
  *   reduces first, then sharpens each axis separately (the reduced axis first),
  *   clamping/truncating after each pass. Only then does it enlarge: an exact
@@ -610,11 +662,21 @@ export function stretchHalftone(
 	// otherwise Windows dithers the finished output.
 	const reducedEven = W < SW ? SW % 2 === 0 && H % SH === 0 : SH % 2 === 0 && W % SW === 0;
 	const ditherAtSource = dithered && ((W >= SW && H >= SH) || (nativeMixed && reducedEven));
+	// Enlarging rows while reducing columns, Windows sharpens the last row against a
+	// further row that is the last source row replicated and dithered like any other
+	// (pattern row SH), not against the last row itself.
+	const extendRow = ditherAtSource && nativeMixed && W < SW && H > SH && !flipY;
+	if (extendRow) {
+		const bigger = new Int32Array((SH + 1) * SW * 3);
+		bigger.set(rect);
+		bigger.copyWithin(SH * SW * 3, (SH - 1) * SW * 3, SH * SW * 3);
+		rect = bigger;
+	}
 	if (ditherAtSource) {
 		// A vertically mirrored blit runs the pattern down the destination rows,
 		// shifted by the extra rows the stretch adds (H - SH), so a source row j
 		// sits at pattern row H - 1 - j.
-		ditherPixels(rect, SW, SH, dither!, false, false, undefined,
+		ditherPixels(rect, SW, extendRow ? SH + 1 : SH, dither!, false, false, undefined,
 			flipY ? Int32Array.from({ length: SH }, (_, j) => H - 1 - j) : undefined);
 	}
 	if (adjust && !adjustAfterSampling && (!dithered || ditherAtSource)) {
@@ -654,7 +716,10 @@ export function stretchHalftone(
 	let out: Int32Array | Float64Array = nativeMixed
 		? new Float64Array(sampleW * sampleH * 3)
 		: new Int32Array(W * H * 3);
-	for (let y = 0; y < sampleH; y++) {
+	if (reducing) {
+		out = halftoneReduceBoth(rect, SW, SH, W, H, flipX, flipY);
+	}
+	for (let y = 0; !reducing && y < sampleH; y++) {
 		const ys = rows[y];
 		for (let x = 0; x < sampleW; x++) {
 			const xs = cols[x];
@@ -680,16 +745,42 @@ export function stretchHalftone(
 			out[o + 2] = round(b);
 		}
 	}
-	if (reducing) {
-		halftoneSharpen(out as Int32Array, W, H);
-	}
 	if (nativeMixed) {
 		const reduceHorizontal = W < SW;
+		// The extension row reduced like the others (see `extendRow`); sharpened along x below.
+		let extension: Float64Array | Int32Array | undefined;
+		if (extendRow) {
+			const reduced = new Float64Array(sampleW * 3);
+			for (let x = 0; x < sampleW; x++) {
+				let total = 0;
+				const sums = [0, 0, 0];
+				for (const [xx, wx] of cols[x]) {
+					total += wx;
+					for (let c = 0; c < 3; c++) sums[c] += rect[(SH * SW + xx) * 3 + c] * wx;
+				}
+				for (let c = 0; c < 3; c++) reduced[x * 3 + c] = sums[c] / total;
+			}
+			extension = reduced;
+		}
 		for (const horizontal of [reduceHorizontal, !reduceHorizontal]) {
 			const source = out;
 			out = new Int32Array(source.length);
+			const ext = extension;
 			const at = (x: number, y: number, c: number) =>
-				source[(Math.max(0, Math.min(sampleH - 1, y)) * sampleW + Math.max(0, Math.min(sampleW - 1, x))) * 3 + c];
+				y >= sampleH && ext
+					? ext[Math.max(0, Math.min(sampleW - 1, x)) * 3 + c]
+					: source[(Math.max(0, Math.min(sampleH - 1, y)) * sampleW + Math.max(0, Math.min(sampleW - 1, x))) * 3 + c];
+			if (horizontal && ext) {
+				const next = new Int32Array(sampleW * 3);
+				for (let x = 0; x < sampleW; x++) {
+					for (let c = 0; c < 3; c++) {
+						const v = ext[x * 3 + c];
+						const sum = at(x - 1, sampleH, c) + at(x + 1, sampleH, c);
+						next[x * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + (2 * v - sum) / 4)));
+					}
+				}
+				extension = next;
+			}
 			for (let y = 0; y < sampleH; y++) {
 				for (let x = 0; x < sampleW; x++) {
 					for (let c = 0; c < 3; c++) {

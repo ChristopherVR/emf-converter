@@ -177,6 +177,29 @@ describe('colorAdjustmentMapper', () => {
 		expect(Math.abs(tinted[0] - 162)).toBeLessThanOrEqual(1);
 		expect(Math.abs(tinted[1] - 224)).toBeLessThanOrEqual(1);
 		expect(tinted[2]).toBe(0);
+		// Native: tint 100 turns pure blue into (0, 82, 111). The turned u' goes
+		// negative here and is floored at 0 (the affine remap alone gives 0, 106, 128).
+		const blue = channels(adjust({ redGreenTint: 100 }, 0x0000ff));
+		expect(blue[0]).toBe(0);
+		expect(Math.abs(blue[1] - 82)).toBeLessThanOrEqual(1);
+		expect(Math.abs(blue[2] - 111)).toBeLessThanOrEqual(1);
+	});
+
+	it('feeds the unclamped illuminant output into the chroma stage', () => {
+		// Native illuminant A (index 1) with tint 40, palette colours: the illuminant
+		// cube is clamped, so chroma applied to the cube value would be far off.
+		const cases: Array<[number, number]> = [
+			[0xa55229, 0xde5084],
+			[0x29ce63, 0x00c54a],
+			[0xe6e652, 0xffdcbc],
+		];
+		for (const [input, expected] of cases) {
+			const got = channels(adjust({ illuminant: 1, redGreenTint: 40 }, input));
+			const want = channels(expected);
+			for (let c = 0; c < 3; c++) {
+				expect(Math.abs(got[c] - want[c])).toBeLessThanOrEqual(1);
+			}
+		}
 	});
 
 	it('reads palette levels unrounded and rounds the chroma result before the curves', () => {
