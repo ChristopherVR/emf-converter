@@ -278,7 +278,8 @@ function parseRegionNode(
  *
  * Binary layout (MS-EMFPLUS 2.2.1.8):
  * - Uint32: Version (0xDBC01002)
- * - Uint32: RegionNodeCount
+ * - Uint32: RegionNodeCount (the number of CHILD nodes: 0 for a region of
+ *   a single leaf, such as the infinite region GDI+ writes to reset a clip)
  * - Region node tree (recursive)
  */
 function parseEmfPlusRegionObject(
@@ -293,7 +294,7 @@ function parseEmfPlusRegionObject(
 	const _version = view.getUint32(off, true);
 	const regionNodeCount = view.getUint32(off + 4, true);
 
-	if (regionNodeCount === 0 || regionNodeCount > 100000) {
+	if (regionNodeCount > 100000) {
 		emfWarn(`parseEmfPlusRegionObject: invalid node count ${regionNodeCount}`);
 		return null;
 	}

@@ -260,3 +260,45 @@ describe('window/viewport extents and the map mode', () => {
 		expect(measure(img, isRed).area).toBeGreaterThan(0.95);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// EMF+ clip replacement
+// ---------------------------------------------------------------------------
+
+describe('EMF+ SetClipRegion', () => {
+	/** EmfPlusSetClipRect with CombineMode `mode`. */
+	const setClipRect = (x: number, y: number, w: number, h: number, mode = 0) => {
+		const d = new Uint8Array(16);
+		const v = new DataView(d.buffer);
+		[x, y, w, h].forEach((n, i) => v.setFloat32(i * 4, n, true));
+		return plusComment(0x4032, (mode & 0xf) << 8, d);
+	};
+	/** EmfPlusObject: a region of one rectangle node, stored in slot `id`. */
+	const rectRegion = (id: number, x: number, y: number, w: number, h: number) => {
+		const d = new Uint8Array(28);
+		const v = new DataView(d.buffer);
+		v.setUint32(0, 0xdbc01002, true);
+		v.setUint32(8, 0x10000000, true);
+		[x, y, w, h].forEach((n, i) => v.setFloat32(12 + i * 4, n, true));
+		return plusComment(0x4008, id | (4 << 8), d);
+	};
+	const setClipRegion = (id: number, mode = 0) => plusComment(0x4034, (id & 0xff) | ((mode & 0xf) << 8));
+
+	it('replaces a clip set earlier (CombineMode Replace)', () => {
+		const img = render(
+			buildEmf(
+				[0, 0, 299, 199],
+				[
+					plusHeader(false),
+					setClipRect(0, 0, 75, 200),
+					rectRegion(3, 0, 0, 300, 200),
+					setClipRegion(3),
+					plusFillRect(0xffff0000, 0, 0, 300, 200),
+					plusComment(0x4002, 0),
+				],
+			),
+		);
+		expect(measure(img, isRed, 0, 75).area).toBeGreaterThan(0.95);
+		expect(measure(img, isRed, 75).area).toBeGreaterThan(0.95);
+	});
+});

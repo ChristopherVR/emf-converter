@@ -704,14 +704,33 @@ describe('emf-plus-object-parser', () => {
 			expect(rCtx.objectTable.has(0)).toBeFalsy();
 		});
 
-		it('returns null for region with zero node count', () => {
+		it('returns null for a region without node data', () => {
 			const rCtx = makeRCtx();
 			const d = 0;
 			rCtx.view.setUint32(d, 0xdbc01002, true);
-			rCtx.view.setUint32(d + 4, 0, true); // 0 nodes, invalid
+			rCtx.view.setUint32(d + 4, 0, true);
 
 			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_REGION, 0), d, 8);
 			expect(rCtx.objectTable.has(0)).toBeFalsy();
+		});
+
+		it('parses a single-leaf region (RegionNodeCount counts child nodes, so 0)', () => {
+			const rCtx = makeRCtx();
+			const d = 0;
+			rCtx.view.setUint32(d, 0xdbc01002, true);
+			rCtx.view.setUint32(d + 4, 0, true);
+			rCtx.view.setUint32(d + 8, 0x10000000, true); // rect leaf
+			[0, 0, 300, 200].forEach((n, i) => rCtx.view.setFloat32(d + 12 + i * 4, n, true));
+			rCtx.view.setUint32(d + 28, 0xdbc01002, true);
+			rCtx.view.setUint32(d + 32, 0, true);
+			rCtx.view.setUint32(d + 36, 0x10000003, true); // infinite leaf
+
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_REGION, 0), d, 28);
+			handleEmfPlusObjectRecord(rCtx, makeFlags(EMFPLUS_OBJECTTYPE_REGION, 1), d + 28, 12);
+			const rect = rCtx.objectTable.get(0);
+			const infinite = rCtx.objectTable.get(1);
+			expect(rect?.kind === 'plus-region' && rect.nodes[0]).toMatchObject({ type: 'rect', width: 300, height: 200 });
+			expect(infinite?.kind === 'plus-region' && infinite.nodes[0]).toMatchObject({ type: 'infinite' });
 		});
 	});
 
