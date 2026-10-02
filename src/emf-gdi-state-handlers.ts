@@ -67,6 +67,15 @@ export function handleEmfGdiStateRecord(
 			}
 			rCtx.clipStack ??= [];
 			rCtx.clipStack.push({ region: rCtx.clipRegion ?? null });
+			rCtx.mappingStack ??= [];
+			rCtx.mappingStack.push({
+				mapMode: rCtx.mapMode,
+				windowOrg: { ...rCtx.windowOrg },
+				windowExt: { ...rCtx.windowExt },
+				viewportOrg: { ...rCtx.viewportOrg },
+				viewportExt: { ...rCtx.viewportExt },
+				useMappingMode: rCtx.useMappingMode,
+			});
 			rCtx.stateStack.push(cloneState(state));
 			ctx.save();
 			if (rCtx.clipRegion) {
@@ -76,10 +85,6 @@ export function handleEmfGdiStateRecord(
 		}
 		case EMR_RESTOREDC: {
 			if (recSize >= 12) {
-				while (rCtx.clipSaveDepth > 0) {
-					ctx.restore();
-					rCtx.clipSaveDepth--;
-				}
 				// Positive values address a 1-based save level; negative values are
 				// relative to the current level (-1 = most recent SaveDC). Convert to
 				// the 1-based level so `restored` pops the addressed snapshot itself.
@@ -87,15 +92,28 @@ export function handleEmfGdiStateRecord(
 				if (rel < 0) {
 					rel = rCtx.stateStack.length + rel + 1;
 				}
-				while (rCtx.stateStack.length > rel && rCtx.stateStack.length > 0) {
+				// Invalid levels fail without modifying any saved state or clip.
+				if (rel < 1 || rel > rCtx.stateStack.length) {
+					return true;
+				}
+				while (rCtx.clipSaveDepth > 0) {
+					ctx.restore();
+					rCtx.clipSaveDepth--;
+				}
+				while (rCtx.stateStack.length > rel) {
 					rCtx.stateStack.pop();
 					rCtx.clipStack?.pop();
+					rCtx.mappingStack?.pop();
 					ctx.restore();
 				}
 				const restored = rCtx.stateStack.pop();
 				if (restored) {
 					const clipSnapshot = rCtx.clipStack?.pop();
+					const mappingSnapshot = rCtx.mappingStack?.pop();
 					Object.assign(state, restored);
+					if (mappingSnapshot) {
+						Object.assign(rCtx, mappingSnapshot);
+					}
 					ctx.restore();
 					// Restore the clip that was active when the DC was saved.
 					rCtx.clipRegion = clipSnapshot?.region ?? null;

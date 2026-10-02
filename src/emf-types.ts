@@ -1197,6 +1197,16 @@ export interface EmfPlusReplayCtx {
 // EMF GDI replay context (shared state passed to handler functions)
 // ---------------------------------------------------------------------------
 
+/** The page-to-device attributes saved by SaveDC alongside drawing state. */
+export interface GdiMappingState {
+	mapMode?: number;
+	windowOrg: { x: number; y: number };
+	windowExt: { cx: number; cy: number };
+	viewportOrg: { x: number; y: number };
+	viewportExt: { cx: number; cy: number };
+	useMappingMode: boolean;
+}
+
 /**
  * Context object threaded through every EMF GDI record handler.
  *
@@ -1235,8 +1245,12 @@ export interface EmfGdiReplayCtx {
 	viewportOrg: { x: number; y: number };
 	/** Viewport extent (device size). */
 	viewportExt: { cx: number; cy: number };
+	/** GDI mapping mode; an absent value has the DC default, MM_TEXT (1). */
+	mapMode?: number;
 	/** When true, use window/viewport mapping instead of simple bounds-based scaling. */
 	useMappingMode: boolean;
+	/** Saved page-to-device attributes, parallel to stateStack. */
+	mappingStack?: GdiMappingState[];
 	/**
 	 * When true, the window/viewport mapping yields device units (as in an
 	 * EMF), which are then placed on the canvas by the same bounds mapping

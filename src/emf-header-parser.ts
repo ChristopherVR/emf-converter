@@ -38,7 +38,7 @@ export function parseEmfHeader(
 	const frameH = frameBottom - frameTop;
 
 	emfLog(
-		`parseEmfHeader: bounds=(${boundsLeft},${boundsTop})→(${boundsRight},${boundsBottom}) [${boundsRight - boundsLeft}×${boundsBottom - boundsTop}]`,
+		`parseEmfHeader: bounds=(${boundsLeft},${boundsTop})→(${boundsRight},${boundsBottom}) [${boundsRight - boundsLeft + 1}×${boundsBottom - boundsTop + 1}]`,
 	);
 	emfLog(
 		`parseEmfHeader: frame=(${frameLeft},${frameTop})→(${frameRight},${frameBottom}) [${frameW}×${frameH}]`,
@@ -61,11 +61,13 @@ export function getRenderableEmfBounds(header: {
 	frameW: number;
 	frameH: number;
 }): EmfBounds | null {
-	const boundsW = header.bounds.right - header.bounds.left;
-	const boundsH = header.bounds.bottom - header.bounds.top;
+	// MS-EMF Header.Bounds is inclusive-inclusive; replay/surface extents are exclusive.
+	// https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-emf/e4a35c41-e8e3-43f9-bc07-a18e99bb866d
+	const boundsW = header.bounds.right - header.bounds.left + 1;
+	const boundsH = header.bounds.bottom - header.bounds.top + 1;
 	if (boundsW > 0 && boundsH > 0) {
 		emfLog(`getRenderableEmfBounds: using bounds ${boundsW}×${boundsH}`);
-		return header.bounds;
+		return { ...header.bounds, right: header.bounds.right + 1, bottom: header.bounds.bottom + 1 };
 	}
 
 	if (header.frameW > 0 && header.frameH > 0) {

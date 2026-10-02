@@ -135,9 +135,10 @@ export function replayEmfRecords(
 		// canvas like every other device coordinate (bounds' top-left to the
 		// canvas origin, scaled by sx/sy); see `deviceToCanvas`.
 		windowOrg: { x: 0, y: 0 },
-		windowExt: { cx: logicalW, cy: logicalH },
+		windowExt: { cx: 1, cy: 1 },
 		viewportOrg: { x: 0, y: 0 },
-		viewportExt: { cx: logicalW, cy: logicalH },
+		viewportExt: { cx: 1, cy: 1 },
+		mapMode: 1, // MM_TEXT: the default DC uses one-to-one page/device units.
 		useMappingMode: false,
 		deviceToCanvas: true,
 		clipSaveDepth: 0,

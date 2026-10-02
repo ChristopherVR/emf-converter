@@ -7,6 +7,7 @@ import {
 	gmh,
 	activateGdiMappingMode,
 	gmapPoint,
+	gdiDeviceMatrix,
 	gdiEllipseParams,
 	hasWorldRotation,
 } from './emf-gdi-coord';
@@ -191,6 +192,33 @@ describe('emf-gdi-coord', () => {
 			expect(gmy(r, 77)).toBe(77);
 			expect(gmw(r, 10)).toBe(10);
 			expect(gmh(r, 20)).toBe(20);
+		});
+	});
+
+	describe('EMF reference-device to output-canvas composition', () => {
+		it('composes every affine component after page mapping and bounds normalization', () => {
+			const r = makeCtx({
+				useMappingMode: true, deviceToCanvas: true,
+				bounds: { left: 20, top: 30, right: 120, bottom: 130 }, sx: 2, sy: 3,
+				windowOrg: { x: 5, y: 6 }, windowExt: { cx: 10, cy: 20 },
+				viewportOrg: { x: 40, y: 50 }, viewportExt: { cx: 100, cy: 60 },
+			});
+			r.state.worldTransform = [2, 1, -0.5, 3, 7, 11];
+			expect(gdiDeviceMatrix(r)).toEqual([40, 9, -10, 27, 80, 105]);
+			expect(gmapPoint(r, 30, 40)).toEqual({ x: 880, y: 1455 });
+			expect(gmx(r, 30)).toBe(1280);
+			expect(gmy(r, 40)).toBe(1185);
+			expect(gmw(r, 40)).toBe(1600);
+			expect(gmh(r, 20)).toBe(540);
+		});
+		it('does not normalize WMF canvas-space viewport coordinates a second time', () => {
+			const r = makeCtx({
+				useMappingMode: true,
+				bounds: { left: 20, top: 30, right: 120, bottom: 130 }, sx: 2, sy: 3,
+				windowExt: { cx: 1, cy: 1 }, viewportExt: { cx: 2, cy: 3 },
+			});
+			expect(gdiDeviceMatrix(r)).toEqual([2, 0, 0, 3, 0, 0]);
+			expect(gmapPoint(r, 10, 20)).toEqual({ x: 20, y: 60 });
 		});
 	});
 

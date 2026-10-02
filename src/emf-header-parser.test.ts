@@ -143,24 +143,24 @@ describe('emf-header-parser', () => {
 	// getRenderableEmfBounds
 	// -----------------------------------------------------------------------
 	describe('getRenderableEmfBounds()', () => {
-		it('returns bounds directly when they have positive dimensions', () => {
+		it('normalizes inclusive bounds to exclusive rendering extents', () => {
 			const header = {
 				bounds: { left: 0, top: 0, right: 800, bottom: 600 },
 				frameW: 21000,
 				frameH: 15000,
 			};
 			const result = getRenderableEmfBounds(header);
-			expect(result).toStrictEqual({ left: 0, top: 0, right: 800, bottom: 600 });
+			expect(result).toStrictEqual({ left: 0, top: 0, right: 801, bottom: 601 });
 		});
 
-		it('falls back to frame when bounds width is zero', () => {
+		it('keeps a one-pixel inclusive rectangle rather than falling back to frame', () => {
 			const header = {
 				bounds: { left: 0, top: 0, right: 0, bottom: 0 },
 				frameW: 500,
 				frameH: 400,
 			};
 			const result = getRenderableEmfBounds(header);
-			expect(result).toStrictEqual({ left: 0, top: 0, right: 500, bottom: 400 });
+			expect(result).toStrictEqual({ left: 0, top: 0, right: 1, bottom: 1 });
 		});
 
 		it('falls back to frame when bounds dimensions are negative', () => {
@@ -175,9 +175,9 @@ describe('emf-header-parser', () => {
 			expect(result!.bottom).toBe(200);
 		});
 
-		it('returns null when both bounds and frame are zero', () => {
+		it('returns null when inclusive bounds are empty and frame is zero', () => {
 			const header = {
-				bounds: { left: 0, top: 0, right: 0, bottom: 0 },
+				bounds: { left: 0, top: 0, right: -1, bottom: -1 },
 				frameW: 0,
 				frameH: 0,
 			};
@@ -186,13 +186,31 @@ describe('emf-header-parser', () => {
 
 		it('returns null when frame dimensions are negative', () => {
 			const header = {
-				bounds: { left: 0, top: 0, right: 0, bottom: 0 },
+				bounds: { left: 0, top: 0, right: -1, bottom: -1 },
 				frameW: -100,
 				frameH: -200,
 			};
 			expect(getRenderableEmfBounds(header)).toBeNull();
 		});
 
+		it('does not mutate raw header coordinates, including negative one-pixel origins', () => {
+			const bounds = Object.freeze({ left: -5, top: -7, right: -5, bottom: -7 });
+			const header = Object.freeze({ bounds, frameW: 0, frameH: 0 });
+			expect(getRenderableEmfBounds(header)).toEqual({ left: -5, top: -7, right: -4, bottom: -6 });
+			expect(header.bounds).toBe(bounds);
+		});
+		it.each([
+			[82, 49, 83, 50],
+			[64, 37, 65, 38],
+		])('matches inclusive corpus dimensions (%i,%i)', (right, bottom, width, height) => {
+			const result = getRenderableEmfBounds({
+				bounds: { left: 0, top: 0, right, bottom },
+				frameW: 0,
+				frameH: 0,
+			})!;
+			expect(result.right - result.left).toBe(width);
+			expect(result.bottom - result.top).toBe(height);
+		});
 		it('preserves non-zero bounds origin', () => {
 			const header = {
 				bounds: { left: 50, top: 100, right: 850, bottom: 700 },
@@ -200,7 +218,7 @@ describe('emf-header-parser', () => {
 				frameH: 15000,
 			};
 			const result = getRenderableEmfBounds(header);
-			expect(result).toStrictEqual({ left: 50, top: 100, right: 850, bottom: 700 });
+			expect(result).toStrictEqual({ left: 50, top: 100, right: 851, bottom: 701 });
 		});
 	});
 

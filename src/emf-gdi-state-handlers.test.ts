@@ -248,6 +248,7 @@ describe('emf-gdi-state-handlers', () => {
 		describe('delegation', () => {
 			it('delegates EMR_SETWINDOWEXTEX (9) to transform handler', () => {
 				const rCtx = makeRCtx();
+				rCtx.mapMode = 8;
 				const dataOff = 8;
 				rCtx.view.setInt32(dataOff, 2000, true);
 				rCtx.view.setInt32(dataOff + 4, 1500, true);

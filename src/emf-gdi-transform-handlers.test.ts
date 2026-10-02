@@ -50,6 +50,7 @@ function makeRCtx(bufSize = 256): EmfGdiReplayCtx {
 		viewportOrg: { x: 0, y: 0 },
 		viewportExt: { cx: 1000, cy: 1000 },
 		useMappingMode: false,
+		mapMode: 8, // Extent tests explicitly use MM_ANISOTROPIC.
 		clipSaveDepth: 0,
 		bounds: { left: 0, top: 0, right: 1000, bottom: 1000 },
 		canvasW: 500,
@@ -97,6 +98,27 @@ describe('emf-gdi-transform-handlers', () => {
 			});
 		});
 
+		it.each([undefined, 1, 2, 3, 4, 5, 6])('ignores extent setters in fixed/default mode %s', (mode) => {
+			const rCtx = makeRCtx();
+			rCtx.mapMode = mode;
+			rCtx.view.setInt32(8, 2, true);
+			rCtx.view.setInt32(12, 3, true);
+			for (const type of [EMR_SETWINDOWEXTEX, EMR_SETVIEWPORTEXTEX]) {
+				handleEmfTransformRecord(rCtx, type, 8, 16);
+			}
+			expect(rCtx.windowExt).toEqual({ cx: 1000, cy: 1000 });
+			expect(rCtx.viewportExt).toEqual({ cx: 1000, cy: 1000 });
+			expect(rCtx.useMappingMode).toBe(false);
+		});
+		it.each([EMR_SETWINDOWEXTEX, EMR_SETVIEWPORTEXTEX])('ignores zero extents atomically (%s)', (type) => {
+			const rCtx = makeRCtx();
+			rCtx.view.setInt32(8, 2, true);
+			rCtx.view.setInt32(12, 0, true);
+			handleEmfTransformRecord(rCtx, type, 8, 16);
+			expect(rCtx.windowExt).toEqual({ cx: 1000, cy: 1000 });
+			expect(rCtx.viewportExt).toEqual({ cx: 1000, cy: 1000 });
+		});
+
 		// -- EMR_SETWINDOWORGEX --
 		describe('eMR_SETWINDOWORGEX', () => {
 			it('sets windowOrg', () => {
@@ -141,7 +163,7 @@ describe('emf-gdi-transform-handlers', () => {
 			it('returns true for map mode record', () => {
 				const rCtx = makeRCtx();
 				const d = 8;
-				rCtx.view.setUint32(d, 8, true); // MM_ISOTROPIC
+				rCtx.view.setUint32(d, 8, true); // MM_ANISOTROPIC
 				expect(handleEmfTransformRecord(rCtx, EMR_SETMAPMODE, d, 12)).toBeTruthy();
 			});
 

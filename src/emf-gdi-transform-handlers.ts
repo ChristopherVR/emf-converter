@@ -20,6 +20,11 @@ import type { EmfGdiReplayCtx, TransformMatrix } from './emf-types';
 // Coordinate-system helpers
 // ---------------------------------------------------------------------------
 
+/** Extent setters are ignored by MM_TEXT and all fixed-unit modes. */
+function extentsSettable(rCtx: EmfGdiReplayCtx): boolean {
+	return rCtx.mapMode === 7 || rCtx.mapMode === 8;
+}
+
 function handleCoordinateRecord(
 	rCtx: EmfGdiReplayCtx,
 	recType: number,
@@ -30,10 +35,13 @@ function handleCoordinateRecord(
 
 	switch (recType) {
 		case EMR_SETWINDOWEXTEX: {
-			if (recSize >= 16) {
-				rCtx.windowExt.cx = view.getInt32(dataOff, true);
-				rCtx.windowExt.cy = view.getInt32(dataOff + 4, true);
-				activateGdiMappingMode(rCtx);
+			if (recSize >= 16 && extentsSettable(rCtx)) {
+				const cx = view.getInt32(dataOff, true);
+				const cy = view.getInt32(dataOff + 4, true);
+				if (cx !== 0 && cy !== 0) {
+					rCtx.windowExt = { cx, cy };
+					activateGdiMappingMode(rCtx);
+				}
 			}
 			return true;
 		}
@@ -46,10 +54,13 @@ function handleCoordinateRecord(
 			return true;
 		}
 		case EMR_SETVIEWPORTEXTEX: {
-			if (recSize >= 16) {
-				rCtx.viewportExt.cx = view.getInt32(dataOff, true);
-				rCtx.viewportExt.cy = view.getInt32(dataOff + 4, true);
-				activateGdiMappingMode(rCtx);
+			if (recSize >= 16 && extentsSettable(rCtx)) {
+				const cx = view.getInt32(dataOff, true);
+				const cy = view.getInt32(dataOff + 4, true);
+				if (cx !== 0 && cy !== 0) {
+					rCtx.viewportExt = { cx, cy };
+					activateGdiMappingMode(rCtx);
+				}
 			}
 			return true;
 		}
@@ -64,14 +75,23 @@ function handleCoordinateRecord(
 		case EMR_SETMAPMODE: {
 			if (recSize >= 12) {
 				const mode = view.getUint32(dataOff, true);
-				if (mode === 8 || mode === 7) {
-					activateGdiMappingMode(rCtx);
+				if (mode >= 1 && mode <= 8) {
+					rCtx.mapMode = mode;
+					if (mode === 1) {
+						// SetMapMode(MM_TEXT) resets the scaling, but retains origins
+						// and the independent world transform.
+						rCtx.windowExt = { cx: 1, cy: 1 };
+						rCtx.viewportExt = { cx: 1, cy: 1 };
+					}
+					if (mode === 1 || mode === 8 || mode === 7) {
+						activateGdiMappingMode(rCtx);
+					}
 				}
 			}
 			return true;
 		}
 		case EMR_SCALEVIEWPORTEXTEX: {
-			if (recSize >= 24) {
+			if (recSize >= 24 && extentsSettable(rCtx)) {
 				const xNum = view.getInt32(dataOff, true);
 				const xDenom = view.getInt32(dataOff + 4, true);
 				const yNum = view.getInt32(dataOff + 8, true);
@@ -87,7 +107,7 @@ function handleCoordinateRecord(
 			return true;
 		}
 		case EMR_SCALEWINDOWEXTEX: {
-			if (recSize >= 24) {
+			if (recSize >= 24 && extentsSettable(rCtx)) {
 				const xNum = view.getInt32(dataOff, true);
 				const xDenom = view.getInt32(dataOff + 4, true);
 				const yNum = view.getInt32(dataOff + 8, true);

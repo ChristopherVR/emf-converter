@@ -268,6 +268,20 @@ function framedBox(rCtx: EmfGdiReplayCtx, box: FixBox): FixBox {
 	return inset ? insetFixBox(box, inset) : box;
 }
 
+/**
+ * Whether two nonzero integer radial vectors describe the same ellipse point.
+ * Work in doubled logical coordinates so an odd-sized box keeps its exact
+ * half-integer centre. The cross product can exceed Number's integer range
+ * for valid LONG coordinates; BigInt avoids mistaking nearby rays for one.
+ */
+function sameEllipseRay(l: number, t: number, r: number, b: number, sx: number, sy: number, ex: number, ey: number): boolean {
+	const ax = BigInt(2 * sx - l - r);
+	const ay = BigInt(2 * sy - t - b);
+	const bx = BigInt(2 * ex - l - r);
+	const by = BigInt(2 * ey - t - b);
+	return ax * by === ay * bx && ax * bx + ay * by > 0n;
+}
+
 // ---------------------------------------------------------------------------
 // Individual shape handlers
 // ---------------------------------------------------------------------------
@@ -716,7 +730,17 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 		// LOCAL angle parameter along the (pre-rotation) ellipse; unaffected by
 		// the device mapping, rotated or not (see gdiEllipseParams's doc comment).
 		const startAngle = Math.atan2((startY - cyA) / (ry || 1), (startX - cxA) / (rx || 1));
-		const endAngle = Math.atan2((endY - cyA) / (ry || 1), (endX - cxA) / (rx || 1));
+		const clockwise = state.arcDirection === 2;
+		// Arc, ArcTo and Chord explicitly draw a complete ellipse when the
+		// effective endpoints coincide. Canvas treats equal angles as empty.
+		// Pie's same-ray case remains unchanged pending a native reference.
+		// https://learn.microsoft.com/windows/win32/api/wingdi/nf-wingdi-arc
+		// https://learn.microsoft.com/windows/win32/api/wingdi/nf-wingdi-arcto
+		// https://learn.microsoft.com/windows/win32/api/wingdi/nf-wingdi-chord
+		const fullEllipse = recType !== EMR_PIE && rx > 0 && ry > 0 && sameEllipseRay(l, t, r, b, startX, startY, endX, endY);
+		const endAngle = fullEllipse
+			? startAngle + (clockwise ? 2 : -2) * Math.PI
+			: Math.atan2((endY - cyA) / (ry || 1), (endX - cxA) / (rx || 1));
 		const rotated = hasWorldRotation(rCtx);
 		const unframed = fixBox(rCtx, l, t, r, b);
 		const inset = insideFrameInset(rCtx, unframed);
@@ -736,15 +760,21 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 		const needsFill = recType === EMR_PIE || recType === EMR_CHORD;
 		// AD_COUNTERCLOCKWISE (GDI's default) runs counter-clockwise on screen,
 		// i.e. towards decreasing Canvas angles (y grows downwards).
-		const clockwise = state.arcDirection === 2;
 		const startPoint = rotated
 			? gmapPoint(rCtx, cxA + rx * Math.cos(startAngle), cyA + ry * Math.sin(startAngle))
 			: { x: params.cx + params.rx * Math.cos(startAngle), y: params.cy + params.ry * Math.sin(startAngle) };
 		const build = (c: CanvasContext) => {
 			if (recType === EMR_PIE) {
 				c.moveTo(params.cx, params.cy);
+			} else if (!isArcTo && inPath) {
+				// Arc and Chord start a separate figure, unlike ArcTo.
+				c.moveTo(startPoint.x, startPoint.y);
 			}
 			if (isArcTo) {
+				if (!inPath) {
+					const from = currentFix(rCtx);
+					c.moveTo(from[0] / 16, from[1] / 16);
+				}
 				c.lineTo(startPoint.x, startPoint.y);
 			}
 			c.ellipse(params.cx, params.cy, params.rx, params.ry, params.rotation, startAngle, endAngle, !clockwise);
@@ -766,7 +796,9 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 		const rasterArgs = (immediate = false) => ({
 			box: inset ? framed : immediate && needsFill ? curvedFixBox(rCtx, l, t, r, b) : unframed,
 			s: radialOnBox(fixPoint(rCtx, startX, startY)),
-			e: radialOnBox(fixPoint(rCtx, endX, endY)),
+			// Device FIX rounding can separate distinct radial points on the
+			// same logical ray. Preserve their proven endpoint identity.
+			e: fullEllipse ? radialOnBox(fixPoint(rCtx, startX, startY)) : radialOnBox(fixPoint(rCtx, endX, endY)),
 			from: currentFix(rCtx),
 		});
 		if (inPath) {

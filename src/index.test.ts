@@ -422,10 +422,10 @@ describe('emf-header-parser', () => {
 
 			expect(result).not.toBeNull();
 			expect(result!.left).toBe(0);
-			expect(result!.right).toBe(800);
+			expect(result!.right).toBe(801);
 		});
 
-		it('falls back to frame when bounds have zero dimensions', () => {
+		it('keeps valid one-pixel inclusive bounds', () => {
 			const header = {
 				bounds: { left: 0, top: 0, right: 0, bottom: 0 },
 				frameW: 500,
@@ -436,8 +436,8 @@ describe('emf-header-parser', () => {
 			expect(result).not.toBeNull();
 			expect(result!.left).toBe(0);
 			expect(result!.top).toBe(0);
-			expect(result!.right).toBe(500);
-			expect(result!.bottom).toBe(400);
+			expect(result!.right).toBe(1);
+			expect(result!.bottom).toBe(1);
 		});
 
 		it('falls back to frame when bounds are negative', () => {
@@ -455,7 +455,7 @@ describe('emf-header-parser', () => {
 
 		it('returns null when both bounds and frame are invalid', () => {
 			const header = {
-				bounds: { left: 0, top: 0, right: 0, bottom: 0 },
+				bounds: { left: 0, top: 0, right: -1, bottom: -1 },
 				frameW: 0,
 				frameH: 0,
 			};
@@ -464,7 +464,7 @@ describe('emf-header-parser', () => {
 
 		it('returns null when frame dimensions are negative', () => {
 			const header = {
-				bounds: { left: 0, top: 0, right: 0, bottom: 0 },
+				bounds: { left: 0, top: 0, right: -1, bottom: -1 },
 				frameW: -100,
 				frameH: -200,
 			};
