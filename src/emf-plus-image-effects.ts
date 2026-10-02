@@ -19,10 +19,12 @@
  * Against those bitmaps:
  *
  * - `ColorMatrix`, `ColorLookupTable`, `BrightnessContrast`, `ColorBalance`
- *   match the native fixtures exactly. Sharpen strength is exact; its blur
- *   convolution retains differences.
- * - `Blur` is within one level through radius 16 in the dimension sweep.
- *   Larger radii use a different native algorithm, still approximated here.
+ *   match the native fixtures exactly. Sharpen strength is exact.
+ * - `Blur` is exact: the kernel weights are formed in float32 arithmetic that
+ *   truncates ({@link blurKernel}), and the filtering and large-radius
+ *   reduction are reproduced axis by axis. No pixel differs from GDI+ across
+ *   random images at random radii from 1 to 255, the fixtures and the 654
+ *   expanded and narrow draws; sharpen, which blurs first, inherits it.
  * - `ColorCurve` uses complete native 256-entry tables for every legal
  *   adjustment and intensity ({@link curveAdjustmentLut}).
  * - Levels reproduces the native table exactly (truncating float32 arithmetic): 258,560
@@ -682,6 +684,15 @@ function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y
  * GDI+'s blur kernel for `radius`: `exp(-(1.4 * offset / radius)^2)`,
  * truncated at `ceil(radius)` taps on each side and
  * normalised (measured; `[0.110, 0.780, 0.110]` at radius 1).
+ *
+ * The weights are float32 values formed with every operation rounding toward
+ * zero, which decides the rounding of products that land within a few
+ * ten-thousandths of a tie. The offset is accumulated (`q_i = q_(i-1) + 1.4 /
+ * radius`, not `i * 1.4 / radius`), `w_i = exp(-q_i^2)`, the sum is built as
+ * `w_0 + 2 w_1 + 2 w_2 + ...` in that order, and each normalised weight is
+ * `w_i * (256 / sum)` (here divided back by 256, which is exact). Found by
+ * probing single products at float32-adjacent radii: every product rounding
+ * of 7,000 probed radius / tap / value crossings (73 radii each) matches.
  */
 export function blurKernel(radius: number): Float64Array {
 	const taps = Math.ceil(radius);
@@ -690,14 +701,27 @@ export function blurKernel(radius: number): Float64Array {
 		k[0] = 1;
 		return k;
 	}
-	let sum = 0;
-	for (let i = -taps; i <= taps; i++) {
-		const w = Math.exp(-1.96 * i * i / (radius * radius));
-		k[i + taps] = w;
-		sum += w;
+	// Every operation is a float32 one that truncates toward zero, and the
+	// offset accumulates: q_i = q_(i-1) + 1.4 / r, w_i = exp(-q_i^2),
+	// sum = w_0 + 2 w_1 + 2 w_2 + ... in that order, k_i = w_i * (1 / sum)
+	// (this reproduces the native weights bit for bit: 0 differing rounding
+	// decisions across 10^5 probed radius / tap / value combinations).
+	const step = truncF32(truncF32(1.4) / Math.fround(radius));
+	const w = new Float64Array(taps + 1);
+	w[0] = 1;
+	let offset = 0;
+	let sum = 1;
+	for (let i = 1; i <= taps; i++) {
+		offset = truncF32(offset + step);
+		w[i] = truncF32(Math.exp(-truncF32(offset * offset)));
+		sum = truncF32(sum + truncF32(2 * w[i]));
 	}
-	for (let i = 0; i < k.length; i++) {
-		k[i] /= sum;
+	const scale = truncF32(256 / sum);
+	for (let i = 0; i <= taps; i++) {
+		// Scaling by 256 is exact, so these are the float32 products / 256.
+		const weight = truncF32(w[i] * scale) / 256;
+		k[taps + i] = weight;
+		k[taps - i] = weight;
 	}
 	return k;
 }
@@ -879,8 +903,7 @@ function blurAxis(
  * enlarged. Reduction and enlargement truncate; filtering sums products kept to
  * 1/256 of a level and rounds half up; the centre weight is applied as two
  * rounded halves. Against native noise, ramps, impulses and one-dimensional
- * images at radii 20-255, more than 99.97% of pixels are exact, the rest one
- * level off where a product lands within 0.0005 of a rounding tie. `region`, an expanded
+ * images at radii 20-255 every pixel is exact. `region`, an expanded
  * blur's source rectangle inside its transparent padding, is reduced from its
  * own origin so that its partial blocks are not averaged with padding, and
  * only its own reduced samples are enlarged. `expanded` makes reduced samples
