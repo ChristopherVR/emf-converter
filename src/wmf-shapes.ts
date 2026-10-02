@@ -184,23 +184,19 @@ function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox, logica
 		const width = box.x1 - box.x0, height = box.y1 - box.y0;
 		return [Math.floor(Math.min(cw, width + penWidth) * width / (width + penWidth)), Math.floor(Math.min(ch, height + penWidth) * height / (height + penWidth))];
 	}
-	if (!penIsNull(p) && penIsCosmetic(p.rCtx)) {
-		// GDI constructs the corner on the original box, then scales it onto
-		// the box with its right/bottom pixel excluded. Retain fractional FIX
-		// extents until the corner's endpoints are rounded (native GetPath).
-		// The original is the unrounded device size of the logical box (at a
-		// non-integer scale that is not the rounded box plus a pixel).
-		const width = box.x1 - box.x0, height = box.y1 - box.y0;
-		const fullW = Math.abs((logical[2] - logical[0]) * m[0]) * 16 || width + ux;
-		const fullH = Math.abs((logical[3] - logical[1]) * m[3]) * 16 || height + uy;
-		return [Math.min(Math.abs(w * m[0]) * 16, fullW) * width / fullW, Math.min(Math.abs(h * m[3]) * 16, fullH) * height / fullH];
-	}
-	// Wide and null pens retain whole, even device-pixel corner extents
-	// (the wmf-shapes and wmf-shapes-scaled native captures).
-	if (!penIsNull(p) && !penIsCosmetic(p.rCtx)) {
-		return [Math.round(Math.floor(cw / (2 * ux)) * 2 * ux), Math.round(Math.floor(ch / (2 * uy)) * 2 * uy)];
-	}
-	return [Math.round(Math.floor(Math.round(cw / ux) / 2) * 2 * ux), Math.round(Math.floor(Math.round(ch / uy) / 2) * 2 * uy)];
+	// GDI constructs the corner on the original box, then scales it onto the
+	// box with its right/bottom pixel excluded. A cosmetic pen retains
+	// fractional FIX extents until the corner's endpoints are rounded (native
+	// GetPath); wide and null pens truncate them to whole FIX (native
+	// wmf-roundrect-corners sweep: 25 corner sizes under 3, 5 and 7 px pens
+	// and a null pen, at two scales). The original is the unrounded device
+	// size of the logical box (at a non-integer scale that is not the rounded
+	// box plus a pixel).
+	const width = box.x1 - box.x0, height = box.y1 - box.y0;
+	const fullW = Math.abs((logical[2] - logical[0]) * m[0]) * 16 || width + ux;
+	const fullH = Math.abs((logical[3] - logical[1]) * m[3]) * 16 || height + uy;
+	const scaled: [number, number] = [Math.min(Math.abs(w * m[0]) * 16, fullW) * width / fullW, Math.min(Math.abs(h * m[3]) * 16, fullH) * height / fullH];
+	return penIsCosmetic(p.rCtx) && !penIsNull(p) ? scaled : [Math.floor(scaled[0]), Math.floor(scaled[1])];
 }
 
 /**

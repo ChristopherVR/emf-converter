@@ -26,6 +26,8 @@ Additional diagnostic groups:
 - `illuminant-charts`: nine EMF/PNG pairs for 256 grey, primary and mixed colours, with the input colours in `illuminant-chart-colours.json` (packed RGB).
 - `halftone-dither`: 256 grey levels at three destination/brush origins.
 - `wmf-insideframe-curves`: 100 ellipse, RoundRect, chord, pie and arc cases with 0.5–10 px inside-frame pens.
+- `wmf-roundrect-corners`: wide-pen (3, 5 and 7 px) RoundRects with 25 corner sizes at the identity scale and at 0.96 (`wmf-roundrect-corners[-scaled]`).
+- `arc-path-probe`: native `GetPath` of 900 Arc, Chord and Pie calls (`arc-paths.json`: box, radial points and `[x, y, type]` triples in FIX).
 - `image-codecs-extra`: odd-width bilevel TIFF captures with uncompressed, PackBits and CCITT Group 3/4 compression.
 - `illuminant-tables`: large raw native samples, excluded from `all`. `halftone-dither-grey-samples.bin` contains 256 × 64 bytes, indexed by grey level then `(sourceY + 5) % 8`, `(sourceX + 5) % 8`; bytes are the nearest output index on the 32-level channel scale. `illuminant-colour-samples-N.bin` contains 32³ RGB triples, indexed by `(r * 32 + g) * 32 + b`, for inputs `floor(channel * 255 / 31)`, sampled at source cell offset (11,11). These captures are specific to the probe layout: using them as universal conversion tables fails independent chart comparisons.
 
