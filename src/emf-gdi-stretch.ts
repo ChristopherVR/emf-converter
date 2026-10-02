@@ -242,25 +242,44 @@ export function halftoneReduceTaps(srcLen: number, dstLen: number, reverse: bool
 }
 
 /**
- * Smooth part of the enlargement kernel, sampled every 0.05 source pixels
- * from the centre outwards (zero beyond 1 pixel). Measured: fitted jointly to
- * native linear responses for 44 enlargement ratios.
+ * Enlargement kernel, sampled every 1/96 source pixel from the centre out to
+ * one pixel (zero beyond), scaled so the centre is 1000. Left of half a pixel
+ * the table holds the values just inside |u| < 0.5 and the box edge is in
+ * {@link ENLARGE_HALF}; right of it the values from just outside. The
+ * generating formula of the native kernel is not known: these are the values
+ * of the one piecewise-linear curve that, with {@link halftoneEnlargeTaps}'s
+ * integerisation, reproduces the integer weight rows measured from native
+ * captures of about 410 source/destination size pairs (about 98% of the
+ * rows it was solved on; about 95% of the rows of sizes held out of the solve).
+ * Far from the centre (beyond about 0.9 pixels) and for ratios just above a
+ * whole number a few rows are a share or two off.
  */
-const ENLARGE_KERNEL = [
-	0.7598, 0.7276, 0.6829, 0.6528, 0.6106, 0.5745, 0.5362, 0.4955, 0.4570, 0.4121, 0.3762,
-	0.3233, 0.2741, 0.2260, 0.1822, 0.1412, 0.1021, 0.0685, 0.0382, 0.0138, 0,
+const ENLARGE_INNER = [
+	1000.0000, 992.4700, 984.9399, 977.4099, 969.8798, 962.3498, 954.8198, 947.2897, 939.7597, 932.2296, 924.6996, 917.1695,
+	909.6395, 902.1095, 894.5665, 886.8087, 879.0450, 871.2813, 863.4349, 855.5885, 847.7421, 839.8269, 831.9046, 823.9120,
+	815.9193, 807.9266, 799.8470, 791.7283, 783.6096, 775.4490, 767.3204, 758.9233, 750.5263, 742.4271, 734.0547, 725.6823,
+	717.2320, 708.7675, 700.2393, 691.7111, 683.0734, 674.4357, 665.7105, 656.9854, 648.2603, 639.3747, 630.4873, 621.5157,
+	612.5442,
 ];
-/** Height of the unit box (|u| < 0.5) added to {@link ENLARGE_KERNEL}. */
-const ENLARGE_BOX = 0.2429;
-const ENLARGE_STEP = 0.05;
+const ENLARGE_OUTER = [
+	375.1388, 364.2093, 353.2797, 342.4714, 331.7615, 321.1462, 310.6456, 300.2252, 289.9229, 279.7227, 269.6439, 259.6535,
+	249.7825, 240.0362, 230.3856, 220.8799, 211.4594, 202.1844, 192.9996, 183.9679, 175.1064, 166.2864, 157.6436, 149.1447,
+	140.7609, 132.5474, 124.4802, 116.5636, 108.7780, 101.1602, 93.7098, 86.4419, 79.3251, 72.4091, 65.6853, 59.1472,
+	52.8120, 46.6978, 40.8001, 35.1449, 29.7494, 24.6096, 19.7977, 15.2801, 11.1442, 7.3916, 4.1415, 1.4039,
+	0.0000,
+];
+/** Kernel value exactly half a pixel from the centre (the box edge). */
+const ENLARGE_HALF = 500.0106;
+const ENLARGE_KNOTS = 96;
 
 /** Unnormalised enlargement kernel weight at `u` source pixels from the centre. */
 function enlargeKernel(u: number): number {
-	const edge = u / ENLARGE_STEP;
-	const i = Math.floor(edge);
-	const smooth = i >= ENLARGE_KERNEL.length - 1 ? 0
-		: ENLARGE_KERNEL[i] + (ENLARGE_KERNEL[i + 1] - ENLARGE_KERNEL[i]) * (edge - i);
-	return smooth + ENLARGE_BOX * (Math.abs(u - 0.5) < 1e-9 ? 0.5 : u < 0.5 ? 1 : 0);
+	if (u >= 1) return 0;
+	if (Math.abs(u - 0.5) < 1e-9) return ENLARGE_HALF;
+	const table = u < 0.5 ? ENLARGE_INNER : ENLARGE_OUTER;
+	const edge = u * ENLARGE_KNOTS - (u < 0.5 ? 0 : ENLARGE_KNOTS / 2);
+	const i = Math.min(table.length - 2, Math.floor(edge + 1e-9));
+	return table[i] + (table[i + 1] - table[i]) * (edge - i);
 }
 
 /**
@@ -271,16 +290,17 @@ function enlargeKernel(u: number): number {
  * Measured against native impulse and random-data responses, Windows first
  * resamples the samples to destination resolution by the area each
  * destination pixel covers of each source pixel, then smooths that row with a
- * symmetric destination-space FIR. Its taps are {@link enlargeKernel} (roughly
- * 0.25 * box(|u| < 0.5) + 0.75 * triangle(|u| < 1)) sampled at the tap's
- * distance `u = k / ratio` in source pixels and normalised to sum to 1;
- * indices beyond the row replicate its edge pixels. The model reproduces the
- * captured linear responses to within measurement noise for enlargements from
- * 2.1x to 40x.
+ * symmetric destination-space FIR whose taps are {@link enlargeKernel} sampled
+ * at the tap's distance `u = k / ratio` in source pixels (a tap is non-zero
+ * for `|u| < 1`) and normalised to sum to 1; indices beyond the row replicate
+ * its edge pixels. The weights of a destination pixel are then made integer
+ * shares of 8192: the cumulative weight up to source pixel `j` is rounded up
+ * and a pixel's weight is the difference of two cumulative shares (the last
+ * is 8192), so a row always sums to exactly 8192.
  */
 export function halftoneEnlargeTaps(src: number, dst: number): HalftoneTaps[] {
 	const ratio = dst / src;
-	const reach = Math.ceil((ENLARGE_KERNEL.length - 1) * ENLARGE_STEP * ratio);
+	const reach = Math.ceil(ratio) - 1;
 	const fir: number[] = [];
 	let total = 0;
 	for (let k = 0; k <= reach; k++) {
@@ -310,7 +330,17 @@ export function halftoneEnlargeTaps(src: number, dst: number): HalftoneTaps[] {
 				weights.set(j, (weights.get(j) ?? 0) + w * v);
 			}
 		}
-		taps.push([...weights.entries()]);
+		const sorted = [...weights.entries()].sort((a, b) => a[0] - b[0]);
+		let prev = 0;
+		let cum = 0;
+		const row: HalftoneTaps = [];
+		for (let i = 0; i < sorted.length; i++) {
+			cum += sorted[i][1] * 8192;
+			const c = i === sorted.length - 1 ? 8192 : Math.ceil(cum - 1e-7);
+			row.push([sorted[i][0], (c - prev) / 8192]);
+			prev = c;
+		}
+		taps.push(row);
 	}
 	return taps;
 }
@@ -686,8 +716,11 @@ export function stretchHalftone(
 	const sampleH = nativeMixed ? Math.min(SH, H) : H;
 	const axis = nativeMixed ? (n: number, d: number, r: boolean) => halftoneReduceTaps(n, d, r)
 		: (n: number, d: number, r: boolean) => halftoneAxis(0, n, d, r);
-	const cols = axis(SW, sampleW, flipX);
-	const rows = axis(SH, sampleH, flipY);
+	// An enlarged axis of the native path keeps its source order here; the mirror reverses its weights below.
+	const enlargeX = nativeMixed && W > SW;
+	const enlargeY = nativeMixed && H > SH;
+	const cols = axis(SW, sampleW, flipX && !enlargeX);
+	const rows = axis(SH, sampleH, flipY && !enlargeY);
 	// Mixed-axis reduction keeps fractions until the first sharpening pass.
 	if (nearestMixed) {
 		const nearest = (taps: HalftoneTaps[], src: number, dst: number, reverse: boolean) => {
@@ -806,6 +839,8 @@ export function stretchHalftone(
 				return halftoneEnlargeTaps(src, dst);
 			};
 		const xt = axisTaps(sampleW, W), yt = axisTaps(sampleH, H);
+		if (enlargeX && flipX) xt.reverse();
+		if (enlargeY && flipY) yt.reverse();
 		for (let y = 0; y < H; y++) {
 			for (let x = 0; x < W; x++) {
 				for (let c = 0; c < 3; c++) {
