@@ -16,6 +16,15 @@
  * rectangle and the brush origin, and advances per source pixel when the
  * stretch enlarges and per destination pixel when it reduces.
  *
+ * Mirrored destinations (all measured on native captures): a horizontal mirror
+ * flips the pattern with the image; a vertical one still runs it down the
+ * destination rows, shifted by the rows the enlargement adds (`H - SH`). When
+ * one axis enlarges while the other reduces, the pattern follows the source
+ * pixel only if the destination is larger than the source in area, otherwise
+ * the destination pixel. A rotated or skewed blit (adjusted only in the case
+ * `EmfGdiReplayCtx.halftoneRotatedAdjusts` describes) anchors the pattern at
+ * the device origin and advances per destination pixel.
+ *
  * @module emf-gdi-halftone-dither
  */
 

@@ -15,7 +15,7 @@ replay each metafile through the converter and compare against the PNG.
 
 `rop`, `gradient`, `text`, `pattern`, `rotation`, `rop2`, `image`,
 `rotation-affine`, `text-extra`, `gdi-raster`, `emfplus-records`,
-`gdiplus-extra`, `wmf-records`, `emf-records`, `halftone`, `emfplus-effects`
+`gdiplus-extra`, `wmf-records`, `emf-records`, `halftone`, `halftone-origin`, `emfplus-effects`
 and `pen-transform`; `all` runs every one.
 
 Additional diagnostic groups:
@@ -33,6 +33,7 @@ These standalone probe modes must be invoked separately from comma-separated dra
 Every generator run also writes `environment-<groups>.json`. It records SHA-256 hashes of the generated references, installed system/user font files and native drawing libraries, plus Windows version, screen DPI and runner image. Compare manifests before accepting regenerated text fixtures; older captures have no recoverable environment manifest. Temporary image-effect tables keep their manifest in the requested temporary directory.
 
 - `illuminant-cubes -TablesDir <dir>` (standalone): the colour Windows draws for every one of the 32^3 halftone palette colours under `IlluminantIndex` 1–5, 7 and 8 (`HalftoneColorProbe.cs`). `generate-illuminant-data.ts <dir>` turns them into `src/emf-gdi-illuminant-data.ts`; the same probe measured the colour-adjustment stage order and constants in `src/emf-gdi-color-adjust.ts` and the 66 x 65 dither in `src/emf-gdi-halftone-dither.ts`.
+- `halftone-origin`: `emfrec-halftone-origin-{stretch,dib,plgblt,rotated}`, flat colours under a colour adjustment whose dither shows where the pattern starts (mirrored destinations, brush origins, mixed axes, bottom-up `StretchDIBits`, axis-aligned `PlgBlt`, rotated and skewed blits). Windows decides at the process's first HALFTONE blit whether rotated blits are adjusted, so the rotated case opens with an unrotated adjusted blit.
 - `halftone`: `emfrec-halftone-{ramp,checker}-{2x,0p5x,1p37x}[-ca]`, HALFTONE
   `StretchBlt` of a gray/RGB ramp and a checkerboard, each plain and under
   `SetColorAdjustment` (`-ca`).

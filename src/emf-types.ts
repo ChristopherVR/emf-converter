@@ -1201,6 +1201,14 @@ export interface EmfPlusReplayCtx {
 export interface EmfGdiReplayCtx {
 	/** WMF layout reflects the playback device horizontally. */
 	wmfLayoutRtl?: boolean;
+	/**
+	 * Whether rotated or skewed HALFTONE blits carry the DC's colour
+	 * adjustment. Windows decides at the first HALFTONE blit of the session
+	 * (it is not DC state, so SaveDC / RestoreDC leave it alone): only when
+	 * that blit is an unrotated one under a colour adjustment do later rotated
+	 * blits get adjusted too. `undefined` until the first HALFTONE blit.
+	 */
+	halftoneRotatedAdjusts?: boolean;
 	/** Target canvas 2D rendering context. */
 	ctx: CanvasContext;
 	/** DataView over the raw EMF file bytes. */

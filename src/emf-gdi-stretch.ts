@@ -569,7 +569,11 @@ export function stretchHalftone(
 	const reducedEven = W < SW ? SW % 2 === 0 && H % SH === 0 : SH % 2 === 0 && W % SW === 0;
 	const ditherAtSource = dithered && ((W >= SW && H >= SH) || (nativeMixed && reducedEven));
 	if (ditherAtSource) {
-		ditherPixels(rect, SW, SH, dither!, false, flipY);
+		// A vertically mirrored blit runs the pattern down the destination rows,
+		// shifted by the extra rows the stretch adds (H - SH), so a source row j
+		// sits at pattern row H - 1 - j.
+		ditherPixels(rect, SW, SH, dither!, false, false, undefined,
+			flipY ? Int32Array.from({ length: SH }, (_, j) => H - 1 - j) : undefined);
 	}
 	if (adjust && !adjustAfterSampling && (!dithered || ditherAtSource)) {
 		adjust(rect);
@@ -698,10 +702,18 @@ export function stretchHalftone(
 		// dither pattern then follows the source pixel on the enlarged axis (and
 		// on a reduced x axis), the destination pixel otherwise.
 		const phase = (n: number, src: number, dst: number, selectSource: boolean): Int32Array =>
-			Int32Array.from({ length: n }, (_, i) => dst > src ? Math.floor((i * src) / dst)
+			Int32Array.from({ length: n }, (_, i) => dst > src
+				? Math.max(0, Math.ceil(((2 * i + 1) * src) / (2 * dst)) - 1)
 				: selectSource ? Math.max(0, Math.min(src - 1, Math.floor(((i + 1) * 2 * src - dst) / (2 * dst)))) : i);
-		ditherPixels(out as Int32Array, W, H, dither!, false, false,
-			nearestMixed ? phase(W, SW, W, true) : undefined, nearestMixed ? phase(H, SH, H, false) : undefined);
+		// Mirrored: the pattern follows the flipped source pixels along x, and
+		// runs on down the destination rows along y, shifted by the rows the
+		// enlargement adds. Destination-pixel phases do not change.
+		const sourcePhase = nearestMixed && W * H > SW * SH;
+		let phaseX = sourcePhase ? phase(W, SW, W, true) : undefined;
+		let phaseY = sourcePhase ? phase(H, SH, H, false) : undefined;
+		if (phaseX && flipX) phaseX = phaseX.slice().reverse();
+		if (phaseY && flipY && H > SH) phaseY = phaseY.slice().reverse().map(v => H - 1 - v);
+		ditherPixels(out as Int32Array, W, H, dither!, false, false, phaseX, phaseY);
 		adjust!(out as Int32Array);
 	}
 	if (adjust && adjustAfterSampling) adjust(out as Int32Array);

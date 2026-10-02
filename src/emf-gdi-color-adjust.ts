@@ -251,6 +251,8 @@ function invert3(m: number[][]): number[][] {
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 const clamp255 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
+/** Rounds half up; a value within float noise of a half counts as the half (the chroma stage lands on exact halves). */
+const roundHalfUp = (v: number): number => Math.floor(v + 0.5 + 1e-7);
 
 /**
  * Scales the CIE 1976 u'v' chroma of a 0..255 colour about D65 white by
@@ -317,7 +319,7 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 		if (negative) {
 			v = 255 - clamp255(v);
 		}
-		return Math.round(clamp255(v));
+		return roundHalfUp(clamp255(v));
 	};
 	if (!illuminant && !chroma) {
 		const tables = [0, 1, 2].map(channel => Uint8Array.from({ length: 256 }, (_, i) => curve(i, channel)));
@@ -336,7 +338,7 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 				c = c.map(exactPaletteLevel) as [number, number, number];
 			}
 			c = adjustChroma(clamp255(c[0]), clamp255(c[1]), clamp255(c[2]), scale, angle);
-			c = c.map(Math.round) as [number, number, number];
+			c = c.map(roundHalfUp) as [number, number, number];
 		}
 		return (curve(c[0], 0) << 16) | (curve(c[1], 1) << 8) | curve(c[2], 2);
 	};

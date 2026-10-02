@@ -925,6 +925,15 @@ const HALFTONE_CASES: ParityCase[] = [
 	halftone('emfrec-ca-control-dib', 0.0075), // 0.738%, max 2 levels (before 10.776%)
 	halftone('emfrec-coloradjustment-off'), // measured 0% (1.048% before)
 	halftone('emfrec-coloradjustment'), // measured 0% (1.814% before the unrounded palette levels)
+	// Flat colours under a colour adjustment, showing where the dither pattern starts: mirrored
+	// and brush-origin StretchBlts (2x, 0.5x, mixed axes), bottom-up StretchDIBits, axis-aligned
+	// PlgBlt (a HALFTONE stretch), and rotated / skewed blits (adjusted only after an unrotated
+	// adjusted HALFTONE blit, dithered per destination pixel). All pixel-exact (1.6-8.8% and up
+	// to 60 levels off before).
+	halftone('emfrec-halftone-origin-stretch'),
+	halftone('emfrec-halftone-origin-dib'),
+	halftone('emfrec-halftone-origin-plgblt'),
+	halftone('emfrec-halftone-origin-rotated'),
 	halftone('emfrec-halftone-ramp-2x'),
 	halftone('emfrec-halftone-ramp-0p5x'),
 	halftone('emfrec-halftone-ramp-1p37x'),

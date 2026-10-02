@@ -5579,6 +5579,127 @@ public static class GdiFixtures
 		}
 	}
 
+	/**
+	 * HALFTONE blits of flat colours under SetColorAdjustment, whose 32-level dither pattern
+	 * shows where Windows starts it: mirrored destinations (2x, 0.5x, mixed axes), brush
+	 * origins, StretchDIBits (bottom-up DIB), an axis-aligned PlgBlt and a rotated blit,
+	 * which Windows leaves unadjusted.
+	 */
+	static void ErHalftoneOriginCases()
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		var ca = new byte[24];
+		BitConverter.GetBytes((ushort)24).CopyTo(ca, 0);
+		BitConverter.GetBytes((ushort)15000).CopyTo(ca, 6);
+		BitConverter.GetBytes((ushort)15000).CopyTo(ca, 8);
+		BitConverter.GetBytes((ushort)15000).CopyTo(ca, 10);
+		BitConverter.GetBytes((ushort)400).CopyTo(ca, 12);
+		BitConverter.GetBytes((ushort)9600).CopyTo(ca, 14);
+		BitConverter.GetBytes((short)30).CopyTo(ca, 16);
+		BitConverter.GetBytes((short)-20).CopyTo(ca, 18);
+		BitConverter.GetBytes((short)40).CopyTo(ca, 20);
+		BitConverter.GetBytes((short)20).CopyTo(ca, 22);
+		const int sw = 20, sh = 16;
+		// Channel values between two palette levels, so the dither threshold decides.
+		Func<int, int, uint> flat = delegate (int x, int y) { return 0xFF000000u | (95u << 16) | (130u << 8) | 60u; };
+		try
+		{
+			// dw, dh, mirror (1 = x, 2 = y), brush origin x, y
+			var stretches = new[] {
+				new[] { 40, 32, 0, 0, 0 }, new[] { 40, 32, 1, 0, 0 }, new[] { 40, 32, 2, 0, 0 }, new[] { 40, 32, 3, 0, 0 },
+				new[] { 10, 8, 0, 0, 0 }, new[] { 10, 8, 1, 0, 0 }, new[] { 10, 8, 2, 0, 0 }, new[] { 10, 8, 3, 0, 0 },
+				new[] { 15, 20, 0, 0, 0 }, new[] { 15, 20, 3, 0, 0 }, new[] { 15, 24, 0, 0, 0 }, new[] { 15, 24, 1, 0, 0 }, new[] { 15, 24, 2, 0, 0 }, new[] { 15, 24, 3, 0, 0 },
+				new[] { 12, 24, 0, 0, 0 }, new[] { 12, 24, 2, 0, 0 }, new[] { 24, 12, 1, 0, 0 },
+				new[] { 40, 32, 2, 3, 5 }, new[] { 40, 32, 1, -7, 40 }, new[] { 10, 8, 3, 70, -3 },
+			};
+			GdiCase("emfrec-halftone-origin-stretch", 8 + 5 * 56, 8 + 4 * 44, delegate (IntPtr hdc)
+			{
+				Stripes(hdc, 8 + 5 * 56, 8 + 4 * 44);
+				if (!ErApi.SetColorAdjustment(hdc, ca)) { throw new Exception("SetColorAdjustment"); }
+				SetStretchBltMode(hdc, 4);
+				using (var src = ErArgbSource(screen, sw, sh, flat))
+				{
+					for (int i = 0; i < stretches.Length; i++)
+					{
+						var s = stretches[i];
+						int left = 8 + (i % 5) * 56, top = 8 + (i / 5) * 44;
+						bool mx = (s[2] & 1) != 0, my = (s[2] & 2) != 0;
+						SetBrushOrgEx(hdc, s[3], s[4], IntPtr.Zero);
+						StretchBlt(hdc, mx ? left + s[0] - 1 : left, my ? top + s[1] - 1 : top, mx ? -s[0] : s[0], my ? -s[1] : s[1], src.Dc, 0, 0, sw, sh, 0x00CC0020);
+					}
+				}
+				SetStretchBltMode(hdc, 1);
+			});
+			GdiCase("emfrec-halftone-origin-dib", 8 + 3 * 56, 8 + 2 * 44, delegate (IntPtr hdc)
+			{
+				Stripes(hdc, 8 + 3 * 56, 8 + 2 * 44);
+				if (!ErApi.SetColorAdjustment(hdc, ca)) { throw new Exception("SetColorAdjustment"); }
+				SetStretchBltMode(hdc, 4);
+				SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+				var bmi = new BITMAPINFOHEADER(); bmi.biSize = 40; bmi.biWidth = sw; bmi.biHeight = sh; bmi.biPlanes = 1; bmi.biBitCount = 32;
+				var bits = new byte[sw * sh * 4];
+				for (int i = 0; i < sw * sh; i++) { bits[i * 4] = 60; bits[i * 4 + 1] = 130; bits[i * 4 + 2] = 95; }
+				var dibs = new[] { new[] { 40, 32, 0 }, new[] { 40, 32, 1 }, new[] { 40, 32, 2 }, new[] { 10, 8, 3 }, new[] { 15, 24, 2 }, new[] { 15, 20, 0 } };
+				for (int i = 0; i < dibs.Length; i++)
+				{
+					var s = dibs[i];
+					int left = 8 + (i % 3) * 56, top = 8 + (i / 3) * 44;
+					bool mx = (s[2] & 1) != 0, my = (s[2] & 2) != 0;
+					StretchDIBits(hdc, mx ? left + s[0] - 1 : left, my ? top + s[1] - 1 : top, mx ? -s[0] : s[0], my ? -s[1] : s[1], 0, 0, sw, sh, bits, ref bmi, 0, 0x00CC0020);
+				}
+				SetStretchBltMode(hdc, 1);
+			});
+			GdiCase("emfrec-halftone-origin-plgblt", 8 + 3 * 56, 8 + 2 * 44, delegate (IntPtr hdc)
+			{
+				Stripes(hdc, 8 + 3 * 56, 8 + 2 * 44);
+				if (!ErApi.SetColorAdjustment(hdc, ca)) { throw new Exception("SetColorAdjustment"); }
+				SetStretchBltMode(hdc, 4);
+				SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+				using (var src = ErArgbSource(screen, sw, sh, flat))
+				{
+					var shapes = new[] { new[] { 40, 32, 0 }, new[] { 40, 32, 1 }, new[] { 40, 32, 2 }, new[] { 10, 8, 3 }, new[] { 15, 24, 2 }, new[] { 15, 20, 0 } };
+					for (int i = 0; i < shapes.Length; i++)
+					{
+						var s = shapes[i];
+						int left = 8 + (i % 3) * 56, top = 8 + (i / 3) * 44;
+						bool mx = (s[2] & 1) != 0, my = (s[2] & 2) != 0;
+						// Upper-left, upper-right and lower-left corners; a mirrored axis anchors at its far edge.
+						int ax = mx ? left + s[0] - 1 : left, ay = my ? top + s[1] - 1 : top;
+						var pts = new POINT[] {
+							new POINT { X = ax, Y = ay },
+							new POINT { X = mx ? ax - s[0] : ax + s[0], Y = ay },
+							new POINT { X = ax, Y = my ? ay - s[1] : ay + s[1] },
+						};
+						ErApi.PlgBlt(hdc, pts, src.Dc, 0, 0, sw, sh, IntPtr.Zero, 0, 0);
+					}
+				}
+				SetStretchBltMode(hdc, 1);
+			});
+			GdiCase("emfrec-halftone-origin-rotated", 120, 120, delegate (IntPtr hdc)
+			{
+				Stripes(hdc, 120, 120);
+				if (!ErApi.SetColorAdjustment(hdc, ca)) { throw new Exception("SetColorAdjustment"); }
+				SetStretchBltMode(hdc, 4);
+				SetBrushOrgEx(hdc, 0, 0, IntPtr.Zero);
+				using (var src = ErArgbSource(screen, sw, sh, flat))
+				{
+					// Windows decides at the process's first HALFTONE blit whether rotated blits
+					// are adjusted: only an unrotated adjusted one first arms it. Start with one.
+					StretchBlt(hdc, 4, 96, 24, 20, src.Dc, 0, 0, sw, sh, 0x00CC0020);
+					SetGraphicsMode(hdc, 2);
+					var xf = new XFORM { eM11 = 0.866f, eM12 = 0.5f, eM21 = -0.5f, eM22 = 0.866f, eDx = 50, eDy = 10 };
+					SetWorldTransform(hdc, ref xf);
+					StretchBlt(hdc, 0, 0, 40, 32, src.Dc, 0, 0, sw, sh, 0x00CC0020);
+					var skew = new XFORM { eM11 = 1f, eM12 = 0f, eM21 = 0.5f, eM22 = 1f, eDx = 10, eDy = 60 };
+					SetWorldTransform(hdc, ref skew);
+					StretchBlt(hdc, 0, 0, 20, 16, src.Dc, 0, 0, sw, sh, 0x00CC0020);
+				}
+				SetStretchBltMode(hdc, 1);
+			});
+		}
+		finally { ReleaseDC(IntPtr.Zero, screen); }
+	}
+
 	/** HALFTONE StretchBlt of a ramp and a checkerboard at 2x, 0.5x and 1.37x, each plain and under SetColorAdjustment. */
 	static void ErHalftoneCases(bool mixed = false)
 	{
@@ -6197,6 +6318,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "emf-records") { EmfRecordCases(); }
 		if (which == "all" || which == "halftone") { ErHalftoneCases(); }
 		if (which == "all" || which == "halftone-mixed") { ErHalftoneCases(true); }
+		if (which == "all" || which == "halftone-origin") { ErHalftoneOriginCases(); }
 		if (which == "halftone-mixed-probe") { ErHalftoneMixedProbe(); }
 		if (which == "all" || which == "color-adjustment-controls") { ErColorAdjustmentControls(); }
 		if (which == "all" || which == "illuminant-charts") { ErIlluminantCharts(); }

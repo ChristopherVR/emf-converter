@@ -23,11 +23,11 @@ import { EMR_BITBLT, EMR_STRETCHBLT, EMR_STRETCHDIBITS, MAX_CANVAS_DIMENSION } f
 import { decodeDibToImageData } from './emf-dib-decoder';
 import { realizeBrush, sampleTile } from './emf-gdi-brush-pattern';
 import type { RealizedBrush } from './emf-gdi-brush-pattern';
-import { applyColorAdjustment, colorAdjustRgb, isChannelOnlyColorAdjustment, splitColorAdjustment } from './emf-gdi-color-adjust';
+import { colorAdjustRgb, isChannelOnlyColorAdjustment, splitColorAdjustment } from './emf-gdi-color-adjust';
 import { gdiDevicePixelX, gdiDevicePixelY, gmx, gmy, gmw, gmh, hasWorldRotation } from './emf-gdi-coord';
 import { paletteEntries } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
-import { ditherStartX, ditherStartY } from './emf-gdi-halftone-dither';
+import { ditherQuantize, ditherStartX, ditherStartY, ditherThreshold } from './emf-gdi-halftone-dither';
 import { HALFTONE, stretchGdi, stretchHalftone } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
 import { drawBlendLayers, splitUnknownDestination, unknownDestination, type BlendLayer } from './emf-rop2-exact';
@@ -162,6 +162,7 @@ interface DecodedSource {
 function decodeSource(
 	rCtx: EmfGdiReplayCtx,
 	req: BlitRequest,
+	rotated = false,
 ): { decoded: DecodedSource; req: BlitRequest } | null {
 	if (!req.source) {
 		return null;
@@ -177,6 +178,10 @@ function decodeSource(
 		return null;
 	}
 	const ca = rCtx.state.colorAdjustment;
+	if (req.stretch && rCtx.state.stretchBltMode === HALFTONE && rCtx.halftoneRotatedAdjusts === undefined) {
+		// The first HALFTONE blit decides whether rotated blits are adjusted.
+		rCtx.halftoneRotatedAdjusts = !rotated && !!ca;
+	}
 	const halftone = req.stretch && rCtx.state.stretchBltMode === HALFTONE && ca;
 	const channelOnly = isChannelOnlyColorAdjustment(ca);
 	const split = halftone && !channelOnly ? splitColorAdjustment(ca) : undefined;
@@ -412,6 +417,7 @@ function executeRotatedBlit(
 	let src: ImageData | null = null;
 	let srcX = sx;
 	let srcY = sy;
+	let adjustTexel: ((rgb: number, x: number, y: number) => number) | undefined;
 	if (operands.usesS) {
 		const decoded = decodeSource(rCtx, {
 			plan: { kind: 'ternary', index, operands },
@@ -426,14 +432,34 @@ function executeRotatedBlit(
 			sh,
 			dibOrigin,
 			stretch,
-		});
+		}, true);
 		if (!decoded) {
 			return;
 		}
 		src = decoded.decoded.pixels;
-		if (decoded.decoded.adjust) {
-			// Sampled texel by texel, not through the halftone stretch.
-			applyColorAdjustment(src, rCtx.state.colorAdjustment);
+		if (decoded.decoded.adjust && rCtx.halftoneRotatedAdjusts) {
+			// Only when an unrotated adjusted HALFTONE blit came first (see
+			// EmfGdiReplayCtx.halftoneRotatedAdjusts). Each device pixel takes its
+			// texel, quantised with the dither at the pixel's own position (the
+			// pattern anchored at the device origin), then mapped.
+			const { adjust, adjustAfterSampling, curves } = decoded.decoded;
+			const startX = ditherStartX(0, rCtx.state.brushOrgX);
+			const startY = ditherStartY(0, rCtx.state.brushOrgY);
+			const triple = new Int32Array(3);
+			adjustTexel = (rgb: number, x: number, y: number): number => {
+				triple[0] = (rgb >> 16) & 0xff;
+				triple[1] = (rgb >> 8) & 0xff;
+				triple[2] = rgb & 0xff;
+				if (!adjustAfterSampling) {
+					const t = ditherThreshold(startX, startY, x, y);
+					for (let c = 0; c < 3; c++) {
+						triple[c] = ditherQuantize(triple[c], t);
+					}
+				}
+				adjust(triple);
+				curves?.(triple);
+				return (triple[0] << 16) | (triple[1] << 8) | triple[2];
+			};
 		}
 		srcX = decoded.req.sx;
 		srcY = decoded.req.sy;
@@ -460,7 +486,10 @@ function executeRotatedBlit(
 		sw,
 		sh,
 		(ix, iy, x, y, d) => {
-			const s = operands.usesS ? texel(ix, iy) : 0;
+			let s = operands.usesS ? texel(ix, iy) : 0;
+			if (adjustTexel && operands.usesS) {
+				s = adjustTexel(s, x, y);
+			}
 			const p = typeof pattern === 'function' ? pattern(x, y) : pattern;
 			return evalRop3(index, p, s, d);
 		},
@@ -544,6 +573,34 @@ function alignMirroredDest(rCtx: EmfGdiReplayCtx, req: BlitRequest): BlitRequest
 		dx: req.dw < 0 ? req.dx + pxX : req.dx,
 		dy: req.dh < 0 ? req.dy + pxY : req.dy,
 	};
+}
+
+/**
+ * An axis-aligned PlgBlt is a SRCCOPY StretchBlt: under the HALFTONE stretch
+ * mode it goes through the halftone engine (with the colour adjustment), which
+ * a PlgBlt of any other mode does not need. `dx` / `dy` are the anchor's canvas
+ * pixel, `dw` / `dh` the signed extents.
+ */
+export function executePlgBltAsStretch(
+	rCtx: EmfGdiReplayCtx,
+	dx: number,
+	dy: number,
+	dw: number,
+	dh: number,
+	source: BlitRequest['source'],
+	r: { sx: number; sy: number; sw: number; sh: number },
+): void {
+	executeBlit(rCtx, {
+		plan: classifyRop3(0x00cc0020),
+		dx,
+		dy,
+		dw,
+		dh,
+		source,
+		...r,
+		dibOrigin: 'top-left',
+		stretch: true,
+	});
 }
 
 function executeBlit(rCtx: EmfGdiReplayCtx, request: BlitRequest): void {
