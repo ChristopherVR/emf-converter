@@ -177,6 +177,12 @@ describe('colorAdjustmentMapper', () => {
 		expect(Math.abs(tinted[0] - 162)).toBeLessThanOrEqual(1);
 		expect(Math.abs(tinted[1] - 224)).toBeLessThanOrEqual(1);
 		expect(tinted[2]).toBe(0);
+		// Native: tint 100 turns pure blue into (0, 82, 111). The turned u' goes
+		// negative here and is floored at 0 (the affine remap alone gives 0, 106, 128).
+		const blue = channels(adjust({ redGreenTint: 100 }, 0x0000ff));
+		expect(blue[0]).toBe(0);
+		expect(Math.abs(blue[1] - 82)).toBeLessThanOrEqual(1);
+		expect(Math.abs(blue[2] - 111)).toBeLessThanOrEqual(1);
 	});
 
 	it('reads palette levels unrounded and rounds the chroma result before the curves', () => {

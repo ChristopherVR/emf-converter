@@ -24,8 +24,9 @@
  *      unrounded (`255 n / 31`, not the rounded 8-bit entry) and its result is
  *      rounded to an integer before the curve stages below; with both
  *      the native cubes agree on all but about 0.2-0.5% of channels (one level).
- *      Strongly out-of-gamut blues (tint beyond about 50) are compressed less
- *      than the affine remap predicts, up to 24 levels at tint 100.
+ *      The turned u' is floored at 0 (a strongly rotated blue would
+ *      otherwise land at a negative u', i.e. a negative X), which is what
+ *      makes the gamut compression of blues at tint beyond about 50 match.
  *   3. Gamma per channel: `255 * (v / 255) ^ gamma`.
  *   4. Reference black / white: `(v - black) / (white - black)`.
  *   5. Contrast: `v * exp(0.0148885 * c)`.
@@ -273,7 +274,8 @@ function adjustChroma(r: number, g: number, b: number, scale: number, angle: num
 	const dv = (9 * y) / d - WHITE_V;
 	const cos = Math.cos(angle) * scale;
 	const sin = Math.sin(angle) * scale;
-	const u = WHITE_U + du * cos - dv * sin;
+	// A negative u' (negative X) is floored: Windows compresses strongly turned blues from that point.
+	const u = Math.max(0, WHITE_U + du * cos - dv * sin);
 	const v = Math.max(1e-6, WHITE_V + du * sin + dv * cos);
 	const x2 = (y * 9 * u) / (4 * v);
 	const z2 = (y * (12 - 3 * u - 20 * v)) / (4 * v);
