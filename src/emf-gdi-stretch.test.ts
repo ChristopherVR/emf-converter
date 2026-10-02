@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+	type HalftoneTaps,
 	axisSamples,
 	gdiNearest,
 	halftoneAxis,
@@ -161,12 +162,32 @@ describe('halftoneEnlargeTaps', () => {
 		}
 	});
 
-	it('is symmetric about the middle of the row', () => {
+	it('is symmetric about the middle of the row to within one 13-bit share', () => {
 		const taps = halftoneEnlargeTaps(16, 43);
 		for (let x = 0; x < 43; x++) {
 			const mirror = new Map(taps[42 - x].map(([j, w]) => [15 - j, w]));
-			for (const [j, w] of taps[x]) expect(mirror.get(j) ?? 0).toBeCloseTo(w, 9);
+			for (const [j, w] of taps[x]) expect(Math.abs((mirror.get(j) ?? 0) - w)).toBeLessThanOrEqual(1 / 8192 + 1e-12);
 		}
+	});
+
+	it('hands out whole 13-bit shares that add up to exactly 8192', () => {
+		for (const [src, dst] of [[16, 43], [13, 35], [7, 50]]) {
+			for (const run of halftoneEnlargeTaps(src, dst)) {
+				for (const [, w] of run) expect(w * 8192).toBe(Math.round(w * 8192));
+				expect(run.reduce((sum, [, w]) => sum + w * 8192, 0)).toBe(8192);
+			}
+		}
+	});
+
+	it('reproduces native weight rows exactly', () => {
+		// Impulse-fitted native weights over 8192 (12 -> 32 and 13 -> 20; 2.67x and 1.54x).
+		const shares = (taps: HalftoneTaps[], x: number) => taps[x].map(([j, w]) => [j, w * 8192]);
+		const a = halftoneEnlargeTaps(12, 32);
+		expect(shares(a, 3)).toEqual([[0, 1867], [1, 6042], [2, 283]]);
+		expect(shares(a, 4)).toEqual([[0, 284], [1, 6042], [2, 1866]]);
+		const b = halftoneEnlargeTaps(13, 20);
+		expect(shares(b, 1)).toEqual([[0, 4313], [1, 3879]]);
+		expect(shares(b, 5)).toEqual([[2, 787], [3, 6325], [4, 1080]]);
 	});
 });
 
