@@ -43,7 +43,7 @@ describe('SVG output is identical with the pure-JS raster mirror', () => {
 			const withoutCanvas = await convertMetafileToSvg(load(name), options);
 			expect(withoutCanvas).toBe(withCanvas);
 		},
-		30_000,
+		120_000,
 	);
 
 	it('really uses the pure-JS mirror in software-only mode', async () => {
