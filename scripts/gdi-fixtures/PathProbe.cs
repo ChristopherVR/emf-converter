@@ -184,4 +184,41 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"curve-widen.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
+	[DllImport("gdi32.dll",EntryPoint="ExtCreatePen")] static extern IntPtr ExtCreatePenDashes(uint style,uint width,ref LogBrush brush,uint count,uint[] dashes);
+	// Native WidenPath of dashed wide pens on Beziers and arcs at the identity scale: the stock dash styles and user-defined patterns
+	// under round, square and flat caps, and the pixel-vector dash measurement they reveal (curve-dash.json).
+	public static void CurveDash(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(9203);var json=new StringBuilder("[");
+		int[] stock={1,2,3,4,7};
+		try {
+			for(int sample=0;sample<300;sample++) {
+				int kind=sample%3==2?1:0,style=stock[(sample/3)%stock.Length],cap=(sample/15)%3,width=4+random.Next(0,11);
+				uint[] dashes=null;string dashJson="[]";
+				if(style==7){int count=2*(1+random.Next(0,2));dashes=new uint[count];for(int i=0;i<count;i++)dashes[i]=(uint)(3+random.Next(0,23));dashJson="["+string.Join(",",Array.ConvertAll(dashes,v=>v.ToString()))+"]";}
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePenDashes((uint)(0x10000|style|cap*0x100),(uint)width,ref brush,dashes==null?0u:(uint)dashes.Length,dashes);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					string head;
+					BeginPath(dc);
+					if(kind==0){
+						var p=new Point[4];for(int i=0;i<4;i++){p[i].X=40+random.Next(0,160);p[i].Y=40+random.Next(0,160);}
+						PolyBezier(dc,p,4);
+						head="\"kind\":\"bezier\",\"points\":["+string.Join(",",new[]{p[0].X,p[0].Y,p[1].X,p[1].Y,p[2].X,p[2].Y,p[3].X,p[3].Y})+"]";
+					} else {
+						int w=40+random.Next(0,120),h=40+random.Next(0,120),l=50+random.Next(0,60),t=50+random.Next(0,60);
+						Func<int[]> pt=delegate(){double a=random.NextDouble()*Math.PI*2,rad=0.6+random.NextDouble()*1.2;return new[]{(int)Math.Round(l+w/2.0+Math.Cos(a)*w/2.0*rad),(int)Math.Round(t+h/2.0-Math.Sin(a)*h/2.0*rad)};};
+						int[] p1=pt(),p2=pt();
+						Arc(dc,l,t,l+w,t+h,p1[0],p1[1],p2[0],p2[1]);
+						head="\"kind\":\"arc\",\"box\":["+l+","+t+","+(l+w)+","+(t+h)+"],\"radials\":["+p1[0]+","+p1[1]+","+p2[0]+","+p2[1]+"]";
+					}
+					EndPath(dc);if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append('{').Append(head).Append(",\"style\":").Append(style).Append(",\"cap\":").Append(cap).Append(",\"width\":").Append(width).Append(",\"dashes\":").Append(dashJson).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			File.WriteAllText(Path.Combine(dir,"curve-dash.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
 }

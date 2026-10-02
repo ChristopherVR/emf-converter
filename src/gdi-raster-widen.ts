@@ -33,9 +33,13 @@
  *   figure becomes two: the right side forward and the left side backward,
  *   each with a join at every vertex. The inner side of a join passes
  *   through the vertex itself.
- * - Geometric dash patterns cut the figure into pieces by exact arc length,
- *   the cut points rounded to 28.4; each piece is widened as an open figure
- *   with the directions of the path segments it lies on. With round or
+ * - Geometric dash patterns cut the figure into pieces by arc length, each
+ *   segment measured from its vector cut down to whole pixels (when one
+ *   logical unit is one pixel: `wholePixelDashVectors`), the cut points
+ *   rounded to 28.4 at the same fraction of the real segment; each piece is
+ *   widened as an open figure with the directions of the path segments it
+ *   lies on, and a square cap's extension is scaled like the segment under
+ *   the cut (real over measured length). With round or
  *   square caps the stock styles shorten every dash by the pen width.
  * - The first and last flattened segment of a Bezier take their draw
  *   vertices from the curve's end tangents (`GdiFigure.tangents`).
@@ -91,6 +95,12 @@ export interface WidenOptions {
 	 * `PS_DASHDOTDOT`), false for `PS_USERSTYLE` (measured).
 	 */
 	shortenDashes?: boolean;
+	/**
+	 * Measure each path segment for the dash pattern from its vector cut down
+	 * to whole device pixels (GDI's rule when one logical unit is one device
+	 * pixel; measured at that scale only, other scales stay exact).
+	 */
+	wholePixelDashVectors?: boolean;
 	/** Native Ellipse curve sides; retain the selected pen's inner triangle rule. */
 	roundCurveJoins?: boolean;
 }
@@ -280,9 +290,9 @@ function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt;
 }
 
 /** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
-export function squareExtension(width: number, dx: number, dy: number): Pt {
+export function squareExtension(width: number, dx: number, dy: number, scale = 1): Pt {
 	const len = Math.hypot(dx, dy);
-	const r = width / 2;
+	const r = (width / 2) * scale;
 	return [Math.floor((dx / len) * r + 0.5), Math.floor((dy / len) * r + 0.5)];
 }
 
@@ -313,6 +323,8 @@ interface Seg {
 	vRaw: Pt;
 	/** Square-cap extension. */
 	e: Pt;
+	/** The vector the extension and perpendicular follow. */
+	pe: Pt;
 	curveEnd: boolean;
 	/** Squared length of the curve end tangent (0 without one): a short tangent from rounded control points is unreliable. */
 	tangentLength: number;
@@ -353,7 +365,7 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1]);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1]), curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1]), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -456,7 +468,7 @@ class Outliner {
 	}
 
 	/** A cap at `p` from the `from` side of `s` round to the other side (`start`: around the back). */
-	private cap(p: Pt, s: Seg, start: boolean): void {
+	private cap(p: Pt, s: Seg, start: boolean, scale = 1): void {
 		const from: 'L' | 'R' = start ? 'L' : 'R';
 		const to: 'L' | 'R' = start ? 'R' : 'L';
 		const { cap } = this.opts;
@@ -476,7 +488,8 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e: Pt = start ? [-s.e[0], -s.e[1]] : s.e;
+			const e0: Pt = scale === 1 ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale);
+			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
 		} else {
@@ -585,7 +598,7 @@ class Outliner {
 	 * lets a single point stand for a zero-length dash along `dirs[0]`;
 	 * `draws` (curve end tangents) picks draw vertices only.
 	 */
-	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[], curves?: boolean[]): void {
+	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[], curves?: boolean[], startScale = 1, endScale = 1): void {
 		if (P.length < 2 && !dirs?.[0]) {
 			this.dot(P[0]);
 			return;
@@ -596,12 +609,12 @@ class Outliner {
 		}
 		if (segs.length === 0) {
 			const s = this.seg(P[0], P[0], dirs?.[0] as Pt, draws?.[0], curves?.[0]);
-			this.cap(P[0], s, true);
-			this.cap(P[0], s, false);
+			this.cap(P[0], s, true, startScale);
+			this.cap(P[0], s, false, endScale);
 			this.flush();
 			return;
 		}
-		this.cap(P[0], segs[0], true);
+		this.cap(P[0], segs[0], true, startScale);
 		for (let i = 0; i + 1 < segs.length; i++) {
 			const s = segs[i];
 			const t = segs[i + 1];
@@ -612,7 +625,7 @@ class Outliner {
 				this.join(P[i + 1], s, t, 'R', tr < 0);
 			}
 		}
-		this.cap(P[P.length - 1], segs[segs.length - 1], false);
+		this.cap(P[P.length - 1], segs[segs.length - 1], false, endScale);
 		for (let i = segs.length - 1; i > 0; i--) {
 			const s = segs[i];
 			const t = segs[i - 1];
@@ -679,6 +692,15 @@ interface DashPiece {
 	dirs: Pt[];
 	/** Curve end tangents (draw vertices only) per piece segment. */
 	draws: (Pt | undefined)[];
+	/** Per piece segment, whether it comes from a flattened curve. */
+	curves: boolean[];
+	/**
+	 * How much longer the real segment under the piece's start/end is than the
+	 * length GDI measured for it: a square cap's extension is laid out in
+	 * measured length too.
+	 */
+	startScale: number;
+	endScale: number;
 }
 
 /**
@@ -688,7 +710,7 @@ interface DashPiece {
  * pen width so the caps end where the dash does; a dash no longer than the
  * width becomes a single capped point.
  */
-function dashPieces(P: Pt[], tangents: (Pt | undefined)[], pattern: number[], shorten: number): DashPiece[] {
+function dashPieces(P: Pt[], tangents: (Pt | undefined)[], curveFlags: boolean[], pattern: number[], shorten: number, wholePixelVectors: boolean): DashPiece[] {
 	const out: DashPiece[] = [];
 	const dashes: number[] = [];
 	for (let i = 0; i < pattern.length; i += 2) {
@@ -703,12 +725,27 @@ function dashPieces(P: Pt[], tangents: (Pt | undefined)[], pattern: number[], sh
 	let idx = 0;
 	let left = dashes[0];
 	let on = true;
-	let cur: DashPiece | null = { pts: [P[0]], dirs: [], draws: [] };
+	let cur: DashPiece | null = { pts: [P[0]], dirs: [], draws: [], curves: [], startScale: 1, endScale: 1 };
 	for (let i = 0; i + 1 < P.length; i++) {
 		const [x0, y0] = P[i];
 		const [x1, y1] = P[i + 1];
 		const dir: Pt = [x1 - x0, y1 - y0];
-		const len = Math.hypot(dir[0], dir[1]);
+		const real = Math.hypot(dir[0], dir[1]);
+		// GDI measures a segment from its vector cut down to whole pixels (an
+		// arithmetic shift of the FIX components, so it rounds toward minus
+		// infinity), then places the cut at the same fraction of the real
+		// segment. Lines on whole pixels lose nothing; the odd-FIX segments of a
+		// flattened curve come out up to a pixel short or long.
+		const len = wholePixelVectors ? Math.hypot(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : Math.hypot(dir[0], dir[1]);
+		if (len === 0) {
+			if (on && cur) {
+				cur.pts.push(P[i + 1]);
+				cur.dirs.push(dir);
+				cur.draws.push(tangents[i]);
+				cur.curves.push(curveFlags[i]);
+			}
+			continue;
+		}
 		let t = 0;
 		while (len - t > left || (left === 0 && on)) {
 			t += left;
@@ -717,10 +754,13 @@ function dashPieces(P: Pt[], tangents: (Pt | undefined)[], pattern: number[], sh
 				cur.pts.push(q);
 				cur.dirs.push(dir);
 				cur.draws.push(tangents[i]);
+				cur.curves.push(curveFlags[i]);
+				// A dash that is a point at the start of the path is not scaled.
+				cur.endScale = cur.pts[0] === P[0] && q[0] === P[0][0] && q[1] === P[0][1] ? 1 : real / len;
 				out.push(cur);
 				cur = null;
 			} else {
-				cur = { pts: [q], dirs: [], draws: [] };
+				cur = { pts: [q], dirs: [], draws: [], curves: [], startScale: real / len, endScale: 1 };
 			}
 			on = !on;
 			idx = (idx + 1) % dashes.length;
@@ -731,9 +771,12 @@ function dashPieces(P: Pt[], tangents: (Pt | undefined)[], pattern: number[], sh
 			cur.pts.push(P[i + 1]);
 			cur.dirs.push(dir);
 			cur.draws.push(tangents[i]);
+			cur.curves.push(curveFlags[i]);
+			cur.endScale = real / len;
 		}
 	}
 	if (on && cur && cur.dirs.length > 0) {
+		cur.endScale = 1;
 		out.push(cur);
 	}
 	return out;
@@ -789,11 +832,14 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 		if (dashed) {
 			const run = closed ? [...P, P[0]] : P;
 			const shorten = opts.cap === 'flat' || opts.shortenDashes === false ? 0 : opts.width;
-			for (const piece of dashPieces(run, closed ? [...dirs, undefined] : dirs, opts.dashes as number[], shorten)) {
+			const runTangents = closed ? [...dirs, undefined] : dirs;
+			const runCurves = closed ? [...curves, !!fig.roundWiden] : curves;
+			for (const piece of dashPieces(run, runTangents, runCurves, opts.dashes as number[], shorten, !!opts.wholePixelDashVectors)) {
 				// Drop repeated points, keeping each remaining segment's direction.
 				const pts: Pt[] = [piece.pts[0]];
 				const pdirs: Pt[] = [];
 				const pdraws: (Pt | undefined)[] = [];
+				const pcurves: boolean[] = [];
 				for (let i = 1; i < piece.pts.length; i++) {
 					const q = piece.pts[i];
 					const last = pts[pts.length - 1];
@@ -801,9 +847,10 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 						pts.push(q);
 						pdirs.push(piece.dirs[i - 1]);
 						pdraws.push(piece.draws[i - 1]);
+						pcurves.push(piece.curves[i - 1]);
 					}
 				}
-				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]], pts.map(() => !!fig.roundWiden));
+				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]], pdirs.length > 0 ? pcurves : [piece.curves[0]], piece.startScale, piece.endScale);
 			}
 		} else if (closed && P.length >= 3) {
 			outliner.closed(P, dirs, curves);
