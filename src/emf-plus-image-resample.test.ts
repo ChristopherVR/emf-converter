@@ -147,10 +147,25 @@ describe('GDI+ resampling kernels', () => {
 	it('places a fractional y origin of a high-quality axis-aligned draw as given (only x mirrors)', () => {
 		// Native GDI+ draws at origins (30, 10.6) and (30.3, 10.6) agree with an unmirrored y.
 		// A tiny shear turns off the axis-aligned mirroring, leaving x (an integer here) and y as given.
-		const column = new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255]);
-		const draw = (shear: number): Uint8ClampedArray =>
-			resampleImage(column, 1, 3, { srcX: 0, srcY: 0, srcW: 1, srcH: 3, toDevice: [2, shear, 0, 3, 10, 5.625], kernel: 'hq-bicubic', halfPixelOffset: false }, { w: 100, h: 100 })!.rgba;
-		expect(Array.from(draw(0))).toEqual(Array.from(draw(1e-13)));
+		// Eight columns wide so the far-edge fade of the sheared draw (the last device
+		// pixel) stays out of the compared columns and rows.
+		const column = new Uint8ClampedArray(8 * 3 * 4);
+		for (let y = 0; y < 3; y++) {
+			for (let x = 0; x < 8; x++) {
+				column.set(y === 1 ? [255, 255, 255, 255] : [0, 0, 0, 255], (y * 8 + x) * 4);
+			}
+		}
+		const draw = (shear: number): number[] => {
+			const block = resampleImage(column, 8, 3, { srcX: 0, srcY: 0, srcW: 8, srcH: 3, toDevice: [3, shear, 0, 3, 10, 5.625], kernel: 'hq-bicubic', halfPixelOffset: false }, { w: 100, h: 100 })!;
+			const out: number[] = [];
+			for (let y = 0; y < block.h - 3; y++) {
+				for (let x = 0; x < block.w - 3; x++) {
+					out.push(...block.rgba.slice((y * block.w + x) * 4, (y * block.w + x) * 4 + 4));
+				}
+			}
+			return out;
+		};
+		expect(draw(0)).toEqual(draw(1e-13));
 	});
 
 	it('samples Half/HighQuality pixel centres against the recorder-shifted source rectangle', () => {
@@ -260,5 +275,75 @@ describe('resampleNearest (GDI+ NearestNeighbor)', () => {
 		expect(at(15)).toBe(255);
 		expect(at(39)).toBe(255);
 		expect(at(40)).toBe(0);
+	});
+});
+
+describe('rotated high-quality draws and edge taps (native GDI+ output)', () => {
+	const WHITE = new Uint8ClampedArray(20 * 20 * 4).fill(255);
+	/** Alpha along device row `y` from x = 73 of a 20x20 opaque white image rotated by 30 degrees. */
+	const alphaRow = (scale: number, kernel: DeferredImageResample['kernel'], half: boolean, y: number, x0: number, n: number): number[] => {
+		const c = Math.cos(Math.PI / 6) * scale;
+		const s = Math.sin(Math.PI / 6) * scale;
+		const h = half ? 0.5 : 0;
+		const block = resampleImage(
+			WHITE,
+			20,
+			20,
+			{ srcX: -h, srcY: -h, srcW: 20, srcH: 20, toDevice: [c, s, -s, c, 40 + c * h - s * h, 10 + s * h + c * h], kernel, halfPixelOffset: half },
+			{ w: 140, h: 140 },
+		)!;
+		return Array.from({ length: n }, (_, i) => block.rgba[((y - block.y) * block.w + (x0 + i - block.x)) * 4 + 3]);
+	};
+	const expectClose = (actual: number[], expected: number[], tolerance: number): void => {
+		expect(actual).toHaveLength(expected.length);
+		actual.forEach((v, i) => expect(Math.abs(v - expected[i])).toBeLessThanOrEqual(tolerance));
+	};
+	const totalAlpha = (sx: number, sy: number, kernel: DeferredImageResample['kernel']): number => {
+		const out = resampleImage(WHITE, 20, 20, { srcX: 0, srcY: 0, srcW: 20, srcH: 20, toDevice: [sx * 0.866, sx * 0.5, -sy * 0.5, sy * 0.866, 40, 10], kernel, halfPixelOffset: false }, { w: 140, h: 140 })!;
+		return out.rgba.reduce((t, v, i) => t + (i % 4 === 3 ? v : 0), 0);
+	};
+
+	it('fades the alpha to zero at the far edge of an upscaled PixelOffsetMode None draw', () => {
+		// Native alpha across the right edge of a 3x HighQualityBicubic draw (the kernel alone
+		// keeps 18 levels at the edge and runs 17 levels high a pixel in).
+		expectClose(alphaRow(3, 'hq-bicubic', false, 65, 73, 7), [254, 240, 185, 113, 34, 0, 0], 3);
+	});
+
+	it('point-samples with Bicubic when a source axis is unscaled', () => {
+		// 20 texels at scale 1: the plain a = -0.5 kernel, not the area-integrated one.
+		expectClose(alphaRow(1, 'hq-bicubic', false, 28, 49, 7), [255, 255, 255, 162, 0, 0, 0], 3);
+		// One unscaled axis of an anisotropic draw is enough, up to 21 device texels for 20.
+		expect(totalAlpha(1.05, 3, 'hq-bicubic')).toBe(totalAlpha(1.05, 3, 'bicubic'));
+		expect(totalAlpha(1.06, 3, 'hq-bicubic')).not.toBe(totalAlpha(1.06, 3, 'bicubic'));
+	});
+
+	it('moves a Half/HighQuality draw half a device pixel along its own axes', () => {
+		// Without the shift the right edge sits half a pixel out (rows 64 to 66 of a native 3x draw).
+		expectClose(alphaRow(3, 'hq-bicubic', true, 64, 74, 5), [255, 255, 247, 168, 0], 6);
+		expectClose(alphaRow(3, 'hq-bicubic', true, 65, 74, 5), [255, 255, 222, 0, 0], 6);
+		expectClose(alphaRow(3, 'hq-bicubic', true, 66, 74, 5), [255, 244, 135, 0, 0], 6);
+	});
+
+	it('reads a halo column right of the bitmap instead of transparency', () => {
+		const bilinear = (rightHalo?: Uint8ClampedArray): number[] => {
+			const block = resampleImage(RGBA, 2, 1, spec({ rightHalo }), { w: 100, h: 100 })!;
+			return row(block).map(([, alpha]) => alpha);
+		};
+		// Bilinear at 2x: the last pixel (u = 1.5) blends texel 1 with the column beyond.
+		expect(bilinear()).toEqual([255, 255, 255, 128]);
+		expect(bilinear(new Uint8ClampedArray([255, 255, 255, 255]))).toEqual([255, 255, 255, 255]);
+		expect(bilinear(new Uint8ClampedArray([255, 255, 255, 64]))[3]).toBe(160);
+	});
+
+	it('reads the bitmap beyond a source sub-rectangle instead of fading to transparent', () => {
+		// Native GDI+ draws source (2, 2, 4, 4) of a 12x12 opaque bitmap with every
+		// interpolation mode: the edge pixels stay opaque because the neighbours exist.
+		const image = new Uint8ClampedArray(12 * 12 * 4).fill(255);
+		for (const kernel of ['bilinear', 'bicubic', 'hq-bilinear', 'hq-bicubic'] as const) {
+			const block = resampleImage(image, 12, 12, { srcX: 2, srcY: 2, srcW: 4, srcH: 4, toDevice: [3, 0, 0, 3, -2, -2], kernel, halfPixelOffset: false }, { w: 40, h: 40 })!;
+			const alpha = (x: number, y: number): number => block.rgba[((y - block.y) * block.w + (x - block.x)) * 4 + 3];
+			expect(alpha(4, 4)).toBe(255);
+			expect(alpha(15, 15)).toBe(255);
+		}
 	});
 });

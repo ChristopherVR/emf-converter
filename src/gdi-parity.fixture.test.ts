@@ -559,9 +559,9 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 		'pom-highspeed-nearestneighbor',
 		'rotated-bilinear',
 	].map((m) => close(`gpx-image-${m}`, 0)),
-	// A rotated HighQualityBicubic draw: exact inside, a few edge pixels
-	// fade differently (GDI+'s rotated high-quality edge is not modelled).
-	close('gpx-image-rotated-highqualitybicubic', 0.003), // measured 0.14%
+	// A rotated HighQualityBicubic draw: the far edges fade to zero at the
+	// edge (see `fadeAt`); two edge pixels remain over 8 levels.
+	close('gpx-image-rotated-highqualitybicubic', 0.00015), // measured 0.013% (0.142% before)
 ];
 
 /**
@@ -1014,7 +1014,7 @@ const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
 	levelExact('plus-effect-blur-r3'), // 0.682% before (0.446% beyond 8 levels), 0.013% one level off now
 	levelExact('plus-effect-blur-r3-expand'), // 8.323% before (4.619% beyond 8 levels), 0.013% one level off now
 	// Residual along one edge of the rotated draw, where the effect draw shows through the recorded bitmap's faded edge.
-	{ name: 'plus-effect-blur-r3-rotate30', ext: 'emf', tolerance: 8, maxMismatch: 0.0025 }, // 2.555% before, 0.218% now
+	{ name: 'plus-effect-blur-r3-rotate30', ext: 'emf', tolerance: 8, maxMismatch: 0.00012 }, // 2.555% before, 0.218% (0.010% since the blur's halo column is sampled)
 	levelExact('plus-effect-blur-r3-scale2'), // 5.696% before (0.045% beyond 8 levels), 5.539% one level off now
 	exact('plus-effect-blur-r4-subrect'),
 	levelExact('plus-effect-blur-r4-subrect-expand'), // 4.884% before (2.448% beyond 8 levels), 0.023% one level off now

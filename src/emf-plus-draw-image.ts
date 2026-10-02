@@ -398,6 +398,7 @@ export function effectedDraw(
 				srcW,
 				srcH,
 				toDevice: mulMatrix(draw.resample.toDevice, shift),
+				rightHalo: region.haloRight,
 			},
 		},
 	};

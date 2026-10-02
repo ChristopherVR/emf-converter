@@ -101,7 +101,7 @@ const BLUR: EffectCase[] = [
 	exact('blur-r4-subrect'), // 84.719%
 	exact('blur-r4-subrect-expand'), // 96.044% before
 	exact('blur-r3-scale2'), // 71.126% before
-	exact('blur-r3-rotate30'), // 79.590% before; draw-edge sampling differences remain in playback
+	exact('blur-r3-rotate30'), // 79.590% before
 ];
 
 /** Sharpen: an unsharp mask along rows against GDI+'s 8-bit row blur. */
