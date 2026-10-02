@@ -10,13 +10,17 @@ The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-onl
 
 - **Not exact yet:**
   - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
-  - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`).
+  - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`). It is the same far-edge fade as rotated `HighQualityBicubic` `DrawImage` (see below).
   - Large blur reproduces the native per-axis algorithm (reduce each row by the factor measured at all 957 quarter radii, filter, enlarge, then the same for columns, with products kept to 1/256 of a level). Against native noise, photo-like, rectangle, block and one-dimensional images 99.5-100% of pixels are exact (the rest one or two levels off); colour impulses and the 957-radius sweep are exact or within two levels, ramps within two. Through radius 16, colour impulses are exact and ramps are within one level; sharpen at radii 32-255 is exact. Unresolved: roughly 0.3% of pixels one level off at rounding boundaries, and images two or three pixels wide whose last pixel native leaves unfiltered.
   - Expanded blur uses native reduction (a cropped source rectangle reduces from its own corner with transparent samples around it) and the source rectangle's crop/vertical-row rules. The 504-draw native capture covers fourteen rectangles, twelve radii and opaque/translucent patterns. Integer bounds retain at most two levels at radius 20 and above, fractional bounds and radii below 20 one level; about 93% of pixels at radius 20 and above and 99.9% below are exact. Small cropped regions at large radii still differ by a level on about a tenth of their pixels.
 
 Sharpen strength now uses the native rational amount curve, quantized to 1/64 with half-down rounding. It matches every integer amount 0–100 and 19 radii when tested independently of blur convolution.
 
 - **JPEG rounding:** pixel-centred chroma reconstruction reduces the original native ramp's maximum error from 19 levels to two (mean 0.36). Odd-sized 4:4:4/4:2:2/4:2:0 and progressive JPEG are within three levels; RGB/greyscale JPEG are within one. GIF and lossless TIFF references remain exact, including offset/palette GIFs, LZW/multipage/bilevel TIFF, Deflate strips (both tags and horizontal prediction) and uncompressed/Deflate tiles. RGB JPEG TIFF strips and tiles are within one level; YCbCr JPEG TIFF is within four. The TIFF coverage target is now captured; JPEG IDCT/chroma rounding differences remain.
+
+## EMF+ rotated high-quality DrawImage
+
+A rotated or sheared `HighQualityBicubic`/`HighQualityBilinear` `DrawImage` (a 3-point destination) keeps a faded-edge difference (`gpx-image-rotated-highqualitybicubic`, 22 pixels over 8 levels; the effect fixture above shows the same). Measured against native draws of an opaque uniform image (`System.Drawing`, public API): the interior impulse response of a single texel matches within 5 levels, the coverage and edge position are right (no translation or scale of the sampling grid improves them), and the native alpha at the far (right and bottom) edge falls to zero at the edge, 15 to 17 levels below the area-integrated a = -1 cubic over the last 0.3 device pixels, while the top-left edges agree within 2 levels. Not explained by a different cubic parameter, a stretched kernel, two-pass scale-then-rotate, or an inclusive `(size - 1)` mapping. The rotated edge profile also depends slightly on position along the edge, so it is not purely a function of the distance to the edge.
 
 ## EMF+ gradients
 
