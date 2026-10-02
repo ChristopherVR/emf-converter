@@ -337,118 +337,98 @@ function ditherPixels(
 	}
 }
 
-/** Largest overshoot (in levels) a sharpened channel may have before it counts as clipped. */
-const SPECKLE_OVERSHOOT = 4;
-
 /**
  * The smoothing Windows' halftone engine applies to the source before an
- * enlargement (measured on `emfrec-halftone-checker-*`): a pixel whose
- * 3-tap sharpening `v + (2v - a - b) / 4` overshoots 0..255 by more than
- * {@link SPECKLE_OVERSHOOT} levels in at least two channels both along the
- * row (a, b = left and right neighbours) and along the column (above and
- * below) is replaced by its horizontal blur `(a + 2v + b) / 4`, rounded.
- * Neighbours past the edge of `px` mirror the one on the other side. A
- * one-pixel black/white checkerboard becomes flat `#808080`; the corners of
- * a red/blue checkerboard of 2-pixel squares where red meets blue on both
- * axes become 3/4 red + 1/4 blue, while the blue ones (whose sharpening
- * stays in range) keep their colour; ramps, bands and ordinary edges do not
- * change. `px` is RGB triples, `w` x `h`, changed in place.
+ * enlargement. It looks for exact two-by-two checkers: a block whose
+ * diagonal pixels are equal (`a == d`, `b == c`) while the two diagonals
+ * differ, compared as whole RGB pixels. Windows treats the image as mirrored
+ * across its edges, so a block on the border has a mirrored neighbour.
+ * Blocks are visited in raster order of their top-left pixel, and every
+ * source pixel is read from the unmodified image; only the pixel being
+ * changed carries over earlier results.
  *
- * An odd size leaves an unpaired last column / row. Where such a pixel
- * differs from the one before it, Windows blurs it across the edge instead
- * of along it, so a lone final pixel of a 2-pixel-block pattern gets 3/4 of
- * itself instead of the mirrored half; the despeckled pixel beside an
- * unpaired pixel that was itself left alone blurs with that pixel's smoothed
- * value (native 13/16 mixes, 7/8 beside both a last column and a last row).
- * This reproduces native 2-pixel-block and one-pixel-checker captures of odd
- * sizes; other patterns and a lone corner pixel that natively stays unchanged
- * remain approximate.
+ * - A checker block with another checker block on both sides along a row or
+ *   along a column (the middle of three) is flattened: its four pixels all
+ *   become the rounded mean `(a + b + 1) >> 1` of the two colours, per
+ *   channel. A one-pixel checkerboard therefore becomes flat `#808080`.
+ * - Any other checker block pulls the pixels of its brighter diagonal pair
+ *   toward their surroundings: the top-left / bottom-right pair, unless the
+ *   other pair is strictly brighter, where brightness is `4R + 8G + B`
+ *   (compared channel by channel, the same pair is used for all three
+ *   channels). Each pixel `p` of that pair moves, per channel, to
+ *   `(12p + t1 + t2 + t3 + t4 + 8) >> 4`. Looking from `p` towards its
+ *   partner in the pair, `t1` and `t2` are the horizontal and vertical
+ *   neighbours inside the block (the other pair's pixels) and `t3`, `t4` the
+ *   pixels one step further along that row and column (mirrored at the
+ *   image edge). A pixel in several blocks is updated once for each, in turn.
+ *
+ * This reproduces native captures of every 4x4 black/white pattern at
+ * 4x4 and in the middle of a larger image, every pattern up to 5x3, and
+ * random black/white, grey and palette-coloured images of up to 40 pixels
+ * a side. `px` is RGB triples, `w` x `h`, changed in place.
  */
 export function halftoneDespeckle(px: Int32Array, w: number, h: number): void {
+	if (w < 2 || h < 2) {
+		return;
+	}
 	const src = px.slice();
-	const at = (x: number, y: number, c: number): number => src[(y * w + x) * 3 + c];
-	const over = (v: number): boolean => v < -SPECKLE_OVERSHOOT * 4 || v > (255 + SPECKLE_OVERSHOOT) * 4;
-	// An odd size leaves the last column / row unpaired.
-	const loneX = w > 2 && w % 2 === 1 ? w - 1 : -1;
-	const loneY = h > 2 && h % 2 === 1 ? h - 1 : -1;
-	const mirror = (i: number, n: number, d: number): number => {
-		const j = i + d;
-		return j < 0 || j >= n ? i - d : j;
+	// The index of the pixel at (x, y), the image mirrored across its edges.
+	const index = (x: number, y: number): number => {
+		const mx = x < 0 ? -x : x >= w ? 2 * (w - 1) - x : x;
+		const my = y < 0 ? -y : y >= h ? 2 * (h - 1) - y : y;
+		return (Math.max(0, Math.min(h - 1, my)) * w + Math.max(0, Math.min(w - 1, mx))) * 3;
 	};
-	const vBlur = (x: number, y: number, c: number): number =>
-		(at(x, mirror(y, h, -1), c) + 2 * at(x, y, c) + at(x, mirror(y, h, 1), c) + 2) >> 2;
-	const hBlur = (x: number, y: number, c: number): number =>
-		(at(mirror(x, w, -1), y, c) + 2 * at(x, y, c) + at(mirror(x, w, 1), y, c) + 2) >> 2;
-	// What the neighbours of an unpaired last column / row see: the pixel
-	// smoothed across the other axis (the corner repeats itself past the edge).
-	const differs = (x0: number, y0: number, x1: number, y1: number): boolean =>
-		at(x0, y0, 0) !== at(x1, y1, 0) || at(x0, y0, 1) !== at(x1, y1, 1) || at(x0, y0, 2) !== at(x1, y1, 2);
-	// A last-column / last-row pixel is unpaired when it differs from the one before it.
-	const loneColumn = (y: number): boolean => loneX > 0 && differs(loneX, y, loneX - 1, y);
-	const loneRow = (x: number): boolean => loneY > 0 && differs(x, loneY, x, loneY - 1);
-	const loneColumnValue = (y: number, c: number): number =>
-		y === loneY && loneRow(loneX) ? (at(loneX, y - 1, c) + 3 * at(loneX, y, c) + 2) >> 2 : vBlur(loneX, y, c);
-	const loneRowValue = (x: number, c: number): number =>
-		x === loneX && loneColumn(loneY) ? (at(x - 1, loneY, c) + 3 * at(x, loneY, c) + 2) >> 2 : hBlur(x, loneY, c);
-	const speckled = (x: number, y: number): boolean => {
-		// The unpaired last column / row repeats itself past the edge here.
-		const up = mirror(y, h, -1);
-		const down = mirror(y, h, 1);
-		const left = mirror(x, w, -1);
-		const right = mirror(x, w, 1);
-		let hClip = 0;
-		let vClip = 0;
-		let alternating = 0;
-		for (let c = 0; c < 3; c++) {
-			const v = at(x, y, c);
-			const axial = Math.max(Math.abs(v - at(left, y, c)), Math.abs(v - at(right, y, c)),
-				Math.abs(v - at(x, up, c)), Math.abs(v - at(x, down, c)));
-			const diagonal = Math.min(Math.abs(v - at(left, up, c)), Math.abs(v - at(right, up, c)),
-				Math.abs(v - at(left, down, c)), Math.abs(v - at(right, down, c)));
-			if (diagonal < axial) alternating++;
-			// 4 * (v + (2v - a - b) / 4), kept in integers.
-			if (over(6 * v - at(left, y, c) - at(right, y, c))) {
-				hClip++;
-			}
-			if (over(6 * v - at(x, up, c) - at(x, down, c))) {
-				vClip++;
-			}
+	const same = (i: number, j: number): boolean =>
+		src[i] === src[j] && src[i + 1] === src[j + 1] && src[i + 2] === src[j + 2];
+	// Checker flags for the blocks whose top-left pixel is (-1..w-1, -1..h-1).
+	const stride = w + 1;
+	const flags = new Uint8Array(stride * (h + 1));
+	for (let y = -1; y < h; y++) {
+		for (let x = -1; x < w; x++) {
+			const a = index(x, y);
+			const b = index(x + 1, y);
+			const c = index(x, y + 1);
+			const d = index(x + 1, y + 1);
+			flags[(y + 1) * stride + x + 1] = same(a, d) && same(b, c) && !same(a, b) ? 1 : 0;
 		}
-		return hClip >= 2 && vClip >= 2 && alternating >= 2;
-	};
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			if (!speckled(x, y)) {
+	}
+	const checker = (x: number, y: number): boolean => flags[(y + 1) * stride + x + 1] === 1;
+	for (let y = 0; y < h - 1; y++) {
+		for (let x = 0; x < w - 1; x++) {
+			if (!checker(x, y)) {
 				continue;
 			}
-			const left = mirror(x, w, -1);
-			const right = mirror(x, w, 1);
-			const up = mirror(y, h, -1);
-			const down = mirror(y, h, 1);
-			// Beside an unpaired last column / row that is itself left alone,
-			// the blur sees that pixel's smoothed value instead of its own.
-			const lonelyColumn = x === loneX && loneColumn(y);
-			const lonelyRow = y === loneY && loneRow(x);
-			const nearLoneX = x === loneX - 1 && loneX > 0 && loneColumn(y) && !speckled(loneX, y);
-			const nearLoneY = y === loneY - 1 && loneY > 0 && loneRow(x) && !speckled(x, loneY);
-			// The corner repeats itself past the edge when the lone column /
-			// row beside it was left alone, else it mirrors.
-			const cornerRepeats = lonelyColumn && lonelyRow && (!speckled(x, y - 1) || !speckled(x - 1, y));
-			for (let c = 0; c < 3; c++) {
-				const v = at(x, y, c);
-				let r: number;
-				if (lonelyColumn && lonelyRow) {
-					r = cornerRepeats ? (at(left, y, c) + 3 * v + 2) >> 2 : hBlur(x, y, c);
-				} else {
-					// The unpaired column is blurred across, the unpaired row along.
-					let sum = lonelyColumn
-						? at(x, up, c) + 2 * v + at(x, down, c)
-						: at(left, y, c) + 2 * v + at(right, y, c);
-					if (nearLoneX) sum += loneColumnValue(y, c) - at(loneX, y, c);
-					if (nearLoneY) sum += loneRowValue(x, c) - at(x, loneY, c);
-					r = (sum + 2) >> 2;
+			const ia = index(x, y);
+			const ib = index(x + 1, y);
+			// The members of the block, each with the direction of its partner pixel.
+			const members: [number, number, number, number, boolean][] = [
+				[x, y, 1, 1, true],
+				[x + 1, y + 1, -1, -1, true],
+				[x + 1, y, -1, 1, false],
+				[x, y + 1, 1, -1, false],
+			];
+			if ((checker(x - 1, y) && checker(x + 1, y)) || (checker(x, y - 1) && checker(x, y + 1))) {
+				for (const [mx, my] of members) {
+					const o = (my * w + mx) * 3;
+					for (let c = 0; c < 3; c++) {
+						px[o + c] = (src[ia + c] + src[ib + c] + 1) >> 1;
+					}
 				}
-				px[(y * w + x) * 3 + c] = r;
+				continue;
+			}
+			const brighter = 4 * (src[ia] - src[ib]) + 8 * (src[ia + 1] - src[ib + 1]) + (src[ia + 2] - src[ib + 2]);
+			for (const [mx, my, sx, sy, isA] of members) {
+				if (isA ? brighter < 0 : brighter >= 0) {
+					continue;
+				}
+				const o = (my * w + mx) * 3;
+				const t1 = index(mx + sx, my);
+				const t2 = index(mx, my + sy);
+				const t3 = index(mx + 2 * sx, my);
+				const t4 = index(mx, my + 2 * sy);
+				for (let c = 0; c < 3; c++) {
+					px[o + c] = (12 * px[o + c] + src[t1 + c] + src[t2 + c] + src[t3 + c] + src[t4 + c] + 8) >> 4;
+				}
 			}
 		}
 	}
@@ -482,7 +462,7 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
  * (`emfrec-halftone-*` fixtures):
  *
  * - Enlarging both axes (or keeping a size while enlarging the other), the
- *   source is first smoothed where it has isolated overshooting pixels
+ *   source is first smoothed where it has exact two-by-two checkers
  *   ({@link halftoneDespeckle}) and then replicated, each destination pixel
  *   taking the source pixel under its centre ({@link halftoneNearest}).
  * - Reducing both axes, each destination pixel is the area average of its

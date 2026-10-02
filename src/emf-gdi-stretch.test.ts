@@ -180,6 +180,30 @@ describe('halftoneDespeckle', () => {
 		expect(new Set(px)).toEqual(new Set([128]));
 	});
 
+	it('pulls a lone diagonal pair of the brighter colour back to 3/4 (native capture)', () => {
+		const px = new Int32Array(9 * 9 * 3);
+		for (const [x, y] of [[4, 4], [5, 5]]) px.set([255, 255, 255], (y * 9 + x) * 3);
+		halftoneDespeckle(px, 9, 9);
+		expect([px[(4 * 9 + 4) * 3], px[(5 * 9 + 5) * 3], px[(4 * 9 + 5) * 3]]).toEqual([191, 191, 0]);
+	});
+
+	it('smooths each pixel once per checker block it belongs to (native capture)', () => {
+		const px = new Int32Array(9 * 9 * 3);
+		for (const [x, y] of [[3, 3], [4, 4], [5, 5]]) px.set([255, 255, 255], (y * 9 + x) * 3);
+		halftoneDespeckle(px, 9, 9);
+		expect([3, 4, 5].map((i) => px[(i * 9 + i) * 3])).toEqual([191, 143, 191]);
+	});
+
+	it('needs exactly equal diagonals (native capture)', () => {
+		const px = new Int32Array(9 * 9 * 3);
+		for (const [x, y] of [[4, 4], [5, 5]]) px.set([255, 255, 255], (y * 9 + x) * 3);
+		px.set([100, 100, 100], (4 * 9 + 5) * 3);
+		px.set([101, 101, 101], (5 * 9 + 4) * 3);
+		const before = [...px];
+		halftoneDespeckle(px, 9, 9);
+		expect([...px]).toEqual(before);
+	});
+
 	it('leaves ramps and one-directional edges alone', () => {
 		const px = new Int32Array(4 * 2 * 3);
 		[100, 104, 108, 112, 255, 255, 255, 255].forEach((v, i) => px.set([v, v, v], i * 3));
