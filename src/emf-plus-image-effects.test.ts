@@ -310,7 +310,28 @@ describe('Blur and Sharpen', () => {
 		expect(k[0]).toBeCloseTo(0.1099, 4);
 		expect(k[1]).toBeCloseTo(0.7802, 4);
 		expect(blurKernel(2.5)).toHaveLength(7);
-		expect(Array.from(blurKernel(10)).reduce((a, b) => a + b)).toBeCloseTo(1, 12);
+		expect(Array.from(blurKernel(10)).reduce((a, b) => a + b)).toBeCloseTo(1, 5);
+	});
+
+	it('forms the kernel weights as float32 values in truncating arithmetic', () => {
+		// Every weight times 256 is a float32 value, so a product's rounding tie is decided by it exactly.
+		for (const radius of [1, 2.5, 10, 15.5, 19.99]) {
+			for (const weight of blurKernel(radius)) {
+				expect(Math.fround(weight * 256)).toBe(weight * 256);
+			}
+		}
+		// Native rounding decisions of single products (tap, pixel value) measured one pixel at a time: where
+		// weight * value falls within a few ten-thousandths of a half, GDI+ rounds as its float32 weight does.
+		const product = (radius: number, tap: number, value: number): number => {
+			const k = blurKernel(radius);
+			return Math.round(k[(k.length - 1) / 2 + tap] * 256 * value);
+		};
+		expect(product(10, 5, 87)).toBe(1120);
+		expect(product(15, 11, 248)).toBe(1215);
+		expect(product(19.5, 10, 112)).toBe(721);
+		// Exact-arithmetic weights would round this one up (5178.50025); GDI+ rounds it down.
+		expect(product(6, 3, 243)).toBe(5178);
+		expect(product(8, 4, 188)).toBe(3017);
 	});
 
 	it('blurs along rows, reflecting at the ends', () => {
