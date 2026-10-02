@@ -293,10 +293,9 @@ const ALIASED_CASES: ParityCase[] = [
  * every cap and join, rotated/mirrored/stretched/skewed blits, and a
  * 800-shape benchmark drawing, plus wide flattened-ellipse pens on closed
  * figures, curves and dashes (`raster-wide-extra`). Every one is exact at
- * tolerance 0 under `gdiAntialias: false` except `raster-wide-extra`'s dashed
- * 10 px Bezier and rectangle (65 pixels: Windows places a dash along a curved
- * Bezier about 2% earlier than along the same polyline, which is not
- * reproduced).
+ * tolerance 0 under `gdiAntialias: false` (Windows measures each segment of
+ * a dashed curve from its vector cut down to whole pixels, which is what
+ * had put its dashes up to 2% away from ours).
  */
 const raster = (name: string, maxMismatch = 0): ParityCase => ({
 	name,
@@ -325,7 +324,7 @@ const RASTER_CASES: ParityCase[] = [
 	raster('raster-wide-pens'), // was 0.420%
 	raster('raster-wide-joins'), // was 0.991%
 	raster('raster-dash-geometric'), // was 3.943%
-	raster('raster-wide-extra', 0.0012), // measured 0.114% (65 pixels), before 0.155%
+	raster('raster-wide-extra'), // exact; was 0.114% (65 pixels): dashes along curves
 ];
 
 /**

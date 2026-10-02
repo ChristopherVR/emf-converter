@@ -342,6 +342,10 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 		miterLimit: state.miterLimit ?? 10,
 		dashes: dashes ? dashes.map((v) => v * 16) : null,
 		shortenDashes: (flags & 0x0f) !== 7,
+		// One logical unit per device pixel, unrotated: GDI measures dash
+		// segments in whole pixels.
+		wholePixelDashVectors:
+			Math.abs(matrix[0] - 1) < 1e-6 && Math.abs(matrix[3] - 1) < 1e-6 && Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6,
 	};
 }
 
