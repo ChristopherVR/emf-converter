@@ -43,7 +43,7 @@ describe('EMF+ image effects', () => {
 				if (i % 4 === 3) { if (actual[i] !== source[i] || actual[i] !== expected[setting * source.length + i]) throw new Error('Tint changed source alpha'); continue; }
 				maximum = Math.max(maximum, Math.abs(actual[i] - expected[setting * source.length + i]));
 			}
-			expect(maximum, `hue=${hue} amount=${amount}`).toBeLessThanOrEqual(amount === 0 ? 1 : amount > 0 ? 3 : amount === -50 ? 3 : 5);
+			expect(maximum, `hue=${hue} amount=${amount}`).toBeLessThanOrEqual(amount === 0 || amount === 100 ? 0 : 1);
 		});
 	});
 	it('matches native hue, saturation and lightness exactly across 1,390,080 colour/setting pairs', () => {

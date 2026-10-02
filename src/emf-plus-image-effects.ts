@@ -29,7 +29,7 @@
  *   sweep values and a further 2.6 million probe values match.
  * - `HueSaturationLightness` is exact: the integer HSL pipeline matches the
  *   native output for the whole RGB cube at every setting measured.
- * - `Tint` is within two levels on nearly every pixel.
+ * - `Tint` is exact at amounts 0 and 100 and within one level elsewhere.
  * - `RedEyeCorrection` remains an approximation.
  *
  * All operations take straight (un-premultiplied) top-down RGBA and return
@@ -351,17 +351,6 @@ export function applyColorMatrix(src: Uint8ClampedArray, m: number[]): Uint8Clam
 	return out;
 }
 
-/** HSL to RGB (0..1). */
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-	const c = (1 - Math.abs(2 * l - 1)) * s;
-	const hp = (((h % 360) + 360) % 360) / 60;
-	const x = c * (1 - Math.abs((hp % 2) - 1));
-	const m = l - c / 2;
-	const [r, g, b] =
-		hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
-	return [r + m, g + m, b + m];
-}
-
 /** Native hue rotates on 255 indices; reconstruction uses 43-unit sextants. */
 const HUE_SEXTANT = 43;
 const HUE_CIRCLE = 255;
@@ -454,43 +443,68 @@ export function applyHueSaturationLightness(
 	return out;
 }
 
-/** Rec. 709 luma weights, which GDI+'s Tint uses. */
-const LUMA_709 = [0.2126, 0.7152, 0.0722] as const;
-
-/** Fitted native chroma scale, now checked across 90 hue/amount settings. */
-const TINT_CHROMA_SCALE = 0.985;
-
 /**
- * Tint (MS-EMFPLUS 2.2.3.11), measured: each pixel moves `amount / 100` of
- * the way toward its own Rec. 709 luma plus the chroma of the fully
- * saturated colour at `hue` degrees (0 red, 120 green, -120 blue; GDI+'s
- * documentation counts from blue, but its red and blue are swapped) scaled
- * by the pixel's largest channel. A negative amount extrapolates away from
- * it, strengthening the complementary colour. Native Tint wraps its
- * quantized hue at 256, unlike HSL's 255-index rotation. A broader sweep
- * retains three levels at positive amounts and five at negative amounts;
- * the chroma scale and colour rounding remain approximate.
+ * Tint (MS-EMFPLUS 2.2.3.11) in GDI+'s integer arithmetic. Luma is
+ * `S = 54 r + 183 g + 19 b` (weights over 256, so 8.8 fixed point). The tint
+ * colour is the full-intensity colour at `hue` rebuilt like the HSL effect's
+ * (hue index, 43 steps a sextant, a maximum of 254, `hue * 255 / 360` rounded
+ * with sign, wrapping at 256). With `x` the per-channel 8.8 value that blends
+ * the pixel with the tint scaled by its largest channel `v`, each output is
+ * `(S + x - luma(x >> 8)) >> 8`: the tinted colour keeps the pixel's luma. At
+ * full amount `x = T (v - 1)` and at zero `x = 255 c`; both are exact over the
+ * whole RGB cube for every hue. In between, `A = round(2.55 |amount|)` (halves
+ * down) weights the pixel `255 - A` and the tint `A - 1`; a negative amount
+ * weights the pixel `255 + A` and subtracts the tint at `v`. Those partial
+ * weights are fitted: the sweep stays within one level (about 8% of channel
+ * values one level off), the exact intermediate arithmetic being unidentified.
  */
 export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): Uint8ClampedArray {
 	// Signed half rounding makes -180 and +180 adjacent palette indices.
-	const index = (Math.round(hue * 255 / 360) + 256) % 256;
+	const index = (Math.round((hue * 255) / 360) + 256) % 256;
 	const q = (index + Math.floor((index + 41) / 85)) % 258;
-	const tint = hslToRgb(q * 60 / 43, 1, 0.5);
-	const ty = tint[0] * LUMA_709[0] + tint[1] * LUMA_709[1] + tint[2] * LUMA_709[2];
-	const chroma = tint.map((c) => (c - ty) * TINT_CHROMA_SCALE);
-	const a = amount / 100;
+	const sextant = Math.min(5, Math.floor(q / HUE_SEXTANT));
+	const position = q - sextant * HUE_SEXTANT;
+	const up = Math.floor((TINT_FULL * position) / HUE_SEXTANT);
+	const down = Math.floor((TINT_FULL * (HUE_SEXTANT - position)) / HUE_SEXTANT);
+	const tint = [
+		[TINT_FULL, up, 0],
+		[down, TINT_FULL, 0],
+		[0, TINT_FULL, up],
+		[0, down, TINT_FULL],
+		[up, 0, TINT_FULL],
+		[TINT_FULL, 0, down],
+	][sextant];
+	const negative = amount < 0;
+	// Round-half-down of 2.55 |amount|, in integers.
+	const weight = Math.floor((255 * Math.abs(amount) + 49) / 100);
+	const original = negative ? 255 + weight : 255 - weight;
 	const out = new Uint8ClampedArray(src);
 	for (let i = 0; i < src.length; i += 4) {
 		const r = src[i];
 		const g = src[i + 1];
 		const b = src[i + 2];
-		const y = r * LUMA_709[0] + g * LUMA_709[1] + b * LUMA_709[2];
 		const v = Math.max(r, g, b);
-		out[i] = Math.round((1 - a) * r + a * (y + v * chroma[0]));
-		out[i + 1] = Math.round((1 - a) * g + a * (y + v * chroma[1]));
-		out[i + 2] = Math.round((1 - a) * b + a * (y + v * chroma[2]));
+		const luma = 54 * r + 183 * g + 19 * b;
+		const x0 = original * r + tintTerm(negative, weight, tint[0], v);
+		const x1 = original * g + tintTerm(negative, weight, tint[1], v);
+		const x2 = original * b + tintTerm(negative, weight, tint[2], v);
+		const compensation = 54 * (x0 >> 8) + 183 * (x1 >> 8) + 19 * (x2 >> 8);
+		out[i] = (luma + x0 - compensation) >> 8;
+		out[i + 1] = (luma + x1 - compensation) >> 8;
+		out[i + 2] = (luma + x2 - compensation) >> 8;
 	}
 	return out;
+}
+
+/** Largest tint channel: the HSL effect's 255-level maximum is 254. */
+const TINT_FULL = 254;
+
+/** The tint's 8.8 contribution to one channel (see {@link applyTint}). */
+function tintTerm(negative: boolean, weight: number, channel: number, v: number): number {
+	if (negative) {
+		return -Math.floor((weight * channel * v) / 255);
+	}
+	return Math.floor((Math.max(weight - 1, 0) * channel * Math.max(v - 1, 0)) / TINT_FULL);
 }
 
 /**
