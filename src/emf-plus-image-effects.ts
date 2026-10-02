@@ -29,7 +29,8 @@
  *   sweep values and a further 2.6 million probe values match.
  * - `HueSaturationLightness` is exact: the integer HSL pipeline matches the
  *   native output for the whole RGB cube at every setting measured.
- * - `Tint` is exact at amounts 0 and 100 and within one level elsewhere.
+ * - `Tint` is exact: the integer luma-preserving pipeline matches the whole
+ *   RGB cube at every amount.
  * - `RedEyeCorrection` remains an approximation.
  *
  * All operations take straight (un-premultiplied) top-down RGBA and return
@@ -444,19 +445,17 @@ export function applyHueSaturationLightness(
 }
 
 /**
- * Tint (MS-EMFPLUS 2.2.3.11) in GDI+'s integer arithmetic. Luma is
- * `S = 54 r + 183 g + 19 b` (weights over 256, so 8.8 fixed point). The tint
- * colour is the full-intensity colour at `hue` rebuilt like the HSL effect's
- * (hue index, 43 steps a sextant, a maximum of 254, `hue * 255 / 360` rounded
- * with sign, wrapping at 256). With `x` the per-channel 8.8 value that blends
- * the pixel with the tint scaled by its largest channel `v`, each output is
- * `(S + x - luma(x >> 8)) >> 8`: the tinted colour keeps the pixel's luma. At
- * full amount `x = T (v - 1)` and at zero `x = 255 c`; both are exact over the
- * whole RGB cube for every hue. In between, `A = round(2.55 |amount|)` (halves
- * down) weights the pixel `255 - A` and the tint `A - 1`; a negative amount
- * weights the pixel `255 + A` and subtracts the tint at `v`. Those partial
- * weights are fitted: the sweep stays within one level (about 8% of channel
- * values one level off), the exact intermediate arithmetic being unidentified.
+ * Tint (MS-EMFPLUS 2.2.3.11) in GDI+'s integer arithmetic, reproduced
+ * exactly. Luma is `S = 54 r + 183 g + 19 b` (weights over 256, so 8.8 fixed
+ * point). The tint colour `T` is the full-intensity colour at `hue`, rebuilt
+ * like the HSL effect's (hue index from `hue * 255 / 360` rounded with sign and
+ * wrapped at 256, 43 steps a sextant, a maximum of 254). The amount becomes a
+ * signed weight `w = +-round(2.55 |amount|)` (halves toward zero). With `v`
+ * the pixel's largest channel and `u = (w * v) >> 8` (an arithmetic shift, so
+ * negative weights round down), each channel's 8.8 value is
+ * `x = (255 - w) c + T u` and the output is `(S + x - luma(x >> 8)) >> 8`: the
+ * tinted colour keeps the pixel's luma. Matches the whole 16.7 million-colour
+ * RGB cube at every amount and hue measured.
  */
 export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): Uint8ClampedArray {
 	// Signed half rounding makes -180 and +180 adjacent palette indices.
@@ -466,7 +465,7 @@ export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): 
 	const position = q - sextant * HUE_SEXTANT;
 	const up = Math.floor((TINT_FULL * position) / HUE_SEXTANT);
 	const down = Math.floor((TINT_FULL * (HUE_SEXTANT - position)) / HUE_SEXTANT);
-	const tint = [
+	const [tr, tg, tb] = [
 		[TINT_FULL, up, 0],
 		[down, TINT_FULL, 0],
 		[0, TINT_FULL, up],
@@ -474,38 +473,28 @@ export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): 
 		[up, 0, TINT_FULL],
 		[TINT_FULL, 0, down],
 	][sextant];
-	const negative = amount < 0;
-	// Round-half-down of 2.55 |amount|, in integers.
-	const weight = Math.floor((255 * Math.abs(amount) + 49) / 100);
-	const original = negative ? 255 + weight : 255 - weight;
+	// Round-half-down of 2.55 |amount| in integers, keeping the sign.
+	const weight = Math.sign(amount) * Math.floor((255 * Math.abs(amount) + 49) / 100);
+	const original = 255 - weight;
 	const out = new Uint8ClampedArray(src);
 	for (let i = 0; i < src.length; i += 4) {
 		const r = src[i];
 		const g = src[i + 1];
 		const b = src[i + 2];
-		const v = Math.max(r, g, b);
-		const luma = 54 * r + 183 * g + 19 * b;
-		const x0 = original * r + tintTerm(negative, weight, tint[0], v);
-		const x1 = original * g + tintTerm(negative, weight, tint[1], v);
-		const x2 = original * b + tintTerm(negative, weight, tint[2], v);
-		const compensation = 54 * (x0 >> 8) + 183 * (x1 >> 8) + 19 * (x2 >> 8);
-		out[i] = (luma + x0 - compensation) >> 8;
-		out[i + 1] = (luma + x1 - compensation) >> 8;
-		out[i + 2] = (luma + x2 - compensation) >> 8;
+		const u = (weight * Math.max(r, g, b)) >> 8;
+		const x0 = original * r + tr * u;
+		const x1 = original * g + tg * u;
+		const x2 = original * b + tb * u;
+		const base = 54 * r + 183 * g + 19 * b - (54 * (x0 >> 8) + 183 * (x1 >> 8) + 19 * (x2 >> 8));
+		out[i] = (base + x0) >> 8;
+		out[i + 1] = (base + x1) >> 8;
+		out[i + 2] = (base + x2) >> 8;
 	}
 	return out;
 }
 
 /** Largest tint channel: the HSL effect's 255-level maximum is 254. */
 const TINT_FULL = 254;
-
-/** The tint's 8.8 contribution to one channel (see {@link applyTint}). */
-function tintTerm(negative: boolean, weight: number, channel: number, v: number): number {
-	if (negative) {
-		return -Math.floor((weight * channel * v) / 255);
-	}
-	return Math.floor((Math.max(weight - 1, 0) * channel * Math.max(v - 1, 0)) / TINT_FULL);
-}
 
 /**
  * Red-eye correction (MS-EMFPLUS 2.2.3.9), an approximation: inside each

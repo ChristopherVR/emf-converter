@@ -165,13 +165,13 @@ const HSL: EffectCase[] = [
 	exact('hsl-h30-sn30-l20'),
 ];
 
-/** Tint in GDI+'s integer luma-preserving arithmetic: exact at full amount, within a level in between. */
+/** Tint in GDI+'s integer luma-preserving arithmetic: exact. */
 const TINT: EffectCase[] = [
-	within('tint-h0-a50'), // 97.005% before, 60.543% within 2 levels, now within 1
+	exact('tint-h0-a50'), // 97.005% before, 60.543% within 2 levels
 	exact('tint-h120-a100'), // 96.908% before
 	exact('tint-h180-a100'), // 96.908% before
-	within('tint-hn90-a30'), // 97.005% before, 73.889% within 2 levels, now within 1
-	within('tint-h60-an50'), // 93.066% before, 51.493% within 2 levels (0.065% three off), now within 1
+	exact('tint-hn90-a30'), // 97.005% before
+	exact('tint-h60-an50'), // 93.066% before
 ];
 
 /** RedEyeCorrection: GDI+ repaints detected pupils with a texture; approximated. */

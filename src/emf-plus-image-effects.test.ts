@@ -227,7 +227,7 @@ describe('HueSaturationLightness', () => {
 describe('Tint', () => {
 	const tint = (hue: number, amount: number): EmfPlusImageEffect => ({ kind: 'tint', hue, amount });
 
-	it('adds the tint scaled by the largest channel, keeping the luma', () => {
+	it('adds the tint scaled by the largest channel, keeping the luma (native values)', () => {
 		// Grey 128 with red (254, 0, 0) scaled by 127/256 on red, luma kept: native (227, 101, 101).
 		expect(apply(px([128, 128, 128, 255]), tint(0, 100))).toEqual([227, 101, 101, 255]);
 		// Half the amount: native (177, 114, 114).
@@ -241,10 +241,9 @@ describe('Tint', () => {
 	});
 
 	it('strengthens the complementary colour for a negative amount', () => {
-		// Yellow at -50 makes grey bluer and pushes red away from yellow (blue rises);
-		// native is (123, 123, 187) and (255, 0, 71), one level from these.
-		expect(apply(px([128, 128, 128, 255]), tint(60, -50))).toEqual([124, 124, 187, 255]);
-		expect(apply(px([200, 0, 0, 255]), tint(60, -50))).toEqual([255, 0, 70, 255]);
+		// Yellow at -50 makes grey bluer and pushes red away from yellow (blue rises); native values.
+		expect(apply(px([128, 128, 128, 255]), tint(60, -50))).toEqual([123, 123, 187, 255]);
+		expect(apply(px([200, 0, 0, 255]), tint(60, -50))).toEqual([255, 0, 71, 255]);
 	});
 
 	it('leaves alpha alone and is the identity at amount 0', () => {
