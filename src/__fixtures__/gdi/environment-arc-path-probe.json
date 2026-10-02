@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-02T01:02:05.5811734Z",
+    "capturedAt":  "2026-10-02T02:57:46.6569289Z",
     "groups":  "arc-path-probe",
     "os":  "Microsoft Windows NT 10.0.26200.0",
     "build":  9457,
@@ -3384,6 +3384,14 @@
                        {
                            "name":  "arc-paths.json",
                            "sha256":  "5cbc2859e1443c98371204cf6bf802f445b1a45fca344806f0b9f3c2b3eb6cb6"
+                       },
+                       {
+                           "name":  "arc-paths-cw.json",
+                           "sha256":  "10bf956976f47c19d1ba6e252eef2efdcaa9f3b174fb20534ad800a4a23fcc0d"
+                       },
+                       {
+                           "name":  "arc-precise.json",
+                           "sha256":  "7538319ada670838e7308e3cb082ac4669e23c948ad63e9ed803196813ea2414"
                        }
                    ]
 }
