@@ -192,9 +192,9 @@ const TINT: EffectCase[] = [
  * and the red-ramp bands (a 256 x 64 gradient test image) are approximate.
  */
 const RED_EYE: EffectCase[] = [
-	bounded('redeye-left', 0, 0.0072), // 3.659% with the old fixed rule, 0.71% now
-	bounded('redeye-both', 0, 0.015), // 6.860%, 1.49%
-	bounded('redeye-whole', 0, 0.0352), // 46.227%, 3.51%
+	bounded('redeye-left', 0, 0.0023), // 3.659% with the old fixed rule, 0.71% before the measured model, 0.21% now
+	bounded('redeye-both', 0, 0.0063), // 6.860%, 1.49%, 0.62%
+	bounded('redeye-whole', 0, 0.0278), // 46.227%, 3.51%, 2.77%
 ];
 
 describe('EMF+ image effects against GDI+-computed bitmaps', () => {
