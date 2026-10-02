@@ -101,4 +101,30 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"wide-outline-fix.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
+	// Perpendicular (half the vector between the two start-side vertices) that WidenPath gives a single flat-capped segment, per pen width
+	// in FIX (the pen is created in 1/16-pixel logical units, so fractional and very wide pens are possible) and whole-pixel direction.
+	public static void FlatVectors(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(8123);var json=new StringBuilder("[");
+		int[,] special={{1,0},{0,1},{-1,0},{0,-1},{1,1},{-1,-1},{1,-1},{-1,1},{2,1},{1,2},{5,-12},{-5,12},{3,-7},{7,-3},{-12,5},{4,-1}};
+		try {
+			SetMapMode(dc,8);SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+			foreach(int width in new[]{104,112,120,126,128,136,147,200,264,376,520,848,1008,1288,1608,1616,1700,1800,2000,2400,3200}) {
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen(0x10000|0x200|0x2000,(uint)width,ref brush,0,IntPtr.Zero);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");IntPtr old=SelectObject(dc,pen);
+				try {
+					for(int sample=0;sample<40+special.GetLength(0);sample++) {
+						int dx,dy;
+						if(sample<40){double a=random.NextDouble()*Math.PI*2,len=5+random.NextDouble()*65;dx=(int)Math.Round(Math.Cos(a)*len);dy=(int)Math.Round(Math.Sin(a)*len);if(dx==0&&dy==0)dx=1;}
+						else{int k=sample-40;dx=special[k,0]*(k<4?40:k<8?28:k<10?25:6);dy=special[k,1]*(k<4?40:k<8?28:k<10?25:6);}
+						var p=new[]{new Point{X=500*16,Y=500*16},new Point{X=(500+dx)*16,Y=(500+dy)*16}};
+						if(!BeginPath(dc)||!Polyline(dc,p,2)||!EndPath(dc)||!WidenPath(dc))throw new Exception("WidenPath failed");
+						int n=GetPath(dc,null,null,0);var points=new Point[n];var types=new byte[n];GetPath(dc,points,types,n);
+						if(json.Length>1)json.Append(',');
+						json.Append('[').Append(width).Append(',').Append(dx*16).Append(',').Append(dy*16).Append(',').Append((points[1].X-points[0].X)/2).Append(',').Append((points[1].Y-points[0].Y)/2).Append(']');
+					}
+				}finally{SelectObject(dc,old);DeleteObject(pen);}
+			}
+			File.WriteAllText(Path.Combine(dir,"flat-pen-vectors.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
 }
