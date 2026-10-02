@@ -128,8 +128,10 @@ describe('halftoneAxis', () => {
 });
 
 describe('halftoneReduceTaps', () => {
-	it('splits an exact 3x reduction as 21844 + 21846 + 21846, the first tap lightest', () => {
-		expect(halftoneReduceTaps(12, 4, false)[1]).toEqual([[3, 21844], [4, 21846], [5, 21846]]);
+	it('splits an exact 3x reduction by 13-bit cumulative shares as 21840 + 21848 + 21848, the first tap lightest', () => {
+		expect(halftoneReduceTaps(12, 4, false)[1]).toEqual([[3, 21840], [4, 21848], [5, 21848]]);
+		// 8192 / 7 = 1170.29: the cumulative share steps over an integer at sub-pixels 3 and 6.
+		expect(halftoneReduceTaps(7, 1, false)[0].map(([, w]) => w / 8)).toEqual([1170, 1170, 1170, 1171, 1170, 1170, 1171]);
 	});
 
 	it('keeps weights that are exact in 16.16 exact and always sums to 65536', () => {

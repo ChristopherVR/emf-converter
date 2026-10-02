@@ -200,35 +200,41 @@ export function halftoneAxis(start: number, srcLen: number, dstLen: number, reve
 	return taps;
 }
 
+/** Bits of the reduction weights Windows keeps per source sub-pixel (8192 shares). */
+const REDUCE_BITS = 13;
+
 /**
  * HALFTONE source taps along one axis of a mixed-axis stretch. Enlarging (or
  * 1:1) is {@link halftoneAxis}'s nearest pixel. Reducing, destination pixel
- * `i` covers the exact span `[i * src / dst, (i + 1) * src / dst)` and takes
- * every source pixel it overlaps with a 16.16 weight: the overlap share
- * rounded up, except for the first (lowest source index) tap, which takes
- * whatever remains so the weights sum to exactly 65536. The stretch carries
- * these fractions through its sharpening pass, so the split decides which side
- * of an integer boundary an exact result (a 3x reduction) lands on; measured
- * against native captures the first tap is the one that ends up the lightest.
- * Weights that are exact in 16.16 (a 16 -> 5 reduction) stay exact.
+ * `i` covers `src` sub-pixels (each a `1 / dst` of a source pixel) starting
+ * at `i * src`, and the footprint is divided into 8192 shares: the cumulative
+ * share at sub-pixel `j` of the footprint is `floor(j * 8192 / src)`, and a
+ * source pixel's weight is the difference of the cumulative shares at its two
+ * edges inside the footprint (a whole-ratio footprint therefore has
+ * `floor(8192 / src)` or one more per sub-pixel, the extras falling where the
+ * cumulative share steps over an integer). The weights are returned scaled by 8
+ * to 16.16, so they sum to exactly 65536. The stretch carries these fractions
+ * through its sharpening pass, so the split decides which side of an integer
+ * boundary an exact result (a 3x reduction, an alternating 0/255 checker) lands
+ * on. Reproduced exactly by native impulse and random-data captures of over
+ * 100 source/destination size pairs (sources of up to 300 pixels).
  */
 export function halftoneReduceTaps(srcLen: number, dstLen: number, reverse: boolean): HalftoneTaps[] {
 	if (dstLen >= srcLen) return halftoneAxis(0, srcLen, dstLen, reverse);
+	const shares = 2 ** REDUCE_BITS;
+	const scale = FIX / shares;
 	const taps: HalftoneTaps[] = [];
 	for (let i = 0; i < dstLen; i++) {
-		// Spans in units of 1 / dstLen source pixels: pixel k covers [k * dstLen, (k + 1) * dstLen).
+		// Sub-pixels of 1 / dstLen source pixels: pixel k covers [k * dstLen, (k + 1) * dstLen).
 		const from = i * srcLen;
 		const to = (i + 1) * srcLen;
 		const run: HalftoneTaps = [];
-		let rest = 0;
 		for (let k = Math.floor(from / dstLen); k * dstLen < to; k++) {
-			const overlap = Math.min(to, (k + 1) * dstLen) - Math.max(from, k * dstLen);
-			if (overlap <= 0) continue;
-			const w = Math.ceil((overlap * FIX) / srcLen);
-			run.push([k, w]);
-			if (run.length > 1) rest += w;
+			const lo = Math.max(from, k * dstLen) - from;
+			const hi = Math.min(to, (k + 1) * dstLen) - from;
+			if (hi <= lo) continue;
+			run.push([k, (Math.floor((hi * shares) / srcLen) - Math.floor((lo * shares) / srcLen)) * scale]);
 		}
-		if (run.length > 1) run[0][1] = FIX - rest;
 		taps.push(run);
 	}
 	if (reverse) taps.reverse();
@@ -535,7 +541,7 @@ function halftoneKeepLast(px: Int32Array, w: number, h: number, rows: boolean): 
  *   clamping/truncating after each pass. Only then does it enlarge: an exact
  *   2x is plain linear interpolation, any other ratio is {@link halftoneEnlargeTaps}
  *   (area resampling plus a destination-space smoothing FIR). Both end in
- *   rounding half up. The reduction carries its 16.16 weights
+ *   rounding half up. The reduction carries its 13-bit-share weights
  *   ({@link halftoneReduceTaps}) through the sharpening. Milder reductions pick
  *   the nearest source pixel. Native captures match exactly for most sizes;
  *   a few exact-tie patterns and full colour adjustment retain residual
