@@ -924,7 +924,16 @@ const HALFTONE_CASES: ParityCase[] = [
 	halftone('emfrec-ca-control-dib-adjusted', 0.006), // 0.549%, max 3 (27.95% at tolerance 24 before)
 	halftone('emfrec-ca-control-dib', 0.0075), // 0.738%, max 2 levels (before 10.776%)
 	halftone('emfrec-coloradjustment-off'), // measured 0% (1.048% before)
-	adjusted('emfrec-coloradjustment', 0.02), // measured 1.814%, max 3 levels (7.886% at tolerance 24 before)
+	halftone('emfrec-coloradjustment'), // measured 0% (1.814% before the unrounded palette levels)
+	// Flat colours under a colour adjustment, showing where the dither pattern starts: mirrored
+	// and brush-origin StretchBlts (2x, 0.5x, mixed axes), bottom-up StretchDIBits, axis-aligned
+	// PlgBlt (a HALFTONE stretch), and rotated / skewed blits (adjusted only after an unrotated
+	// adjusted HALFTONE blit, dithered per destination pixel). All pixel-exact (1.6-8.8% and up
+	// to 60 levels off before).
+	halftone('emfrec-halftone-origin-stretch'),
+	halftone('emfrec-halftone-origin-dib'),
+	halftone('emfrec-halftone-origin-plgblt'),
+	halftone('emfrec-halftone-origin-rotated'),
 	halftone('emfrec-halftone-ramp-2x'),
 	halftone('emfrec-halftone-ramp-0p5x'),
 	halftone('emfrec-halftone-ramp-1p37x'),
@@ -937,16 +946,16 @@ const HALFTONE_CASES: ParityCase[] = [
 	halftone('emfrec-halftone-ramp-0p5x-2y', 0.178), // 17.698% (before 22.297%)
 	halftone('emfrec-halftone-checker-2x-0p5y', 0.237), // 23.629% (before 43.207%)
 	halftone('emfrec-halftone-checker-0p5x-2y', 0.226), // 22.498% (before 42.349%)
-	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.055), // 5.023%, max 8
-	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.08), // 7.525%, max 18
-	adjusted('emfrec-halftone-checker-2x-0p5y-ca', 0.006), // 0.549%, max 2
-	adjusted('emfrec-halftone-checker-0p5x-2y-ca', 0.016), // 1.447%, max 2
-	adjusted('emfrec-halftone-ramp-2x-ca', 0.08), // 7.187%, max 3
-	adjusted('emfrec-halftone-ramp-0p5x-ca', 0.042), // 3.841%, max 3
-	adjusted('emfrec-halftone-ramp-1p37x-ca', 0.07), // 6.143%, max 3
-	adjusted('emfrec-halftone-checker-2x-ca', 0.07), // 6.037%, max 2
-	adjusted('emfrec-halftone-checker-0p5x-ca', 0.013), // 1.183%, max 2
-	adjusted('emfrec-halftone-checker-1p37x-ca', 0.065), // 5.737%, max 2
+	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.005), // 0.469% (5.023% before)
+	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.013), // 1.282% (7.525% before)
+	halftone('emfrec-halftone-checker-2x-0p5y-ca'), // 0% (0.549% before)
+	halftone('emfrec-halftone-checker-0p5x-2y-ca'), // 0% (1.447% before)
+	adjusted('emfrec-halftone-ramp-2x-ca', 0.0065), // 0.614% (7.187% before)
+	adjusted('emfrec-halftone-ramp-0p5x-ca', 0.003), // 0.290% (3.841% before)
+	adjusted('emfrec-halftone-ramp-1p37x-ca', 0.005), // 0.469% (6.143% before)
+	halftone('emfrec-halftone-checker-2x-ca'), // 0% (6.037% before)
+	halftone('emfrec-halftone-checker-0p5x-ca'), // 0% (1.183% before)
+	halftone('emfrec-halftone-checker-1p37x-ca'), // 0% (5.737% before)
 ];
 
 /**

@@ -52,10 +52,10 @@ import {
 } from './emf-constants';
 import { realizeBrush } from './emf-gdi-brush-pattern';
 import { gdiDevicePixelX, gdiDevicePixelY, gmh, gmw, gmx, gmy } from './emf-gdi-coord';
-import { paintParallelogram, patternOperand } from './emf-gdi-draw-bitmap';
+import { executePlgBltAsStretch, paintParallelogram, patternOperand, sourceOf } from './emf-gdi-draw-bitmap';
 import { paletteEntries, resolveColorRefRgb } from './emf-gdi-palette';
 import { fixPoint } from './emf-gdi-raster-shapes';
-import { gdiNearest } from './emf-gdi-stretch';
+import { gdiNearest, HALFTONE } from './emf-gdi-stretch';
 import { emfWarn } from './emf-logging';
 import { acquireScratch, compositeOverlay, rewritePixels, type PixelBox } from './emf-rop2-exact';
 import { evalRop3, rop3Operands } from './emf-rop3';
@@ -546,6 +546,19 @@ function handlePlgBlt(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, re
 		// mask is not: measured on a vertically mirrored masked PlgBlt).
 		const W = Math.round(Math.abs(b[0] - a[0]) / 16);
 		const H = Math.round(Math.abs(q[1] - a[1]) / 16);
+		if (!mask && rCtx.state.stretchBltMode === HALFTONE && W > 0 && H > 0) {
+			// Under HALFTONE the blit is the halftone engine's StretchBlt.
+			executePlgBltAsStretch(
+				rCtx,
+				Math.round(a[0] / 16),
+				Math.round(a[1] / 16),
+				b[0] < a[0] ? -W : W,
+				q[1] < a[1] ? -H : H,
+				sourceOf(offset, view.getUint32(dataOff + 88, true), view.getUint32(dataOff + 92, true), view.getUint32(dataOff + 96, true), view.getUint32(dataOff + 100, true), view.getUint32(dataOff + 84, true)),
+				r,
+			);
+			return;
+		}
 		const left = Math.round(a[0] / 16) + (b[0] < a[0] ? 1 - W : 0);
 		const top = Math.round(a[1] / 16) + (q[1] < a[1] ? 1 - H : 0);
 		const aw = Math.abs(r.sw);
@@ -565,6 +578,10 @@ function handlePlgBlt(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, re
 			return texel(flipX ? aw - 1 - kx : kx, flipY ? ah - 1 - ky : ky, kx, ky);
 		});
 		return;
+	}
+	if (rCtx.state.stretchBltMode === HALFTONE && rCtx.halftoneRotatedAdjusts === undefined) {
+		// A rotated HALFTONE blit as the session's first leaves rotated blits unadjusted.
+		rCtx.halftoneRotatedAdjusts = false;
 	}
 	paintParallelogram(rCtx, a, b, q, r.sw, r.sh, (ix, iy) => texel(ix, iy));
 }

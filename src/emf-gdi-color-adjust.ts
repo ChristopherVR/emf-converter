@@ -20,7 +20,12 @@
  *      white), keeping Y: the chroma offset from white is scaled by
  *      `1 + c / 100` and turned by `-t * 0.6` degrees. A result outside
  *      0..255 is remapped affinely onto 0..255 (smallest channel to 0,
- *      largest to 255) rather than clipped.
+ *      largest to 255) rather than clipped. The stage reads the palette level
+ *      unrounded (`255 n / 31`, not the rounded 8-bit entry) and its result is
+ *      rounded to an integer before the curve stages below; with both
+ *      the native cubes agree on all but about 0.2-0.5% of channels (one level).
+ *      Strongly out-of-gamut blues (tint beyond about 50) are compressed less
+ *      than the affine remap predicts, up to 24 levels at tint 100.
  *   3. Gamma per channel: `255 * (v / 255) ^ gamma`.
  *   4. Reference black / white: `(v - black) / (white - black)`.
  *   5. Contrast: `v * exp(0.0148885 * c)`.
@@ -100,6 +105,12 @@ function hasIlluminant(ca: GdiColorAdjustment): boolean {
 
 /** The 8-bit value of 32-level palette entry `n` (`round(n * 255 / 31)`). */
 const PALETTE = Array.from({ length: 32 }, (_, n) => Math.round((n * 255) / 31));
+
+/** The unrounded level `255 n / 31` of a palette entry's 8-bit value, or `v` when it is not a palette entry. */
+function exactPaletteLevel(v: number): number {
+	const n = Math.round((v * 31) / 255);
+	return PALETTE[n] === v ? (255 * n) / 31 : v;
+}
 
 /** Fractional palette index of a 0..1 channel value, exact at the palette's own levels. */
 function paletteIndex(v: number): number {
@@ -240,6 +251,8 @@ function invert3(m: number[][]): number[][] {
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 const clamp255 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
+/** Rounds half up; a value within float noise of a half counts as the half (the chroma stage lands on exact halves). */
+const roundHalfUp = (v: number): number => Math.floor(v + 0.5 + 1e-7);
 
 /**
  * Scales the CIE 1976 u'v' chroma of a 0..255 colour about D65 white by
@@ -306,7 +319,7 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 		if (negative) {
 			v = 255 - clamp255(v);
 		}
-		return Math.round(clamp255(v));
+		return roundHalfUp(clamp255(v));
 	};
 	if (!illuminant && !chroma) {
 		const tables = [0, 1, 2].map(channel => Uint8Array.from({ length: 256 }, (_, i) => curve(i, channel)));
@@ -319,7 +332,13 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 			c = [mapped[0] * 255, mapped[1] * 255, mapped[2] * 255];
 		}
 		if (chroma) {
+			if (!illuminant) {
+				// The chroma stage reads the palette level unrounded (255 n / 31),
+				// not the rounded 8-bit entry the curve stages see.
+				c = c.map(exactPaletteLevel) as [number, number, number];
+			}
 			c = adjustChroma(clamp255(c[0]), clamp255(c[1]), clamp255(c[2]), scale, angle);
+			c = c.map(roundHalfUp) as [number, number, number];
 		}
 		return (curve(c[0], 0) << 16) | (curve(c[1], 1) << 8) | curve(c[2], 2);
 	};

@@ -6,6 +6,7 @@ import {
 	ditherThreshold,
 	paletteLevel,
 } from './emf-gdi-halftone-dither';
+import { stretchHalftone } from './emf-gdi-stretch';
 
 describe('halftone ordered dither (native captures)', () => {
 	it('uses the 32-level palette round(n * 255 / 31)', () => {
@@ -52,5 +53,51 @@ describe('halftone ordered dither (native captures)', () => {
 		expect(ditherStartX(2, 1)).toBe(65);
 		expect(ditherStartX(2, 3)).toBe(62);
 		expect(ditherStartY(2, 4)).toBe(61);
+	});
+});
+
+describe('halftone dither of mirrored and mixed-axis stretches (native captures)', () => {
+	// Flat grey 100 through the palette only (an illuminant-free adjustment is the identity on the
+	// quantised colour), so the output shows the threshold decision of every destination pixel.
+	const flat = (w: number, h: number, dw: number, dh: number, startX = 0, startY = 0): Int32Array => {
+		const data = new Uint8ClampedArray(w * h * 4).fill(100);
+		const out = stretchHalftone(
+			{ width: w, height: h, data },
+			0, 0, w, h, dw, dh,
+			() => undefined,
+			false, false,
+			{ startX, startY },
+		);
+		return Int32Array.from({ length: out.width * out.height }, (_, i) => out.data[i * 4]);
+	};
+	const expectedAt = (sx: number, sy: number, px: number, py: number): number => ditherQuantize(100, ditherThreshold(sx, sy, px, py));
+
+	it('runs a vertically mirrored 2x enlargement down the rows, shifted by the added rows', () => {
+		// Native: rows start at H - SH = 8 for 8 -> 16, and each source row spans two destination rows.
+		const out = flat(8, 8, 16, -16);
+		for (let y = 0; y < 16; y++) {
+			for (let x = 0; x < 16; x++) {
+				expect(out[y * 16 + x]).toBe(expectedAt(0, 0, Math.floor(x / 2), 8 + Math.floor(y / 2)));
+			}
+		}
+	});
+
+	it('flips the pattern with a horizontally mirrored enlargement', () => {
+		const out = flat(8, 8, -16, 16);
+		for (let y = 0; y < 16; y++) {
+			for (let x = 0; x < 16; x++) {
+				expect(out[y * 16 + x]).toBe(expectedAt(0, 0, 7 - Math.floor(x / 2), Math.floor(y / 2)));
+			}
+		}
+	});
+
+	it('follows the destination pixel when the destination is not larger than the source in area', () => {
+		// 16 -> 12 x 20 (area 240 < 256): both axes follow the destination pixel.
+		const out = flat(16, 16, 12, 20);
+		for (let y = 0; y < 20; y++) {
+			for (let x = 0; x < 12; x++) {
+				expect(out[y * 12 + x]).toBe(expectedAt(0, 0, x, y));
+			}
+		}
 	});
 });
