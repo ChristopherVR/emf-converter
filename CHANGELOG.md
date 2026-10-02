@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.3) - 2026-10-02
+
+### Bug Fixes
+
+- **emf-plus:** Match GDI+ rotated high-quality DrawImage edges and sub-rectangle taps ([b6fd312](https://github.com/ChristopherVR/emf-converter/commit/b6fd31292947a85063fa1911e5320509c8389dcd))
+- **gdi:** Floor the turned u' at 0 so strongly tinted blues compress like Windows ([b281d0b](https://github.com/ChristopherVR/emf-converter/commit/b281d0b7d6aebb15185bd95eabd4ee3c1fe1dcb7))
+- **gdi:** Exact BT.709 matrix and unclamped illuminant output for the HALFTONE chroma stage ([eb94b59](https://github.com/ChristopherVR/emf-converter/commit/eb94b59ea5cb0b07ea946b9ea041630717499b16))
+- **gdi:** Reduce both axes like Windows' HALFTONE (rows rounded, columns unrounded, then sharpen) ([fc70ff7](https://github.com/ChristopherVR/emf-converter/commit/fc70ff70a7d22ff96fec97a220a63ab5b9841046))
+- **gdi:** Sharpen the last row against a dithered replica row for mixed-axis adjusted stretches ([a726569](https://github.com/ChristopherVR/emf-converter/commit/a7265698318a818d907d659703a5f778782f485a))
+
 ## [4.8.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.2) - 2026-10-02
 
 ### Bug Fixes
