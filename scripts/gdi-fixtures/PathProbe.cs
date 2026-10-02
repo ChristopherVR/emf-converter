@@ -19,6 +19,9 @@ public static class PathProbe
 	[DllImport("gdi32.dll")] static extern int GetPath(IntPtr dc, [Out] Point[] points, [Out] byte[] types, int count);
 	[DllImport("gdi32.dll")] static extern bool RoundRect(IntPtr dc, int l, int t, int r, int b, int w, int h);
 	[DllImport("gdi32.dll")] static extern bool Ellipse(IntPtr dc, int l, int t, int r, int b);
+	[DllImport("gdi32.dll")] static extern bool Arc(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
+	[DllImport("gdi32.dll")] static extern bool Chord(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
+	[DllImport("gdi32.dll")] static extern bool Pie(IntPtr dc, int l, int t, int r, int b, int x1, int y1, int x2, int y2);
 	[DllImport("gdi32.dll")] static extern int SetArcDirection(IntPtr dc, int direction);
 	[DllImport("gdi32.dll")] static extern int SetMapMode(IntPtr dc, int mode);
 	[DllImport("gdi32.dll")] static extern int SetGraphicsMode(IntPtr dc, int mode);
@@ -99,6 +102,86 @@ public static class PathProbe
 				}}finally{SelectObject(dc,old);DeleteObject(pen);}
 			}
 			File.WriteAllText(Path.Combine(dir,"wide-outline-fix.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
+	// Perpendicular (half the vector between the two start-side vertices) that WidenPath gives a single flat-capped segment, per pen width
+	// in FIX (the pen is created in 1/16-pixel logical units, so fractional and very wide pens are possible) and whole-pixel direction.
+	public static void FlatVectors(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(8123);var json=new StringBuilder("[");
+		int[,] special={{1,0},{0,1},{-1,0},{0,-1},{1,1},{-1,-1},{1,-1},{-1,1},{2,1},{1,2},{5,-12},{-5,12},{3,-7},{7,-3},{-12,5},{4,-1}};
+		try {
+			SetMapMode(dc,8);SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+			foreach(int width in new[]{104,112,120,126,128,136,147,200,264,376,520,848,1008,1288,1608,1616,1700,1800,2000,2400,3200}) {
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen(0x10000|0x200|0x2000,(uint)width,ref brush,0,IntPtr.Zero);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");IntPtr old=SelectObject(dc,pen);
+				try {
+					for(int sample=0;sample<40+special.GetLength(0);sample++) {
+						int dx,dy;
+						if(sample<40){double a=random.NextDouble()*Math.PI*2,len=5+random.NextDouble()*65;dx=(int)Math.Round(Math.Cos(a)*len);dy=(int)Math.Round(Math.Sin(a)*len);if(dx==0&&dy==0)dx=1;}
+						else{int k=sample-40;dx=special[k,0]*(k<4?40:k<8?28:k<10?25:6);dy=special[k,1]*(k<4?40:k<8?28:k<10?25:6);}
+						var p=new[]{new Point{X=500*16,Y=500*16},new Point{X=(500+dx)*16,Y=(500+dy)*16}};
+						if(!BeginPath(dc)||!Polyline(dc,p,2)||!EndPath(dc)||!WidenPath(dc))throw new Exception("WidenPath failed");
+						int n=GetPath(dc,null,null,0);var points=new Point[n];var types=new byte[n];GetPath(dc,points,types,n);
+						if(json.Length>1)json.Append(',');
+						json.Append('[').Append(width).Append(',').Append(dx*16).Append(',').Append(dy*16).Append(',').Append((points[1].X-points[0].X)/2).Append(',').Append((points[1].Y-points[0].Y)/2).Append(']');
+					}
+				}finally{SelectObject(dc,old);DeleteObject(pen);}
+			}
+			File.WriteAllText(Path.Combine(dir,"flat-pen-vectors.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
+	// Native GetPath of Arc/Chord/Pie on integer device boxes (GM_COMPATIBLE, counter-clockwise): random arcs, arcs from or to a quadrant boundary, and a 0.096 scale case.
+	public static void ArcPaths(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(6047);var json=new StringBuilder("[");
+		try {
+			for(int sample=0;sample<900;sample++) {
+				int kind=sample%3,w=12+random.Next(0,240),h=12+random.Next(0,240),l=50+random.Next(0,100),t=50+random.Next(0,100),r=l+w,b=t+h;
+				double a1=random.NextDouble()*Math.PI*2,a2=random.NextDouble()*Math.PI*2;
+				if(sample%3==1&&sample>=300){a1=Math.Floor(a1/(Math.PI/2))*(Math.PI/2);}
+				if(sample>=600){a2=Math.Floor(a2/(Math.PI/2))*(Math.PI/2);}
+				Func<double,int[]> pt=delegate(double a){double rad=0.5+random.NextDouble()*1.5;return new[]{(int)Math.Round(l+w/2.0+Math.Cos(a)*w/2.0*rad),(int)Math.Round(t+h/2.0-Math.Sin(a)*h/2.0*rad)};};
+				int[] p1=pt(a1),p2=pt(a2);
+				SetMapMode(dc,1);BeginPath(dc);
+				if(kind==0)Arc(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);else if(kind==1)Chord(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);else Pie(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+				EndPath(dc);
+				string path=ReadFixPath(dc);
+				if(json.Length>1)json.Append(',');
+				json.Append("{\"kind\":").Append(kind).Append(",\"box\":[").Append(l).Append(',').Append(t).Append(',').Append(r).Append(',').Append(b).Append("],\"radials\":[").Append(p1[0]).Append(',').Append(p1[1]).Append(',').Append(p2[0]).Append(',').Append(p2[1]).Append("],\"expected\":").Append(path).Append('}');
+			}
+			File.WriteAllText(Path.Combine(dir,"arc-paths.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
+	[DllImport("gdi32.dll")] static extern bool PolyBezier(IntPtr dc,Point[] points,uint count);
+	// Native WidenPath of wide curves: random Beziers, Arcs, Chords and Pies under flat/square/round caps and several joins, at the identity scale.
+	public static void CurveWiden(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(5171);var json=new StringBuilder("[");
+		int[][] styles={new[]{2,0},new[]{2,2},new[]{2,1},new[]{1,1},new[]{1,2},new[]{1,0},new[]{0,0},new[]{0,2}};
+		try {
+			for(int sample=0;sample<4*styles.Length*10;sample++) {
+				int kind=sample%4;int[] style=styles[(sample/4)%styles.Length];int width=7+random.Next(0,12);
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|style[0]*0x100|style[1]*0x1000),(uint)width,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					string head;
+					BeginPath(dc);
+					if(kind==0){
+						var p=new Point[4];for(int i=0;i<4;i++){p[i].X=40+random.Next(0,160);p[i].Y=40+random.Next(0,160);}
+						PolyBezier(dc,p,4);
+						head="\"kind\":\"bezier\",\"points\":["+string.Join(",",new[]{p[0].X,p[0].Y,p[1].X,p[1].Y,p[2].X,p[2].Y,p[3].X,p[3].Y})+"]";
+					} else {
+						int w=40+random.Next(0,120),h=40+random.Next(0,120),l=50+random.Next(0,60),t=50+random.Next(0,60);
+						Func<int[]> pt=delegate(){double a=random.NextDouble()*Math.PI*2,rad=0.6+random.NextDouble()*1.2;return new[]{(int)Math.Round(l+w/2.0+Math.Cos(a)*w/2.0*rad),(int)Math.Round(t+h/2.0-Math.Sin(a)*h/2.0*rad)};};
+						int[] p1=pt(),p2=pt();
+						if(kind==1)Arc(dc,l,t,l+w,t+h,p1[0],p1[1],p2[0],p2[1]);else if(kind==2)Chord(dc,l,t,l+w,t+h,p1[0],p1[1],p2[0],p2[1]);else Pie(dc,l,t,l+w,t+h,p1[0],p1[1],p2[0],p2[1]);
+						head="\"kind\":\""+(kind==1?"arc":kind==2?"chord":"pie")+"\",\"box\":["+l+","+t+","+(l+w)+","+(t+h)+"],\"radials\":["+p1[0]+","+p1[1]+","+p2[0]+","+p2[1]+"]";
+					}
+					EndPath(dc);if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append('{').Append(head).Append(",\"cap\":").Append(style[0]).Append(",\"join\":").Append(style[1]).Append(",\"width\":").Append(width).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			File.WriteAllText(Path.Combine(dir,"curve-widen.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
 }

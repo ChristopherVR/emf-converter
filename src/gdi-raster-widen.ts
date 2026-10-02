@@ -39,6 +39,12 @@
  *   square caps the stock styles shorten every dash by the pen width.
  * - The first and last flattened segment of a Bezier take their draw
  *   vertices from the curve's end tangents (`GdiFigure.tangents`).
+ * - The segments that come from a flattened curve (`GdiFigure.curveSegs`)
+ *   behave as a smooth curve whatever the pen's cap and join: their sides
+ *   rest on the pen's draw vertices, joins between two of them are always
+ *   round and drop the pen loop on the inner side, and a curve end's
+ *   perpendicular and square-cap extension follow its end tangent.
+ *   Between two cubics the longer end tangent is used for both.
  *
  * Callers apply two record-level rules measured on direct drawing: a
  * `Rectangle` stroked with a wide `CreatePen` pen uses miter joins, and an
@@ -53,7 +59,7 @@
  * with round joins 97.2%; 299 of 300 random dashed polylines. The residual
  * is GDI's inclusion of a pen vertex exactly at the end of a join or cap
  * arc (mostly for the flattened pens of 7 px and more), and the half-pixel
- * rounding of the perpendicular for 8 px pens (now fitted per pen edge, `FLAT_SECTOR_BIAS`).
+ * rounding of the perpendicular for 8 px pens (now a closed rule, `oddEdgeAdjustment`).
  *
  * @module gdi-raster-widen
  */
@@ -110,151 +116,34 @@ const HOBBY: Pt[][] = [
 const HOBBY_LIMIT = 104;
 
 /**
- * Rounding bias GDI applies to the perpendicular of a flattened pen, per
- * pen-edge sector. The perpendicular is found on the pen edge that the
- * segment's normal passes through; its x and y are shifted by a bias
- * before the half-pixel rounding, and the bias differs from edge to edge
- * (and from pen to pen) in a way no closed form was found for. Measured by
- * sweeping the direction of a single flat-capped segment under every
- * integer pen width from 7 to 100 px against native `WidenPath`; the table
- * reproduces the rounded perpendicular for all but about 0.03% of 1.1
- * million measured directions.
- *
- * Per width: the first sector key held in the tail, the pair for sector
- * key 0, and the tail pairs for keys `first..2n-1`. The key is
- * `2 * support vertex + (the lower neighbour is the interpolation partner
- * ? 0 : 1)`. A pair is two characters, the x then the y bias. `a`..`m` are
- * `(char code - 'a') / 2 - 1.5` FIX and `A`..`M` the same less 1/64 (a
- * value landing exactly on a rounding boundary rounds down); `.` marks a
- * sector no measured direction reached (the generic 0.5 rule applies).
+ * Half-FIX offset GDI's perpendicular of a flattened pen carries on top of
+ * the generic half-unit bias, per pen-edge channel. Measured by sweeping
+ * the direction of a single flat-capped segment against native
+ * `WidenPath` (whole-pixel end points, 600-80,000 directions per width) at
+ * integer, fractional and wider-than-100-px widths: the interpolated
+ * perpendicular is the point of a pen edge `D -> B` (support vertex to its
+ * interpolation partner), and a channel whose edge extent `|B - D|` is odd
+ * lands half a unit lower than the exact point (half a unit higher on the
+ * pen's first edge, the one that ends at its start vertex). Even extents
+ * need no adjustment. The earlier per-width table of fitted biases for
+ * 7-100 px pens is this rule (it reproduced the table's entries wherever a
+ * native direction could tell them apart), now valid for any width.
  */
-const FLAT_SECTOR_BIAS: Record<number, [number, string, string]> = {
-	7: [9, 'cf..', 'edededEdcDcdcd'],
-	8: [9, 'dFee', 'ededededbdbdbd'],
-	9: [9, 'df..', 'ddddddddbDbdbd'],
-	10: [9, 'de..', 'dededeDebEbebE'],
-	11: [9, 'ce..', 'eeeeeeEececece'],
-	12: [13, 'ce..', 'eeeeeeeeeeeececEcecece'],
-	13: [17, 'ce..', 'eeeeededdddddeDebebebdbdcdcdce'],
-	14: [17, 'df..', 'ddedeeeededeeeedcDcebebecececd'],
-	15: [17, 'dF..', 'ddedeeeeeeeedeDdbdbecececececd'],
-	16: [17, 'ce..', 'eeeededededeeeeececebebebebece'],
-	17: [17, 'df..', 'ddedededededdeddbdbebdbdbdbdcd'],
-	18: [17, 'de..', 'deeededeededeeEdcDcecdcdbebece'],
-	19: [17, 'cf..', 'ededeeeedddddeDebEbecdcdbebecd'],
-	20: [17, 'ce..', 'eeeeddddeeeeddDdbdbdcecebdbdce'],
-	21: [17, 'dF..', 'ddddededededddDdbdbdcdcdcdcdbd'],
-	22: [17, 'ce..', 'eeeededeeeeedeDebebececebebece'],
-	23: [17, 'cf..', 'edededededededEdcDcdcdcdcdcdcD'],
-	24: [17, 'dF..', 'ddddddddddddddDdbdbdbdbdbdbdbd'],
-	25: [17, 'cE..', 'eeeeededededeeEecEcecdcdcdcdce'],
-	26: [17, 'cf..', 'ededdedeededdedebEbecdcdbebecd'],
-	27: [17, 'de..', 'dedeededdedeededcDcdbebecdcdbe'],
-	28: [17, 'cf..', 'ededddddeeeedeDebEbebebecdcdcd'],
-	29: [17, 'ce..', 'eeeeeeeededededebebebebececece'],
-	30: [17, 'dF..', 'dddddedeeeeeedEdcdcdcecebebebd'],
-	31: [17, 'de..', 'dedeededededdeDebebecdcdcdcdbe'],
-	32: [17, 'cf..', 'ededdededdddeeeecEcebdbdbebecd'],
-	33: [17, 'de..', 'dedeeeeeededddDdbdbdcdcdcecebe'],
-	34: [17, 'de..', 'dedeeeeeddddedEdcdcdbdbdcecebe'],
-	35: [17, 'cf..', 'ededededdededeDebebebebecdcdcd'],
-	36: [17, 'deee', 'eeeeeeeeddddddDdcdcdcdcDbebebe'],
-	37: [17, 'dF..', 'dddddededededdDdbdbdcecececebd'],
-	38: [17, 'ce..', 'eeeeddddddddeeEececebdbdbdbdce'],
-	39: [17, 'cF..', 'ededddddddddededcdcdbdbDbdbdcd'],
-	40: [17, 'de..', 'dededededdddddddbdbdbdbdbebebe'],
-	41: [17, 'ce..', 'eeeeeeeeeeeeeeEececececececece'],
-	42: [17, 'cf..', 'ededeeeedddddedebebebdbdcececd'],
-	43: [17, 'df..', 'ddddeeeededeedEdcdcdbebececebd'],
-	44: [17, 'cF..', 'ededdedeededdeDebebecdcdbebecd'],
-	45: [17, 'ce..', 'eeeededededeeeeecEcebebebebece'],
-	46: [17, 'dF..', 'ddddededddddedEdcDcdcdcdbdbdbd'],
-	47: [17, 'ce..', 'dedededededededececececececece'],
-	48: [25, 'cf..', 'ededeeeeeeeeededeeeeeeEecececececdcdcececececd'],
-	49: [25, 'cF..', 'ededddddededeeeeededdeDebebecdcdcececdcdbdbdcd'],
-	50: [25, 'ce..', 'eeeeddddededdededededeDebebebebebEbecdcdbdbdce'],
-	51: [25, 'ce..', 'eeeeededddddeeeededeeeEececebebececebdbdcdcdce'],
-	52: [25, 'ce..', 'eeeededededeededededeeEecececdcdcdcdbebebebece'],
-	53: [25, 'dF..', 'ddedeeeedddddddddedeeeEdcdcebebebdbDbdbdcececd'],
-	54: [25, 'dF..', 'ddedddddededededdddddEDdbdbebdbdcdcdcdcdbdbdcd'],
-	55: [25, 'dF..', 'ddeddedeeeeeeeeedededeDdbdbebebebebebebebebecd'],
-	56: [25, 'dE..', 'deeeeeeeededeeeededeeEedcdcebebecececdcdcecece'],
-	57: [25, 'de..', 'deeedddddddddedeededeeEdcDcecDcdcececdcdbdbDce'],
-	58: [25, 'dF..', 'ddedddddeeeedddddedeeeEdcdcebebebdbdcecebdbdcd'],
-	59: [33, 'cF..', 'ededdedeededddddeeeeeeeedddddeDebebebdbdcecececebdbdcdcdbebecd'],
-	60: [33, 'cf..', 'ededeeeeededededddddeeeeeeeedeDebebececececebdbdcdcdcdcdcececd'],
-	61: [33, 'ce..', 'eeeeeeeeddddeeeeeeeeddddeeeeeeeececececebdbdcecececebdbdcecece'],
-	62: [33, 'ce..', 'eeeeddddeeeeededededeeeeddddeeEecEcebdbdcececdcdcdcdcecebdbdce'],
-	63: [33, 'cf..', 'ededededeeeededededeeeeeeeeeeeEececececececebebEbebecececdcdcd'],
-	64: [33, 'cF..', 'ededeeeedddddedeeeeededeeeeedeDebebececebebececebebebdbdcececd'],
-	65: [33, 'df..', 'ddedededededddddddddeeeeeeeedeDdbdbececececebdbdbdbdcdcdcdcdcd'],
-	66: [33, 'de..', 'deeeededdedeeeeedddddededddddeDdbdbebdbdbebecdcdbebebebecdcdce'],
-	67: [33, 'de..', 'deeeddddddddededdddddededdddeeEdcDcebdbdbebebdbdcdcdbdbdbdbdce'],
-	68: [33, 'dE..', 'deeeeeeeeeeeeeeeddddeeeeeeeeeeEdcdcececececebdbdcecececececece'],
-	69: [33, 'df..', 'ddedededdedeeeeeddddededededdeDdbdbecdcdcdcdbdbdcecebebecdcdcd'],
-	70: [33, 'dF..', 'ddeddddddddddddddededededddddeDdbdbebdbdbebebebebdbdbdbdbdbDcd'],
-	71: [33, 'ce..', 'eeeeddddeeeededeeeeededeededdeDebebecdcdbebececebebececebdbdce'],
-	72: [33, 'ce..', 'eeeededededeededededddddddddeeEececebdbdbdbdcdcdcdcdbebebebece'],
-	73: [33, 'ce..', 'eeeeededededddddededdedeeeeeeeEececececebebecdcdbdbdcdcDcdcdce'],
-	74: [33, 'cf..', 'ededddddededededededdededddddeDebebebdbdbebecdcDcdcdcdcdbdbdcd'],
-	75: [33, 'cF..', 'ededdededededdddddddeeeedddddeDebebebdbdcececdcdcdcdbebebebecd'],
-	76: [33, 'ce..', 'eeeeeeeeeeeeeeeeeeeededeeeeedeDebebececebebecececececececececE'],
-	77: [33, 'ce..', 'eeeeeeeedededddddededdddedededEdcDcdcdcdbdbdbebebdbdbebececece'],
-	78: [33, 'de..', 'dedeededdedededeeeeeeeeededeedEdcdcdbebececececebebebebecdcdbe'],
-	79: [33, 'dF..', 'ddddddddededdededdddeeeeedededEdcDcdcdcdcecebdbdbebecdcdbdbdbd'],
-	80: [33, 'dF..', 'dddddededdddeeeeddddddddededddDdbdbdcdcdbdbdbdbDcecebdbdbebEbd'],
-	81: [33, 'de..', 'dedeeeeeeeeededeededeeeedededdDdbdbdbebecececdcdbebececececebe'],
-	82: [33, 'de..', 'dedeededdedeededdedededeedededEdcdcdcdcdbebebebecdcdbebecdcDbe'],
-	83: [33, 'de..', 'dededededddddededdddeeeededeeeEececebebececebdbdbebebdbdbebebe'],
-	84: [33, 'cF..', 'ededddddeeeeddddeeeeeeeeededeeEecececdcdcecebebecdcdcecebdbdcd'],
-	85: [33, 'cf..', 'ededdddddededddddddddedeeeeedeDebebececebebebdbdbdbdbebebdbdcd'],
-	86: [33, 'ce..', 'eeeeededddddeeeeeeeedededededeDebebebebebebebebebebebdbdcdcdce'],
-	87: [33, 'ce..', 'eeeeddddeeeeddddddddeeeeddddeeeececebdbdcecebdbDbdbdcecebdbdce'],
-	88: [33, 'ce..', 'eeeedededdddeeeeededededededeeeecececdcdcdcdcdcdcecebdbdbebece'],
-	89: [33, 'cF..', 'ededeeeeddddddddededdedededeeeEecEcebebEbebecdcdbdbdbdbdcececd'],
-	90: [33, 'dF..', 'ddddededeeeeededeeeedededededdDdbdbdbebebEbecececdcdcececdcdbd'],
-	91: [33, 'df..', 'ddddeeeededededeededdddddededdDdbdbdbebebdbdcdcdbebebebececebd'],
-	92: [33, 'de..', 'dedededeededdddddededededdddedEdcdcdbdbdbebebebebdbdcdcdbebebe'],
-	93: [33, 'de..', 'dededddddddddedeededeeeeeeeeededcdcdcececececdcdbebebdbdbdbdbe'],
-	94: [33, 'dF..', 'ddddeeeeddddeeeeddddeeeededeedEdcDcdbebececebdbDcecebdbdcecebd'],
-	95: [33, 'df..', 'ddddddddededeeeedddddededdddddDdbdbDbdbdbebecdcdbebecdcdbdbdbd'],
-	96: [33, 'cf..', 'ededeeeededeeeeedededdddeeeedeDebebececebdbdbebececebebecececd'],
-	97: [33, 'ce..', 'eeeedededededededdddeeeedddddeDebebebdbdcEcebdbdbebebEbebebece'],
-	98: [33, 'ce..', 'eeeeededededeeeeeeeededededeeeEececebebebebecececececdcdcdcdce'],
-	99: [33, 'cf..', 'ededededddddddddddddededdedeeeEececebebecdcdbdbdbdbdbdbdcdcdcd'],
-	100: [33, 'cf..', 'ededdedeeeeededededeeeeeededdeDebebecdcdcecebebebebececebebecd'],
-};
-
-/** Decodes one `FLAT_SECTOR_BIAS` character. */
-function sectorBias(code: number): number {
-	return code >= 97 ? (code - 97) / 2 - 1.5 : (code - 65) / 2 - 1.5 - 1 / 64;
+function oddEdgeAdjustment(odd: boolean, firstEdge: boolean): number {
+	return odd ? (firstEdge ? 0.5 : -0.5) : 0;
 }
 
-/**
- * The side offset (the perpendicular's x) GDI gives an exactly vertical
- * segment of a flattened pen steps to `8 * m` (m = 7 ..) at a width of
- * `16 * m - 7 - delta` FIX; character `m - 7` of this string is `delta`.
- * Measured with `WidenPath` (flat caps, miter joins) at every width from
- * 6 to 87 px in 1/16 px steps. The horizontal sides always step at
- * `16 * m - 8`; the vertical ones step up to two units early in runs that
- * follow no simple formula (half-pixel widths among them: 6.5 and 7.5 px
- * round up, 8.5 and 9.5 px down), so this is a table.
- */
-const VERTICAL_STEP_EARLY = '120002002002002002202200200200200220220020000022222220000002222220000002222220000';
-const VERTICAL_STEP_FIRST = 7;
-
-/** GDI's side offset (FIX) of a vertical segment for a flattened pen `width` FIX wide, or `undefined` outside the measured range. */
-function verticalSideOffset(width: number): number | undefined {
-	if (width < HOBBY_LIMIT || width > 1400) {
-		return undefined;
+/** `floor(a / b)` for `b > 0`, exact beyond 2^53 where the operands need it. */
+function floorDivision(a: number, b: number): number {
+	if (Number.isSafeInteger(a) && Number.isSafeInteger(b)) {
+		return Math.floor(a / b);
 	}
-	let m = VERTICAL_STEP_FIRST;
-	for (let i = 1; i < VERTICAL_STEP_EARLY.length; i++) {
-		if (width >= 16 * (i + VERTICAL_STEP_FIRST) - 7 - +VERTICAL_STEP_EARLY[i]) {
-			m = i + VERTICAL_STEP_FIRST;
-		}
+	const A = BigInt(Math.round(a)), B = BigInt(Math.round(b));
+	let q = A / B;
+	if (A % B !== 0n && (A < 0n) !== (B < 0n)) {
+		q -= 1n;
 	}
-	return 8 * m;
+	return Number(q);
 }
 
 const penCache = new Map<number, Pt[]>();
@@ -360,6 +249,10 @@ function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt;
 			best = i;
 		}
 	}
+	if (flip && best === 0 && nx * pen[n - 1][0] + ny * pen[n - 1][1] === bh) {
+		// A reversed segment parallel to the edge that closes the pen takes that edge's first vertex as the support.
+		best = n - 1;
+	}
 	const P = pen[(best + n - 1) % n];
 	const N = pen[(best + 1) % n];
 	const D = pen[best];
@@ -368,20 +261,21 @@ function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt;
 	const [B, hB, hS] = hP >= hN ? [P, hP, hN] : [N, hN, hP];
 	const den = 2 * (bh - hB + (bh - hS));
 	const w = den === 0 ? 0 : (hB - hS) / den;
-	const r = (v: number) => 8 * Math.floor((v + 4) / 8);
 	const x = D[0] + (B[0] - D[0]) * w, y = D[1] + (B[1] - D[1]) * w;
-	let cx = 0.5 * Math.sign(dy), cy = 0.5 * Math.sign(dx);
-	const table = width % 16 === 0 ? FLAT_SECTOR_BIAS[width / 16] : undefined;
-	if (table) {
-		const key = best * 2 + (hP >= hN ? 0 : 1);
-		const pair = key === 0 ? table[1].slice(0, 2) : key >= table[0] ? table[2].slice((key - table[0]) * 2, (key - table[0]) * 2 + 2) : '..';
-		if (pair[0] !== '.') {
-			cx = sectorBias(pair.charCodeAt(0));
-			cy = sectorBias(pair.charCodeAt(1));
+	const signs = [dx === 0 ? 0 : Math.sign(dy), Math.sign(dx)];
+	const firstEdge = best === 0 && hP >= hN;
+	const num = hB - hS;
+	const rounded = [0, 1].map((c) => {
+		// floor((x + bias + 4) / 8) * 8 with x = D + (B - D) * num / den, exactly.
+		const bias2 = signs[c] + 2 * oddEdgeAdjustment(Math.abs(B[c] - D[c]) % 2 === 1, firstEdge);
+		if (den === 0) {
+			return 8 * (c === 1 && dy < 0 ? Math.ceil((D[c] + bias2 / 2 + 4) / 8) - 1 : Math.floor((D[c] + bias2 / 2 + 4) / 8));
 		}
-	}
-	const side = dx === 0 ? verticalSideOffset(width) : undefined;
-	const vx = side === undefined ? r(x + cx) : -side, vy = r(y + cy);
+		const top = D[c] * den + (B[c] - D[c]) * num;
+		// A value exactly on a rounding boundary rounds up, except in y for a segment running upward on screen.
+		return 8 * floorDivision(2 * top + den * (bias2 + 8) - (c === 1 && dy < 0 ? 1 : 0), 16 * den);
+	});
+	const vx = rounded[0], vy = rounded[1];
 	return { v: flip ? [-vx, -vy] : [vx, vy], ray: flip ? [-x, -y] : [x, y] };
 }
 
@@ -420,6 +314,10 @@ interface Seg {
 	/** Square-cap extension. */
 	e: Pt;
 	curveEnd: boolean;
+	/** Squared length of the curve end tangent (0 without one): a short tangent from rounded control points is unreliable. */
+	tangentLength: number;
+	/** The segment is a piece of a flattened curve (the pen then rests on its support vertices). */
+	curve: boolean;
 }
 
 /** Builds one pen's outlines; `out` collects finished figures. */
@@ -427,7 +325,6 @@ class Outliner {
 	private readonly pen: Pt[];
 	private readonly n: number;
 	private readonly rr: boolean;
-	private readonly roundJoinSides: boolean;
 	private readonly originalRoundJoinSides: boolean;
 	private readonly maxX: number;
 	private pts: Pt[] = [];
@@ -440,7 +337,6 @@ class Outliner {
 		this.n = this.pen.length;
 		this.rr = opts.cap === 'round' && opts.join === 'round';
 		this.originalRoundJoinSides = opts.join === 'round' && opts.cap !== 'flat';
-		this.roundJoinSides = !!opts.roundCurveJoins || this.originalRoundJoinSides;
 		this.maxX = Math.max(...this.pen.map((q) => Math.abs(q[0])));
 	}
 
@@ -449,14 +345,15 @@ class Outliner {
 	 * `drawDir` (a curve's end tangent) only picks the draw vertices, the
 	 * perpendicular following the chord (measured on Bezier ends).
 	 */
-	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Pt): Seg {
+	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Pt, curve = false): Seg {
 		const dx = dir ? dir[0] : b[0] - a[0];
 		const dy = dir ? dir[1] : b[1] - a[1];
 		const d = drawDir ?? [dx, dy];
 		const [L, R] = drawVertices(this.pen, d[0], d[1]);
-		const perpendicular = this.opts.roundCurveJoins && drawDir ? drawDir : [dx, dy];
+		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
+		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1]);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, dx, dy), curveEnd: !!drawDir };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1]), curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -495,7 +392,7 @@ class Outliner {
 	 * vertex exactly on `A`'s ray is included when `startIncl`, one on `B`'s
 	 * ray when `endIncl`.
 	 */
-	private wedge(p: Pt, A: Pt, B: Pt, startIncl: boolean, endIncl: boolean): void {
+	private wedge(p: Pt, A: Pt, B: Pt, startIncl: boolean, endIncl: boolean, tail = -1): void {
 		const TWO = Math.PI * 2;
 		const aA = Math.atan2(A[1], A[0]);
 		const angleOf = (Q: Pt) => {
@@ -526,14 +423,23 @@ class Outliner {
 			}
 		}
 		list.sort((x, y) => x[0] - y[0]);
+		if (tail >= 0 && !list.some(([, k]) => k === tail)) {
+			list.push([Infinity, tail]);
+		}
 		for (const [, k] of list) {
 			this.penAt(p, k);
 		}
 	}
 
+	/** The pen's extreme-x vertex `k` that a steep segment `s` rests on, or -1 when the rule does not apply. */
+	private extremeTail(applies: boolean, k: number, s: Seg): number {
+		const q = this.pen[k];
+		return applies && Math.abs(s.dy) > Math.abs(s.dx) && Math.abs(q[0]) === this.maxX && q[1] === 0 ? k : -1;
+	}
+
 	/** Side offset of segment `s` at a join. */
 	private joinSide(s: Seg, side: 'L' | 'R'): Pt {
-		if (this.roundJoinSides) {
+		if (this.originalRoundJoinSides || s.curve) {
 			const q = this.pen[side === 'L' ? s.L : s.R];
 			return [halfPixel(q[0]), halfPixel(q[1])];
 		}
@@ -586,27 +492,30 @@ class Outliner {
 	 */
 	private join(p: Pt, a: Seg, b: Seg, side: 'L' | 'R', outer: boolean): void {
 		const { cap, width, miterLimit } = this.opts;
-		const join = this.opts.roundCurveJoins ? 'round' : this.opts.join;
+		const curveJoin = a.curve && b.curve;
+		const join = curveJoin ? 'round' : this.opts.join;
+		const roundSides = this.originalRoundJoinSides || curveJoin;
 		let sa = this.joinSide(a, side);
 		let sb = this.joinSide(b, side);
 		const rayA: Pt = side === 'R' ? a.vRaw : [-a.vRaw[0], -a.vRaw[1]];
 		const rayB: Pt = side === 'R' ? b.vRaw : [-b.vRaw[0], -b.vRaw[1]];
-	if (this.opts.roundCurveJoins && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
+		if (curveJoin && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
 			// At the boundary of two ellipse cubics, these styles use the
 			// true tangent's perpendicular rather than a pen support vertex.
-			sa = side === 'R' ? a.v : [-a.v[0], -a.v[1]];
-			sb = side === 'R' ? b.v : [-b.v[0], -b.v[1]];
+			// Both cubics describe the same tangent: the one with the longer arm is the reliable one.
+			const t = a.tangentLength >= b.tangentLength ? a : b;
+			sa = sb = side === 'R' ? t.v : [-t.v[0], -t.v[1]];
 		}
 		const Da = side === 'R' ? a.R : a.L;
 		const Db = side === 'R' ? b.R : b.L;
-		if (this.roundJoinSides && (Da === Db || (this.opts.roundCurveJoins && sa[0] === sb[0] && sa[1] === sb[1]))) {
+		if (roundSides && (Da === Db || (curveJoin && sa[0] === sb[0] && sa[1] === sb[1]))) {
 			this.push(p, sa);
 			return;
 		}
 		this.push(p, sa);
 		if (outer) {
 			if (join === 'round') {
-				if (this.roundJoinSides) {
+				if (roundSides) {
 					// The left side (walked backwards) keeps the pen's extreme
 					// vertex after a steep segment (measured).
 					const q = this.pen[Db];
@@ -615,7 +524,10 @@ class Outliner {
 					this.walk(p, Da, Db, false, incl);
 				} else {
 					const anti = sa[0] === -sb[0] && sa[1] === -sb[1];
-					this.wedge(p, rayA, rayB, !anti, !anti);
+					if (Da !== Db || anti) {
+						// A vertex exactly on the second ray is left out, and the left side keeps a steep segment's extreme-x vertex.
+						this.wedge(p, rayA, rayB, !anti, false, this.extremeTail(side === 'L' && !anti, Db, b));
+					}
 				}
 			} else if (join === 'miter') {
 				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit, side);
@@ -625,17 +537,20 @@ class Outliner {
 			}
 		} else {
 			this.pts.push([p[0], p[1]]);
-			if (this.opts.roundCurveJoins && !this.originalRoundJoinSides) {
+			if (curveJoin && !this.originalRoundJoinSides) {
 				// Native WidenPath repeats this inner triangle. Filling hides
 				// the repetition; stroking the widened outline exposes it.
 				this.push(p, sb);
 				this.push(p, sa);
 				this.pts.push([p[0], p[1]]);
 			}
-			if (join === 'round' && cap === 'flat' && !this.opts.roundCurveJoins) {
+			if (join === 'round' && cap === 'flat' && !curveJoin) {
 				// Flat-capped round joins loop round the pen on the inner side too.
 				this.push(p, sb);
-				this.wedge(p, rayB, rayA, false, false);
+				if (Da !== Db) {
+					// Two sides resting on the same pen vertex enclose no other vertex.
+					this.wedge(p, rayB, rayA, false, false, this.extremeTail(side === 'L', Da, a));
+				}
 				this.push(p, sa);
 				this.pts.push([p[0], p[1]]);
 			}
@@ -670,17 +585,17 @@ class Outliner {
 	 * lets a single point stand for a zero-length dash along `dirs[0]`;
 	 * `draws` (curve end tangents) picks draw vertices only.
 	 */
-	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[]): void {
+	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[], curves?: boolean[]): void {
 		if (P.length < 2 && !dirs?.[0]) {
 			this.dot(P[0]);
 			return;
 		}
 		const segs: Seg[] = [];
 		for (let i = 0; i + 1 < P.length; i++) {
-			segs.push(this.seg(P[i], P[i + 1], dirs?.[i], draws?.[i]));
+			segs.push(this.seg(P[i], P[i + 1], dirs?.[i], draws?.[i], curves?.[i]));
 		}
 		if (segs.length === 0) {
-			const s = this.seg(P[0], P[0], dirs?.[0] as Pt, draws?.[0]);
+			const s = this.seg(P[0], P[0], dirs?.[0] as Pt, draws?.[0], curves?.[0]);
 			this.cap(P[0], s, true);
 			this.cap(P[0], s, false);
 			this.flush();
@@ -712,11 +627,11 @@ class Outliner {
 	}
 
 	/** Outlines a closed polygon (distinct consecutive points, not repeating the first). */
-	closed(P: Pt[], draws?: (Pt | undefined)[]): void {
+	closed(P: Pt[], draws?: (Pt | undefined)[], curves?: boolean[]): void {
 		const m = P.length;
 		const segs: Seg[] = [];
 		for (let i = 0; i < m; i++) {
-			segs.push(this.seg(P[i], P[(i + 1) % m], undefined, draws?.[i]));
+			segs.push(this.seg(P[i], P[(i + 1) % m], undefined, draws?.[i], curves?.[i]));
 		}
 		// Right side forward, starting at the second vertex.
 		for (let j = 1; j <= m; j++) {
@@ -845,11 +760,12 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 	const out: number[][] = [];
 	const dashed = !!opts.dashes && opts.dashes.length > 0;
 	for (const fig of path.figures) {
-		const outliner = new Outliner(fig.roundWiden ? { ...opts, roundCurveJoins: true } : opts, out);
+		const outliner = new Outliner(opts, out);
 		// Distinct points, and per remaining segment the curve tangent GDI
 		// widens it with (when it is a flattened Bezier's first or last).
 		let P: Pt[] = [];
 		const dirs: (Pt | undefined)[] = [];
+		const curves: boolean[] = [];
 		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
 			const q: Pt = [fig.pts[i], fig.pts[i + 1]];
 			const last = P[P.length - 1];
@@ -858,6 +774,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 			}
 			if (last) {
 				dirs.push(fig.tangents?.get(i / 2 - 1));
+				curves.push(!!fig.roundWiden || !!fig.curveSegs?.has(i / 2 - 1));
 			}
 			P.push(q);
 		}
@@ -886,14 +803,14 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 						pdraws.push(piece.draws[i - 1]);
 					}
 				}
-				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]]);
+				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]], pts.map(() => !!fig.roundWiden));
 			}
 		} else if (closed && P.length >= 3) {
-			outliner.closed(P, dirs);
+			outliner.closed(P, dirs, curves);
 		} else if (closed && P.length === 2) {
 			outliner.open([P[0], P[1], P[0]]);
 		} else {
-			outliner.open(P, undefined, dirs);
+			outliner.open(P, undefined, dirs, curves);
 		}
 	}
 	return out;

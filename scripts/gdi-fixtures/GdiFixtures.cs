@@ -2817,6 +2817,27 @@ public static class GdiFixtures
 		WmfPlayCase("wmf-shapes-scaled", 365, 242, WmfRecord(delegate (IntPtr hdc) { WmfShapeSheet(hdc, 10); }), new int[] { 0, 0, 3800, 2520 }, 1000);
 	}
 
+	/** RoundRects with corner ellipses of 6..30 logical units under 3, 5 and 7 px wide pens and a null pen, at the identity scale and at the 0.96 scale. */
+	static void WmfRoundRectCorners()
+	{
+		int[] pens = { 3, 5, 7, 0 };
+		foreach (int k in new[] { 1, 10 })
+		{
+			int kk = k;
+			int cells = 25, pitch = 42;
+			int w = cells * pitch * k == 1050 ? 1050 : (int)Math.Round(cells * pitch * k * 0.096), h = (int)Math.Round(pens.Length * pitch * k * (k == 1 ? 1.0 : 0.096));
+			WmfPlayCase(k == 1 ? "wmf-roundrect-corners" : "wmf-roundrect-corners-scaled", w, h, WmfRecord(delegate (IntPtr hdc) {
+				for (int pi = 0; pi < pens.Length; pi++) for (int ci = 0; ci < cells; ci++)
+				{
+					int x = ci * pitch, y = pi * pitch, c = 6 + ci;
+					WithObjects(hdc, pens[pi] == 0 ? CreatePen(5, 0, 0) : CreatePen(0, pens[pi] * kk, Rgb(16, 16, 96)), CreateSolidBrush(Palette[2]), delegate {
+						RoundRect(hdc, (x + 4) * kk, (y + 4) * kk, (x + 38) * kk, (y + 36) * kk, c * kk, (c * 7 / 10) * kk);
+					});
+				}
+			}), new int[] { 0, 0, cells * pitch * k, pens.Length * pitch * k }, k == 1 ? 96 : 1000);
+		}
+	}
+
 	static void WmfInsideFrameCurves()
 	{
 		var names = new[] { "ellipse", "roundrect", "chord", "pie", "arc" };
@@ -6325,6 +6346,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "halftone-dither") { ErDitherCharts(); }
 		if (which == "illuminant-tables") { ErIlluminantTables(); }
 		if (which == "all" || which == "wmf-insideframe-curves") { WmfInsideFrameCurves(); }
+		if (which == "wmf-roundrect-corners") { WmfRoundRectCorners(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 	}
 }

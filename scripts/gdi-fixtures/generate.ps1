@@ -67,9 +67,9 @@ if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra' -or $Which -eq
     Complete-Fixtures
     return
 }
-if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe' -or $Which -eq 'wide-outline-probe') {
+if ($Which -eq 'path-probe' -or $Which -eq 'wide-path-probe' -or $Which -eq 'wide-outline-probe' -or $Which -eq 'flat-pen-probe' -or $Which -eq 'arc-path-probe' -or $Which -eq 'curve-widen-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    if ($Which -eq 'wide-path-probe') { [PathProbe]::Wide($outDir) } elseif ($Which -eq 'wide-outline-probe') { [PathProbe]::Outline($outDir) } else { [PathProbe]::Run($outDir) }
+    if ($Which -eq 'wide-path-probe') { [PathProbe]::Wide($outDir) } elseif ($Which -eq 'flat-pen-probe') { [PathProbe]::FlatVectors($outDir) } elseif ($Which -eq 'arc-path-probe') { [PathProbe]::ArcPaths($outDir) } elseif ($Which -eq 'curve-widen-probe') { [PathProbe]::CurveWiden($outDir) } elseif ($Which -eq 'wide-outline-probe') { [PathProbe]::Outline($outDir) } else { [PathProbe]::Run($outDir) }
     Complete-Fixtures
     return
 }
@@ -102,7 +102,7 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -
 
 $known = @('all', 'rop', 'gradient', 'text', 'pattern', 'rotation', 'rop2', 'image', 'rotation-affine',
 	'text-extra', 'gdi-raster', 'emfplus-records', 'gdiplus-extra', 'wmf-records', 'emf-records',
-	'halftone', 'halftone-mixed', 'halftone-origin', 'halftone-mixed-probe', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'emfplus-effects', 'pen-transform')
+	'halftone', 'halftone-mixed', 'halftone-origin', 'halftone-mixed-probe', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'wmf-roundrect-corners', 'emfplus-effects', 'pen-transform')
 $groups = @($Which -split '[,\s]+' | Where-Object { $_ })
 if ($groups.Count -eq 0) { $groups = @('all') }
 foreach ($g in $groups) {

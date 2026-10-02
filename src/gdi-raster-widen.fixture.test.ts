@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import nativePaths from './__fixtures__/gdi/wide-path-fix.json';
 import nativeOutlines from './__fixtures__/gdi/wide-outline-fix.json';
 import nativeMiterLimits from './__fixtures__/gdi/miter-limits.json';
+import nativeFlatVectors from './__fixtures__/gdi/flat-pen-vectors.json';
 import { GdiRasterPath, fillPolygonSpans } from './gdi-raster';
-import { widenPath } from './gdi-raster-widen';
+import { flatVector, widenPath } from './gdi-raster-widen';
 import { ellipseRasterPath } from './emf-gdi-raster-shapes';
 import { axisBox } from './gdi-raster';
 
@@ -16,7 +17,7 @@ function nativePolygons(points: number[]): number[][] {
 	return polygons;
 }
 
-it('bounds the remaining fill differences across all 2,136 native wide paths', () => {
+it('matches the fill of all 2,136 native wide paths', () => {
 	expect(nativePaths).toHaveLength(2136);
 	let differences = 0;
 	for (const c of nativePaths) {
@@ -30,11 +31,22 @@ it('bounds the remaining fill differences across all 2,136 native wide paths', (
 		const expected = fillPolygonSpans(nativePolygons(c.expected), true);
 		if (actual.length !== expected.length || actual.data.subarray(0, actual.length * 3).some((v, i) => v !== expected.data[i])) differences++;
 	}
-	expect(differences).toBeLessThanOrEqual(2);
+	expect(differences).toBe(0);
+});
+
+describe('flattened pen perpendicular', () => {
+	it('matches native WidenPath for every fractional, wide and axis-aligned pen direction', () => {
+		expect(nativeFlatVectors).toHaveLength(1176);
+		const mismatches = nativeFlatVectors.filter(([width, dx, dy, ex, ey]) => {
+			const v = flatVector(width, dx, dy);
+			return v[0] !== ex || v[1] !== ey;
+		});
+		expect(mismatches).toEqual([]);
+	});
 });
 
 describe('native miter limits', () => {
-	it('matches 766 of 768 decisions around measured thresholds in eight orientations', () => {
+	it('matches all 768 decisions around measured thresholds in eight orientations', () => {
 		expect(nativeMiterLimits).toHaveLength(384);
 		let differences = 0;
 		for (const c of nativeMiterLimits) {
@@ -51,8 +63,7 @@ describe('native miter limits', () => {
 				if (outline[0].length / 2 !== expectedCount) differences++;
 			}
 		}
-		// The two retained decisions share the known 7px perpendicular error.
-		expect(differences).toBeLessThanOrEqual(2);
+		expect(differences).toBe(0);
 	});
 
 	for (const width of [2, 5]) for (const cap of [1, 2]) {

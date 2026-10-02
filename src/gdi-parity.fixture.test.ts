@@ -293,11 +293,10 @@ const ALIASED_CASES: ParityCase[] = [
  * every cap and join, rotated/mirrored/stretched/skewed blits, and a
  * 800-shape benchmark drawing, plus wide flattened-ellipse pens on closed
  * figures, curves and dashes (`raster-wide-extra`). Every one is exact at
- * tolerance 0 under `gdiAntialias: false` except `raster-wide-extra`'s two
- * Bezier curves: a 10 px flat-capped round-joined pen (GDI leaves out a pen
- * vertex at a few joins of the flattened curve) and a dashed 10 px curve
- * (GDI's direct dashed curve differs from its own `WidenPath`, which the
- * widener reproduces exactly).
+ * tolerance 0 under `gdiAntialias: false` except `raster-wide-extra`'s dashed
+ * 10 px Bezier and rectangle (65 pixels: Windows places a dash along a curved
+ * Bezier about 2% earlier than along the same polyline, which is not
+ * reproduced).
  */
 const raster = (name: string, maxMismatch = 0): ParityCase => ({
 	name,
@@ -326,7 +325,7 @@ const RASTER_CASES: ParityCase[] = [
 	raster('raster-wide-pens'), // was 0.420%
 	raster('raster-wide-joins'), // was 0.991%
 	raster('raster-dash-geometric'), // was 3.943%
-	raster('raster-wide-extra', 0.002), // measured 0.155%
+	raster('raster-wide-extra', 0.0012), // measured 0.114% (65 pixels), before 0.155%
 ];
 
 /**
@@ -737,10 +736,10 @@ const SMOOTHING_CASES: ParityCase[] = [
  * embedded EMF. Before this replay (the old canvas-only WMF path) these
  * measured 4.9% to 100% of pixels off. Now `wmf-shapes`, `wmf-shapes-twips`,
  * `wmf-pixels*` and the PS_INSIDEFRAME rectangle, ellipse and RoundRect
- * sweeps are pixel-exact; the residuals are `wmf-shapes-scaled` (0.158%:
- * scattered pen-edge pixels of every row at the 0.96 scale),
- * `wmf-insideframe-curved-chord/pie/arc` (a handful of pixels at one arc
- * end), `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
+ * sweeps, including the inside-frame Chord, Pie and Arc, are pixel-exact;
+ * the residuals are `wmf-shapes-scaled` (0.027%: 24 pixels of the
+ * inside-frame row and the Pies at the 0.96 scale),
+ * `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
  * own wide-pen residual).
  */
 const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', tolerance: 0, maxMismatch });
@@ -748,15 +747,17 @@ const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', 
 const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-shapes'), // measured 0%
 	wmf('wmf-shapes-twips'), // measured 0%
-	wmf('wmf-shapes-scaled', 0.0016), // measured 0.158%
+	wmf('wmf-shapes-scaled', 0.0003), // measured 0.027% (24 pixels), before 0.158%
+	wmf('wmf-roundrect-corners'), // 0%, before 500+ pixels: wide-pen and null-pen corners scale onto the drawn box
+	wmf('wmf-roundrect-corners-scaled'), // 0%, before 813+ pixels
 	wmf('wmf-insideframe-subpixel'),
 	wmf('wmf-insideframe-fractional'), // 0%, before 0.385% at the 6.5/7.5 px pens
 	wmf('wmf-insideframe-wide-subpixel'), // 0%, before 0.385%: the same half-width ties
 	wmf('wmf-insideframe-curved-ellipse'), // 0%, before 0.109% (2.057% before the fractional fit)
 	wmf('wmf-insideframe-curved-roundrect'), // 0%, before 0.145% (2.785% before the fractional fit)
-	wmf('wmf-insideframe-curved-chord', 0.00007), // 0.006%, before 0.156%: one arc end
-	wmf('wmf-insideframe-curved-pie', 0.00005), // 0.005%, before 0.142%: one arc end
-	wmf('wmf-insideframe-curved-arc', 0.00007), // 0.006%, before 0.039%: one arc end
+	wmf('wmf-insideframe-curved-chord'), // 0%, before 0.006% (0.156% before the arc ends)
+	wmf('wmf-insideframe-curved-pie'), // 0%, before 0.005% (0.142% before the arc ends)
+	wmf('wmf-insideframe-curved-arc'), // 0%, before 0.006% (0.039% before the arc ends)
 	wmf('wmf-map-anisotropic'),
 	wmf('wmf-map-isotropic'),
 	wmf('wmf-map-text'),
@@ -857,10 +858,10 @@ const TEXT_CONTRAST_CASES: ParityCase[] = [
  * PaintRgn, ExtFloodFill, AngleArc, PolyDraw / PolyDraw16,
  * PolyPolyline16 and Flatten / Widen / AbortPath. Every one is pixel-exact
  * but for the wide-pen widener's known residual (`gdi-raster-widen.ts`):
- * `emfrec-anglearc` (a 7 px flat-capped miter pen along the arc; the
- * AngleArc path itself matches GDI's `GetPath` point for point),
+ * `emfrec-anglearc` (2 pixels of a 7 px flat-capped miter pen along the arc;
+ * the AngleArc path itself matches GDI's `GetPath` point for point),
  * `emfrec-path-flatten` (the same pen on a flattened curve) and the
- * WidenPath outlines.
+ * WidenPath outlines (16 pixels).
  */
 const emfrec = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
 
@@ -885,9 +886,9 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-polydraw32'),
 	emfrec('emfrec-polypolyline16'),
 	emfrec('emfrec-path-abort'),
-	emfrec('emfrec-anglearc', 0.001), // measured 0.062%
+	emfrec('emfrec-anglearc', 0.0001), // measured 0.0046% (2 pixels), before 0.062%
 	emfrec('emfrec-path-flatten', 0.0005), // measured 0.011%
-	emfrec('emfrec-path-widen', 0.002), // measured 0.157%
+	emfrec('emfrec-path-widen', 0.0004), // measured 0.034% (16 pixels), before 0.157%
 	emfrec('emfrec-path-widen-outline'), // ellipse curve sides and duplicated inner triangles
 ];
 
