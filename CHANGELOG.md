@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.8](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.8) - 2026-10-02
+
+### Bug Fixes
+
+- **gdi:** Preserve mapping state, inclusive bounds and full arcs ([5a5df70](https://github.com/ChristopherVR/emf-converter/commit/5a5df709b256803e66199293033fb47d27c3a787))
+
 ## [4.8.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.6) - 2026-10-02
 
 ### Bug Fixes
