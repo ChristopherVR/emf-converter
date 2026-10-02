@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.5) - 2026-10-02
+
+### Bug Fixes
+
+- **gdi:** Reproduce Windows' arc angle, polygon trigonometry and Bezier controls ([f0f069d](https://github.com/ChristopherVR/emf-converter/commit/f0f069d85cb154212881ca43646dadea20eb411a))
+- **gdi:** Inside-frame pens pull the box in by the per-axis pen width, in EMF as well as WMF ([1d1267f](https://github.com/ChristopherVR/emf-converter/commit/1d1267faa286be8d5499de4c2eb9e1179a2d6aa5))
+- **wmf:** Scale inside-frame RoundRect corners from unrounded extents, half-FIX Ellipse and RoundRect edges ([e4d7ab8](https://github.com/ChristopherVR/emf-converter/commit/e4d7ab8593fe177508a585bc62ce41ae5c1884ca))
+- **gdi:** AngleArc follows the polygon trigonometry and the sub-90-degree single Bezier ([913fc9d](https://github.com/ChristopherVR/emf-converter/commit/913fc9d08e3ff652c0b58c5710e42a7adaeb0c48))
+
+### Other
+
+- Merge arc geometry and inside-frame pen rules ([ca22852](https://github.com/ChristopherVR/emf-converter/commit/ca22852f6987219e8fdf52dfbc85be37716cf257))
+
 ## [4.8.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.4) - 2026-10-02
 
 ### Bug Fixes
