@@ -158,11 +158,11 @@ const HSL: EffectCase[] = [
 	exact('hsl-h0-sn100-l0'), // 37.500% before
 	exact('hsl-h0-s0-ln50'),
 	exact('hsl-h0-s0-l50'),
-	within('hsl-h0-s60-l0'),
+	exact('hsl-h0-s60-l0'),
 	exact('hsl-hn120-s0-l0'),
 	exact('hsl-h90-s0-l0'),
 	exact('hsl-h180-s0-l0'),
-	within('hsl-h30-sn30-l20'),
+	exact('hsl-h30-sn30-l20'),
 ];
 
 /** Tint: toward luma plus the tint chroma scaled by the largest channel, a fitted chroma scale. */

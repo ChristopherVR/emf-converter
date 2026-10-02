@@ -9,7 +9,6 @@ Windows reference images come from `scripts/gdi-fixtures`. The **Windows fixture
 The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-only-effect-*`) are in the parity test. They have been regenerated on Windows with corrected metafile type constants. `src/emf-plus-image-effects.fixture.test.ts` also checks the effect algorithms against the effected bitmaps that GDI+ records into each fixture.
 
 - **Not exact yet:**
-  - HSL hue quantization now matches all 554,496 saturated-colour/angle pairs exactly. The broader 1,390,080-pair hue/saturation/lightness sweep retains at most one level on mixed colours and controls. All recorded pure rotation fixtures now match exactly; tone rounding remains.
   - Tint's native 256-index palette and signed hue wrapping now match the broader probe; the 253,440-pair sweep retains at most three levels for positive amounts and five for negative amounts.
   - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
   - The rotated blur's effected bitmap is now exact; playback still has a 0.22% residual along one draw edge (`plus-effect-blur-r3-rotate30`).

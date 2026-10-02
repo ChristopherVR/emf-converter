@@ -27,8 +27,8 @@
  *   adjustment and intensity ({@link curveAdjustmentLut}).
  * - Levels reproduces the native table exactly (truncating float32 arithmetic): 258,560
  *   sweep values and a further 2.6 million probe values match.
- * - `HueSaturationLightness` reproduces native hue quantization across all
- *   integer angles. Mixed-colour/control sweeps retain one-level rounding.
+ * - `HueSaturationLightness` is exact: the integer HSL pipeline matches the
+ *   native output for the whole RGB cube at every setting measured.
  * - `Tint` is within two levels on nearly every pixel.
  * - `RedEyeCorrection` remains an approximation.
  *
@@ -393,15 +393,19 @@ function gdipHue(r: number, g: number, b: number): number {
 }
 
 /**
- * Hue/saturation/lightness (MS-EMFPLUS 2.2.3.7) in GDI+'s integer HSL
- * (measured): lightness is `(max + min) >> 1` (a full-intensity colour tops
- * out at 254) plus `2.55 * lightness` levels; saturation, the usual HSL
- * saturation, is scaled by `1 + saturation / 100`; the hue ({@link gdipHue})
- * rotates by round(`hue * 255 / 360`) indices (positive: red toward yellow).
- * Reconstruction skips three indices in the 258-unit sextant domain. The
- * colour is rebuilt from the rounded HSL maximum and minimum, the middle
- * channel truncated. Saturated colours match all 361 native rotation
- * angles exactly; mixed colours and controls retain one-level rounding.
+ * Hue/saturation/lightness (MS-EMFPLUS 2.2.3.7) in GDI+'s all-integer HSL,
+ * reproduced exactly (the whole 16.7 million colour cube at 20 settings, and
+ * the 1,390,080-pair sweep). Lightness `L` is `(max + min) >> 1`, saturation
+ * `S` is `floor(255 * (max - min) / min(max + min, 510 - max - min))`, and
+ * the hue ({@link gdipHue}) is an index on 255 steps. The lightness control
+ * adds `round(255 * floor(65536 * lightness / 100) / 65536)` levels to `L`;
+ * the saturation control multiplies `S` by `65536 + floor(65536 * saturation /
+ * 100)` in 16.16 fixed point, rounded. The hue control rotates the index by
+ * round(`hue * 255 / 360`) (positive: red toward yellow). The colour is
+ * rebuilt from `hi = floor(L * (255 + S) / 255)` (`L + S - floor(L * S /
+ * 255)` above 127) and `2L - hi`, the middle channel interpolated linearly
+ * with truncating integer division over 43 steps per sextant, skipping three
+ * indices in the 258-unit domain.
  */
 export function applyHueSaturationLightness(
 	src: Uint8ClampedArray,
@@ -411,29 +415,30 @@ export function applyHueSaturationLightness(
 ): Uint8ClampedArray {
 	const out = new Uint8ClampedArray(src);
 	const shift = Math.round((hue * HUE_CIRCLE) / 360);
-	const sMul = 1 + saturation / 100;
+	const satScale = 65536 + Math.floor((saturation * 65536) / 100);
+	const lightOffset = Math.round((255 * Math.floor((lightness * 65536) / 100)) / 65536);
 	for (let i = 0; i < src.length; i += 4) {
 		const r = src[i];
 		const g = src[i + 1];
 		const b = src[i + 2];
 		const max = Math.max(r, g, b);
 		const min = Math.min(r, g, b);
-		const l = clamp(Math.round((((max + min) >> 1) * 100 + 255 * lightness) / 100), 0, 255);
+		const l = clamp(((max + min) >> 1) + lightOffset, 0, 255);
 		if (max === min) {
 			out[i] = out[i + 1] = out[i + 2] = l;
 			continue;
 		}
 		const sum = max + min;
-		const s = Math.fround(clamp(((max - min) / (sum <= 255 ? sum : 510 - sum)) * sMul, 0, 1));
-		const hi = l <= 127 ? l * (1 + s) : l + s * (255 - l);
-		const m1 = l <= 127 ? 2 * l - Math.trunc(hi) : Math.round(2 * l - hi);
-		const m2 = 2 * l - m1;
+		const sat = clamp(Math.round((Math.floor(((max - min) * 255) / (sum <= 255 ? sum : 510 - sum)) * satScale) / 65536), 0, 255);
+		const hi = l <= 127 ? Math.floor((l * (255 + sat)) / 255) : l + sat - Math.floor((l * sat) / 255);
+		const m1 = 2 * l - hi;
+		const m2 = hi;
 		const index = (((gdipHue(r, g, b) + shift) % HUE_CIRCLE) + HUE_CIRCLE) % HUE_CIRCLE;
 		const q = index + Math.floor((index + 41) / 85);
 		const sextant = Math.min(5, Math.floor(q / HUE_SEXTANT));
-		const f = (q - sextant * HUE_SEXTANT) / HUE_SEXTANT;
-		const up = Math.trunc(m1 + (m2 - m1) * f);
-		const down = Math.trunc(m1 + (m2 - m1) * (1 - f));
+		const position = q - sextant * HUE_SEXTANT;
+		const up = m1 + Math.floor(((m2 - m1) * position) / HUE_SEXTANT);
+		const down = m1 + Math.floor(((m2 - m1) * (HUE_SEXTANT - position)) / HUE_SEXTANT);
 		const [nr, ng, nb] = [
 			[m2, up, m1],
 			[down, m2, m1],
