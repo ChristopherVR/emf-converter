@@ -145,7 +145,7 @@ const f32Buffer = new Float32Array(1);
 const f32Bits = new Int32Array(f32Buffer.buffer);
 
 /** `x` truncated toward zero to float32 (GDI+ forms a `Blend` knot with truncating float32 arithmetic). */
-function truncF32(x: number): number {
+export function truncF32(x: number): number {
 	const r = Math.fround(x);
 	if (Math.abs(r) > Math.abs(x)) {
 		f32Buffer[0] = r;

@@ -246,8 +246,8 @@ describe('EMF+ image effects', () => {
 				if (diff) differences++;
 			}
 		});
-		expect(maximumDifference).toBeLessThanOrEqual(1);
-		expect(differences).toBe(1);
+		expect(maximumDifference).toBe(0);
+		expect(differences).toBe(0);
 	});
 	it('rejects truncated and nonfinite parameters', () => {
 		const { view } = nativeCase('matrix-swap');

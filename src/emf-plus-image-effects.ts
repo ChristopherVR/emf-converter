@@ -25,7 +25,8 @@
  *   Larger radii use a different native algorithm, still approximated here.
  * - `ColorCurve` uses complete native 256-entry tables for every legal
  *   adjustment and intensity ({@link curveAdjustmentLut}).
- * - A broader Levels sweep has one one-level difference in 258,560 values.
+ * - Levels reproduces the native table exactly (truncating float32 arithmetic): 258,560
+ *   sweep values and a further 2.6 million probe values match.
  * - `HueSaturationLightness` reproduces native hue quantization across all
  *   integer angles. Mixed-colour/control sweeps retain one-level rounding.
  * - `Tint` is within two levels on nearly every pixel.
@@ -39,6 +40,7 @@
  */
 
 import { nativeCurveLookup } from './emf-plus-image-curves';
+import { truncF32 } from './emf-plus-linear-ramp';
 
 /** A rectangle in image pixels, right and bottom exclusive (a RECTL). */
 export interface EffectRect {
@@ -242,8 +244,8 @@ function midtoneGamma(t: number): number {
 		low = high;
 		high = (high + 100) / 2;
 	}
-	gamma = Math.abs(t) === 100 ? 10 : Math.min(10, gamma + (Math.abs(t) - low) / (high - low));
-	return Math.fround(t < 0 ? gamma : 1 / gamma);
+	gamma = Math.abs(t) === 100 ? 10 : Math.min(10, truncF32(gamma + truncF32(truncF32(Math.abs(t) - low) / truncF32(high - low))));
+	return t < 0 ? truncF32(gamma) : truncF32(1 / truncF32(gamma));
 }
 
 /**
@@ -278,6 +280,25 @@ export function curveAdjustmentLut(adjustment: number, intensity: number): Uint8
  * ({@link midtoneGamma}); halves round down.
  */
 export function levelsLut(highlight: number, midtone: number, shadow: number): Uint8Array {
+	if (highlight !== shadow) {
+		// GDI+ forms the whole table in float32 arithmetic that truncates
+		// toward zero; inverted ranges mirror the stretch and subtract from 255.
+		const forward = highlight > shadow;
+		const lo = truncF32((forward ? shadow : highlight) * 255 / 100);
+		const hi = truncF32((forward ? highlight : shadow) * 255 / 100);
+		const scale = truncF32(1 / truncF32(hi - lo));
+		const exponent = midtoneGamma(midtone);
+		const lut = new Uint8Array(256);
+		for (let v = 0; v < 256; v++) {
+			let level = clamp(truncF32(truncF32(v - lo) * scale), 0, 1);
+			if (midtone !== 0) {
+				level = truncF32(level ** exponent);
+			}
+			const out = forward ? truncF32(255 * level) : truncF32(255 - truncF32(255 * level));
+			lut[v] = clamp(Math.floor(out + 0.5), 0, 255);
+		}
+		return lut;
+	}
 	const base = shadow * 255 / 100 - (highlight === shadow && shadow < 50 ? 1 : 0);
 	const span = highlight === shadow ? 1 : (highlight - shadow) * 255 / 100;
 	const exponent = midtoneGamma(midtone);
