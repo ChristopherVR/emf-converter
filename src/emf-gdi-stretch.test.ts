@@ -69,6 +69,23 @@ describe('stretchGdi', () => {
 		expect(unpack(stretchGdi(src, 0, 0, 4, 1, 2, 1, COLORONCOLOR))).toEqual([0x00ff00, 0xffffff]);
 	});
 
+	it('keeps only the last row of a two-row source squeezed into one while the width doubles', () => {
+		const src = { width: 3, height: 2, data: new Uint8ClampedArray(3 * 2 * 4) };
+		const colours = [0x102030, 0x405060, 0x708090, 0xa0b0c0, 0xd0e0f0, 0x112233];
+		colours.forEach((v, i) => src.data.set([(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, 255], i * 4));
+		expect(unpack(stretchHalftone(src, 0, 0, 3, 2, 6, 1))).toEqual([
+			0xa0b0c0, 0xa0b0c0, 0xd0e0f0, 0xd0e0f0, 0x112233, 0x112233,
+		]);
+	});
+
+	it('averages the pair of a one-pixel checkerboard squeezed into one row', () => {
+		const src = { width: 3, height: 2, data: new Uint8ClampedArray(3 * 2 * 4) };
+		[0x000000, 0xffffff, 0x000000, 0xffffff, 0x000000, 0xffffff].forEach((v, i) =>
+			src.data.set([(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, 255], i * 4));
+		expect(unpack(stretchHalftone(src, 0, 0, 3, 2, 6, 1))).toEqual(Array(6).fill(0x808080));
+		expect(unpack(stretchHalftone(src, 0, 0, 3, 2, 4, 1))).toEqual(Array(4).fill(0x808080));
+	});
+
 	it('mirrors when exactly one of the extents is negative', () => {
 		expect(unpack(stretchGdi(src, 0, 0, 4, 1, -4, 1, COLORONCOLOR))).toEqual([
 			0xffffff, 0x0000ff, 0x00ff00, 0xff0000,
@@ -111,8 +128,10 @@ describe('halftoneAxis', () => {
 });
 
 describe('halftoneReduceTaps', () => {
-	it('splits an exact 3x reduction as 21844 + 21846 + 21846, the first tap lightest', () => {
-		expect(halftoneReduceTaps(12, 4, false)[1]).toEqual([[3, 21844], [4, 21846], [5, 21846]]);
+	it('splits an exact 3x reduction by 13-bit cumulative shares as 21840 + 21848 + 21848, the first tap lightest', () => {
+		expect(halftoneReduceTaps(12, 4, false)[1]).toEqual([[3, 21840], [4, 21848], [5, 21848]]);
+		// 8192 / 7 = 1170.29: the cumulative share steps over an integer at sub-pixels 3 and 6.
+		expect(halftoneReduceTaps(7, 1, false)[0].map(([, w]) => w / 8)).toEqual([1170, 1170, 1170, 1171, 1170, 1170, 1171]);
 	});
 
 	it('keeps weights that are exact in 16.16 exact and always sums to 65536', () => {
