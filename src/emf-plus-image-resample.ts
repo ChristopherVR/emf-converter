@@ -37,12 +37,26 @@
  *   fractional y origin is used as given, rounded to 1/16 pixel; mirroring it
  *   too left errors of up to 96 levels against native draws.
  *
- * A texel outside the source rectangle counts as transparent (GDI+'s
- * default clamp for `DrawImage`), so the kernel's overhang fades an edge
- * out; with an ImageAttributes WrapMode the overhang reads the bitmap's own
- * neighbouring texels and, beyond the bitmap, wraps (Tile, TileFlip*) or
- * reads the clamp colour (Clamp). Colours are blended premultiplied, and a negative-lobe result is
- * clamped. {@link resampleImage} implements all of this as a pure function
+ * - Rotated or sheared high-quality draws (a 3-point destination) differ
+ *   from the axis-aligned ones, measured against native draws of solid,
+ *   noise, impulse and bordered images over angles 5 to 70 degrees and
+ *   scales 0.4 to 6. If either source axis is unscaled, meaning its device
+ *   length rounded up is within one pixel of the source length (20 texels
+ *   at scales from 0.905 to 1.05), GDI+ point-samples with the plain
+ *   Bicubic (`a = -0.5`) or Bilinear kernel instead. Otherwise the
+ *   area-integrated kernel above applies, and under PixelOffsetMode
+ *   Half/HighQuality the whole image sits half a device pixel further along
+ *   each of its own axes (the sample grid is not the pixel-centre grid
+ *   there), while under None the alpha near the far (right and bottom)
+ *   source edges falls to exactly zero at the edge (see {@link fadeAt}).
+ *
+ * A texel outside the bitmap counts as transparent (GDI+'s default clamp
+ * for `DrawImage`), so the kernel's overhang fades an edge out; a texel
+ * inside the bitmap but outside the source rectangle is read as it is
+ * (measured on sub-rectangle draws in every interpolation mode). With an
+ * ImageAttributes WrapMode the overhang beyond the bitmap wraps (Tile,
+ * TileFlip*) or reads the clamp colour (Clamp). Colours are blended
+ * premultiplied, and a negative-lobe result is clamped. {@link resampleImage} implements all of this as a pure function
  * over RGBA pixels; callers composite its block at an integer device
  * offset, which every canvas backend copies unfiltered.
  *
@@ -167,6 +181,45 @@ function cubicIntegral(t: number, a: number): number {
 		v = p1 + p(x) - p(1);
 	}
 	return Math.sign(t) * v;
+}
+
+/**
+ * `HighQualityBicubic` fade table: sampled every 0.05 pixel from 0 to 1 (see {@link fadeAt}).
+ */
+const FAR_FADE = [1, 1, 0.985, 0.95, 0.91, 0.85, 0.8, 0.745, 0.69, 0.63, 0.56, 0.5, 0.43, 0.35, 0.28, 0.22, 0.16, 0.11, 0.065, 0.03, 0];
+
+/**
+ * How much of its edge alpha a rotated high-quality draw (under
+ * PixelOffsetMode None) loses `d` device pixels inside the far (right or
+ * bottom) edge of the source rectangle, as a share of the alpha the kernel
+ * gives at the edge itself. Native alpha there is the kernel's alpha minus
+ * this share of the edge alpha: zero at the edge, rejoining the kernel one
+ * pixel in, whatever the angle or the scale (measured with an opaque image
+ * against the same image inside a transparent border, over angles 0.4 to
+ * 60 degrees and scales 2 to 6). The tent kernel loses it linearly
+ * (`1 - d`); the cubic follows {@link FAR_FADE}. Pure.
+ */
+function fadeAt(d: number, bilinear: boolean): number {
+	if (d >= 1) {
+		return 0;
+	}
+	if (bilinear) {
+		return 1 - Math.max(0, d);
+	}
+	const x = Math.max(0, d) * 20;
+	const i = Math.floor(x);
+	return FAR_FADE[i] + (FAR_FADE[i + 1] - FAR_FADE[i]) * (x - i);
+}
+
+/**
+ * Whether a source extent of `srcLen` texels spanning `deviceLen` device
+ * pixels counts as "unscaled" for a rotated high-quality draw: its rounded-up
+ * device length is within one pixel of the source length (so 20 texels at
+ * scales from 0.905 to 1.05 are, 0.9 and 1.055 are not).
+ */
+function nearSourceExtent(deviceLen: number, srcLen: number): boolean {
+	const d = Math.ceil(deviceLen - 1e-6) - srcLen;
+	return d >= -1 && d <= 1;
 }
 
 /** Cubic parameter GDI+ uses for `Bicubic` (point-sampled). */
@@ -363,13 +416,41 @@ export function resampleImage(
 	spec: DeferredImageResample,
 	surface: { w: number; h: number },
 ): ResampledBlock | null {
+	if (spec.rightHalo && spec.rightHalo.length === height * 4) {
+		// Append the halo column to the bitmap, then sample it as an ordinary one.
+		const grown = new Uint8ClampedArray((width + 1) * height * 4);
+		for (let y = 0; y < height; y++) {
+			grown.set(rgba.subarray(y * width * 4, (y + 1) * width * 4), y * (width + 1) * 4);
+			grown.set(spec.rightHalo.subarray(y * 4, y * 4 + 4), (y * (width + 1) + width) * 4);
+		}
+		return resampleImage(grown, width + 1, height, { ...spec, rightHalo: undefined }, surface);
+	}
 	if (spec.kernel === 'nearest' && !spec.wrap) {
 		return resampleNearest(rgba, width, height, spec, surface);
 	}
 	let m = snapToDeviceGrid(spec);
-	const kernel = spec.kernel;
+	let kernel = spec.kernel;
 	const hq = kernel === 'hq-bilinear' || kernel === 'hq-bicubic';
 	const axisAligned = m[1] === 0 && m[2] === 0;
+	let farFade = false;
+	let shiftX = 0;
+	let shiftY = 0;
+	if (hq && !axisAligned) {
+		// A rotated or sheared high-quality draw (see the module doc).
+		const extentU = Math.hypot(m[0], m[1]) * spec.srcW;
+		const extentV = Math.hypot(m[2], m[3]) * spec.srcH;
+		if (nearSourceExtent(extentU, spec.srcW) || nearSourceExtent(extentV, spec.srcH)) {
+			kernel = kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear';
+		} else {
+			farFade = true;
+			if (spec.halfPixelOffset) {
+				const lu = Math.hypot(m[0], m[1]);
+				const lv = Math.hypot(m[2], m[3]);
+				shiftX = (0.5 * m[0]) / lu + (0.5 * m[2]) / lv;
+				shiftY = (0.5 * m[1]) / lu + (0.5 * m[3]) / lv;
+			}
+		}
+	}
 	if (hq && axisAligned) {
 		// Mirror the fractional part of the destination origin's x (the device
 		// position of the source rectangle's top-left corner). Only x is
@@ -433,6 +514,8 @@ export function resampleImage(
 	const vMax = spec.srcY + spec.srcH;
 	const wu: number[] = [];
 	const wv: number[] = [];
+	const gradU = Math.hypot(inv[0], inv[2]);
+	const gradV = Math.hypot(inv[1], inv[3]);
 	const c = spec.clampArgb ?? 0;
 	const edge: EdgeMode = {
 		wrap: spec.wrap,
@@ -444,8 +527,8 @@ export function resampleImage(
 		const py = by0 + j + o;
 		for (let i = 0; i < w; i++) {
 			const px = bx0 + i + o;
-			const u = inv[0] * px + inv[2] * py + inv[4];
-			const v = inv[1] * px + inv[3] * py + inv[5];
+			const u = inv[0] * (px - shiftX) + inv[2] * (py - shiftY) + inv[4];
+			const v = inv[1] * (px - shiftX) + inv[3] * (py - shiftY) + inv[5];
 			// Coverage by the top-left rule, as GDI+ rasterises the destination
 			// parallelogram: the sample is nudged right by a hair (and down by
 			// far less), so a pixel exactly on a left or top edge is inside and
@@ -462,31 +545,38 @@ export function resampleImage(
 			// PixelOffsetMode: under Half/HighQuality GDI+'s recorder already
 			// shifts the source rectangle by -0.5 (it records (0, 0, w, h) as
 			// (-0.5, -0.5, w, h)), so only the device sample point moves.
-			const cu = u;
-			const cv = v;
-			const iu0 = Math.ceil(cu - fu.radius);
-			const iu1 = Math.floor(cu + fu.radius);
-			const iv0 = Math.ceil(cv - fv.radius);
-			const iv1 = Math.floor(cv + fv.radius);
-			wu.length = 0;
-			wv.length = 0;
-			for (let t = iu0; t <= iu1; t++) {
-				wu.push(fu.weight(t, cu));
+			const box = { x0: 0, y0: 0, x1: width, y1: height };
+			const sampleAt = (cu: number, cv: number): [number, number, number, number] => {
+				const iu0 = Math.ceil(cu - fu.radius);
+				const iu1 = Math.floor(cu + fu.radius);
+				const iv0 = Math.ceil(cv - fv.radius);
+				const iv1 = Math.floor(cv + fv.radius);
+				wu.length = 0;
+				wv.length = 0;
+				for (let t = iu0; t <= iu1; t++) {
+					wu.push(fu.weight(t, cu));
+				}
+				for (let t = iv0; t <= iv1; t++) {
+					wv.push(fv.weight(t, cv));
+				}
+				return blendSeparable(rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge);
+			};
+			let [r, g, b, a] = sampleAt(u, v);
+			if (farFade && !spec.wrap && a > 0) {
+				const du = (uMax - u) / gradU;
+				const dv = (vMax - v) / gradV;
+				const k =
+					1 -
+					(du < 1 ? fadeAt(du, kernel === 'hq-bilinear') * (sampleAt(uMax, v)[3] / a) : 0) -
+					(dv < 1 ? fadeAt(dv, kernel === 'hq-bilinear') * (sampleAt(u, vMax)[3] / a) : 0);
+				if (k < 1) {
+					const f = Math.max(0, k);
+					r *= f;
+					g *= f;
+					b *= f;
+					a *= f;
+				}
 			}
-			for (let t = iv0; t <= iv1; t++) {
-				wv.push(fv.weight(t, cv));
-			}
-			const [r, g, b, a] = blendSeparable(
-				rgba,
-				width,
-				spec.wrap ? { x0: 0, y0: 0, x1: width, y1: height } : { x0: sx0, y0: sy0, x1: sx1, y1: sy1 },
-				iu0,
-				wu,
-				iv0,
-				wv,
-				kernel === 'bicubic',
-				edge,
-			);
 			if (a <= 0) {
 				continue;
 			}

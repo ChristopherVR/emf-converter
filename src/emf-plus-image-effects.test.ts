@@ -390,6 +390,18 @@ describe('applyImageEffectToRect', () => {
 		expect(Array.from(grown.rgba.slice(4, 8))).toEqual([200, 100, 50, 255]);
 	});
 
+	it('keeps the first halo column of an expandEdge blur that reaches the image end, for bilinear taps', () => {
+		const src = px(...new Array(9).fill([200, 100, 50, 255]));
+		const grown = applyImageEffectToRect(src, 3, 3, blur(true, 1), rect(0, 0, 3, 3))!;
+		// One RGBA texel per region row: the blurred buffer's column right of the region, fainter than the edge.
+		expect(grown.haloRight).toHaveLength(3 * 4);
+		expect(grown.haloRight![3]).toBeGreaterThan(0);
+		expect(grown.haloRight![3]).toBeLessThan(grown.rgba[2 * 4 + 3]);
+		// A rectangle that stops short of the image end has none.
+		expect(applyImageEffectToRect(src, 3, 3, blur(true, 1), rect(0, 0, 1, 1))!.haloRight).toBeUndefined();
+		expect(applyImageEffectToRect(src, 3, 3, blur(false, 1), rect(0, 0, 3, 3))!.haloRight).toBeUndefined();
+	});
+
 	it('moves red-eye areas into the cropped region', () => {
 		const red: [number, number, number, number] = [255, 0, 0, 255];
 		const src = px(...Array.from({ length: 6 * 6 }, () => red));

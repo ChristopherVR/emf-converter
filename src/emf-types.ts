@@ -854,15 +854,21 @@ export interface DeferredImageResample {
 	/** True under `PixelOffsetMode` Half/HighQuality (pixel centres), false under None/Default. */
 	halfPixelOffset: boolean;
 	/**
-	 * The draw's `ImageAttributes` WrapMode: a kernel tap outside the source
-	 * rectangle then reads the bitmap's own texel, and one outside the bitmap
+	 * The draw's `ImageAttributes` WrapMode: a kernel tap outside the bitmap
 	 * wraps within it (Tile/TileFlipX/Y/XY) or reads `clampArgb` (Clamp),
 	 * as measured on the `gpx-image-attr-*` fixtures. Absent: a tap outside
-	 * the source rectangle is transparent, GDI+'s default without attributes.
+	 * the bitmap is transparent, GDI+'s default without attributes (a tap
+	 * outside the source rectangle but inside the bitmap reads the bitmap).
 	 */
 	wrap?: EmfPlusGradientWrapMode;
 	/** Packed ARGB read outside the source rectangle under `wrap` Clamp. */
 	clampArgb?: number;
+	/**
+	 * RGBA texels (one per bitmap row) that a tap just right of the bitmap
+	 * reads instead of transparency: an expanded blur's first halo column,
+	 * which GDI+ does not draw but does sample.
+	 */
+	rightHalo?: Uint8ClampedArray;
 }
 
 // ---------------------------------------------------------------------------

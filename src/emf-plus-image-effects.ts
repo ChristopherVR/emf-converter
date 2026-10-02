@@ -1028,6 +1028,13 @@ export interface EffectedRegion {
 	y: number;
 	width: number;
 	height: number;
+	/**
+	 * An expanded blur's first halo column, just right of the region (`height`
+	 * RGBA texels). GDI+ draws no halo, but a bilinear tap at the region's
+	 * right edge reads this column rather than a transparent one. Absent
+	 * when the region does not reach the end of the effect's output.
+	 */
+	haloRight?: Uint8ClampedArray;
 }
 
 /** Copies the `w` x `h` block at (`sx`, `sy`) of a `width`-wide image into a new `bw`-wide buffer at (`dx`, `dy`). */
@@ -1075,7 +1082,7 @@ function expandedBlur(
 	x1: number,
 	y1: number,
 	cropped: boolean,
-): Uint8ClampedArray {
+): { out: Uint8ClampedArray; halo: Uint8ClampedArray } {
 	const r = Math.ceil(radius);
 	const bw = x1 - x0 + 2 * r;
 	const bh = y1 - y0 + 2 * r;
@@ -1095,13 +1102,17 @@ function expandedBlur(
 			: gdipBlur(buf, bw, bh, radius, cropped ? r : 0, cropped, Math.ceil((y1 - y0) / (x1 - x0)));
 	const w = x1 - x0;
 	const out = new Uint8ClampedArray(w * (y1 - y0) * 4);
+	const halo = new Uint8ClampedArray((y1 - y0) * 4);
 	for (let y = 0; y < y1 - y0; y++) {
 		const from = ((y + r) * bw + r) * 4;
 		for (let i = 0; i < w * 4; i++) {
 			out[y * w * 4 + i] = Math.round(blurred[from + i]);
 		}
+		for (let i = 0; i < 4; i++) {
+			halo[y * 4 + i] = Math.round(blurred[from + w * 4 + i]);
+		}
 	}
-	return out;
+	return { out, halo };
 }
 
 /**
@@ -1115,7 +1126,8 @@ function expandedBlur(
  *   rectangle rounded outward, without that extra column and row;
  * - a blur with `expandEdge` blurs transparency in from beyond the edges
  *   (see {@link expandedBlur}), but the result is still only the region:
- *   GDI+ draws no halo outside the source rectangle;
+ *   GDI+ draws no halo outside the source rectangle (the first halo column
+ *   is kept as `haloRight`, which a bilinear tap at the right edge reads);
  * - red-eye areas, given in image pixels, are moved into the region's
  *   coordinates.
  *
@@ -1163,7 +1175,12 @@ export function applyImageEffectToRect(
 		// Decide cropping from the shown rectangle, before adding the extra
 		// native working column/row. A one-pixel gap still takes the crop path.
 		const cropped = Math.ceil(src.x + src.w) < width && Math.ceil(src.y + src.h) < height;
-		return result(expandedBlur(rgba, width, height, effect.radius, x0, y0, x1, y1, cropped));
+		const { out, halo } = expandedBlur(rgba, width, height, effect.radius, x0, y0, x1, y1, cropped);
+		const region = result(out);
+		if (shownWidth === w && shownHeight === h) {
+			region.haloRight = halo;
+		}
+		return region;
 	}
 	let region = rgba;
 	if (w !== width || h !== height) {
