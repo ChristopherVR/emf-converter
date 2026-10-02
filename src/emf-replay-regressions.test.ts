@@ -231,3 +231,32 @@ describe('window/viewport mapping and the bounds origin', () => {
 		}
 	}
 });
+
+// ---------------------------------------------------------------------------
+// Window/viewport extents outside MM_ISOTROPIC / MM_ANISOTROPIC
+// ---------------------------------------------------------------------------
+
+describe('window/viewport extents and the map mode', () => {
+	// A 900x600 window on a 300x200 viewport would shrink the picture to a
+	// third, but only once a scalable map mode lets the extents take effect.
+	const extents = [record(9, [900, 600]), record(11, [300, 200])];
+
+	it('ignores the extents in MM_TEXT, the mode a DC starts in', () => {
+		const img = render(buildEmf([0, 0, 299, 199], [...extents, ...redRect(0, 0, 300, 200)]));
+		expect(measure(img, isRed).area).toBeGreaterThan(0.95);
+	});
+
+	it('applies the extents after SetMapMode(MM_ANISOTROPIC)', () => {
+		const img = render(buildEmf([0, 0, 299, 199], [record(17, [8]), ...extents, ...redRect(0, 0, 300, 200)]));
+		const m = measure(img, isRed);
+		expect(m.area).toBeGreaterThan(0.09);
+		expect(m.area).toBeLessThan(0.13);
+	});
+
+	it('drops extents set earlier when SetMapMode(MM_TEXT) follows', () => {
+		const img = render(
+			buildEmf([0, 0, 299, 199], [record(17, [8]), ...extents, record(17, [1]), ...redRect(0, 0, 300, 200)]),
+		);
+		expect(measure(img, isRed).area).toBeGreaterThan(0.95);
+	});
+});

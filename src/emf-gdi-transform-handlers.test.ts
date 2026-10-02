@@ -160,16 +160,69 @@ describe('emf-gdi-transform-handlers', () => {
 
 		// -- EMR_SETMAPMODE --
 		describe('eMR_SETMAPMODE', () => {
+			const setMapMode = (rCtx: EmfGdiReplayCtx, mode: number) => {
+				rCtx.view.setUint32(8, mode, true);
+				return handleEmfTransformRecord(rCtx, EMR_SETMAPMODE, 8, 12);
+			};
+			const setExt = (rCtx: EmfGdiReplayCtx, type: number, cx: number, cy: number) => {
+				rCtx.view.setInt32(8, cx, true);
+				rCtx.view.setInt32(12, cy, true);
+				handleEmfTransformRecord(rCtx, type, 8, 16);
+			};
+
 			it('returns true for map mode record', () => {
-				const rCtx = makeRCtx();
-				const d = 8;
-				rCtx.view.setUint32(d, 8, true); // MM_ANISOTROPIC
-				expect(handleEmfTransformRecord(rCtx, EMR_SETMAPMODE, d, 12)).toBeTruthy();
+				expect(setMapMode(makeRCtx(), 8)).toBeTruthy();
 			});
 
 			it('ignores if recSize < 12', () => {
 				const rCtx = makeRCtx();
 				expect(handleEmfTransformRecord(rCtx, EMR_SETMAPMODE, 8, 8)).toBeTruthy();
+			});
+
+			it('ignores window and viewport extents in MM_TEXT, the default', () => {
+				const rCtx = makeRCtx();
+				rCtx.mapMode = undefined;
+				setExt(rCtx, EMR_SETWINDOWEXTEX, 900, 600);
+				setExt(rCtx, EMR_SETVIEWPORTEXTEX, 300, 200);
+				expect(rCtx.windowExt).toEqual({ cx: 1000, cy: 1000 });
+				expect(rCtx.viewportExt).toEqual({ cx: 1000, cy: 1000 });
+				expect(rCtx.useMappingMode).toBeFalsy();
+			});
+
+			it('resets the extents to 1:1 on MM_TEXT', () => {
+				const rCtx = makeRCtx();
+				setExt(rCtx, EMR_SETWINDOWEXTEX, 900, 600);
+				setMapMode(rCtx, 1);
+				expect(rCtx.mapMode).toBe(1);
+				expect(rCtx.windowExt).toEqual({ cx: 1, cy: 1 });
+				expect(rCtx.viewportExt).toEqual({ cx: 1, cy: 1 });
+			});
+
+			it('keeps the extents when switching to MM_ANISOTROPIC', () => {
+				const rCtx = makeRCtx();
+				rCtx.mapMode = undefined;
+				setMapMode(rCtx, 8);
+				expect(rCtx.windowExt).toEqual({ cx: 1000, cy: 1000 });
+				expect(rCtx.useMappingMode).toBeTruthy();
+			});
+
+			it('derives MM_LOMETRIC from the header reference device, y up', () => {
+				const rCtx = makeRCtx();
+				// EMR_HEADER: szlDevice 1920x1080 px, szlMillimeters 508x286 (96 dpi).
+				rCtx.view.setUint32(0, 1, true);
+				[1920, 1080, 508, 286].forEach((n, i) => rCtx.view.setInt32(72 + i * 4, n, true));
+				setMapMode(rCtx, 2);
+				expect(rCtx.windowExt).toEqual({ cx: 254, cy: 254 });
+				expect(rCtx.viewportExt.cx).toBeCloseTo(96, 6);
+				expect(rCtx.viewportExt.cy).toBeCloseTo(-(1080 * 25.4) / 286, 6);
+			});
+
+			it('evens out the viewport in MM_ISOTROPIC', () => {
+				const rCtx = makeRCtx();
+				rCtx.mapMode = 7;
+				setExt(rCtx, EMR_SETWINDOWEXTEX, 100, 100);
+				setExt(rCtx, EMR_SETVIEWPORTEXTEX, 300, 200);
+				expect(rCtx.viewportExt).toEqual({ cx: 200, cy: 200 });
 			});
 		});
 

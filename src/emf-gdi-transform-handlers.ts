@@ -15,15 +15,83 @@ import {
 } from './emf-constants';
 import { activateGdiMappingMode } from './emf-gdi-coord';
 import type { EmfGdiReplayCtx, TransformMatrix } from './emf-types';
+import { MM_ANISOTROPIC, MM_TEXT, type WmfMapping, extentsSettable, fixIsotropic, setMapMode } from './wmf-mapping';
+
+// ---------------------------------------------------------------------------
+// Map mode
+// ---------------------------------------------------------------------------
+
+/**
+ * The reference device's density, from the EMF header's `szlDevice` and
+ * `szlMillimeters` (the metric map modes are defined through it); absent
+ * when the replayed buffer does not start with a usable header.
+ */
+function emfDeviceDpi(view: DataView): { x: number; y: number } | undefined {
+	if (view.byteLength < 88 || view.getUint32(0, true) !== 1) {
+		return undefined;
+	}
+	const devW = view.getInt32(72, true);
+	const devH = view.getInt32(76, true);
+	const mmW = view.getInt32(80, true);
+	const mmH = view.getInt32(84, true);
+	if (devW <= 0 || devH <= 0 || mmW <= 0 || mmH <= 0) {
+		return undefined;
+	}
+	return { x: (devW * 25.4) / mmW, y: (devH * 25.4) / mmH };
+}
+
+/** The DC's mapping as the shared GDI mapping rules (`wmf-mapping.ts`) see it. */
+function emfMapping(r: EmfGdiReplayCtx): WmfMapping {
+	const dpi = emfDeviceDpi(r.view);
+	return {
+		...(dpi ? { dpi } : {}),
+		mode: r.mapMode ?? MM_TEXT,
+		winOrg: r.windowOrg,
+		winExt: { ...r.windowExt },
+		vpOrg: r.viewportOrg,
+		vpExt: { ...r.viewportExt },
+	};
+}
+
+/** Writes the mode and extents of `m` back to the replay context. */
+function storeMapping(r: EmfGdiReplayCtx, m: WmfMapping): void {
+	r.mapMode = m.mode;
+	r.windowExt = m.winExt;
+	r.viewportExt = m.vpExt;
+}
+
+/**
+ * Sets the window (`viewport` false) or viewport extent. GDI ignores both
+ * outside `MM_ISOTROPIC`/`MM_ANISOTROPIC` (in `MM_TEXT`, the mode a DC
+ * starts in, a logical unit stays one device pixel) and rejects a zero
+ * extent; `MM_ISOTROPIC` then evens out the viewport.
+ */
+function setExtent(r: EmfGdiReplayCtx, viewport: boolean, cx: number, cy: number): void {
+	const m = emfMapping(r);
+	if (!extentsSettable(m) || cx === 0 || cy === 0) {
+		return;
+	}
+	if (viewport) {
+		m.vpExt = { cx, cy };
+	} else {
+		m.winExt = { cx, cy };
+	}
+	fixIsotropic(m);
+	storeMapping(r, m);
+	activateGdiMappingMode(r);
+}
+
+/** `ScaleViewportExtEx` / `ScaleWindowExtEx`: rational scaling, under the same rules as {@link setExtent}. */
+function scaleExtent(r: EmfGdiReplayCtx, viewport: boolean, xNum: number, xDenom: number, yNum: number, yDenom: number): void {
+	const ext = viewport ? r.viewportExt : r.windowExt;
+	const cx = xDenom !== 0 ? Math.round((ext.cx * xNum) / xDenom) : ext.cx;
+	const cy = yDenom !== 0 ? Math.round((ext.cy * yNum) / yDenom) : ext.cy;
+	setExtent(r, viewport, cx, cy);
+}
 
 // ---------------------------------------------------------------------------
 // Coordinate-system helpers
 // ---------------------------------------------------------------------------
-
-/** Extent setters are ignored by MM_TEXT and all fixed-unit modes. */
-function extentsSettable(rCtx: EmfGdiReplayCtx): boolean {
-	return rCtx.mapMode === 7 || rCtx.mapMode === 8;
-}
 
 function handleCoordinateRecord(
 	rCtx: EmfGdiReplayCtx,
@@ -35,13 +103,8 @@ function handleCoordinateRecord(
 
 	switch (recType) {
 		case EMR_SETWINDOWEXTEX: {
-			if (recSize >= 16 && extentsSettable(rCtx)) {
-				const cx = view.getInt32(dataOff, true);
-				const cy = view.getInt32(dataOff + 4, true);
-				if (cx !== 0 && cy !== 0) {
-					rCtx.windowExt = { cx, cy };
-					activateGdiMappingMode(rCtx);
-				}
+			if (recSize >= 16) {
+				setExtent(rCtx, false, view.getInt32(dataOff, true), view.getInt32(dataOff + 4, true));
 			}
 			return true;
 		}
@@ -54,13 +117,8 @@ function handleCoordinateRecord(
 			return true;
 		}
 		case EMR_SETVIEWPORTEXTEX: {
-			if (recSize >= 16 && extentsSettable(rCtx)) {
-				const cx = view.getInt32(dataOff, true);
-				const cy = view.getInt32(dataOff + 4, true);
-				if (cx !== 0 && cy !== 0) {
-					rCtx.viewportExt = { cx, cy };
-					activateGdiMappingMode(rCtx);
-				}
+			if (recSize >= 16) {
+				setExtent(rCtx, true, view.getInt32(dataOff, true), view.getInt32(dataOff + 4, true));
 			}
 			return true;
 		}
@@ -75,50 +133,28 @@ function handleCoordinateRecord(
 		case EMR_SETMAPMODE: {
 			if (recSize >= 12) {
 				const mode = view.getUint32(dataOff, true);
-				if (mode >= 1 && mode <= 8) {
-					rCtx.mapMode = mode;
-					if (mode === 1) {
-						// SetMapMode(MM_TEXT) resets the scaling, but retains origins
-						// and the independent world transform.
-						rCtx.windowExt = { cx: 1, cy: 1 };
-						rCtx.viewportExt = { cx: 1, cy: 1 };
-					}
-					if (mode === 1 || mode === 8 || mode === 7) {
-						activateGdiMappingMode(rCtx);
-					}
+				if (mode >= MM_TEXT && mode <= MM_ANISOTROPIC) {
+					// MM_TEXT resets the extents to 1:1 but keeps the origins and
+					// the independent world transform.
+					const m = emfMapping(rCtx);
+					setMapMode(m, mode);
+					storeMapping(rCtx, m);
+					activateGdiMappingMode(rCtx);
 				}
 			}
 			return true;
 		}
-		case EMR_SCALEVIEWPORTEXTEX: {
-			if (recSize >= 24 && extentsSettable(rCtx)) {
-				const xNum = view.getInt32(dataOff, true);
-				const xDenom = view.getInt32(dataOff + 4, true);
-				const yNum = view.getInt32(dataOff + 8, true);
-				const yDenom = view.getInt32(dataOff + 12, true);
-				if (xDenom !== 0) {
-					rCtx.viewportExt.cx = Math.round((rCtx.viewportExt.cx * xNum) / xDenom);
-				}
-				if (yDenom !== 0) {
-					rCtx.viewportExt.cy = Math.round((rCtx.viewportExt.cy * yNum) / yDenom);
-				}
-				activateGdiMappingMode(rCtx);
-			}
-			return true;
-		}
+		case EMR_SCALEVIEWPORTEXTEX:
 		case EMR_SCALEWINDOWEXTEX: {
-			if (recSize >= 24 && extentsSettable(rCtx)) {
-				const xNum = view.getInt32(dataOff, true);
-				const xDenom = view.getInt32(dataOff + 4, true);
-				const yNum = view.getInt32(dataOff + 8, true);
-				const yDenom = view.getInt32(dataOff + 12, true);
-				if (xDenom !== 0) {
-					rCtx.windowExt.cx = Math.round((rCtx.windowExt.cx * xNum) / xDenom);
-				}
-				if (yDenom !== 0) {
-					rCtx.windowExt.cy = Math.round((rCtx.windowExt.cy * yNum) / yDenom);
-				}
-				activateGdiMappingMode(rCtx);
+			if (recSize >= 24) {
+				scaleExtent(
+					rCtx,
+					recType === EMR_SCALEVIEWPORTEXTEX,
+					view.getInt32(dataOff, true),
+					view.getInt32(dataOff + 4, true),
+					view.getInt32(dataOff + 8, true),
+					view.getInt32(dataOff + 12, true),
+				);
 			}
 			return true;
 		}

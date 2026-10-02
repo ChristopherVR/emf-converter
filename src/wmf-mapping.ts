@@ -88,7 +88,7 @@ const METRIC_UNITS_PER_INCH: Record<number, number> = {
  * spans the same distance on both axes (square device pixels), rounded to
  * the nearest integer and never zero.
  */
-function fixIsotropic(m: WmfMapping): void {
+export function fixIsotropic(m: WmfMapping): void {
 	if (m.mode !== MM_ISOTROPIC || !m.winExt.cx || !m.winExt.cy) {
 		return;
 	}
@@ -120,7 +120,7 @@ export function setMapMode(m: WmfMapping, mode: number): void {
 }
 
 /** True when the window and viewport extents may be set (`MM_ISOTROPIC`/`MM_ANISOTROPIC`). */
-function extentsSettable(m: WmfMapping): boolean {
+export function extentsSettable(m: WmfMapping): boolean {
 	return m.mode === MM_ISOTROPIC || m.mode === MM_ANISOTROPIC;
 }
 
