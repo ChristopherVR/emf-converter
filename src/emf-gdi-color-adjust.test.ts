@@ -179,6 +179,21 @@ describe('colorAdjustmentMapper', () => {
 		expect(tinted[2]).toBe(0);
 	});
 
+	it('reads palette levels unrounded and rounds the chroma result before the curves', () => {
+		// Native colorfulness 25 cube entries (the chroma stage sees 255 n / 31, not the rounded entry).
+		const cube: Array<[number, number]> = [
+			[0x21e642, 0x02f22a],
+			[0x3110ef, 0x2803ff],
+			[0x3a4a94, 0x3449a9],
+			[0x42843a, 0x37882d],
+			[0x4ab5e6, 0x32baf9],
+			[0x52ef8c, 0x37f87e],
+		];
+		for (const [input, native] of cube) {
+			expect(adjust({ colorfulness: 25 }, input)).toBe(native);
+		}
+	});
+
 	it('matches the Windows grey ramp of the halftone fixtures within three levels', () => {
 		// emfrec-halftone-ramp-2x-ca: Windows' colour for each of the 32
 		// quantisation levels of a grey ramp (gamma 1.5, reference black /
