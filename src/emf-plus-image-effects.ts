@@ -546,15 +546,15 @@ function mirror(p: number, n: number): number {
  * {@link blurKernel}, with rounded horizontal pixels before the vertical
  * pass. Every product is kept to 1/256 of a level before it is summed.
  * Native filtering visits `verticalRows` (default ceil(h / w)) leading rows
- * starting at `vRow`. Edges reflect unless the radius reaches that axis's
- * size, when they clamp; `vZeroAbove` reads transparency above the source
+ * starting at `vRow`. Edges reflect unless the kernel reaches that axis's
+ * size (`taps` rounded up to odd covers it), when they clamp; `vZeroAbove` reads transparency above the source
  * rectangle. Returns floats.
  */
 function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, vRow = 0, vZeroAbove = false, verticalRows = Math.ceil(h / w)): Float64Array {
 	const k = blurKernel(radius);
 	const taps = (k.length - 1) / 2;
-	const horizontalIndex = taps >= w ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
-	const verticalIndex = taps >= h ? (y: number) => Math.max(0, Math.min(h - 1, y)) : (y: number) => mirror(y, h);
+	const horizontalIndex = (taps | 1) >= w ? (x: number) => Math.max(0, Math.min(w - 1, x)) : (x: number) => mirror(x, w);
+	const verticalIndex = (taps | 1) >= h ? (y: number) => Math.max(0, Math.min(h - 1, y)) : (y: number) => mirror(y, h);
 	const out = new Float64Array(w * h * 4);
 	for (let y = 0; y < h; y++) {
 		const row = y * w * 4;
@@ -565,11 +565,13 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 			let s3 = 0;
 			for (let j = -taps; j <= taps; j++) {
 				const p = row + horizontalIndex(x + j) * 4;
-				const kw = k[j + taps] * 256;
-				s0 += Math.round(kw * src[p]);
-				s1 += Math.round(kw * src[p + 1]);
-				s2 += Math.round(kw * src[p + 2]);
-				s3 += Math.round(kw * src[p + 3]);
+				// The centre weight is applied as two halves, each product rounded on its own.
+				const kw = j === 0 ? k[taps] * 128 : k[j + taps] * 256;
+				const times = j === 0 ? 2 : 1;
+				s0 += times * Math.round(kw * src[p]);
+				s1 += times * Math.round(kw * src[p + 1]);
+				s2 += times * Math.round(kw * src[p + 2]);
+				s3 += times * Math.round(kw * src[p + 3]);
 			}
 			const o = row + x * 4;
 			out[o] = Math.floor((s0 + 128) / 256);
@@ -592,8 +594,10 @@ function gdipBlur(src: ArrayLike<number>, w: number, h: number, radius: number, 
 					continue;
 				}
 				const base = verticalIndex(yy) * w * 4;
+				const kw = j === 0 ? k[taps] * 128 : k[j + taps] * 256;
+				const times = j === 0 ? 2 : 1;
 				for (let i = 0; i < w * 4; i++) {
-					col[i] += Math.round(k[j + taps] * horizontal[base + i] * 256) / 256;
+					col[i] += (times * Math.round(kw * horizontal[base + i])) / 256;
 				}
 			}
 			out.set(col, row * w * 4);
@@ -621,8 +625,10 @@ interface BlurSpan {
  * mean, a partial last block averaged over its own samples), filtered with
  * the reduced kernel and enlarged back to `length` samples. `get` reads sample
  * `i` of lane `lane`, channel `c`; `put` stores the enlarged sample.
- * `edgeLength` is the number of samples that picks the edge mode: kernels as
- * wide as it clamp at the ends, narrower ones reflect.
+ * `edgeLength` is the number of reduced samples (partial block included) that
+ * picks the edge mode: a kernel whose half-width, rounded up to odd, reaches it
+ * clamps at the ends, a narrower one reflects. A lone reduced sample has no
+ * line to continue, so a single pixel beyond it is left as it was.
  */
 function blurAxis(
 	length: number,
@@ -637,10 +643,13 @@ function blurAxis(
 	const inner = Math.ceil(span.size / factor);
 	const n = inner + 2 * span.pad;
 	const taps = (k.length - 1) / 2;
-	const index = taps >= edgeLength ? (i: number) => clamp(i, 0, n - 1) : (i: number) => mirror(i, n);
+	const index = (taps | 1) >= edgeLength ? (i: number) => clamp(i, 0, n - 1) : (i: number) => mirror(i, n);
 	const reduced = new Float64Array(n);
 	const filtered = new Float64Array(n);
 	const k256 = k.map((w) => w * 256);
+	// The centre weight is applied as two halves, each product rounded on its own.
+	const half = k256[taps] / 2;
+	k256[taps] = 0;
 	for (let lane = 0; lane < lanes; lane++) for (let c = 0; c < 4; c++) {
 		for (let b = span.pad; b < span.pad + inner; b++) {
 			const from = span.start + (b - span.pad) * factor;
@@ -657,9 +666,12 @@ function blurAxis(
 			} else {
 				for (let j = 0; j < k256.length; j++) sum += Math.round(k256[j] * reduced[index(b - taps + j)]);
 			}
+			sum += 2 * Math.round(half * reduced[b]);
 			filtered[b] = Math.floor((sum + 128) / 256);
 		}
-		for (let i = 0; i < length; i++) {
+		// A lone reduced sample has no line to continue: a single pixel beyond it stays as it was.
+		const written = n === 1 && length - Math.ceil(factor / 2) === 1 ? length - 1 : length;
+		for (let i = 0; i < written; i++) {
 			// Beyond the outer reduced samples the line through the two nearest continues.
 			const p = (i - span.start + 0.5) / factor - 0.5 + span.pad;
 			const a = clamp(Math.floor(p), 0, Math.max(0, n - 2));
@@ -674,9 +686,10 @@ function blurAxis(
  * every row is reduced horizontally, filtered and enlarged back to full width,
  * then every column of those rows is reduced vertically, filtered and
  * enlarged. Reduction and enlargement truncate; filtering sums products kept to
- * 1/256 of a level and rounds half up. Against native noise, photo-like,
- * rectangle, block and one-dimensional images at radii 25-100, 99.6-99.9% of
- * interior pixels are exact (the rest one level off). `region`, an expanded
+ * 1/256 of a level and rounds half up; the centre weight is applied as two
+ * rounded halves. Against native noise, ramps, impulses and one-dimensional
+ * images at radii 20-255, more than 99.97% of pixels are exact, the rest one
+ * level off where a product lands within 0.0005 of a rounding tie. `region`, an expanded
  * blur's source rectangle inside its transparent padding, is reduced from its
  * own origin so that its partial blocks are not averaged with padding.
  */
@@ -690,14 +703,12 @@ function effectBlur(src: Uint8ClampedArray, width: number, height: number, radiu
 	const pad = region ? Math.ceil(Math.ceil(radius) / factor) : 0;
 	const spanX = region ? { start: region.x, size: region.w, pad } : undefined;
 	const spanY = region ? { start: region.y, size: region.h, pad } : undefined;
-	// Native edge-mode selection counts complete blocks, although the buffer
-	// retains a partial final block. Odd dimensions expose this distinction.
-	const rows = new Uint8Array(src.length);
-	blurAxis(width, height, factor, k, Math.floor(width / factor), (i, lane, c) => src[(lane * width + i) * 4 + c], (i, lane, c, v) => {
+	const rows = new Uint8Array(src);
+	blurAxis(width, height, factor, k, Math.ceil(width / factor), (i, lane, c) => src[(lane * width + i) * 4 + c], (i, lane, c, v) => {
 		rows[(lane * width + i) * 4 + c] = v;
 	}, spanX);
-	const out = new Float64Array(src.length);
-	blurAxis(height, width, factor, k, Math.floor(height / factor), (i, lane, c) => rows[(i * width + lane) * 4 + c], (i, lane, c, v) => {
+	const out = Float64Array.from(rows);
+	blurAxis(height, width, factor, k, Math.ceil(height / factor), (i, lane, c) => rows[(i * width + lane) * 4 + c], (i, lane, c, v) => {
 		out[(i * width + lane) * 4 + c] = v;
 	}, spanY);
 	return out;

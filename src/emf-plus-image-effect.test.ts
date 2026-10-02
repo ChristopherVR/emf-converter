@@ -79,11 +79,9 @@ describe('EMF+ image effects', () => {
 			}
 		}
 	});
-	it('bounds native large-radius blur on square and rectangular buffers', () => {
+	it('matches native large-radius blur exactly on square, rectangular and two-pixel buffers', () => {
 		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-large.json', import.meta.url), 'utf8'));
 		for (const c of cases) {
-			// Partial blocks on tiny images follow a separate, unresolved native edge path.
-			if (c.width < 8 && c.radius >= 20) continue;
 			for (const pattern of ['ramp', 'impulse']) {
 				const source = new Uint8ClampedArray(c.width * c.height * 4);
 				for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
@@ -94,7 +92,7 @@ describe('EMF+ image effects', () => {
 				const expected = Buffer.from(c[pattern], 'base64');
 				let maxDiff = 0;
 				for (let i = 0; i < actual.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
-				const bound = pattern === 'impulse' ? 0 : c.radius < 20 ? 1 : 2;
+				const bound = 0;
 				expect(maxDiff, `${c.width}x${c.height} radius=${c.radius} ${pattern}`).toBeLessThanOrEqual(bound);
 			}
 		}
@@ -122,12 +120,12 @@ describe('EMF+ image effects', () => {
 				maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
 				same += actual[i] === expected[i] ? 1 : 0;
 			}
-			expect(maxDiff, `${c.width}x${c.height} radius=${c.radius}`).toBeLessThanOrEqual(2);
-			expect(same / actual.length, `${c.width}x${c.height} radius=${c.radius}`).toBeGreaterThan(0.995);
+			expect(maxDiff, `${c.width}x${c.height} radius=${c.radius}`).toBeLessThanOrEqual(1);
+			expect(same / actual.length, `${c.width}x${c.height} radius=${c.radius}`).toBeGreaterThan(0.997);
 			exact += same;
 			total += actual.length;
 		}
-		expect(exact / total).toBeGreaterThan(0.998);
+		expect(exact / total).toBeGreaterThan(0.9995);
 	});
 	it('follows native blur reduction transitions at all 957 quarter radii', () => {
 		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-factors.json', import.meta.url), 'utf8'));
@@ -139,13 +137,12 @@ describe('EMF+ image effects', () => {
 			const expected = Buffer.from(c.row, 'base64');
 			let maxDiff = 0;
 			for (let i = 0; i < expected.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
-			expect(maxDiff, `radius=${c.radius}`).toBeLessThanOrEqual(c.radius < 20 ? 0 : 2);
+			expect(maxDiff, `radius=${c.radius}`).toBe(0);
 		}
 	});
-	it('matches native blur across tall, narrow and square buffers through radius 16', () => {
+	it('matches native blur exactly across tall, narrow and square buffers at every captured radius', () => {
 		const cases = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/effect-blur-dimensions.json', import.meta.url), 'utf8'));
 		for (const c of cases) {
-			if (c.radius > 16) continue;
 			for (const pattern of ['ramp', 'impulse']) {
 				const source = new Uint8ClampedArray(c.width * c.height * 4);
 				for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
@@ -156,7 +153,7 @@ describe('EMF+ image effects', () => {
 				const expected = Buffer.from(c[pattern], 'base64');
 				let maxDiff = 0;
 				for (let i = 0; i < actual.length; i++) maxDiff = Math.max(maxDiff, Math.abs(actual[i] - expected[i]));
-				expect(maxDiff, `${c.width}x${c.height} radius=${c.radius} ${pattern}`).toBeLessThanOrEqual(pattern === 'impulse' ? 0 : 1);
+				expect(maxDiff, `${c.width}x${c.height} radius=${c.radius} ${pattern}`).toBe(0);
 			}
 		}
 	});

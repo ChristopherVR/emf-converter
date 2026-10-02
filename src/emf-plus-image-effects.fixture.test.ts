@@ -45,8 +45,8 @@ describe('native expanded blur regions', () => {
 			}
 			expect(maximum, `radius ${effect.radius}, rectangle ${srcRect}`).toBeLessThanOrEqual(effect.radius < 20 || fractional ? 1 : 2);
 		}
-		expect(exact.small[0] / exact.small[1]).toBeGreaterThan(0.998);
-		expect(exact.large[0] / exact.large[1]).toBeGreaterThan(0.9);
+		expect(exact.small[0] / exact.small[1]).toBeGreaterThan(0.9995);
+		expect(exact.large[0] / exact.large[1]).toBeGreaterThan(0.94);
 	}, 60000);
 });
 
@@ -75,11 +75,11 @@ const bounded = (name: string, tolerance: number, maxMismatch: number): EffectCa
  */
 const BLUR: EffectCase[] = [
 	exact('blur-r1'), // 5.615% before
-	within('blur-r2p5'), // 39.880% before, 0.212% one level off now
+	exact('blur-r2p5'), // 39.880% before, 0.212% one level off now
 	exact('blur-r3'), // 54.517% before; rounding rows before the vertical pass removes the residue
 	exact('blur-r3-expand'), // 68.673% before
-	within('blur-r10'), // 83.138%, 0.191%
-	within('blur-r10-expand'), // 99.972%, 0.118%
+	exact('blur-r10'), // 83.138%, 0.191%
+	exact('blur-r10-expand'), // 99.972%, 0.118%
 	exact('blur-r4-subrect'), // 84.719%
 	exact('blur-r4-subrect-expand'), // 96.044% before
 	exact('blur-r3-scale2'), // 71.126% before
