@@ -21,6 +21,12 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 - Reproduce native arc geometry and scaled WMF arcs and rounded rectangles ([d985456](https://github.com/ChristopherVR/emf-converter/commit/d985456e420c4ba2f84ad18104435296583ea2ca))
 - Scale WMF RoundRect corners onto the drawn box for wide and null pens ([c40a0d2](https://github.com/ChristopherVR/emf-converter/commit/c40a0d2b12da40aa7534f87532bf0ec4a3857795))
 - Widen curves with per-segment curve rules and fix flat round join arcs ([50e5274](https://github.com/ChristopherVR/emf-converter/commit/50e5274036501d5eedc40f69e699ea1775fd7fb5))
+- **emf-plus:** Form Levels tables in truncating float32 arithmetic ([edaeac9](https://github.com/ChristopherVR/emf-converter/commit/edaeac904206f799f3e14e242e87ac8aa3e5f0b9))
+- **emf-plus:** Reproduce Hue/Saturation/Lightness in native all-integer HSL ([e5618e0](https://github.com/ChristopherVR/emf-converter/commit/e5618e00428852b0f886a7af31cbffe140d691a9))
+- **emf-plus:** Rebuild Tint in native integer luma-preserving arithmetic ([9a6b8eb](https://github.com/ChristopherVR/emf-converter/commit/9a6b8eb322691017913817972d095c93bbb4bd59))
+- **emf-plus:** Reproduce Tint exactly (amount scales the largest channel by w/256) ([36cc4dd](https://github.com/ChristopherVR/emf-converter/commit/36cc4dd25626a746ebe7753ccfd5173f67440f77))
+- **emf-plus:** Mirror only the x origin of a high-quality axis-aligned DrawImage ([2860e56](https://github.com/ChristopherVR/emf-converter/commit/2860e56740bd3521521fc8ba6ed6764b191f684f))
+- **emf-plus:** Map a nested metafile onto its destination first-pixel to last-pixel ([c6b5da9](https://github.com/ChristopherVR/emf-converter/commit/c6b5da95dc9d61da8c66e68f522f14bfd387f6d3))
 
 ### Other
 
@@ -28,6 +34,11 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 - Merge exact mixed-axis reduction shares and single-row collapse ([96769d2](https://github.com/ChristopherVR/emf-converter/commit/96769d21b2397999c9a7a6988b1233caaec51cb3))
 - Merge clean-room black-box red-eye model ([5d9523c](https://github.com/ChristopherVR/emf-converter/commit/5d9523c02f049dccf3a4ad5b4fb6c9b113645a5f))
 - Merge flat-pen rule, arc geometry, RoundRect corners and curve widening ([cea4520](https://github.com/ChristopherVR/emf-converter/commit/cea45206700f16c8e3333b2360705fb76c4af713))
+- Merge exact Levels, HSL, Tint, nested-metafile and DrawImage origin fixes ([f97efa9](https://github.com/ChristopherVR/emf-converter/commit/f97efa9001b8b04ff6b52eed9d6f76c506720411))
+
+### Documentation
+
+- Record the rotated high-quality DrawImage edge measurements ([f7ae595](https://github.com/ChristopherVR/emf-converter/commit/f7ae595009452291774ffc5a2bc193209df35acc))
 
 ## [4.7.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.7.0) - 2026-10-02
 
