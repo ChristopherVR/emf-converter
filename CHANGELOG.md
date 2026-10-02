@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.2) - 2026-10-02
+
+### Bug Fixes
+
+- **gdi-raster:** Measure dashes on curves in whole pixels like WidenPath ([e13a5c0](https://github.com/ChristopherVR/emf-converter/commit/e13a5c064e605953554aa2fd55df484bbebbd975))
+
+### Testing
+
+- Give the SVG shadow comparison more time for the slower blur path ([7ca0ece](https://github.com/ChristopherVR/emf-converter/commit/7ca0eced9272377806ed0c7e41f53b8d7cafc163))
+
 ## [4.8.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.0) - 2026-10-02
 
 ### Features
