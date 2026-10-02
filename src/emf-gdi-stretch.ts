@@ -477,6 +477,47 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
 }
 
 /**
+ * A mixed-axis stretch that squeezes a pair of rows (columns) into one while
+ * enlarging the other axis despeckles the pair first: a pixel of a 2 x 2 block
+ * whose diagonals are equal colours while the colours differ (a one-pixel
+ * checkerboard) becomes the rounded mean of its pair (`(a + b + 1) >> 1`,
+ * measured on native captures; Windows' despeckle, which on a pair of rows sees
+ * the other row as both neighbours). Nothing else changes. `px` is RGB triples,
+ * `w` x `h`, one of them 2; `rows` is true for two rows.
+ */
+function halftonePairDespeckle(px: Int32Array, w: number, h: number, rows: boolean): void {
+	const n = rows ? w : h;
+	const at = (k: number, side: number): number => ((rows ? side * w + k : k * w + side) * 3);
+	const same = (i: number, j: number): boolean =>
+		px[i] === px[j] && px[i + 1] === px[j + 1] && px[i + 2] === px[j + 2];
+	const checker = (k: number): boolean => k >= 0 && k + 1 < n && same(at(k, 0), at(k + 1, 1))
+		&& same(at(k, 1), at(k + 1, 0)) && !same(at(k, 0), at(k, 1));
+	const mean: boolean[] = Array.from({ length: n }, (_, k) => checker(k - 1) || checker(k));
+	for (let k = 0; k < n; k++) {
+		if (!mean[k]) continue;
+		const first = at(k, 0);
+		const last = at(k, 1);
+		for (let c = 0; c < 3; c++) px[first + c] = px[last + c] = (px[first + c] + px[last + c] + 1) >> 1;
+	}
+}
+
+/**
+ * Where such a pair is squeezed into one while the other axis at least doubles,
+ * only the last row (column) of the pair survives (measured on native
+ * captures) and is enlarged like any other single-row source. Returns it as RGB
+ * triples; `px` is as for {@link halftonePairDespeckle}.
+ */
+function halftoneKeepLast(px: Int32Array, w: number, h: number, rows: boolean): Int32Array {
+	const n = rows ? w : h;
+	const out = new Int32Array(n * 3);
+	for (let k = 0; k < n; k++) {
+		const last = (rows ? w + k : k * w + 1) * 3;
+		for (let c = 0; c < 3; c++) out[k * 3 + c] = px[last + c];
+	}
+	return out;
+}
+
+/**
  * HALFTONE stretch, with the same argument conventions as
  * {@link stretchGdi}. Reproduces Windows' halftone engine on 32bpp output
  * (`emfrec-halftone-*` fixtures):
@@ -497,8 +538,8 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
  *   rounding half up. The reduction carries its 16.16 weights
  *   ({@link halftoneReduceTaps}) through the sharpening. Milder reductions pick
  *   the nearest source pixel. Native captures match exactly for most sizes;
- *   exact-tie patterns, single-row destinations and full colour adjustment
- *   retain residual differences (`halftone-mixed.fixture.test.ts`).
+ *   a few exact-tie patterns and full colour adjustment retain residual
+ *   differences (`halftone-mixed.fixture.test.ts`).
  *
  * Direct StretchDIBits skips the enlargement pre-filter. Isolated gamma/log
  * curves are applied after sampling/sharpening. Pixels outside `src` read as black.
@@ -519,8 +560,8 @@ export function stretchHalftone(
 ): Pixels {
 	const W = Math.max(0, Math.round(Math.abs(dw)));
 	const H = Math.max(0, Math.round(Math.abs(dh)));
-	const SW = Math.round(Math.abs(sw));
-	const SH = Math.round(Math.abs(sh));
+	let SW = Math.round(Math.abs(sw));
+	let SH = Math.round(Math.abs(sh));
 	const x0 = Math.round(Math.min(sx, sx + sw));
 	const y0 = Math.round(Math.min(sy, sy + sh));
 	const flipX = dw < 0 !== sw < 0;
@@ -530,7 +571,7 @@ export function stretchHalftone(
 		return { width: W, height: H, data };
 	}
 	// The source rectangle as RGB triples (outside `src`: black).
-	const rect = new Int32Array(SW * SH * 3);
+	let rect: Int32Array = new Int32Array(SW * SH * 3);
 	for (let y = 0; y < SH; y++) {
 		const yy = y0 + y;
 		for (let x = 0; x < SW; x++) {
@@ -545,6 +586,21 @@ export function stretchHalftone(
 			rect[o + 2] = src.data[i + 2];
 		}
 	}
+	// A pair of rows (columns) squeezed into one while the other axis grows is
+	// despeckled first, and keeps only its last row (column) when that axis at
+	// least doubles (measured on native captures).
+	const pairRows = SH === 2 && H === 1 && W > SW && (!adjust || adjustAfterSampling || !!dither);
+	const pairColumns = SW === 2 && W === 1 && H > SH && (!adjust || adjustAfterSampling || !!dither);
+	if (pairRows || pairColumns) {
+		if (!directDib) halftonePairDespeckle(rect, SW, SH, pairRows);
+		if (pairRows && W >= 2 * SW) {
+			rect = halftoneKeepLast(rect, SW, SH, true);
+			SH = 1;
+		} else if (pairColumns && H >= 2 * SH) {
+			rect = halftoneKeepLast(rect, SW, SH, false);
+			SW = 1;
+		}
+	}
 	const enlarging = W >= SW && H >= SH && (W > SW || H > SH);
 	const reducing = W < SW && H < SH;
 	const mixed = (W > SW && H < SH) || (W < SW && H > SH);
@@ -557,7 +613,7 @@ export function stretchHalftone(
 	// sampling path.
 	const nativeMixed = mixed && (!adjust || adjustAfterSampling || dithered)
 		&& ((W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW));
-	if ((enlarging || nearestMixed) && !directDib) {
+	if ((enlarging || nearestMixed) && !directDib && !pairRows && !pairColumns) {
 		halftoneDespeckle(rect, SW, SH);
 	}
 	// A combined adjustment quantises the source to 32 levels with an ordered

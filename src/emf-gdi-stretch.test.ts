@@ -69,6 +69,23 @@ describe('stretchGdi', () => {
 		expect(unpack(stretchGdi(src, 0, 0, 4, 1, 2, 1, COLORONCOLOR))).toEqual([0x00ff00, 0xffffff]);
 	});
 
+	it('keeps only the last row of a two-row source squeezed into one while the width doubles', () => {
+		const src = { width: 3, height: 2, data: new Uint8ClampedArray(3 * 2 * 4) };
+		const colours = [0x102030, 0x405060, 0x708090, 0xa0b0c0, 0xd0e0f0, 0x112233];
+		colours.forEach((v, i) => src.data.set([(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, 255], i * 4));
+		expect(unpack(stretchHalftone(src, 0, 0, 3, 2, 6, 1))).toEqual([
+			0xa0b0c0, 0xa0b0c0, 0xd0e0f0, 0xd0e0f0, 0x112233, 0x112233,
+		]);
+	});
+
+	it('averages the pair of a one-pixel checkerboard squeezed into one row', () => {
+		const src = { width: 3, height: 2, data: new Uint8ClampedArray(3 * 2 * 4) };
+		[0x000000, 0xffffff, 0x000000, 0xffffff, 0x000000, 0xffffff].forEach((v, i) =>
+			src.data.set([(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, 255], i * 4));
+		expect(unpack(stretchHalftone(src, 0, 0, 3, 2, 6, 1))).toEqual(Array(6).fill(0x808080));
+		expect(unpack(stretchHalftone(src, 0, 0, 3, 2, 4, 1))).toEqual(Array(4).fill(0x808080));
+	});
+
 	it('mirrors when exactly one of the extents is negative', () => {
 		expect(unpack(stretchGdi(src, 0, 0, 4, 1, -4, 1, COLORONCOLOR))).toEqual([
 			0xffffff, 0x0000ff, 0x00ff00, 0xff0000,
