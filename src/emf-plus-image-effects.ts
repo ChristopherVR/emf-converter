@@ -488,9 +488,10 @@ export function applyTint(src: Uint8ClampedArray, hue: number, amount: number): 
  *   `rem = (1 - falloff(u)) x` for every colour, which tabulates the falloff.
  * - **Polar frame.** Pixels are binned into 60 sectors of 6 degrees (from +x
  *   towards +y) around a centre: the centroid, over the area's pixel centres,
- *   of the weight `x / (G + 0.225 B)` (ignored below a denominator of 1,
- *   clamped to 10). Only pixels nearer than `radius = (min(width, height) - 1)
- *   / 2` to the centre are processed, and only they are counted.
+ *   of the weight `x / (G + 0.225 B)` (clamped to 6; pixels with a denominator
+ *   below 1 weigh the clamp). Only pixels nearer than `radius = min(cx, cy) -
+ *   0.5` to the centre (its distance to the area's left or top edge) are
+ *   processed, and only they are counted.
  * - **Sector mean.** `M` is the mean of `x` over a sector's counted pixels;
  *   an ordinary pixel keeps `rem = (1 - falloff(u)) M` with `u = distance /
  *   radius`. A uniform area is therefore only lightly desaturated near its
@@ -539,7 +540,9 @@ function redEyeFalloff(u: number): number {
 
 const RED_EYE_SECTORS = 60;
 const RED_EYE_BLUE_WEIGHT = 0.225;
-const RED_EYE_WEIGHT_CAP = 10;
+const RED_EYE_WEIGHT_CAP = 6;
+/** Flat centroid weight of a red pixel with almost no green or blue (measured on lone pupils). */
+const RED_EYE_PURE_WEIGHT = RED_EYE_WEIGHT_CAP;
 const RED_EYE_DARK_STRENGTH = 0.49;
 const RED_EYE_DARK_RATIO = 0.6;
 /** Share of the redness removed that lands in green and blue (the rest leaves red). */
@@ -548,10 +551,6 @@ const RED_EYE_GREEN_SHARE = 80 / 255;
 function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y0: number, x1: number, y1: number): void {
 	const w = x1 - x0;
 	const h = y1 - y0;
-	const radius = (Math.min(w, h) - 1) / 2;
-	if (!(radius > 0)) {
-		return;
-	}
 	const count = w * h;
 	const redness = new Float64Array(count);
 	const dark = new Float64Array(count);
@@ -570,8 +569,8 @@ function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y
 			if (v > 0) {
 				redness[k] = v;
 				const denominator = g + RED_EYE_BLUE_WEIGHT * b;
-				if (denominator >= 1) {
-					const weight = Math.min(RED_EYE_WEIGHT_CAP, v / denominator);
+				{
+					const weight = denominator >= 1 ? Math.min(RED_EYE_WEIGHT_CAP, v / denominator) : RED_EYE_PURE_WEIGHT;
 					sx += weight * (x + 0.5);
 					sy += weight * (y + 0.5);
 					sw += weight;
@@ -590,6 +589,11 @@ function correctRedEyeArea(out: Uint8ClampedArray, stride: number, x0: number, y
 	}
 	const cx = sx / sw;
 	const cy = sy / sw;
+	// The working radius is the distance from the centre to the area's left or top edge, whichever is nearer (never the right or bottom edge).
+	const radius = Math.min(cx, cy) - 0.5;
+	if (!(radius > 0)) {
+		return;
+	}
 	const sector = new Uint8Array(count);
 	const distance = new Float64Array(count);
 	const sectorSum = new Float64Array(RED_EYE_SECTORS);

@@ -1084,9 +1084,9 @@ const EMF_PLUS_ONLY_EFFECT_CASES: ParityCase[] = EMF_PLUS_EFFECT_CASES
 		// fallback painting over it. These bounds measure the real algorithm.
 		tolerance: c.name.includes('-hsl-') ? (c.name === 'plus-effect-hsl-h0-s60-l0' || c.name === 'plus-effect-hsl-h30-sn30-l20' ? 1 : 0)
 			: c.name.includes('-tint-') ? 3 : c.name === 'plus-effect-sharpen-r3-a100' ? 2 : 1,
-		maxMismatch: c.name.endsWith('-redeye-left') ? 0.003
-			: c.name.endsWith('-redeye-both') ? 0.0063
-			: c.name.endsWith('-redeye-whole') ? 0.0266
+		maxMismatch: c.name.endsWith('-redeye-left') ? 0.0022
+			: c.name.endsWith('-redeye-both') ? 0.0054
+			: c.name.endsWith('-redeye-whole') ? 0.0123
 			: c.name.includes('-hsl-') ? 0
 			: c.name === 'plus-effect-sharpen-r3-a100' ? 0.00013 : c.maxMismatch,
 	}));
