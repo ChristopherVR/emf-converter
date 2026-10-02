@@ -45,6 +45,12 @@ if ($Which -eq 'image-effect-expanded-blur') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'image-effect-narrow-blur') {
+    Add-Type -Path (Join-Path $here 'NarrowBlurProbe.cs') -ReferencedAssemblies System.Drawing
+    [NarrowBlurProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'gradient-blend-probe') {
     Add-Type -Path (Join-Path $here 'GradientProbe.cs') -ReferencedAssemblies System.Drawing
     [GradientProbe]::Run($outDir)

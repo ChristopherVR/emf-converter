@@ -21,7 +21,7 @@ import { readBakedEffects } from './__fixtures__/emf-plus-effect-baked';
 import { applyImageEffectToRect } from './emf-plus-image-effects';
 
 describe('native expanded blur regions', () => {
-	it('bounds 504 draws across radii, edge positions, fractional rectangles and alpha', async () => {
+	it('matches 504 draws across radii, edge positions, fractional rectangles and alpha to one level', async () => {
 		const cases = await readBakedEffects('effect-blur-expanded');
 		expect(cases).toHaveLength(504);
 		// Share of compared pixels that match exactly, for radii below and from 20.
@@ -31,8 +31,7 @@ describe('native expanded blur regions', () => {
 			if (effect.kind !== 'blur') throw new Error('not a blur capture');
 			const [x, y, w, h] = srcRect;
 			const region = applyImageEffectToRect(source.data, source.width, source.height, effect, { x, y, w, h })!;
-			const fractional = srcRect.some(v => !Number.isInteger(v));
-			let maximum = 0;
+						let maximum = 0;
 			for (let yy = 0; yy < Math.ceil(h); yy++) for (let xx = 0; xx < Math.ceil(w); xx++) {
 				const i = (yy * region.width + xx) * 4, j = (yy * baked.width + xx) * 4;
 				let pixel = Math.abs(region.rgba[i + 3] - baked.data[j + 3]);
@@ -43,10 +42,29 @@ describe('native expanded blur regions', () => {
 				exact[effect.radius < 20 ? 'small' : 'large'][0] += pixel === 0 ? 1 : 0;
 				exact[effect.radius < 20 ? 'small' : 'large'][1]++;
 			}
-			expect(maximum, `radius ${effect.radius}, rectangle ${srcRect}`).toBeLessThanOrEqual(effect.radius < 20 || fractional ? 1 : 2);
+			expect(maximum, `radius ${effect.radius}, rectangle ${srcRect}`).toBeLessThanOrEqual(1);
 		}
-		expect(exact.small[0] / exact.small[1]).toBeGreaterThan(0.998);
-		expect(exact.large[0] / exact.large[1]).toBeGreaterThan(0.9);
+		expect(exact.small[0] / exact.small[1]).toBeGreaterThan(0.9995);
+		expect(exact.large[0] / exact.large[1]).toBeGreaterThan(0.9995);
+	}, 60000);
+
+	it('matches 150 narrow and edge-reaching draws exactly, including a lone reduced sample', async () => {
+		// One reduced sample (rectangles up to a block wide) is continued toward a transparent neighbour from
+		// its block's middle, or from just past its last pixel in a shorter block; samples beyond the buffer
+		// are transparent, not reflected; only a rectangle's own reduced samples are enlarged.
+		const cases = await readBakedEffects('effect-blur-narrow');
+		expect(cases).toHaveLength(150);
+		for (const { source, effect, srcRect, baked } of cases) {
+			if (effect.kind !== 'blur') throw new Error('not a blur capture');
+			const [x, y, w, h] = srcRect;
+			const region = applyImageEffectToRect(source.data, source.width, source.height, effect, { x, y, w, h })!;
+			for (let yy = 0; yy < Math.ceil(h); yy++) for (let xx = 0; xx < Math.ceil(w); xx++) {
+				const i = (yy * region.width + xx) * 4, j = (yy * baked.width + xx) * 4;
+				const label = `radius ${effect.radius}, rectangle ${srcRect}, pixel ${xx},${yy}`;
+				expect(region.rgba[i + 3], label).toBe(baked.data[j + 3]);
+				if (baked.data[j + 3]) for (let ch = 0; ch < 3; ch++) expect(region.rgba[i + ch], label).toBe(baked.data[j + ch]);
+			}
+		}
 	}, 60000);
 });
 
@@ -75,11 +93,11 @@ const bounded = (name: string, tolerance: number, maxMismatch: number): EffectCa
  */
 const BLUR: EffectCase[] = [
 	exact('blur-r1'), // 5.615% before
-	within('blur-r2p5'), // 39.880% before, 0.212% one level off now
+	exact('blur-r2p5'), // 39.880% before, 0.212% one level off now
 	exact('blur-r3'), // 54.517% before; rounding rows before the vertical pass removes the residue
 	exact('blur-r3-expand'), // 68.673% before
-	within('blur-r10'), // 83.138%, 0.191%
-	within('blur-r10-expand'), // 99.972%, 0.118%
+	exact('blur-r10'), // 83.138%, 0.191%
+	exact('blur-r10-expand'), // 99.972%, 0.118%
 	exact('blur-r4-subrect'), // 84.719%
 	exact('blur-r4-subrect-expand'), // 96.044% before
 	exact('blur-r3-scale2'), // 71.126% before
