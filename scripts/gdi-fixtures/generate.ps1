@@ -97,6 +97,18 @@ if ($Which -eq 'playback-extents') {
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
     return
 }
+if ($Which -eq 'halftone-selection') {
+    Add-Type -Path (Join-Path $here 'HalftoneSelectionProbe.cs')
+    [HalftoneSelectionProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'roundrect-half-fix-translation') {
+    Add-Type -Path (Join-Path $here 'HalfFixRoundRectTranslationProbe.cs')
+    [HalfFixRoundRectTranslationProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'roundrect-half-fix') {
     Add-Type -Path (Join-Path $here 'HalfFixRoundRectProbe.cs')
     [HalfFixRoundRectProbe]::Run($outDir)

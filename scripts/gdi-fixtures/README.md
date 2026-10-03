@@ -160,3 +160,7 @@ sweep. `emfplus-effects` records metafiles for playback parity.
 `bezier-flatten` captures public `GraphicsPath.Flatten(null, 0.25f)` output for 64 seeded random cubic curves and one ellipse. All 1,556 vertices match the shared fixed-point flattener and parsed path-gradient boundaries exactly.
 
 `wide-pen-axis-directions` captures 16,128 independent single segments and right-angle corners, seven unequal axis transforms, four widths, and round/square caps. Every filled outline is exact, including 272 controls that previously differed because elliptical pen-edge ties were resolved in device direction.
+
+`roundrect-half-fix-translation` captures 576 public `GetPath` controls: both arc directions, two fractional scales, 48 corner heights and translations of 0/+1024/-1024 logical units. Every translated native path is exactly covariant. This rejects coordinate magnitude as the cause of the remaining half-FIX side-point ties; 228 replay paths are exact and the others retain individually pinned one-FIX coordinate bounds. No rounding heuristic is inferred from the corner-height transition.
+
+`halftone-selection` captures 240 fixed-geometry controls across 20 source patterns, two scales, three colour adjustments and both public stretch APIs. Of these, 144 are RGB-exact; 96 filtered controls have independent pixel, channel and maximum-error ceilings. Arbitrary palettes and grayscale ramps contradict both geometry-only and distinct-7-bit-colour selection rules, which are deliberately excluded from production.
