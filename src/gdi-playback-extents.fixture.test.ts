@@ -6,7 +6,7 @@ interface ExtentCase { name: string; w: number; h: number; ox: number; oy: numbe
 const cases: ExtentCase[] = JSON.parse(readFileSync(fixturePath('playback-extents.json'), 'utf8'));
 
 it('expanded native captures reproduce every pixel of their original references', async () => {
-	expect(cases).toHaveLength(87);
+	expect(cases).toHaveLength(88);
 	for (const c of cases) {
 		const expanded = await loadReference(c.name, true);
 		expect([expanded.width, expanded.height, expanded.originX, expanded.originY], c.name).toEqual([c.w, c.h, c.ox, c.oy]);
@@ -16,6 +16,18 @@ it('expanded native captures reproduce every pixel of their original references'
 });
 
 describe.skipIf(!windowsFonts())('playback across the complete recorded device extent', () => {
+	it('covers the flattened path ink without translating its native flattening grid', async () => {
+		const rendered = await renderFixture('emfrec-path-flatten.emf', { fonts: windowsFonts()! });
+		expect(rendered).not.toBeNull();
+		const original = await loadReference('emfrec-path-flatten');
+		const expanded = await loadReference('emfrec-path-flatten', true);
+		// The negative header bound is an off-curve control point. Translating
+		// native playback changes FlattenPath's device grid; only the painted
+		// right margin needs a larger surface.
+		expect(inkOutside(rendered!, original)).toBe(340);
+		expect(inkOutside(rendered!, expanded)).toBe(0);
+		expect(diffImages(rendered!, expanded, 0, 0).mismatched).toBe(4);
+	});
 	it('keeps the 60 exact controls exact and pins every remaining full-area residual', async () => {
 		let exact = 0;
 		for (const c of cases) {

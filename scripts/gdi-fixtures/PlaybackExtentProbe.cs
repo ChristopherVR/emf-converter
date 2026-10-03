@@ -1,5 +1,7 @@
 // Public native playback into a surface covering both the original reference
-// and the recorded device bounds. Original reference PNGs remain untouched.
+// and the painted extent. Off-curve control points in recorded device bounds
+// need not enlarge the capture: translating native playback can change its
+// device-grid path flattening. Original reference PNGs remain untouched.
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;

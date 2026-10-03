@@ -29,6 +29,7 @@ async function main(): Promise<void> {
 	];
 	let total = 0;
 	let exact = 0;
+	let completeExact = 0;
 	let failed = 0;
 	let missingInk = 0;
 	let uncapturedInk = 0;
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
 		if (missing > 0) missingInk++;
 		if (uncaptured > 0) uncapturedInk++;
 		if (strict.compared > 0 && strict.mismatched === 0) exact++;
+		if (strict.compared > 0 && strict.mismatched === 0 && missing === 0 && uncaptured === 0) completeExact++;
 		if (dump) {
 			mkdirSync(dump, { recursive: true });
 			const napi = await import('@napi-rs/canvas');
@@ -66,6 +68,7 @@ async function main(): Promise<void> {
 		rows.push(`${name.padEnd(40)} mismatch>0: ${(strict.mismatchRatio * 100).toFixed(4).padStart(8)}% (${strict.mismatched}/${strict.compared})  mismatch>8: ${(d.mismatchRatio * 100).toFixed(4).padStart(8)}%  mean: ${d.meanAbsDiff.toFixed(4)}  max: ${d.maxDiff}  size: ${rendered.width}x${rendered.height}/${reference.width}x${reference.height}  outside: ${missing}/${uncaptured}`);
 	}
 	rows.push(`Summary: ${exact}/${total} exact RGB comparisons in the common area; ${failed} render failures.`);
+	rows.push(`Complete RGB ink coverage: ${completeExact}/${total} exact comparisons with no painted RGB pixels outside the compared extent (white margins ignored; alpha not independently compared).`);
 	rows.push(`Extent coverage: ${missingInk} comparisons omit reference ink; ${uncapturedInk} comparisons have rendered ink beyond the captured reference.`);
 	writeFileSync(process.env.GDI_REPORT ?? 'gdi-report.txt', `${rows.join('\n')}\n`);
 }

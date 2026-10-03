@@ -602,7 +602,9 @@ export class RealizedFont implements GdiRealizedFont {
 					xs[i] = Math.round(m[0] * x - m[2] * y + subX);
 					ys[i] = Math.round(-(m[1] * x - m[3] * y) - subY);
 				} else {
-					xs[i] = Math.round(x + subX);
+					// A sixth-pixel ClearType translation is an exact whole-sample
+					// move. Re-rounding it to 26.6 changes edge ties on that grid.
+					xs[i] = this.gdiPlus && this.mode === 'cleartype' ? x + subX : Math.round(x + subX);
 					ys[i] = y - subY;
 				}
 			}

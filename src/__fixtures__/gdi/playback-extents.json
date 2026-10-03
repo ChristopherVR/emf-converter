@@ -176,6 +176,17 @@
     "maxDiff": 0
   },
   {
+    "name": "emfrec-path-flatten",
+    "w": 222,
+    "h": 170,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 4,
+    "maxDiff": 160
+  },
+  {
     "name": "emfrec-path-widen-outline",
     "w": 201,
     "h": 120,

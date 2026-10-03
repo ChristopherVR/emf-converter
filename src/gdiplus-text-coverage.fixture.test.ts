@@ -36,7 +36,6 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled ClearType glyphs', ()
 		const fonts = new GdiFontCollection(windowsFonts()!);
 		let compared = 0;
 		for (const c of [...clearTypeCaptures, ...verticalCaptures.filter(c => c.hint === 5).map(c => ({ ...c, qy: c.qy / 16 }))]) {
-			if (c.qx % 2) continue;
 			const char = String.fromCharCode(c.code);
 			const closed = c.face === 'Segoe UI' && !'ak4'.includes(char) ||
 				c.face === 'Times New Roman' && 'IS4'.includes(char) ||
@@ -56,7 +55,7 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled ClearType glyphs', ()
 			expect(Buffer.from(rgba).equals(Buffer.from(c.rgba, 'base64')), JSON.stringify({ ...c, rgba: undefined })).toBe(true);
 			compared++;
 		}
-		expect(compared).toBe(672);
+		expect(compared).toBe(960);
 	});
 });
 
@@ -140,5 +139,37 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled grayscale glyphs', ()
 			compared++;
 		}
 		expect(compared).toBe(1280);
+	});
+});
+
+// DriverString's six-column ClearType grid moves as a whole: the translated
+// outline must not be rounded back to 26.6 coordinates before scan conversion.
+// These independently captured stems, curves and diagonals include every
+// 1/64-pixel phase and both sides of each nearest-sixth transition.
+describe.skipIf(!windowsFonts())('GDI+ fine ClearType horizontal placement', () => {
+	it('matches 384 closed native RGB controls at every 1/64-pixel x origin', () => {
+		const fonts = new GdiFontCollection(windowsFonts()!);
+		let compared = 0;
+		for (const c of fineCaptures) {
+			if (c.hint !== 5) continue;
+			const char = String.fromCharCode(c.code);
+			const closed = c.face === 'Segoe UI' ||
+				c.face === 'Times New Roman' && char === 'I' ||
+				c.size === 16 && char === 'v' || c.size === 40 && char === 'I';
+			if (!closed) continue;
+			const font = fonts.realize({ face: c.face, height: -c.size, width: 0, weight: c.style & 1 ? 700 : 400,
+				italic: !!(c.style & 2), charSet: 1, pitchAndFamily: 0, quality: 6, gdiPlus: true })!;
+			const mask = gdiTextCoverage(font, { codes: [c.code], glyphIndices: false, x: 8 + c.qx / 64, y: 48, dx: null, dy: null,
+				textAlign: 24, textColor: '#000000', bkColor: '#ffffff', bkMode: 1, options: 0, rect: null, matrix: null,
+				underline: false, strikeOut: false })!;
+			const rgba = new Uint8ClampedArray(64 * 64 * 4).fill(255);
+			for (let y = 0; y < mask.height; y++) for (let x = 0; x < mask.width; x++) {
+				const o = ((y + mask.y) * 64 + x + mask.x) * 4;
+				for (let ch = 0; ch < 3; ch++) rgba[o + ch] = 255 - mask.data[(y * mask.width + x) * 3 + ch];
+			}
+			expect(Buffer.from(rgba).equals(Buffer.from(c.rgba, 'base64')), JSON.stringify({ ...c, rgba: undefined })).toBe(true);
+			compared++;
+		}
+		expect(compared).toBe(384);
 	});
 });
