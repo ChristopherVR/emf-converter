@@ -28,6 +28,12 @@ function Complete-Fixtures {
     $files = @(Get-ChildItem -LiteralPath $Directory -File | Where-Object {
         $_.LastWriteTimeUtc -ge $generationStarted -and $_.Name -notlike 'environment-*.json'
     } | ForEach-Object { $_.FullName })
+    # Private diagnostic fonts are capture inputs even when they were not regenerated.
+    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } else { $null }
+    if ($fontFilter) {
+        $files += @(Get-ChildItem -LiteralPath $Directory -File -Filter $fontFilter | ForEach-Object { $_.FullName })
+        $files = @($files | Sort-Object -Unique)
+    }
     $name = 'environment-' + ($Which -replace '[^a-zA-Z0-9-]', '-') + '.json'
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $Directory $name) -Groups $Which -Files $files
 }
@@ -97,6 +103,18 @@ if ($Which -eq 'playback-extents') {
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
     return
 }
+if ($Which -eq 'text-signed-diagonal' -or $Which -eq 'text-signed-diagonal-hinting' -or $Which -eq 'text-signed-diagonal-coverage') {
+    if ($Which -ne 'text-signed-diagonal-coverage') {
+        Add-Type -Path (Join-Path $here 'SignedDiagonalHintProbe.cs')
+        [SignedDiagonalHintProbe]::Run($outDir)
+    }
+    if ($Which -ne 'text-signed-diagonal-hinting') {
+        Add-Type -Path (Join-Path $here 'SignedDiagonalCoverageProbe.cs') -ReferencedAssemblies System.Drawing
+        [SignedDiagonalCoverageProbe]::Run($outDir)
+    }
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'text-diagonal-coverage') {
     Add-Type -Path (Join-Path $here 'DiagonalCoverageProbe.cs') -ReferencedAssemblies System.Drawing
     [DiagonalCoverageProbe]::Run($outDir)
@@ -106,6 +124,12 @@ if ($Which -eq 'text-diagonal-coverage') {
 if ($Which -eq 'text-diagonal-hinting') {
     Add-Type -Path (Join-Path $here 'DiagonalHintProbe.cs')
     [DiagonalHintProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'bicubic-phases') {
+    Add-Type -Path (Join-Path $here 'BicubicPhaseProbe.cs') -ReferencedAssemblies System.Drawing
+    [BicubicPhaseProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

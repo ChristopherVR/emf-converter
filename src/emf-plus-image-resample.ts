@@ -583,10 +583,13 @@ export function resampleImage(
 				wu.length = 0;
 				wv.length = 0;
 				for (let t = iu0; t <= iu1; t++) {
-					wu.push(fu.weight(t, cu));
+					// Native Bicubic stores each kernel share in nearest 16.16,
+					// after selecting its 1/64 source phase. Keeping polynomial
+					// weights unquantised changes rare integer colour boundaries.
+					wu.push(integerBicubic ? Math.round(fu.weight(t, cu) * 65536) / 65536 : fu.weight(t, cu));
 				}
 				for (let t = iv0; t <= iv1; t++) {
-					wv.push(fv.weight(t, cv));
+					wv.push(integerBicubic ? Math.round(fv.weight(t, cv) * 65536) / 65536 : fv.weight(t, cv));
 				}
 				return blendSeparable(rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge, integerBicubic);
 			};

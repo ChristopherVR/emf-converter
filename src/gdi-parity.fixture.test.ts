@@ -548,7 +548,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
  * every PixelOffsetMode. Before, only Bilinear/NearestNeighbor under None
  * were modelled and Bicubic/HQ fell back to Canvas scaling (39% to 46% of
  * pixels off). Every pixel remains within 8 levels of GDI+; the Bicubic
- * fixture is now within one level after native integer sampling.
+ * fixture is now pixel-exact after native integer sampling.
  */
 const IMAGE_MODE_CASES: ParityCase[] = [
 	...[
@@ -570,7 +570,7 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 		'pom-highspeed-nearestneighbor',
 		'rotated-bilinear',
 	].map((m) => close(`gpx-image-${m}`, 0)),
-	levelExact('gpx-image-bicubic'),
+	exact('gpx-image-bicubic'),
 	// A rotated HighQualityBicubic draw: the far edges fade to zero at the
 	// edge (see `fadeAt`); two edge pixels remain over 8 levels.
 	close('gpx-image-rotated-highqualitybicubic', 0.00015), // measured 0.013% (0.142% before)
