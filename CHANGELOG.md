@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.10](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.10) - 2026-10-03
+
+### Bug Fixes
+
+- Tighten native GDI and GDI+ rendering parity ([1e2a4c1](https://github.com/ChristopherVR/emf-converter/commit/1e2a4c1f88eb72bc1f70ada15f5e674a9e92c0b2))
+- **emf+:** Round grayscale vertical origins to quarter pixels ([e9c9798](https://github.com/ChristopherVR/emf-converter/commit/e9c97989e610b933a73d91cd8a2daa245377d336))
+
 ## [4.8.9](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.9) - 2026-10-02
 
 ### Bug Fixes
