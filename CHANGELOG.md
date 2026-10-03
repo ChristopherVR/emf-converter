@@ -4,11 +4,18 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.18](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.18) - 2026-10-03
+
+### Documentation
+
+- Record three further native parity rounds ([6072979](https://github.com/ChristopherVR/emf-converter/commit/60729792c0b8f04001a1315abd0274a9b45550c1))
+
 ## [4.8.17](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.17) - 2026-10-03
 
 ### Bug Fixes
 
 - Close native bicubic kernel coefficient rounding ([2b90a4b](https://github.com/ChristopherVR/emf-converter/commit/2b90a4bd2d3a5fcabcbfbe1e80f4d50ed698eb8c))
+- Improve native sampling and font vector parity ([1a5029d](https://github.com/ChristopherVR/emf-converter/commit/1a5029d3b5150a2877e34150337e0ec6833bdf45))
 
 ### Testing
 
