@@ -97,6 +97,23 @@ if ($Which -eq 'playback-extents') {
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
     return
 }
+if ($Which -eq 'text-diagonal-hinting') {
+    Add-Type -Path (Join-Path $here 'DiagonalHintProbe.cs')
+    [DiagonalHintProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'bicubic-arithmetic' -or $Which -eq 'bicubic-independent') {
+    if ($Which -eq 'bicubic-arithmetic') {
+        Add-Type -Path (Join-Path $here 'BicubicArithmeticProbe.cs') -ReferencedAssemblies System.Drawing
+        [BicubicArithmeticProbe]::Run($outDir)
+    } else {
+        Add-Type -Path (Join-Path $here 'BicubicIndependentProbe.cs') -ReferencedAssemblies System.Drawing
+        [BicubicIndependentProbe]::Run($outDir)
+    }
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'halftone-selection') {
     Add-Type -Path (Join-Path $here 'HalftoneSelectionProbe.cs')
     [HalftoneSelectionProbe]::Run($outDir)

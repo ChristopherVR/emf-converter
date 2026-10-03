@@ -285,7 +285,9 @@ interface TexelBox {
  * transparent edge clamps per line, not only once at the end. GDI+'s
  * Bicubic runs the vertical pass first, its high-quality kernels the
  * horizontal pass first (each order matches its own fixtures exactly and
- * the other does not). A texel outside `box` is transparent. Returns
+ * the other does not). Axis-aligned Bicubic first converts source colours
+ * to integer premultiplied bytes and truncates each convolution pass.
+ * A texel outside `box` is transparent. Returns
  * premultiplied `[r, g, b, a]` on a 0..255 scale, unclamped. Pure.
  */
 function blendSeparable(
@@ -298,6 +300,7 @@ function blendSeparable(
 	wv: readonly number[],
 	verticalFirst: boolean,
 	edge: EdgeMode = { wrap: undefined, clamp: null },
+	integerBicubic = false,
 ): [number, number, number, number] {
 	const [outer0, outerW, inner0, innerW] = verticalFirst ? [iu0, wu, iv0, wv] : [iv0, wv, iu0, wu];
 	const [oMin, oMax, iMin, iMax] = verticalFirst ? [box.x0, box.x1, box.y0, box.y1] : [box.y0, box.y1, box.x0, box.x1];
@@ -339,10 +342,16 @@ function blendSeparable(
 			}
 			const alpha = px[s + 3];
 			const wa = (wi * alpha) / 255;
-			lr += wa * px[s];
-			lg += wa * px[s + 1];
-			lb += wa * px[s + 2];
+			lr += integerBicubic ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
+			lg += integerBicubic ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
+			lb += integerBicubic ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
 			la += wi * alpha;
+		}
+		if (integerBicubic) {
+			lr = Math.trunc(lr);
+			lg = Math.trunc(lg);
+			lb = Math.trunc(lb);
+			la = Math.trunc(la);
 		}
 		la = Math.min(255, Math.max(0, la));
 		r += wo * Math.min(la, Math.max(0, lr));
@@ -432,6 +441,10 @@ export function resampleImage(
 	let kernel = spec.kernel;
 	const hq = kernel === 'hq-bilinear' || kernel === 'hq-bicubic';
 	const axisAligned = m[1] === 0 && m[2] === 0;
+	// Native DrawImage's axis-aligned Bicubic path uses integer colour
+	// intermediates. DrawImagePoints under rotation/shear remains a separate
+	// path; independent captures do not support applying this arithmetic there.
+	const integerBicubic = kernel === 'bicubic' && axisAligned;
 	let farFade = false;
 	let shiftX = 0;
 	let shiftY = 0;
@@ -523,12 +536,17 @@ export function resampleImage(
 		mirrorX: spec.wrap === 'tile-flip-x' || spec.wrap === 'tile-flip-xy',
 		mirrorY: spec.wrap === 'tile-flip-y' || spec.wrap === 'tile-flip-xy',
 	};
+	const bicubicDu = Math.round(inv[0] * FIX16);
+	const bicubicDv = Math.round(inv[1] * FIX16);
 	for (let j = 0; j < h; j++) {
 		const py = by0 + j + o;
+		let start = -1;
+		let su = 0;
+		let sv = 0;
 		for (let i = 0; i < w; i++) {
 			const px = bx0 + i + o;
-			const u = inv[0] * (px - shiftX) + inv[2] * (py - shiftY) + inv[4];
-			const v = inv[1] * (px - shiftX) + inv[3] * (py - shiftY) + inv[5];
+			let u = inv[0] * (px - shiftX) + inv[2] * (py - shiftY) + inv[4];
+			let v = inv[1] * (px - shiftX) + inv[3] * (py - shiftY) + inv[5];
 			// Coverage by the top-left rule, as GDI+ rasterises the destination
 			// parallelogram: the sample is nudged right by a hair (and down by
 			// far less), so a pixel exactly on a left or top edge is inside and
@@ -540,6 +558,17 @@ export function resampleImage(
 			const ev = inv[1] * cx + inv[3] * cy + inv[5];
 			if (eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax) {
 				continue;
+			}
+			if (integerBicubic) {
+				// The first covered pixel starts a nearest-16.16 row stepper.
+				// Kernel phases truncate to 1/64; y is reinitialised each row.
+				if (start < 0) {
+					start = i;
+					su = Math.round(u * FIX16);
+					sv = Math.round(v * FIX16);
+				}
+				u = Math.floor((su + (i - start) * bicubicDu) / (FIX16 / 64)) / 64;
+				v = Math.floor((sv + (i - start) * bicubicDv) / (FIX16 / 64)) / 64;
 			}
 			// Texel (i, j) is centred on (i, j) in source coordinates under every
 			// PixelOffsetMode: under Half/HighQuality GDI+'s recorder already
@@ -559,7 +588,7 @@ export function resampleImage(
 				for (let t = iv0; t <= iv1; t++) {
 					wv.push(fv.weight(t, cv));
 				}
-				return blendSeparable(rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge);
+				return blendSeparable(rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge, integerBicubic);
 			};
 			let [r, g, b, a] = sampleAt(u, v);
 			if (farFade && !spec.wrap && a > 0) {
@@ -579,6 +608,13 @@ export function resampleImage(
 			}
 			if (a <= 0) {
 				continue;
+			}
+			if (integerBicubic) {
+				r = Math.trunc(r);
+				g = Math.trunc(g);
+				b = Math.trunc(b);
+				a = Math.trunc(a);
+				if (a <= 0) continue;
 			}
 			const alpha = Math.min(255, a);
 			const dst = (j * w + i) * 4;
