@@ -114,6 +114,12 @@ if ($Which -eq 'bicubic-arithmetic' -or $Which -eq 'bicubic-independent') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'halftone-arrangement') {
+    Add-Type -Path (Join-Path $here 'HalftoneArrangementProbe.cs')
+    [HalftoneArrangementProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'halftone-selection') {
     Add-Type -Path (Join-Path $here 'HalftoneSelectionProbe.cs')
     [HalftoneSelectionProbe]::Run($outDir)
