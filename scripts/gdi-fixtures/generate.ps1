@@ -97,6 +97,12 @@ if ($Which -eq 'playback-extents') {
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
     return
 }
+if ($Which -eq 'vertical-focus-line') {
+    Add-Type -Path (Join-Path $here 'VerticalFocusLineProbe.cs') -ReferencedAssemblies System.Drawing
+    [VerticalFocusLineProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'focus-contours') {
     Add-Type -Path (Join-Path $here 'FocusContourProbe.cs') -ReferencedAssemblies System.Drawing
     [FocusContourProbe]::Run($outDir)

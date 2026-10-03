@@ -146,6 +146,9 @@ export function pathGradientColorAt(
 	shape: EmfPlusPathGradientShape,
 	x: number,
 	y: number,
+	// Scanline coverage may nudge x, but a collapsed focus line keeps the
+	// original sample location. Direct callers already supply that location.
+	focusPoint?: { x: number; y: number },
 ): number | null {
 	const { center, boundary, boundaryArgb } = shape;
 	const n = boundary.length;
@@ -199,6 +202,14 @@ export function pathGradientColorAt(
 				const ey = b.y - a.y;
 				const cross = ax * ey - ay * ex;
 				if (Math.abs(cross) < 1e-12) continue;
+				// At zero x focus, the strip extending right from the focus line
+				// includes that line. A scanline's coverage nudge must not move it
+				// out of the constant-colour focus region.
+				if (fx === 0 && fy > 0 && Math.abs((focusPoint?.x ?? x) - center.x) < eps &&
+					ex > 0 && Math.max(ax, ax + ex) > 0 && Math.abs(ey) > eps) {
+					const u = (((focusPoint?.y ?? y) - center.y) / fy - ay) / ey;
+					if (u >= -eps && u <= 1 + eps) inFocus = true;
+				}
 				if ((fx > 0 || Math.abs(px) < eps) && (fy > 0 || Math.abs(py) < eps)) {
 					const x = fx > 0 ? px / fx : 0;
 					const y = fy > 0 ? py / fy : 0;

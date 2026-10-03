@@ -20,7 +20,7 @@ EMF+ pen transforms (uniform, non-uniform and skewed) match GDI+ exactly on the 
 
 ## Text
 
-Grayscale GDI+ glyph origins now snap independently to the nearest quarter pixel in x and y, verified on native sweeps at 1/64-pixel intervals. ClearType keeps fractional horizontal placement and snaps vertically; its finer horizontal sampling and glyph hinting still differ.
+Grayscale GDI+ glyph origins now snap independently to the nearest quarter pixel in x and y, verified on native sweeps at 1/64-pixel intervals. ClearType snaps horizontal placement to the nearest sixth pixel and preserves that fraction through scan conversion, while vertical placement snaps to whole pixels. Diagonal/base glyph hinting still differs.
 
 - The ANSI, small-text and multi-string record fixtures retain glyph-edge differences under 0.1% (`src/emf-text-records.fixture.test.ts`). PolyTextOut C1 handling now follows native playback; focused Courier controls are exact and Arial retains three edge pixels. EMF+ masks retain decorations and use native grayscale hinting and 16 shades; 150 grayscale and 34 ClearType baseline-controlled glyph captures, plus every captured contrast mapping, are exact. Broader ClearType, antialiasing and TextContrast fixtures still differ, including diagonal hinting and fractional positioning. Current fonts reproduce the three `textx-plus` antialias/ClearType references exactly, so those residuals are renderer differences; other old captures lack complete provenance.
 - ANSI text is decoded with the host's `TextDecoder` for common Windows code pages. Johab and OEM CP437 use bundled Windows mappings; other unsupported encodings fall back to Windows-1252.
@@ -43,7 +43,7 @@ EMF files do not record the graphics mode. Windows plays back RoundRect, Arc, Ch
 ## EMF+
 
 - Rotated `HighQualityBicubic` `DrawImage` differs beyond eight channel levels on 0.013% of pixels in the current fixture (previously 0.14%). Zero-tolerance sampling differences are more widespread, including unrotated Bicubic and high-quality kernels.
-- Path gradients now preserve independent horizontal/vertical focus scales, including zero and fully focused axes. All seven rectangular and elliptical controls and six triangular controls are within one channel level in PNG and embedded SVG image payloads. Curve boundaries match all 1,556 vertices in the native random/ellipse Flatten probe. Folded focus strips use odd coverage and can extend outside the outer polygon. The collapsed horizontal triangle is within one channel level. The vertical triangle retains one scanline pixel beyond eight levels; 49 of 252 independent contour/order controls retain 84 pixels beyond one level; channel rounding and wrap sampling remain open. Exact native linear Blend lookup tables do not establish exact path-gradient sampling.
+- Path gradients now preserve independent horizontal/vertical focus scales, including zero and fully focused axes. All seven rectangular and elliptical controls and seven triangular controls are within one channel level in PNG and embedded SVG image payloads. Curve boundaries match all 1,556 vertices in the native random/ellipse Flatten probe. Folded focus strips use odd coverage and can extend outside the outer polygon. Both collapsed triangle controls are within one channel level. Forty of 252 independent contour/order controls retain 57 pixels beyond one level; channel rounding and wrap sampling remain open. Exact native linear Blend lookup tables do not establish exact path-gradient sampling.
 
 ## WMF
 

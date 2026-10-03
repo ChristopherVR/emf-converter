@@ -194,7 +194,11 @@ export function pathGradientSampler(
 					by = foldIntoTile(by, box.y, box.h, mirrorY, lagY);
 				}
 				if (wrap === 'clamp' && by >= box.y + box.h) continue;
-				const c = pathGradientColorAt(shape, bx, by);
+				// The coverage nudge selects a span; it must not displace a
+				// collapsed vertical focus line's constant-colour samples.
+				const focusPoint = bias && shape.focus?.x === 0
+					? { x: bx - inv[0] * bias, y: by - inv[1] * bias } : undefined;
+				const c = pathGradientColorAt(shape, bx, by, focusPoint);
 				if (c === null) {
 					continue;
 				}

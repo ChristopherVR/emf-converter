@@ -235,7 +235,7 @@ describe('curved and triangular path-gradient focus against native GDI+', () => 
 		expect(diff!.mismatched).toBe(0);
 	});
 
-	it.each(['75-25', '25-75', '50-50', '50-0', '100-25', '25-100'])('triangle %s', async (focus) => {
+	it.each(['75-25', '25-75', '50-50', '50-0', '0-50', '100-25', '25-100'])('triangle %s', async (focus) => {
 		const name = `grad-path-focus-triangle-${focus}`;
 		const diff = await compareFixture(name, 'emf', 1);
 		await expectSvgPayload(name);
@@ -243,14 +243,6 @@ describe('curved and triangular path-gradient focus against native GDI+', () => 
 		expect(diff!.mismatched).toBe(0);
 	});
 
-	// Collapsed triangle focus contours still have scanline residuals.
-	it.each([['0-50', 1, 23]] as const)('collapsed triangle %s', async (focus, count, max) => {
-		const name = `grad-path-focus-triangle-${focus}`;
-		const diff = await compareFixture(name, 'emf', 8);
-		await expectSvgPayload(name, 8, count, max);
-		expect(diff!.mismatched, JSON.stringify(diff)).toBeLessThanOrEqual(count);
-		expect(diff!.maxDiff).toBeLessThanOrEqual(max);
-	});
 });
 
 describe('createBrushGradient', () => {
