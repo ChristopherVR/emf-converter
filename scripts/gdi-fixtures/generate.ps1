@@ -12,7 +12,7 @@
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
 # playback of the recorded metafile.
-param([string]$Which = 'all', [string]$TablesDir = '')
+param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '')
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # GetDeviceCaps and enhanced-metafile headers must use the same physical
@@ -29,7 +29,7 @@ function Complete-Fixtures {
         $_.LastWriteTimeUtc -ge $generationStarted -and $_.Name -notlike 'environment-*.json'
     } | ForEach-Object { $_.FullName })
     # Private diagnostic fonts are capture inputs even when they were not regenerated.
-    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } else { $null }
+    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } elseif ($Which -like 'text-opcode*') { 'opcode-*.ttf' } elseif ($Which -like 'text-vector-stage*') { 'vector-stage-*.ttf' } else { $null }
     if ($fontFilter) {
         $files += @(Get-ChildItem -LiteralPath $Directory -File -Filter $fontFilter | ForEach-Object { $_.FullName })
         $files = @($files | Sort-Object -Unique)
@@ -91,9 +91,19 @@ if ($Which -eq 'text-coverage' -or $Which -eq 'text-cleartype-coverage') {
 if ($Which -eq 'playback-extents') {
     Add-Type -Path (Join-Path $here 'PlaybackExtentProbe.cs') -ReferencedAssemblies System.Drawing
     $cases = Get-Content -LiteralPath (Join-Path $outDir 'playback-extents.json') -Raw | ConvertFrom-Json
-    foreach ($case in $cases) {
-        $success = [PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $case.plus)
+    if ($PlaybackCase) {
+        $case = @($cases | Where-Object { $_.name -eq $PlaybackCase })
+        if ($case.Count -ne 1) { throw "Unknown expanded playback case: $PlaybackCase" }
+        $case = $case[0]
+        $success = [PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $case.plus, ($case.nativeFrame -eq $true), ($case.recordPlayback -eq $true))
         if ($success -ne $case.playbackSucceeded) { throw "Unexpected native playback status: $($case.name)" }
+        return
+    }
+    # Native replay depends on earlier playback in the process for some old
+    # recordings. Give every reference the same fresh-process initial state.
+    foreach ($case in $cases) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extents -PlaybackCase $case.name
+        if ($LASTEXITCODE -ne 0) { throw "Expanded playback capture failed: $($case.name)" }
     }
     $files = @((Join-Path $outDir 'playback-extents.json')) + @($cases | ForEach-Object {
         Join-Path $outDir ($_.name + '.emf')
@@ -101,6 +111,70 @@ if ($Which -eq 'playback-extents') {
         Join-Path $outDir ($_.name + '.extent.png')
     })
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
+    return
+}
+if ($Which -eq 'path-gradient-colors') {
+    Add-Type -Path (Join-Path $here 'PathGradientColorProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientColorProbe]::Run($outDir)
+    Add-Type -Path (Join-Path $here 'PathGradientAlphaProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientAlphaProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'bicubic-copy') {
+    Add-Type -Path (Join-Path $here 'BicubicCopyProbe.cs') -ReferencedAssemblies System.Drawing
+    [BicubicCopyProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-arithmetic') {
+    Add-Type -Path (Join-Path $here 'HighQualityArithmeticProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityArithmeticProbe]::Run($outDir)
+    Add-Type -Path (Join-Path $here 'HighQualityIndependentProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityIndependentProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'halftone-fractional-kernel') {
+    Add-Type -Path (Join-Path $here 'HalftoneFractionalKernelProbe.cs')
+    [HalftoneFractionalKernelProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'halftone-run-2d') {
+    Add-Type -Path (Join-Path $here 'HalftoneRun2DProbe.cs')
+    [HalftoneRun2DProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'halftone-run-phase') {
+    Add-Type -Path (Join-Path $here 'HalftoneRunPhaseProbe.cs')
+    [HalftoneRunPhaseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-opcode-hinting') {
+    Add-Type -Path (Join-Path $here 'OpcodeHintProbe.cs')
+    [OpcodeHintProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-opcode-coverage') {
+    Add-Type -Path (Join-Path $here 'OpcodeCoverageProbe.cs') -ReferencedAssemblies System.Drawing
+    [OpcodeCoverageProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-vector-stage-hinting') {
+    Add-Type -Path (Join-Path $here 'VectorStageHintProbe.cs')
+    [VectorStageHintProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-vector-stage-coverage') {
+    Add-Type -Path (Join-Path $here 'VectorStageCoverageProbe.cs') -ReferencedAssemblies System.Drawing
+    [VectorStageCoverageProbe]::Run($outDir)
+    Complete-Fixtures
     return
 }
 if ($Which -eq 'text-signed-diagonal' -or $Which -eq 'text-signed-diagonal-hinting' -or $Which -eq 'text-signed-diagonal-coverage') {

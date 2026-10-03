@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { halftoneSharpen, stretchHalftone, type HalftoneTaps } from './emf-gdi-stretch';
+import { measuredRunAxis, measuredRunCrop } from './halftone-run-phase.fixture-helper';
 import { colorAdjustRgb, DEFAULT_COLOR_ADJUSTMENT } from './emf-gdi-color-adjust';
 
 interface Capture {
@@ -38,7 +39,7 @@ function measuredAxis(source: number, destination: number): HalftoneTaps[] {
 	});
 }
 const sharpened = new Map<number, Int32Array>();
-function measuredCrop(c: Capture): Int32Array {
+function measuredCrop(c: Capture, axis = measuredRunAxis): Int32Array {
 	let source = sharpened.get(c.sourceId);
 	if (!source) {
 		const bytes = rgba(c);
@@ -47,9 +48,9 @@ function measuredCrop(c: Capture): Int32Array {
 		halftoneSharpen(source, c.sw, c.sh);
 		sharpened.set(c.sourceId, source);
 	}
-	const columns = measuredAxis(c.sw, c.dw), rows = measuredAxis(c.sh, c.dh);
-	const crop = new Int32Array(c.cropW * c.cropH * 3);
-	for (let y = 0; y < c.cropH; y++) for (let x = 0; x < c.cropW; x++) {
+	const columns = axis(c.sw, c.dw), rows = axis(c.sh, c.dh);
+	const crop = axis === measuredRunAxis ? measuredRunCrop(source, c) : new Int32Array(c.cropW * c.cropH * 3);
+	if (axis !== measuredRunAxis) for (let y = 0; y < c.cropH; y++) for (let x = 0; x < c.cropW; x++) {
 		for (let channel = 0; channel < 3; channel++) {
 			let value = 0;
 			for (const [yy, wy] of rows[y + c.cropY]) for (const [xx, wx] of columns[x + c.cropX]) value += source[(yy * c.sw + xx) * 3 + channel] * wx * wy;
@@ -88,9 +89,9 @@ describe('native HALFTONE central kernel measurements', () => {
 		}
 	});
 
-	it('measures 96 filtered 2x/3x central responses exactly, including log and gamma', () => {
-		const cases = captures.filter(c => c.sw > 64 && c.scale !== 237);
-		expect(cases).toHaveLength(96);
+	it('measures all 144 filtered central responses exactly, including fractional phase, log and gamma', () => {
+		const cases = captures.filter(c => c.sw > 64);
+		expect(cases).toHaveLength(144);
 		for (const c of cases) expect(largestDifference(c, measuredCrop(c)), `${c.sw}/${c.pattern}/${c.scale}/${c.mode}/${c.dib}`).toBe(0);
 	});
 
@@ -99,6 +100,6 @@ describe('native HALFTONE central kernel measurements', () => {
 		// nearest-eighth integrated-tent formula misses fourteen channel levels.
 		const c = captures.find(c => c.sw === 128 && c.pattern === 1 && c.scale === 237 && c.mode === 0 && !c.dib)!;
 		expect([c.dw, c.dh]).toEqual([303, 76]);
-		expect(largestDifference(c, measuredCrop(c))).toBe(14);
+		expect(largestDifference(c, measuredCrop(c, measuredAxis))).toBe(14);
 	});
 });

@@ -9,22 +9,24 @@ interface Capture {
 	pattern: number; mode?: number; sx?: number; sy?: number; origin?: number;
 	m?: TransformMatrix; srcBgra: string; bgra: string;
 	phase?: number; axis?: number; srcX?: number; srcY?: number;
+	scale?: number; srcW?: number; srcH?: number; dx?: number; dy?: number;
 }
 function load(name: string): Capture[] {
 	return JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}.json.gz`, import.meta.url))).toString());
 }
 
-function compare(c: Capture, independent: boolean, phases = false): [number, number, number] {
-	const width = phases ? 12 : independent ? 11 : 8, height = phases ? 12 : independent ? 7 : 8, extent = phases ? 24 : independent ? 80 : 48;
+function compare(c: Capture, independent: boolean, phases = false, copy = false): [number, number, number] {
+	const width = copy ? 13 : phases ? 12 : independent ? 11 : 8, height = copy ? 11 : phases ? 12 : independent ? 7 : 8, extent = copy || phases ? 24 : independent ? 80 : 48;
 	const source = Buffer.from(c.srcBgra, 'base64');
 	const rgba = new Uint8ClampedArray(source.length);
 	for (let p = 0; p < source.length; p += 4) {
 		rgba[p] = source[p + 2]; rgba[p + 1] = source[p + 1]; rgba[p + 2] = source[p]; rgba[p + 3] = source[p + 3];
 	}
 	const block = resampleImage(rgba, width, height, {
-		srcX: phases ? c.srcX! : independent ? 1 : 0, srcY: phases ? c.srcY! : independent ? 1 : 0,
-		srcW: independent ? 9 : 8, srcH: independent ? 5 : 8,
-		toDevice: phases ? [1, 0, 0, 1, 4 - c.srcX!, 4 - c.srcY!] : c.m ?? [c.sx!, 0, 0, c.sy!, 4 + c.origin!, 4 + c.origin!],
+		srcX: copy ? Math.fround(c.srcX!) : phases ? c.srcX! : independent ? 1 : 0, srcY: copy ? Math.fround(c.srcY!) : phases ? c.srcY! : independent ? 1 : 0,
+		srcW: copy ? c.srcW! : independent ? 9 : 8, srcH: copy ? c.srcH! : independent ? 5 : 8,
+		toDevice: copy ? [Math.fround(c.scale!), 0, 0, Math.fround(c.scale!), c.dx! - Math.fround(c.scale!) * Math.fround(c.srcX!), c.dy! - Math.fround(c.scale!) * Math.fround(c.srcY!)]
+			: phases ? [1, 0, 0, 1, 4 - c.srcX!, 4 - c.srcY!] : c.m ?? [c.sx!, 0, 0, c.sy!, 4 + c.origin!, 4 + c.origin!],
 		kernel: 'bicubic', halfPixelOffset: false,
 	}, { w: extent, h: extent })!;
 	const native = Buffer.from(c.bgra, 'base64');
@@ -79,19 +81,36 @@ it('keeps Bicubic PNG playback pixel-exact to native pixels', async () => {
  expect(png!.maxDiff).toBe(0);
 });
 
-it('matches every captured native Bicubic kernel phase with bounded copy-path residuals', () => {
+it('matches 380 native Bicubic kernel phases and bounds four positive copy-boundary residuals', () => {
 	const captures = load('bicubic-phases');
 	expect(captures).toHaveLength(384);
-	// Native unit-scale draws copy texels at near-integer source origins when
-	// the other axis is integral. The finer eligibility boundary remains open.
+	// Positive source phase +1/64 needs a further native dispatch condition.
+	// Negative phases and the interior copy interval are exact.
 	const residuals: Record<number, [number, number, number]> = {
-		3: [61, 81, 2], 46: [62, 84, 2], 148: [58, 81, 2], 189: [62, 83, 2],
-		195: [57, 67, 2], 238: [60, 72, 2], 340: [62, 72, 2], 381: [62, 73, 2],
+		3: [61, 81, 2], 148: [58, 81, 2], 195: [57, 67, 2], 340: [62, 72, 2],
 	};
 	for (const [i, capture] of captures.entries()) {
 		const metrics = compare(capture, false, true), ceiling = residuals[i] ?? [0, 0, 0];
 		for (let metric = 0; metric < 3; metric++) {
 			expect(metrics[metric], `capture ${i}, metric ${metric}`).toBeLessThanOrEqual(ceiling[metric]);
+		}
+	}
+});
+
+it('matches 930 independent Bicubic copy captures and preserves six boundary residuals', () => {
+	const captures = load('bicubic-copy');
+	expect(captures).toHaveLength(936);
+	// Independent noise and alpha, unequal cropped dimensions, integral and
+	// fractional destination origins, both source axes, and scales 1 +/- 1/1024.
+	// Offsets straddle the 1/64 boundary by 1/16384. All non-unit controls are exact.
+	const residuals: Record<number, [number, number, number]> = {
+		120: [62, 84, 2], 123: [60, 82, 2], 126: [63, 135, 4],
+		588: [58, 69, 2], 591: [61, 77, 2], 594: [64, 118, 4],
+	};
+	for (const [i, capture] of captures.entries()) {
+		const metrics = compare(capture, false, false, true), ceiling = residuals[i] ?? [0, 0, 0];
+		for (let metric = 0; metric < 3; metric++) {
+			expect(metrics[metric], `copy capture ${i}, metric ${metric}`).toBeLessThanOrEqual(ceiling[metric]);
 		}
 	}
 });

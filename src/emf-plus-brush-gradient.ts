@@ -91,6 +91,23 @@ function lerpArgb(a: number, b: number, t: number): number {
 	return ((ch(24) << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
 }
 
+/** Native uniform-surround path gradients interpolate premultiplied channels. */
+function lerpUniformPathArgb(a: number, b: number, t: number): number {
+	const aa = (a >>> 24) & 0xff;
+	const ab = (b >>> 24) & 0xff;
+	if (aa === ab) return lerpArgb(a, b, t);
+	const alpha = Math.round(aa + (ab - aa) * t);
+	if (alpha === 0) return 0;
+	const ch = (shift: number): number => {
+		const ca = ((a >>> shift) & 0xff) * aa / 255;
+		const cb = ((b >>> shift) & 0xff) * ab / 255;
+		// Rounded alpha can be smaller than its floating value. Clamp before
+		// packing so a saturated channel cannot overflow into its neighbour.
+		return Math.min(255, Math.max(0, Math.round((ca + (cb - ca) * t) * 255 / alpha)));
+	};
+	return ((alpha << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
+}
+
 /** Piecewise-linear lookup of `ys` at `x` over ascending `xs` (clamped at both ends). */
 function piecewise(xs: readonly number[], ys: readonly number[], x: number): number {
 	const n = Math.min(xs.length, ys.length);
@@ -283,7 +300,12 @@ export function pathGradientColorAt(
 	const c1 = boundaryArgb[(found + 1) % n] ?? c0;
 	const surround = lerpArgb(c0, c1, bestU);
 	const factor = shape.blend ? piecewise(shape.blend.positions, shape.blend.factors, pos) : pos;
-	return lerpArgb(surround, shape.centerArgb, Math.min(1, Math.max(0, factor)));
+	const t = Math.min(1, Math.max(0, factor));
+	// Independent native alpha captures confirm the uniform-surround path.
+	// Varying surrounds have a separate strip/color interpolation mechanism.
+	return (surround >>> 24) !== (shape.centerArgb >>> 24) && boundaryArgb.every((color) => color === boundaryArgb[0])
+		? lerpUniformPathArgb(surround, shape.centerArgb, t)
+		: lerpArgb(surround, shape.centerArgb, t);
 }
 
 // ---------------------------------------------------------------------------

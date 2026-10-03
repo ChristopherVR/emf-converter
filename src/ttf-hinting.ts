@@ -1300,7 +1300,9 @@ export class HintedSize {
 				// SPVFS, SFVFS
 				const y = (this.pop() << 16) >> 16;
 				const x = (this.pop() << 16) >> 16;
-				const [vx, vy] = this.normalize(x, y);
+				// SPVFS/SFVFS already receive signed 2.14 components. Public
+				// GPV/GFV controls preserve those words, even for non-unit vectors.
+				const vx = x, vy = y;
 				if (op === 0x0a) {
 					gs.pvx = gs.dvx = vx;
 					gs.pvy = gs.dvy = vy;

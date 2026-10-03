@@ -445,6 +445,13 @@ export function resampleImage(
 	// intermediates. DrawImagePoints under rotation/shear remains a separate
 	// path; independent captures do not support applying this arithmetic there.
 	const integerBicubic = kernel === 'bicubic' && axisAligned;
+	// Native unit-scale draws copy near-integral texels within this signed
+	// 1/64 phase interval. The positive source-phase endpoint has additional
+	// dispatch conditions, so keep it on the convolution path. Public captures
+	// cover both axes, fractional destination origins, cropped sizes and alpha.
+	const unitBicubicCopy = integerBicubic && !spec.halfPixelOffset && m[0] === 1 && m[3] === 1 &&
+		m[4] - Math.round(m[4]) > -1 / 64 && m[4] - Math.round(m[4]) <= 1 / 64 &&
+		m[5] - Math.round(m[5]) > -1 / 64 && m[5] - Math.round(m[5]) <= 1 / 64;
 	let farFade = false;
 	let shiftX = 0;
 	let shiftY = 0;
@@ -517,8 +524,13 @@ export function resampleImage(
 	const integral = (v: number): boolean => Math.abs(v - Math.round(v)) < 1e-9;
 	const copyU = axisAligned && Math.abs(scaleU - 1) < 1e-9 && integral(m[4]);
 	const copyV = axisAligned && Math.abs(scaleV - 1) < 1e-9 && integral(m[5]);
-	const fu = axisFilter(kernel, scaleU, copyU);
-	const fv = axisFilter(kernel, scaleV, copyV);
+	// High-quality native draws bypass filtering only for a complete unit
+	// copy. An unscaled axis still uses the integrated kernel when the other
+	// axis is scaled; independent noise/impulse and cropped alpha captures
+	// distinguish this from copying each qualifying axis separately.
+	const copy = copyU && copyV;
+	const fu = axisFilter(kernel, scaleU, copy);
+	const fv = axisFilter(kernel, scaleV, copy);
 	const out = new Uint8ClampedArray(w * h * 4);
 	// PixelOffsetMode Half/HighQuality: pixel (x, y) is the point
 	// (x + 0.5, y + 0.5) and texel (i, j) is centred on (i + 0.5, j + 0.5).
@@ -569,6 +581,10 @@ export function resampleImage(
 				}
 				u = Math.floor((su + (i - start) * bicubicDu) / (FIX16 / 64)) / 64;
 				v = Math.floor((sv + (i - start) * bicubicDv) / (FIX16 / 64)) / 64;
+				if (unitBicubicCopy) {
+					u = Math.round(u);
+					v = Math.round(v);
+				}
 			}
 			// Texel (i, j) is centred on (i, j) in source coordinates under every
 			// PixelOffsetMode: under Half/HighQuality GDI+'s recorder already

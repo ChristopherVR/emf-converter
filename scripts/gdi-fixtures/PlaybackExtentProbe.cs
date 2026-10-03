@@ -29,7 +29,10 @@ public static class PlaybackExtentProbe
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool GdiFlush();
 
-    static bool CaptureGdi(string source, string destination, int width, int height, Rect rect)
+    delegate int RecordCallback(IntPtr dc, IntPtr table, IntPtr record, int handles, IntPtr data);
+    [DllImport("gdi32.dll")] static extern bool EnumEnhMetaFile(IntPtr dc, IntPtr metafile, RecordCallback callback, IntPtr data, ref Rect rect);
+    [DllImport("gdi32.dll")] static extern bool PlayEnhMetaFileRecord(IntPtr dc, IntPtr table, IntPtr record, int handles);
+    static bool CaptureGdi(string source, string destination, int width, int height, Rect rect, bool recordPlayback)
     {
         IntPtr screen = GetDC(IntPtr.Zero), dc = IntPtr.Zero, bitmap = IntPtr.Zero, old = IntPtr.Zero, metafile = IntPtr.Zero;
         try {
@@ -44,7 +47,19 @@ public static class PlaybackExtentProbe
             Marshal.Copy(pixels, 0, bits, pixels.Length);
             metafile = GetEnhMetaFile(source);
             if (metafile == IntPtr.Zero) throw new Exception("GetEnhMetaFile failed: " + source);
-            bool success = PlayEnhMetaFile(dc, metafile, ref rect);
+            bool success;
+            if (recordPlayback) {
+                // Pass the actual enumeration DC and handle table unchanged,
+                // as required by the public PlayEnhMetaFileRecord contract.
+                bool recordsSucceeded = true;
+                RecordCallback callback = delegate(IntPtr target, IntPtr table, IntPtr record, int handles, IntPtr data) {
+                    recordsSucceeded &= PlayEnhMetaFileRecord(target, table, record, handles);
+                    return 1;
+                };
+                success = EnumEnhMetaFile(dc, metafile, callback, IntPtr.Zero, ref rect) && recordsSucceeded;
+            } else {
+                success = PlayEnhMetaFile(dc, metafile, ref rect);
+            }
             GdiFlush();
             Marshal.Copy(bits, pixels, 0, pixels.Length);
             // A GDI DIB has RGB pixels, not an independently defined alpha channel.
@@ -65,14 +80,27 @@ public static class PlaybackExtentProbe
         }
     }
 
-    public static bool Capture(string dir, string name, int width, int height, int originX, int originY, bool plus)
+    public static bool Capture(string dir, string name, int width, int height, int originX, int originY, bool plus, bool nativeFrame = false, bool recordPlayback = false, string suffix = ".extent.png")
     {
         string source = Path.Combine(dir, name + ".emf");
         using (var original = new Bitmap(Path.Combine(dir, name + ".png"))) {
             if (!plus) {
                 var rect = new Rect { left = -originX, top = -originY,
                     right = original.Width - originX, bottom = original.Height - originY };
-                return CaptureGdi(source, Path.Combine(dir, name + ".extent.png"), width, height, rect);
+                if (nativeFrame) {
+                    // Some old recordings mix virtualised frame coordinates with
+                    // physical reference-device caps. Replay their frame at its
+                    // recorded device size instead of scaling it to the clipped PNG.
+                    byte[] header = File.ReadAllBytes(source);
+                    int deviceW = BitConverter.ToInt32(header, 72), deviceH = BitConverter.ToInt32(header, 76);
+                    int mmW = BitConverter.ToInt32(header, 80), mmH = BitConverter.ToInt32(header, 84);
+                    if (deviceW <= 0 || deviceH <= 0 || mmW <= 0 || mmH <= 0) throw new Exception("Invalid reference-device dimensions");
+                    int frameW = BitConverter.ToInt32(header, 32) - BitConverter.ToInt32(header, 24);
+                    int frameH = BitConverter.ToInt32(header, 36) - BitConverter.ToInt32(header, 28);
+                    rect.right = (int)Math.Round(frameW * (double)deviceW / (mmW * 100.0)) - originX;
+                    rect.bottom = (int)Math.Round(frameH * (double)deviceH / (mmH * 100.0)) - originY;
+                }
+                return CaptureGdi(source, Path.Combine(dir, name + suffix), width, height, rect, recordPlayback);
             }
         }
         using (var output = new Bitmap(width, height))
@@ -81,7 +109,7 @@ public static class PlaybackExtentProbe
             using (var metafile = new Metafile(source))
                 graphics.DrawImage(metafile, new Rectangle(0, 0, width, height),
                     originX, originY, width, height, GraphicsUnit.Pixel);
-            output.Save(Path.Combine(dir, name + ".extent.png"), ImageFormat.Png);
+            output.Save(Path.Combine(dir, name + suffix), ImageFormat.Png);
         }
         return true;
     }

@@ -11,17 +11,6 @@
     "maxDiff": 160
   },
   {
-    "name": "emfrec-coloradjustment-off",
-    "w": 162,
-    "h": 80,
-    "ox": 0,
-    "oy": 0,
-    "plus": false,
-    "playbackSucceeded": true,
-    "maxMismatched": 0,
-    "maxDiff": 0
-  },
-  {
     "name": "emfrec-coloradjustment",
     "w": 162,
     "h": 80,
@@ -33,20 +22,22 @@
     "maxDiff": 0
   },
   {
-    "name": "emfrec-fillrgn-scaled",
-    "w": 201,
-    "h": 163,
+    "name": "emfrec-coloradjustment-off",
+    "w": 162,
+    "h": 80,
     "ox": 0,
     "oy": 0,
     "plus": false,
     "playbackSucceeded": true,
     "maxMismatched": 0,
-    "maxDiff": 0
+    "maxDiff": 0,
+    "nativeFrame": true,
+    "recordPlayback": true
   },
   {
-    "name": "emfrec-halftone-checker-0p5x-ca",
-    "w": 33,
-    "h": 32,
+    "name": "emfrec-fillrgn-scaled",
+    "w": 201,
+    "h": 163,
     "ox": 0,
     "oy": 0,
     "plus": false,
@@ -63,12 +54,40 @@
     "plus": false,
     "playbackSucceeded": true,
     "maxMismatched": 0,
-    "maxDiff": 0
+    "maxDiff": 0,
+    "nativeFrame": true,
+    "recordPlayback": true
   },
   {
-    "name": "emfrec-halftone-checker-2x-ca",
-    "w": 81,
+    "name": "emfrec-halftone-checker-0p5x-2y",
+    "w": 33,
     "h": 80,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "nativeFrame": true,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0,
+    "recordPlayback": true
+  },
+  {
+    "name": "emfrec-halftone-checker-0p5x-2y-ca",
+    "w": 33,
+    "h": 80,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "nativeFrame": true,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0,
+    "recordPlayback": true
+  },
+  {
+    "name": "emfrec-halftone-checker-0p5x-ca",
+    "w": 33,
+    "h": 32,
     "ox": 0,
     "oy": 0,
     "plus": false,
@@ -78,6 +97,45 @@
   },
   {
     "name": "emfrec-halftone-checker-2x",
+    "w": 81,
+    "h": 80,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0,
+    "nativeFrame": true,
+    "recordPlayback": true
+  },
+  {
+    "name": "emfrec-halftone-checker-2x-0p5y",
+    "w": 81,
+    "h": 32,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "nativeFrame": true,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0,
+    "recordPlayback": true
+  },
+  {
+    "name": "emfrec-halftone-checker-2x-0p5y-ca",
+    "w": 81,
+    "h": 32,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "nativeFrame": true,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0,
+    "recordPlayback": true
+  },
+  {
+    "name": "emfrec-halftone-checker-2x-ca",
     "w": 81,
     "h": 80,
     "ox": 0,
@@ -110,7 +168,7 @@
     "maxDiff": 0
   },
   {
-    "name": "emfrec-halftone-ramp-1p37x-ca",
+    "name": "emfrec-halftone-ramp-1p37x",
     "w": 105,
     "h": 60,
     "ox": 0,
@@ -118,10 +176,12 @@
     "plus": false,
     "playbackSucceeded": true,
     "maxMismatched": 0,
-    "maxDiff": 0
+    "maxDiff": 0,
+    "nativeFrame": true,
+    "recordPlayback": true
   },
   {
-    "name": "emfrec-halftone-ramp-1p37x",
+    "name": "emfrec-halftone-ramp-1p37x-ca",
     "w": 105,
     "h": 60,
     "ox": 0,
@@ -264,17 +324,6 @@
     "maxDiff": 0
   },
   {
-    "name": "gpx-rec-customcap-aa",
-    "w": 195,
-    "h": 126,
-    "ox": -22,
-    "oy": -13,
-    "plus": true,
-    "playbackSucceeded": true,
-    "maxMismatched": 47,
-    "maxDiff": 40
-  },
-  {
     "name": "gpx-rec-customcap",
     "w": 195,
     "h": 126,
@@ -284,6 +333,17 @@
     "playbackSucceeded": true,
     "maxMismatched": 2,
     "maxDiff": 255
+  },
+  {
+    "name": "gpx-rec-customcap-aa",
+    "w": 195,
+    "h": 126,
+    "ox": -22,
+    "oy": -13,
+    "plus": true,
+    "playbackSucceeded": true,
+    "maxMismatched": 47,
+    "maxDiff": 40
   },
   {
     "name": "pattern-fill-ellipse-color",
@@ -363,17 +423,6 @@
     "maxDiff": 0
   },
   {
-    "name": "plus-effect-blur-r4-subrect-expand",
-    "w": 232,
-    "h": 113,
-    "ox": 0,
-    "oy": 0,
-    "plus": true,
-    "playbackSucceeded": true,
-    "maxMismatched": 0,
-    "maxDiff": 0
-  },
-  {
     "name": "plus-effect-blur-r4-subrect",
     "w": 232,
     "h": 113,
@@ -385,7 +434,18 @@
     "maxDiff": 0
   },
   {
-    "name": "plus-only-effect-blur-r4-subrect-expand",
+    "name": "plus-effect-blur-r4-subrect-expand",
+    "w": 232,
+    "h": 113,
+    "ox": 0,
+    "oy": 0,
+    "plus": true,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
+  },
+  {
+    "name": "plus-only-effect-blur-r4-subrect",
     "w": 232,
     "h": 112,
     "ox": 0,
@@ -396,7 +456,7 @@
     "maxDiff": 0
   },
   {
-    "name": "plus-only-effect-blur-r4-subrect",
+    "name": "plus-only-effect-blur-r4-subrect-expand",
     "w": 232,
     "h": 112,
     "ox": 0,
@@ -759,6 +819,17 @@
     "maxDiff": 0
   },
   {
+    "name": "textx-fon-mssansserif",
+    "w": 884,
+    "h": 627,
+    "ox": 0,
+    "oy": -1,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
+  },
+  {
     "name": "textx-fon-mssansserif-aa",
     "w": 884,
     "h": 627,
@@ -779,17 +850,6 @@
     "playbackSucceeded": true,
     "maxMismatched": 43,
     "maxDiff": 255
-  },
-  {
-    "name": "textx-fon-mssansserif",
-    "w": 884,
-    "h": 627,
-    "ox": 0,
-    "oy": -1,
-    "plus": false,
-    "playbackSucceeded": true,
-    "maxMismatched": 0,
-    "maxDiff": 0
   },
   {
     "name": "textx-fon-msserif",
