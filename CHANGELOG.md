@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.11](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.11) - 2026-10-03
+
+### Bug Fixes
+
+- Validate flattened-path extent and ClearType sample origins ([73d4b21](https://github.com/ChristopherVR/emf-converter/commit/73d4b21e117a461621b9b6d494252939d3d5204b))
+
 ## [4.8.10](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.10) - 2026-10-03
 
 ### Bug Fixes
