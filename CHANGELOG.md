@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.13](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.13) - 2026-10-03
+
+### Bug Fixes
+
+- Tighten red-eye correction and clockwise RoundRect geometry ([c24bec5](https://github.com/ChristopherVR/emf-converter/commit/c24bec535c102f86c606b2e3d4f78d3d01501129))
+
 ## [4.8.12](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.12) - 2026-10-03
 
 ### Bug Fixes
