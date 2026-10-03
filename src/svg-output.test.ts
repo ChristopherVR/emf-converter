@@ -270,7 +270,7 @@ describe('SvgContext', () => {
 		const tree = await ctx.toTree();
 		const clips = tree.children![0].children!.filter((c) => c.tag === 'clipPath');
 		expect(clips).toHaveLength(2);
-		expect(clips[1].attrs['clip-path']).toBe(`url(#${clips[0].attrs.id})`);
+		expect(clips[1].children![0].attrs['clip-path']).toBe(`url(#${clips[0].attrs.id})`);
 		expect(clips[1].children![0].attrs['clip-rule']).toBe('evenodd');
 		const group = tree.children![1];
 		expect(group.attrs['clip-path']).toBe(`url(#${clips[1].attrs.id})`);

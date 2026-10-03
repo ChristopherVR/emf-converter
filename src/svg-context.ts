@@ -1159,10 +1159,13 @@ export class SvgContext {
 		const parent = this.state.clipId;
 		const id = this.id('c');
 		const attrs: SvgNode['attrs'] = { id };
-		if (parent) {
-			attrs['clip-path'] = `url(#${parent})`;
-		}
 		const pathAttrs: SvgNode['attrs'] = { d: pathData(this.path, null) || 'M0 0' };
+		if (parent) {
+			// Clip the graphics element itself. A parent clip on <clipPath>
+			// can be ignored by Chromium for a large complement boundary,
+			// letting an excluded image draw escape its existing clip.
+			pathAttrs['clip-path'] = `url(#${parent})`;
+		}
 		if (fillRule === 'evenodd') {
 			pathAttrs['clip-rule'] = 'evenodd';
 		}

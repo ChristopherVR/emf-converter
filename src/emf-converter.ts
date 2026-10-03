@@ -173,9 +173,10 @@ export interface SvgConvertOptions extends EmfConvertOptions {
 	 * PNG output's `InterpolationMode`/`PixelOffsetMode` model), so the SVG
 	 * shows what GDI+ painted pixel for pixel at its nominal size. PNG and
 	 * BMP images are decoded in pure JavaScript; JPEG, GIF and other formats
-	 * need a canvas backend to decode and otherwise keep `'renderer'`
-	 * scaling, as do draws GDI+ scales with a filter the resampler does not
-	 * model (bicubic, high-quality).
+	 * use the available image decoder and otherwise keep `'renderer'`
+	 * scaling. The resampler covers nearest-neighbour, bilinear, bicubic
+	 * and high-quality modes; its remaining native differences also apply
+	 * to the baked SVG pixels.
 	 */
 	imageResampling?: 'renderer' | 'exact';
 	/**
@@ -617,8 +618,7 @@ async function decodeToRgba(bytes: ArrayBuffer): Promise<{ data: Uint8ClampedArr
  * `imageResampling: 'exact'`: resamples a deferred EMF+ image draw per
  * device pixel the way GDI+ does (`emf-plus-image-resample.ts`, the same
  * model the PNG output uses), returning the device-space block to embed at
- * identity, or `null` when the image cannot be decoded here or GDI+'s
- * filter for it is not modelled.
+ * identity, or `null` when the image cannot be decoded here.
  */
 async function resampleExact(
 	bytes: ArrayBuffer,
