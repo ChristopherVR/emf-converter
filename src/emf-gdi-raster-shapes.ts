@@ -176,7 +176,7 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, cloc
 	for (let i = 0; i < q.length; i += 2) {
 		pts.push(...map(q[i], clockwise ? f.t + f.b - q[i + 1] : q[i + 1]));
 	}
-	if (box.halfX && !clockwise) {
+	if (box.halfX) {
 		// An odd inside-frame pen width (see `FixBox.halfX`); the rounding of the two side points on each edge is not
 		// reproduced (about half of them are a FIX off).
 		for (const k of [1, 2, 3, 4, 5, 6, 8, 15]) {

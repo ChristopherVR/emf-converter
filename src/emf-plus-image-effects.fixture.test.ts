@@ -192,8 +192,8 @@ const TINT: EffectCase[] = [
  * and the red-ramp bands (a 256 x 64 gradient test image) are approximate.
  */
 const RED_EYE: EffectCase[] = [
-	bounded('redeye-left', 0, 0.0023), // 3.659% with the old fixed rule, 0.71% before the measured model, 0.21% now
-	bounded('redeye-both', 0, 0.0063), // 6.860%, 1.49%, 0.62%
+	bounded('redeye-left', 0, 0.00058), // 3.659% with the old fixed rule, 0.71% before the measured model, 12 pixels (0.057%) now
+	bounded('redeye-both', 0, 0.00472), // 6.860%, 1.49%, 99 pixels (0.472%) now
 	bounded('redeye-whole', 0, 0.0278), // 46.227%, 3.51%, 2.77%
 ];
 

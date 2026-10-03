@@ -542,7 +542,9 @@ const TINT_FULL = 254;
  *   for `u = distance / radius`. The first term is `m = 1/4` for a uniform
  *   area and rises by quantised steps with the spread (`1/2` from `S = 31.5`,
  *   `0.661` from 50, `3/4` from 98.8); the second corrects pixels much darker
- *   than their sector harder (pupils).
+ *   than their sector harder (pupils). The squared darkness term is symmetric
+ *   about the sector mean, and is used only for `D / Dm < 2`; brighter
+ *   pixels at or above twice that mean retain the radial term alone.
  *
  * Not reproduced: the exact fallback centre of the farthest-off areas, the
  * quantised small-denominator weights of near-black reds, and sector
@@ -681,7 +683,10 @@ function correctRedEyeArea(
 			const meanDark = sectorDark[s] / sectorCount[s];
 			const ratio = meanDark > 0 ? dark[k] / meanDark : 1;
 			const u = distance[k] / radius;
-			const falloff = Math.max(strength * (1 - u) * (1 - u), 0.5 * Math.max(0, 1 - ratio) ** 2);
+			// Native concentric controls correct both sides of the mean, but stop
+			// using this darkness term at twice the sector mean.
+			const darknessFalloff = ratio < 2 ? 0.5 * (1 - ratio) ** 2 : 0;
+			const falloff = Math.max(strength * (1 - u) * (1 - u), darknessFalloff);
 			const rest = (1 - falloff) * mean;
 			if (rest >= v) {
 				continue;

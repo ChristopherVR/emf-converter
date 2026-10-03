@@ -97,6 +97,18 @@ if ($Which -eq 'playback-extents') {
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
     return
 }
+if ($Which -eq 'roundrect-half-fix') {
+    Add-Type -Path (Join-Path $here 'HalfFixRoundRectProbe.cs')
+    [HalfFixRoundRectProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'redeye-independent') {
+    Add-Type -Path (Join-Path $here 'RedEyeCorrectionProbe.cs') -ReferencedAssemblies System.Drawing
+    [RedEyeCorrectionProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'vertical-focus-line') {
     Add-Type -Path (Join-Path $here 'VerticalFocusLineProbe.cs') -ReferencedAssemblies System.Drawing
     [VerticalFocusLineProbe]::Run($outDir)

@@ -215,7 +215,7 @@ interface FrameInset {
  *     paths are those of the box rounded down on the left and up on the
  *     right, with the first half of the path a FIX further right (`halfX`).
  */
-function insideFrameInset(rCtx: EmfGdiReplayCtx, box: FixBox, rectangle = false): FrameInset | null {
+function insideFrameInset(rCtx: EmfGdiReplayCtx, box: FixBox, rectangle = false, clockwiseRoundRect = false): FrameInset | null {
 	if ((rCtx.state.penStyle & 0x0f) !== PS_INSIDEFRAME || !isAxisBox(box) || hasWorldRotation(rCtx)) {
 		return null;
 	}
@@ -234,7 +234,9 @@ function insideFrameInset(rCtx: EmfGdiReplayCtx, box: FixBox, rectangle = false)
 	}
 	const lo = Math.floor(wx / 2);
 	const hi = Math.ceil(wx / 2);
-	const y = Math.round(Math.ceil(wy / 2) * py);
+	// Clockwise RoundRect keeps the lower half-FIX inset on both y sides.
+	// Public GetPath controls distinguish this from the other box shapes.
+	const y = Math.round((clockwiseRoundRect ? Math.floor(wy / 2) : Math.ceil(wy / 2)) * py);
 	return {
 		left: Math.round((rectangle ? hi : lo) * px),
 		right: Math.round((rectangle ? lo : hi) * px),
@@ -576,7 +578,7 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const cornerH = view.getInt32(dataOff + 20, true);
 		const clockwise = rCtx.state.arcDirection === 2;
 		const unframed = uprightFixBox(rCtx, l, t, r, b);
-		const inset = insideFrameInset(rCtx, unframed);
+		const inset = insideFrameInset(rCtx, unframed, false, clockwise);
 		const framed = inset ? insetFixBox(unframed, inset) : unframed;
 		// The corner ellipse is scaled onto an inside-frame pen's smaller box.
 		const devM = gdiDeviceMatrix(rCtx);
