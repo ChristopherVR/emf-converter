@@ -52,6 +52,7 @@ interface DirectionCase extends NativeCase { dx: number; dy: number }
 it('matches 16,128 independent native axis-scaled direction and corner controls', () => {
 	const controls: DirectionCase[] = JSON.parse(gunzipSync(readFileSync(fixturePath('wide-pen-axis-directions.json.gz'))).toString());
 	expect(controls).toHaveLength(16128);
+	let exact = 0;
 	for (const c of controls) {
 		const path = new GdiRasterPath();
 		path.moveTo(20 * c.sx * 16, 20 * c.sy * 16);
@@ -68,7 +69,14 @@ it('matches 16,128 independent native axis-scaled direction and corner controls'
 			cap: c.cap === 0 ? 'round' : 'square', join: 'round', miterLimit: 10,
 		}), true);
 		const key = [c.w, c.sx, c.sy, c.cap, c.shape, c.dx, c.dy].join(',');
+		// Fast exact comparison keeps the full native sweep affordable on CI.
+		// Expand assertion diagnostics only for a failing control.
+		if (actual.length === native.length && actual.data.subarray(0, actual.length * 3).every((v, i) => v === native.data[i])) {
+			exact++;
+			continue;
+		}
 		expect(actual.length, key).toBe(native.length);
 		expect(actual.data.subarray(0, actual.length * 3), key).toEqual(native.data.subarray(0, native.length * 3));
 	}
+	expect(exact).toBe(16128);
 });
