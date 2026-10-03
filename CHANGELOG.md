@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.15](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.15) - 2026-10-03
+
+### Bug Fixes
+
+- Match native axis-aligned bicubic sampling arithmetic ([a449068](https://github.com/ChristopherVR/emf-converter/commit/a4490686bc781bc8110f997cd024d725695c9ed2))
+
+### Testing
+
+- Isolate spatial halftone branch selection ([2385369](https://github.com/ChristopherVR/emf-converter/commit/238536913f320a00912b0956185911164f8b242e))
+
+## [4.8.14](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.14) - 2026-10-03
+
+### Testing
+
+- Isolate native halftone selection and fractional roundrect ties ([87deda9](https://github.com/ChristopherVR/emf-converter/commit/87deda962c061cbf513a681e9a6cb3e1bf2ab9fb))
+
 ## [4.8.13](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.13) - 2026-10-03
 
 ### Bug Fixes
