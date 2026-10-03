@@ -75,5 +75,3 @@ public static class DrawStringPlacementProbe
         }
     }
 }
-
-

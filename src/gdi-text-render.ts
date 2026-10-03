@@ -288,8 +288,8 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 	let down = baseDown;
 	for (let i = 0; i < n; i++) {
 		const origin = at(along, down);
-		// GDI+ grayscale x origins snap to the nearest quarter pixel before
-		// sampling (independent 1/64-pixel native controls). ClearType retains
+		// GDI+ grayscale origins snap to the nearest quarter pixel before
+		// sampling (independent x/y 1/64-pixel native controls). ClearType retains
 		// its finer x phase; monochrome glyphs snap to whole device pixels.
 		const fractionalX = !font.gridFit || font.fractionalOrigins;
 		const ox = fractionalX ? Math.floor(origin.x) : Math.round(origin.x);
@@ -297,7 +297,7 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 			: font.fractionalOrigins === 'xy' ? Math.round((origin.x - ox) * 4) * 16
 			: Math.round((origin.x - ox) * 64);
 		const oy = font.fractionalOrigins === 'xy' ? Math.floor(origin.y) : Math.round(origin.y);
-		const subY = font.fractionalOrigins === 'xy' ? Math.round((origin.y - oy) * 64) : 0;
+		const subY = font.fractionalOrigins === 'xy' ? Math.round((origin.y - oy) * 4) * 16 : 0;
 		origins.push({ x: ox + subX / 64, y: oy + subY / 64, along, down });
 		if (!suppressC1Glyph(run, i)) {
 			const g = font.glyph(glyphs[i], gm, subX, subY);

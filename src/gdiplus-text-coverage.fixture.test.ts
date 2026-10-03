@@ -12,6 +12,8 @@ const clearTypeCaptures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL(
 
 const fineCaptures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/text-origin-phases.json.gz', import.meta.url))).toString());
 
+const verticalCaptures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/text-origin-vertical-phases.json.gz', import.meta.url))).toString());
+
 it('matches native ClearType contrast independently on every RGB channel', () => {
 	expect(clearTypeCaptures).toHaveLength(1664);
 	let mismatched = 0;
@@ -33,7 +35,7 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled ClearType glyphs', ()
 	it('matches the closed fractional-origin RGB controls at both contrasts', () => {
 		const fonts = new GdiFontCollection(windowsFonts()!);
 		let compared = 0;
-		for (const c of clearTypeCaptures) {
+		for (const c of [...clearTypeCaptures, ...verticalCaptures.filter(c => c.hint === 5).map(c => ({ ...c, qy: c.qy / 16 }))]) {
 			if (c.qx % 2) continue;
 			const char = String.fromCharCode(c.code);
 			const closed = c.face === 'Segoe UI' && !'ak4'.includes(char) ||
@@ -54,7 +56,7 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled ClearType glyphs', ()
 			expect(Buffer.from(rgba).equals(Buffer.from(c.rgba, 'base64')), JSON.stringify({ ...c, rgba: undefined })).toBe(true);
 			compared++;
 		}
-		expect(compared).toBe(288);
+		expect(compared).toBe(672);
 	});
 });
 
@@ -85,7 +87,7 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled grayscale glyphs', ()
 		const fonts = new GdiFontCollection(windowsFonts()!);
 		let compared = 0;
 		for (const c of captures) {
-			
+
 			const char = String.fromCharCode(c.code);
 			const closed = c.face === 'Segoe UI' ||
 				(c.face === 'Times New Roman' && 'IvSy028'.includes(char)) ||
@@ -109,11 +111,12 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled grayscale glyphs', ()
 		}
 		expect(compared).toBe(2400);
 	});
-	it('matches independent grayscale x phases at every 1/64-pixel origin', () => {
+	it.each([['x', fineCaptures], ['y', verticalCaptures]] as const)('matches independent grayscale %s phases at every 1/64-pixel origin', (_axis, records) => {
+		expect(records).toHaveLength(2304);
 		const fonts = new GdiFontCollection(windowsFonts()!);
 		let compared = 0;
-		for (const c of fineCaptures) {
-			
+		for (const c of records) {
+
 			if (c.hint === 5) continue;
 			const char = String.fromCharCode(c.code);
 			const closed = c.face === 'Segoe UI' ||
@@ -124,7 +127,7 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled grayscale glyphs', ()
 			const font = fonts.realize({ face: c.face, height: -c.size, width: 0, weight: c.style & 1 ? 700 : 400,
 				italic: !!(c.style & 2), charSet: 1, pitchAndFamily: 0, quality: 4, unhinted: c.hint === 4,
 				ignoreGasp: c.hint === 4, gdiPlus: true })!;
-			const mask = gdiTextCoverage(font, { codes: [c.code], glyphIndices: false, x: 8 + c.qx / 64, y: 48 + c.qy / 4, dx: null, dy: null,
+			const mask = gdiTextCoverage(font, { codes: [c.code], glyphIndices: false, x: 8 + c.qx / 64, y: 48 + c.qy / 64, dx: null, dy: null,
 				textAlign: 24, textColor: '#000000', bkColor: '#ffffff', bkMode: 1, options: 0, rect: null, matrix: null,
 				underline: false, strikeOut: false }, { grayLevels: 15 })!;
 			applyTextContrast(mask.data, textGamma(c.contrast));

@@ -62,9 +62,10 @@ if ($Which -eq 'gradient-blend-probe') {
     Complete-Fixtures
     return
 }
-if ($Which -eq 'text-origin-phases') {
+if ($Which -eq 'text-origin-phases' -or $Which -eq 'text-origin-vertical-phases') {
     Add-Type -Path (Join-Path $here 'TextOriginPhaseProbe.cs') -ReferencedAssemblies System.Drawing
-    [TextOriginPhaseProbe]::Run($outDir)
+    if ($Which -eq 'text-origin-phases') { [TextOriginPhaseProbe]::Run($outDir) }
+    else { [TextOriginPhaseProbe]::Vertical($outDir) }
     Complete-Fixtures
     return
 }

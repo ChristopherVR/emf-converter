@@ -20,6 +20,8 @@ EMF+ pen transforms (uniform, non-uniform and skewed) match GDI+ exactly on the 
 
 ## Text
 
+Grayscale GDI+ glyph origins now snap independently to the nearest quarter pixel in x and y, verified on native sweeps at 1/64-pixel intervals. ClearType keeps fractional horizontal placement and snaps vertically; its finer horizontal sampling and glyph hinting still differ.
+
 - The ANSI, small-text and multi-string record fixtures retain glyph-edge differences under 0.1% (`src/emf-text-records.fixture.test.ts`). PolyTextOut C1 handling now follows native playback; focused Courier controls are exact and Arial retains three edge pixels. EMF+ masks retain decorations and use native grayscale hinting and 16 shades; 150 grayscale and 34 ClearType baseline-controlled glyph captures, plus every captured contrast mapping, are exact. Broader ClearType, antialiasing and TextContrast fixtures still differ, including diagonal hinting and fractional positioning. Current fonts reproduce the three `textx-plus` antialias/ClearType references exactly, so those residuals are renderer differences; other old captures lack complete provenance.
 - ANSI text is decoded with the host's `TextDecoder` for common Windows code pages. Johab and OEM CP437 use bundled Windows mappings; other unsupported encodings fall back to Windows-1252.
 - Vertical `ETO_PDY` advances are supported with or without the `fonts` option.

@@ -27,9 +27,13 @@ public static class TextOriginPhaseProbe
     [DllImport("gdiplus.dll")] static extern int GdipDisposeImage(IntPtr image);
     static void Check(int status) { if (status != 0) throw new Exception("GDI+ status " + status); }
 
-    public static void Run(string dir)
+    public static void Run(string dir) { Capture(dir, false); }
+    public static void Vertical(string dir) { Capture(dir, true); }
+
+    static void Capture(string dir, bool vertical)
     {
-        int[] hints = { 3, 4, 5 }; string filename = "text-origin-phases.json.gz";
+        int[] hints = { 3, 4, 5 };
+        string filename = vertical ? "text-origin-vertical-phases.json.gz" : "text-origin-phases.json.gz";
         Directory.CreateDirectory(dir);
         var json = new StringBuilder("[");
         string[] faces = { "Arial", "Times New Roman", "Segoe UI", "Arial" };
@@ -39,7 +43,8 @@ public static class TextOriginPhaseProbe
         for (int f = 0; f < faces.Length; f++)
         foreach (int hint in hints) foreach (int contrast in new[] { 0 })
         foreach (char character in new[] { 'I', 'g', 'v' })
-        for (int qx = 0; qx < 64; qx++) for (int qy = 0; qy < 1; qy++) {
+        for (int phase = 0; phase < 64; phase++) {
+            int qx = vertical ? 0 : phase, qy = vertical ? phase : 0;
             IntPtr image = IntPtr.Zero, graphics = IntPtr.Zero, family = IntPtr.Zero, font = IntPtr.Zero, brush = IntPtr.Zero;
             try {
                 Check(GdipCreateBitmapFromScan0(64, 64, 0, 0x26200a, IntPtr.Zero, out image));
@@ -47,7 +52,7 @@ public static class TextOriginPhaseProbe
                 Check(GdipSetTextRenderingHint(graphics, hint)); Check(GdipSetTextContrast(graphics, (uint)contrast));
                 Check(GdipCreateFontFamilyFromName(faces[f], IntPtr.Zero, out family));
                 Check(GdipCreateFont(family, sizes[f], styles[f], 2, out font)); Check(GdipCreateSolidFill(unchecked((int)0xff000000), out brush));
-                Check(GdipDrawDriverString(graphics, new[] { (ushort)character }, 1, font, brush, new[] { new PointF(8 + qx / 64f, 48 + qy / 4f) }, 1, IntPtr.Zero));
+                Check(GdipDrawDriverString(graphics, new[] { (ushort)character }, 1, font, brush, new[] { new PointF(8 + qx / 64f, 48 + qy / 64f) }, 1, IntPtr.Zero));
                 var rect = new Rect { w = 64, h = 64 }; Bits bits;
                 Check(GdipBitmapLockBits(image, ref rect, 1, 0x26200a, out bits));
                 var rgba = new byte[64 * 64 * 4];

@@ -52,4 +52,3 @@ describe.skipIf(!windowsFonts())('native DrawString placement', () => {
   expect(compared).toBe(88);
  });
 });
-
