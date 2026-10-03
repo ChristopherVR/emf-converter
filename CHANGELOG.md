@@ -9,6 +9,7 @@ by [git-cliff](https://git-cliff.org); do not edit it by hand.
 ### Bug Fixes
 
 - Match native axis-aligned bicubic sampling arithmetic ([a449068](https://github.com/ChristopherVR/emf-converter/commit/a4490686bc781bc8110f997cd024d725695c9ed2))
+- Preserve parent clips for svg image exclusions ([1f628dd](https://github.com/ChristopherVR/emf-converter/commit/1f628dd178fb41281896c22b70881c918ef73ea3))
 
 ### Testing
 
