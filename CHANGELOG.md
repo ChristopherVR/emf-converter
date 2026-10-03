@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.12](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.12) - 2026-10-03
+
+### Bug Fixes
+
+- **emf+:** Preserve collapsed vertical gradient focus lines ([b47309d](https://github.com/ChristopherVR/emf-converter/commit/b47309dd59b35874b0f61e04d9d6f1f266b54715))
+
 ## [4.8.11](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.11) - 2026-10-03
 
 ### Bug Fixes
