@@ -79,6 +79,8 @@ export type JoinStyle = 'round' | 'bevel' | 'miter';
 export interface WidenOptions {
 	/** Pen width in device FIX (1/16 pixel). */
 	width: number;
+	/** Device FIX height for an axis-aligned elliptical nib; defaults to width. */
+	height?: number;
 	cap: CapStyle;
 	join: JoinStyle;
 	/** Miter limit (ratio of miter length to half the pen width); GDI's default is 10. */
@@ -156,25 +158,26 @@ function floorDivision(a: number, b: number): number {
 	return Number(q);
 }
 
-const penCache = new Map<number, Pt[]>();
+const penCache = new Map<string, Pt[]>();
 
 /**
  * GDI's pen polygon for a pen `width` FIX wide (see the module doc), in
  * pen order (counter-clockwise on screen, the second half the reflection of
  * the first).
  */
-export function penPolygon(width: number): Pt[] {
-	const cached = penCache.get(width);
+export function penPolygon(width: number, height = width): Pt[] {
+	const key = `${width},${height}`;
+	const cached = penCache.get(key);
 	if (cached) {
 		return cached;
 	}
 	let pen: Pt[];
-	if (width < HOBBY_LIMIT) {
+	if (width === height && width < HOBBY_LIMIT) {
 		const n = Math.min(6, Math.max(1, Math.floor(width / 16 + 0.5)));
 		pen = HOBBY[n - 1];
 	} else {
 		const rx = Math.ceil(width / 2);
-		const ry = rx;
+		const ry = Math.ceil(height / 2);
 		const f = flattenBezierPath(ellipseBeziers(-rx, -ry, rx, ry));
 		// The flattened first half runs from (rx, 0) over the top to (-rx, 0).
 		const half: Pt[] = [];
@@ -187,7 +190,7 @@ export function penPolygon(width: number): Pt[] {
 		half.pop();
 		pen = [...half, ...half.map((p): Pt => [0 - p[0] || 0, 0 - p[1] || 0])];
 	}
-	penCache.set(width, pen);
+	penCache.set(key, pen);
 	return pen;
 }
 
@@ -199,10 +202,15 @@ export function penPolygon(width: number): Pt[] {
  * the one further along the segment's direction normalised to point
  * rightwards (or downwards when steeper than 2:1).
  */
-export function drawVertices(pen: readonly Pt[], dx: number, dy: number): [number, number] {
+export function drawVertices(pen: readonly Pt[], dx: number, dy: number, width = 1, height = width): [number, number] {
 	const n = pen.length;
 	const axisVertex = pen.some((q) => q[1] === 0);
-	const steep = Math.abs(dy) > 2 * Math.abs(dx) || (Math.abs(dy) === 2 * Math.abs(dx) && axisVertex);
+	// Elliptical pens resolve parallel-edge ties in logical direction: the
+	// 45-degree boundary becomes height/width in device coordinates.
+	// Circular digital pens retain their measured 2:1 boundary.
+	const yMagnitude = Math.abs(dy) * (width === height ? 1 : width);
+	const xMagnitude = Math.abs(dx) * (width === height ? 2 : height);
+	const steep = yMagnitude > xMagnitude || (yMagnitude === xMagnitude && axisVertex);
 	const s = (steep ? dy < 0 : dx < 0 || (dx === 0 && dy < 0)) ? -1 : 1;
 	let best = 0;
 	let bestH = -Infinity;
@@ -238,7 +246,7 @@ export function flatVector(width: number, dx0: number, dy0: number): Pt {
 }
 
 /** Rounded stroke sides and the unrounded tangent point used to select pen arcs. */
-function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt; ray: Pt } {
+function perpendicularVectors(width: number, dx0: number, dy0: number, height = width): { v: Pt; ray: Pt } {
 	let dx = dx0;
 	let dy = dy0;
 	const flip = dx < 0 || (dx === 0 && dy < 0);
@@ -246,7 +254,7 @@ function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt;
 		dx = -dx;
 		dy = -dy;
 	}
-	const pen = penPolygon(width);
+	const pen = penPolygon(width, height);
 	const n = pen.length;
 	const nx = -dy;
 	const ny = dx;
@@ -290,8 +298,8 @@ function perpendicularVectors(width: number, dx0: number, dy0: number): { v: Pt;
 }
 
 /** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
-export function squareExtension(width: number, dx: number, dy: number, scale = 1): Pt {
-	const len = Math.hypot(dx, dy);
+export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width): Pt {
+	const len = width === height ? Math.hypot(dx, dy) : Math.hypot(dx, dy * width / height);
 	const r = (width / 2) * scale;
 	return [Math.floor((dx / len) * r + 0.5), Math.floor((dy / len) * r + 0.5)];
 }
@@ -345,7 +353,7 @@ class Outliner {
 		private readonly opts: WidenOptions,
 		private readonly out: number[][],
 	) {
-		this.pen = penPolygon(opts.width);
+		this.pen = penPolygon(opts.width, opts.height);
 		this.n = this.pen.length;
 		this.rr = opts.cap === 'round' && opts.join === 'round';
 		this.originalRoundJoinSides = opts.join === 'round' && opts.cap !== 'flat';
@@ -361,11 +369,11 @@ class Outliner {
 		const dx = dir ? dir[0] : b[0] - a[0];
 		const dy = dir ? dir[1] : b[1] - a[1];
 		const d = drawDir ?? [dx, dy];
-		const [L, R] = drawVertices(this.pen, d[0], d[1]);
+		const [L, R] = drawVertices(this.pen, d[0], d[1], this.opts.width, this.opts.height);
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
-		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1]);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1]), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height);
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -488,7 +496,7 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e0: Pt = scale === 1 ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale);
+			const e0: Pt = scale === 1 ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height);
 			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
@@ -543,7 +551,7 @@ class Outliner {
 					}
 				}
 			} else if (join === 'miter') {
-				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit, side);
+				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit, side, this.opts.height);
 				if (m) {
 					this.push(p, m);
 				}
@@ -868,7 +876,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
  * `sa + t * da` and `sb + u * db` meet, or `null` when the miter would be
  * longer than `limit` half widths (GDI then bevels).
  */
-function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number, side: 'L' | 'R'): Pt | null {
+function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number, side: 'L' | 'R', height = width): Pt | null {
 	const den = da[0] * db[1] - da[1] * db[0];
 	if (den === 0) {
 		return null;
@@ -884,7 +892,8 @@ function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number
 	// components upward. The right side tests the negated vector, which
 	// rounds its components downward. Emitted vertices retain FIX precision.
 	const pixel = side === 'L' ? Math.ceil : Math.floor;
-	if (Math.hypot(pixel(x / 16), pixel(y / 16)) > (limit * width) / 32) {
+	const yDistance = height === width ? pixel(y / 16) : pixel(y / 16) * width / height;
+	if (Math.hypot(pixel(x / 16), yDistance) > (limit * width) / 32) {
 		return null;
 	}
 	return [x, y];

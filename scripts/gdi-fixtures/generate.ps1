@@ -15,6 +15,11 @@
 param([string]$Which = 'all', [string]$TablesDir = '')
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+# GetDeviceCaps and enhanced-metafile headers must use the same physical
+# coordinates. A DPI-virtualised PowerShell otherwise records a larger frame
+# and PlayEnhMetaFile silently scales its reference bitmap on scaled displays.
+Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class GdiFixtureDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
+[GdiFixtureDpi]::SetProcessDPIAware() | Out-Null
 $out = Join-Path $here '..\..\src\__fixtures__\gdi'
 $outDir = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $out)).Path
 $generationStarted = [DateTime]::UtcNow
@@ -54,6 +59,75 @@ if ($Which -eq 'image-effect-narrow-blur') {
 if ($Which -eq 'gradient-blend-probe') {
     Add-Type -Path (Join-Path $here 'GradientProbe.cs') -ReferencedAssemblies System.Drawing
     [GradientProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-origin-phases') {
+    Add-Type -Path (Join-Path $here 'TextOriginPhaseProbe.cs') -ReferencedAssemblies System.Drawing
+    [TextOriginPhaseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-drawstring-placement') {
+    Add-Type -Path (Join-Path $here 'DrawStringPlacementProbe.cs') -ReferencedAssemblies System.Drawing
+    [DrawStringPlacementProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-coverage' -or $Which -eq 'text-cleartype-coverage') {
+    Add-Type -Path (Join-Path $here 'TextCoverageProbe.cs') -ReferencedAssemblies System.Drawing
+    if ($Which -eq 'text-coverage') { [TextCoverageProbe]::Run($outDir) }
+    else { [TextCoverageProbe]::ClearType($outDir) }
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'playback-extents') {
+    Add-Type -Path (Join-Path $here 'PlaybackExtentProbe.cs') -ReferencedAssemblies System.Drawing
+    $cases = Get-Content -LiteralPath (Join-Path $outDir 'playback-extents.json') -Raw | ConvertFrom-Json
+    foreach ($case in $cases) {
+        $success = [PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $case.plus)
+        if ($success -ne $case.playbackSucceeded) { throw "Unexpected native playback status: $($case.name)" }
+    }
+    $files = @((Join-Path $outDir 'playback-extents.json')) + @($cases | ForEach-Object {
+        Join-Path $outDir ($_.name + '.emf')
+        Join-Path $outDir ($_.name + '.png')
+        Join-Path $outDir ($_.name + '.extent.png')
+    })
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
+    return
+}
+if ($Which -eq 'focus-contours') {
+    Add-Type -Path (Join-Path $here 'FocusContourProbe.cs') -ReferencedAssemblies System.Drawing
+    [FocusContourProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'bezier-flatten') {
+    Add-Type -Path (Join-Path $here 'BezierFlattenProbe.cs') -ReferencedAssemblies System.Drawing
+    [BezierFlattenProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'wide-pen-axis-directions') {
+    Add-Type -Path (Join-Path $here 'AnisotropicPenDirectionProbe.cs')
+    [AnisotropicPenDirectionProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'wide-pen-axis-probe') {
+    Add-Type -Path (Join-Path $here 'AnisotropicPenProbe.cs')
+    [AnisotropicPenProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus' -or $Which -eq 'halftone-transitions') {
+    if ($Which -eq 'path-gradient-focus') {
+        Add-Type -Path (Join-Path $here 'PathGradientFocusProbe.cs') -ReferencedAssemblies System.Drawing
+        [PathGradientFocusProbe]::Run($outDir)
+    } else {
+        Add-Type -Path (Join-Path $here 'HalftoneTransitionProbe.cs')
+        [HalftoneTransitionProbe]::Run($outDir)
+    }
     Complete-Fixtures
     return
 }
@@ -101,7 +175,7 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -
 }
 
 $known = @('all', 'rop', 'gradient', 'text', 'pattern', 'rotation', 'rop2', 'image', 'rotation-affine',
-	'text-extra', 'gdi-raster', 'emfplus-records', 'gdiplus-extra', 'wmf-records', 'emf-records',
+	'text-extra', 'text-c1', 'pen-axis-scales', 'gdi-raster', 'emfplus-records', 'gdiplus-extra', 'wmf-records', 'emf-records',
 	'halftone', 'halftone-mixed', 'halftone-origin', 'halftone-mixed-probe', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'wmf-roundrect-corners', 'emf-insideframe', 'emfplus-effects', 'pen-transform')
 $groups = @($Which -split '[,\s]+' | Where-Object { $_ })
 if ($groups.Count -eq 0) { $groups = @('all') }

@@ -75,8 +75,9 @@ export interface LogFontSpec {
 	pitchAndFamily: number;
 	quality: number;
 	/**
-	 * Skip grid-fitting and position glyphs at fractional pixels (GDI+'s
-	 * SingleBitPerPixel / AntiAlias text rendering hints). GDI never does.
+	 * Use linear advances and fractional positions (GDI+'s SingleBitPerPixel /
+	 * AntiAlias hints). GDI never does. GDI+ grayscale retains its smoothing
+	 * interpreter even when advances are linear.
 	 */
 	unhinted?: boolean;
 	/**
@@ -84,6 +85,8 @@ export interface LogFontSpec {
 	 * hints do; GDI turns grayscale off where `gasp` asks).
 	 */
 	ignoreGasp?: boolean;
+	/** GDI+ smoothing uses natural-width hinting and its own coverage quantisation. */
+	gdiPlus?: boolean;
 }
 
 /**
@@ -205,6 +208,8 @@ export interface GdiRealizedFont {
 	readonly syntheticBold: boolean;
 	readonly syntheticItalic: boolean;
 	readonly gridFit: boolean;
+	/** GDI+ retains both origin phases in grayscale, and only the x phase in ClearType. */
+	readonly fractionalOrigins?: 'x' | 'xy';
 	glyphIndex(code: number): number;
 	advance(index: number): number;
 	rotatedAdvance(index: number): number;
@@ -215,7 +220,7 @@ export interface GdiRealizedFont {
 	 */
 	readonly rotatedAscent?: number;
 	readonly rotatedDescent?: number;
-	glyph(index: number, m?: readonly [number, number, number, number], subX?: number): GdiGlyph;
+	glyph(index: number, m?: readonly [number, number, number, number], subX?: number, subY?: number): GdiGlyph;
 	charForGlyph(index: number): number;
 }
 
@@ -385,6 +390,7 @@ export class RealizedFont implements GdiRealizedFont {
 	readonly syntheticItalic: boolean;
 	/** False for GDI+'s non-grid-fitted hints: unhinted outlines, fractional advances and origins. */
 	readonly gridFit: boolean;
+	readonly fractionalOrigins?: 'x' | 'xy';
 	private readonly hinted: HintedSize;
 	private rotatedSize: HintedSize | null = null;
 	private readonly rotOutlines = new Map<number, HintedGlyph>();
@@ -404,9 +410,11 @@ export class RealizedFont implements GdiRealizedFont {
 		cellHeight = 0,
 		stretchWidth = 0,
 		gridFit = true,
+		private readonly gdiPlus = false,
 	) {
 		this.ttf = ttf;
 		this.gridFit = gridFit;
+		this.fractionalOrigins = gdiPlus ? mode === 'gray' ? 'xy' : mode === 'cleartype' ? 'x' : undefined : undefined;
 		this.stretchWidth = ppemX !== ppem ? stretchWidth : 0;
 		this.ppem = ppem;
 		this.ppemX = ppemX;
@@ -439,7 +447,12 @@ export class RealizedFont implements GdiRealizedFont {
 		this.underlineThickness = scale(ttf.underlineThickness);
 		this.strikeoutPosition = scale(ttf.strikeoutPosition);
 		this.strikeoutThickness = scale(ttf.strikeoutSize);
-		this.hinted = new HintedSize(ttf, ppemX, ppem, { version: 35, grayscale: mode !== 'mono' }, gridFit);
+		// GDI+ gray masks use the subpixel interpreter's x-direction rules;
+		// AntiAlias also runs these programs, while keeping linear advances.
+		this.hinted = new HintedSize(ttf, ppemX, ppem,
+			gdiPlus && mode === 'gray'
+				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false }
+				: { version: 35, grayscale: mode !== 'mono' }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
 	}
 
@@ -494,7 +507,7 @@ export class RealizedFont implements GdiRealizedFont {
 			return o;
 		}
 		const gi = index < this.ttf.numGlyphs ? index : NOTDEF;
-		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true });
+		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus });
 		const u = this.ctSize.hintGlyph(gi);
 		const natural = (this.ttf.hMetrics(gi).advance * this.ppemX) / this.ttf.unitsPerEm;
 		const k = !this.naturalWidths && natural > 0 ? this.advance(index) / natural : 1;
@@ -551,8 +564,8 @@ export class RealizedFont implements GdiRealizedFont {
 	 * `m` = [a, b, c, d] (device, y down: x' = a*x + c*y, y' = b*x + d*y,
 	 * applied to the hinted outline about the pen position).
 	 */
-	glyph(index: number, m?: readonly [number, number, number, number], subX = 0): GdiGlyph {
-		const key = (m ? `${index}|${m.map((v) => v.toFixed(6)).join(',')}` : String(index)) + (subX ? `@${subX}` : '');
+	glyph(index: number, m?: readonly [number, number, number, number], subX = 0, subY = 0): GdiGlyph {
+		const key = (m ? `${index}|${m.map((v) => v.toFixed(6)).join(',')}` : String(index)) + (subX || subY ? `@${subX},${subY}` : '');
 		let g = this.glyphs.get(key);
 		if (g) {
 			return g;
@@ -572,33 +585,34 @@ export class RealizedFont implements GdiRealizedFont {
 			const p = this.ppem;
 			m = [Math.round(m[0] * p) / p, Math.round(m[1] * p) / p, Math.round(m[2] * p) / p, Math.round(m[3] * p) / p];
 		}
-		let o: Outline = src;
-		if (this.syntheticItalic || m || subX) {
-			const n = src.xs.length;
+		let o: Outline = this.mode === 'cleartype' && !m && !this.syntheticItalic ? this.ctOutline(index) : src;
+		if (this.syntheticItalic || m || subX || subY) {
+			const base = o;
+			const n = base.xs.length;
 			const xs = new Float64Array(n);
 			const ys = new Float64Array(n);
 			for (let i = 0; i < n; i++) {
-				let x = src.xs[i];
-				const y = src.ys[i];
+				let x = base.xs[i];
+				const y = base.ys[i];
 				if (this.syntheticItalic) {
 					x += y * ITALIC_SHEAR;
 				}
 				if (m) {
 					// Outline space is y up; the matrix is in device (y down) space.
-					xs[i] = Math.round(m[0] * x - m[2] * y);
-					ys[i] = Math.round(-(m[1] * x - m[3] * y));
+					xs[i] = Math.round(m[0] * x - m[2] * y + subX);
+					ys[i] = Math.round(-(m[1] * x - m[3] * y) - subY);
 				} else {
 					xs[i] = Math.round(x + subX);
-					ys[i] = y;
+					ys[i] = y - subY;
 				}
 			}
-			o = { xs, ys, onCurve: src.onCurve, endPts: src.endPts };
+			o = { xs, ys, onCurve: base.onCurve, endPts: base.endPts };
 		}
 		let bitmap: GlyphBitmap | null;
 		if (this.mode === 'mono') {
 			bitmap = rasterizeMono(o, dropoutMode(src.scanControl, src.scanType));
 		} else if (this.mode === 'cleartype') {
-			bitmap = rasterizeClearType(!m && !this.syntheticItalic ? this.ctOutline(index) : o);
+			bitmap = rasterizeClearType(o, this.gdiPlus);
 		} else {
 			bitmap = rasterizeGray(o);
 		}
@@ -854,6 +868,7 @@ export class GdiFontCollection {
 					cellHeight,
 					spec.width,
 					!spec.unhinted,
+					spec.gdiPlus,
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				return tt;
@@ -953,9 +968,10 @@ const CLEARTYPE_OVERSAMPLE = 6;
  * subpixel's coverage is averaged with its two neighbours (a 3-tap box
  * filter across subpixels), giving one 0..255 alpha per colour channel.
  * Fitted to the edge profiles of `textx-arial-cleartype` (an Arial stem at
- * 72 px reproduces to within 1 level per channel).
+ * 72 px reproduces to within 1 level per channel). GDI+ truncates the
+ * coverage instead of rounding it (native baseline-controlled captures).
  */
-function rasterizeClearType(o: Outline): GlyphBitmap | null {
+function rasterizeClearType(o: Outline, truncate = false): GlyphBitmap | null {
 	const S = CLEARTYPE_OVERSAMPLE / 3;
 	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, 1, 1);
 	if (!r) {
@@ -977,7 +993,7 @@ function rasterizeClearType(o: Outline): GlyphBitmap | null {
 		}
 		for (let j = 0; j < n; j++) {
 			const acc = (j > 0 ? sub[j - 1] : 0) + sub[j] + (j + 1 < n ? sub[j + 1] : 0);
-			data[y * n + j] = Math.round((255 * acc) / (3 * S));
+			data[y * n + j] = (truncate ? Math.floor : Math.round)((255 * acc) / (3 * S));
 		}
 	}
 	return { width, height, left: box.xMin, top: box.yMax, data, channels: 3 };

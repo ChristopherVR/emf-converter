@@ -422,6 +422,21 @@ describe('gdi-text-render', () => {
 		expect(gdiTextCoverage(font, run({ codes: [0x20] }))).toBeNull();
 	});
 
+	it('retains decorations in coverage masks, including spaces and right alignment', async () => {
+		for (const r of [run({ underline: true, strikeOut: true }), run({ codes: [0x20, 0x20], underline: true, textAlign: 0x1a })]) {
+			const cov = gdiTextCoverage(font, r, { decorations: true })!;
+			expect(cov).not.toBeNull();
+			const { ink } = await paint(r);
+			for (let y = 0; y < 30; y++) {
+				for (let x = 0; x < 40; x++) {
+					const inMask = x >= cov.x && x < cov.x + cov.width && y >= cov.y && y < cov.y + cov.height;
+					const covered = inMask && cov.data[(y - cov.y) * cov.width + x - cov.x] > 0;
+					expect(covered, `${x},${y}`).toBe(ink(x, y) === '#');
+				}
+			}
+		}
+	});
+
 	it('emits SVG text at the same per-glyph origins', async () => {
 		const ctx = new SvgContext(40, 30);
 		paintGdiTextRun(ctx as unknown as CanvasContext, font, run({ underline: true }));

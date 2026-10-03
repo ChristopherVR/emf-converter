@@ -5298,6 +5298,32 @@ public static class GdiFixtures
 
 	// ---- records the recorder never writes ----
 
+	// Compare language processing of identical C1 text across record families.
+	static void ErC1TextCases()
+	{
+		foreach (bool poly in new[] { false, true })
+		foreach (bool ignore in new[] { false, true })
+		foreach (string face in new[] { "Arial", "Courier New" })
+		{
+			string name = "emfrec-text-c1-" + (poly ? "poly" : "ext") + (ignore ? "-ignore" : "") + (face == "Arial" ? "-arial" : "-courier");
+			ErPlayCase(name, 240, 130, delegate (IntPtr hdc)
+			{
+				Fill(hdc, 0, 0, 240, 130, Rgb(255, 255, 255));
+				SetBkMode(hdc, 1); SetTextColor(hdc, Rgb(0, 0, 0)); SetTextAlign(hdc, 24);
+				TxWithFont(hdc, ErFont(face, -16, 1), delegate
+				{
+					string[] lines = { "A\u0081B\u0082C\u009fD", "A\u0080B\u0085C\u0093D", "A\u00a0B C" };
+					for (int k = 0; k < lines.Length; k++)
+						ErApi.ExtTextOutW(hdc, 8, 30 + 35 * k, 0, IntPtr.Zero, lines[k], lines[k].Length, null);
+				});
+			}, ErMapTexts(delegate (int i, ErText t)
+			{
+				if (ignore) { t.Options |= 0x1000; }
+				return new[] { poly ? ErPolyText(new List<ErText> { t }, null) : ErExtText(t, Encoding.Unicode.GetBytes(t.Text), t.Text.Length, false, true) };
+			}));
+		}
+	}
+
 	static void ErTextCases()
 	{
 		// EMR_EXTTEXTOUTA: each line's text in its font's charset code page.
@@ -6383,10 +6409,35 @@ public static class GdiFixtures
 		ErColorAdjustmentCases();
 	}
 
+	static void PenAxisScaleCases()
+	{
+		int[,] scales = { {4,1}, {1,4}, {2,3}, {3,2} };
+		foreach (int width in new[] { 4, 8 }) for (int i = 0; i < 4; i++) {
+			int sx = scales[i,0], sy = scales[i,1];
+			GdiCase("pen-axis-scale-" + sx + "x" + sy + "-w" + width, 864, 864, delegate(IntPtr dc) {
+				Fill(dc, 0, 0, 864, 864, Rgb(255,255,255));
+				SetGraphicsMode(dc, 2);
+				for (int cap = 0; cap < 3; cap++) for (int join = 0; join < 3; join++) {
+					var matrix = new XFORM { eM11 = sx, eM22 = sy, eDx = join * 288, eDy = cap * 288 };
+					SetWorldTransform(dc, ref matrix);
+					IntPtr pen = ExtPen(PS_GEOMETRIC | (uint)cap * 0x100u | (uint)join * 0x1000u, width, 0, null);
+					IntPtr old = SelectObject(dc, pen);
+					try {
+						Polyline(dc, new[] { P(20,20), P(60,20) }, 2);
+						Polyline(dc, new[] { P(20,40), P(60,50) }, 2);
+						Polyline(dc, new[] { P(20,60), P(40,45), P(60,60) }, 3);
+					} finally { SelectObject(dc, old); DeleteObject(pen); }
+				}
+			});
+		}
+	}
+
 	public static void Run(string dir, string which)
 	{
 		outDir = dir;
 		Directory.CreateDirectory(dir);
+		if (which == "all" || which == "pen-axis-scales") { PenAxisScaleCases(); }
+		if (which == "text-c1") { ErC1TextCases(); }
 		if (which == "all" || which == "rop") { RopCases(); }
 		if (which == "all" || which == "gradient") { GradientCases(); }
 		if (which == "all" || which == "text") { TextCases(); }

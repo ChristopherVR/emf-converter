@@ -24,6 +24,7 @@ import {
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { decodeEmfPlusBitmapPixelsToRgba } from './emf-plus-bitmap-decoder';
+import { gdiplusFix, flattenBezierGdiplus } from './emf-plus-bezier';
 import { parseEmfPlusPath } from './emf-plus-path';
 import type {
 	EmfPlusBrush,
@@ -562,16 +563,7 @@ function lerpArgb(a: number, b: number, t: number): number {
 	return out >>> 0;
 }
 
-/**
- * Flatness tolerance (brush-space units) a path-gradient boundary's Bezier
- * segments are flattened to: GDI+'s own `FlatnessDefault` (0.25). GDI+
- * fills a path gradient as the boundary polygon flattened at this
- * tolerance, so a finer flattening (this parser once used 24 fixed
- * segments per curve) paints pixels along a curved boundary that GDI+
- * leaves to the next tile or the background (measured against the real
- * GDI+ `grad-path-ellipse-*` fixtures: about 0.72% mismatching pixels at 24
- * segments, 0.13% at this tolerance).
- */
+/** Chord-distance tolerance for the general-purpose recursive curve helper. */
 const BEZIER_FLATNESS = 0.25;
 
 /** Recursion cap for {@link flattenCubic} (at most 2^10 segments per curve). */
@@ -645,17 +637,17 @@ function flattenFirstFigure(
 			break; // a second figure starts: the first is the boundary
 		}
 		if (kind === 3 && k > 0 && k + 2 < points.length) {
-			const p0 = points[k - 1];
-			const p1 = points[k];
-			const p2 = points[k + 1];
-			const p3 = points[k + 2];
+			const curve = points.slice(k - 1, k + 3).flatMap((p) => [gdiplusFix(p.x), gdiplusFix(p.y)]);
+			// Flatten quantizes the curve's starting vertex as well as its controls.
+			outPts[outPts.length - 1] = { x: curve[0] / 16, y: curve[1] / 16 };
 			const c0 = colorAt(k - 1);
 			const c3 = colorAt(k + 2);
-			const flat: Array<{ x: number; y: number; t: number }> = [];
-			flattenCubic(p0, p1, p2, p3, flat);
-			for (const v of flat) {
-				outPts.push({ x: v.x, y: v.y });
-				outArgb.push(lerpArgb(c0, c3, v.t));
+			const flat: number[] = [];
+			const parameters: number[] = [];
+			flattenBezierGdiplus(curve, flat, undefined, parameters);
+			for (let i = 0; i < parameters.length; i++) {
+				outPts.push({ x: flat[i * 2] / 16, y: flat[i * 2 + 1] / 16 });
+				outArgb.push(lerpArgb(c0, c3, parameters[i]));
 			}
 			k += 2;
 			if (types[k] & 0x80) {

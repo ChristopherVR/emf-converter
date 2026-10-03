@@ -499,9 +499,9 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-opaque-aa', 'emf', 0.0004), // measured 0.001%
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
-	fontCase('textx-plus-antialias', 'emf', 0.1414), // measured 11.310%
-	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0699), // measured 5.590%
-	fontCase('textx-plus-cleartype', 'emf', 0.1684), // measured 13.465%
+	fontCase('textx-plus-antialias', 'emf', 0.0321), // nearest-quarter grayscale origins; remaining glyph hinting
+	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0255), // measured 2.547%; GDI+ hinting and shades
+	fontCase('textx-plus-cleartype', 'emf', 0.1021), // measured 10.216%; decorations retained
 	fontCase('textx-plus-singlebit', 'emf', 0.0245), // measured 1.960%
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
@@ -854,7 +854,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
  * 6.39% before, grayscale 6.64%).
  */
 const TEXT_CONTRAST_CASES: ParityCase[] = [
-	close('gpx-rec-textcontrast', 0.075), // measured 6.444%
+	close('gpx-rec-textcontrast', 0.0287), // measured 2.865%; GDI+ hinting and shades
 	close('gpx-rec-textcontrast-cleartype', 0.05), // measured 4.008%
 ];
 
@@ -999,6 +999,14 @@ const PEN_TRANSFORM_CASES: ParityCase[] = [
 	'skew-aa',
 	'skew-horizontal',
 	'skew-diagonal',
+	'scale3-dash',
+	'scale3-dash-aa',
+	'anchor-squareanchor',
+	'anchor-squareanchor-aa',
+	'anchor-roundanchor',
+	'anchor-roundanchor-aa',
+	'anchor-diamondanchor',
+	'anchor-diamondanchor-aa',
 ].map((c) => exact(`pen-${c}`));
 
 /**

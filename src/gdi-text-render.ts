@@ -288,14 +288,19 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 	let down = baseDown;
 	for (let i = 0; i < n; i++) {
 		const origin = at(along, down);
-		// GDI places every glyph at an integer origin; GDI+'s non-grid-fitted
-		// hints keep the fractional x (to 1/64 pixel) in the glyph itself.
-		const ox = font.gridFit ? Math.round(origin.x) : Math.floor(origin.x);
-		const subX = font.gridFit ? 0 : Math.round((origin.x - ox) * 64);
-		const oy = Math.round(origin.y);
-		origins.push({ x: ox + subX / 64, y: oy, along, down });
+		// GDI+ grayscale x origins snap to the nearest quarter pixel before
+		// sampling (independent 1/64-pixel native controls). ClearType retains
+		// its finer x phase; monochrome glyphs snap to whole device pixels.
+		const fractionalX = !font.gridFit || font.fractionalOrigins;
+		const ox = fractionalX ? Math.floor(origin.x) : Math.round(origin.x);
+		const subX = !fractionalX ? 0
+			: font.fractionalOrigins === 'xy' ? Math.round((origin.x - ox) * 4) * 16
+			: Math.round((origin.x - ox) * 64);
+		const oy = font.fractionalOrigins === 'xy' ? Math.floor(origin.y) : Math.round(origin.y);
+		const subY = font.fractionalOrigins === 'xy' ? Math.round((origin.y - oy) * 64) : 0;
+		origins.push({ x: ox + subX / 64, y: oy + subY / 64, along, down });
 		if (!suppressC1Glyph(run, i)) {
-			const g = font.glyph(glyphs[i], gm, subX);
+			const g = font.glyph(glyphs[i], gm, subX, subY);
 			if (g.bitmap) {
 				placed.push({ x: ox + g.bitmap.left, y: oy - g.bitmap.top, bitmap: g.bitmap });
 			}
@@ -789,11 +794,26 @@ export interface GdiTextCoverage {
  * black-and-white pixel, `k * 255 / 16` for grayscale coverage `k`, and
  * per-channel alphas for ClearType. For callers that fill text with
  * something other than a solid colour (e.g. an EMF+ gradient or texture
- * brush sampled per pixel through the mask). Returns null for an empty run.
+ * brush sampled per pixel through the mask). With `decorations`, include
+ * upright underline/strike-out bars, including runs containing only spaces.
+ * Returns null when there is no painted coverage.
  */
-export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun): GdiTextCoverage | null {
-	const { placed } = layoutGdiRun(font, run);
-	if (placed.length === 0) {
+export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options: { decorations?: boolean; grayLevels?: 15 | 16 } = {}): GdiTextCoverage | null {
+	const { placed, total, startAlong, baseDown } = layoutGdiRun(font, run);
+	const bars: DeviceRect[] = [];
+	// EMF+ uses upright, device-scaled fonts on this coverage path. Keep
+	// decoration masks optional for callers that only need the glyphs.
+	if (options.decorations && !run.matrix && total !== 0) {
+		const x = Math.round(run.x + startAlong);
+		const end = x + Math.round(total);
+		const add = (position: number, thickness: number): void => {
+			const top = Math.round(run.y + baseDown) - position;
+			bars.push({ left: Math.min(x, end), right: Math.max(x, end), top, bottom: top + Math.max(1, thickness) });
+		};
+		if (run.underline) add(font.underlinePosition, font.underlineThickness);
+		if (run.strikeOut) add(font.strikeoutPosition, font.strikeoutThickness);
+	}
+	if (placed.length === 0 && bars.length === 0) {
 		return null;
 	}
 	let x0 = Infinity;
@@ -806,6 +826,10 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun): GdiText
 		x1 = Math.max(x1, p.x + p.bitmap.width);
 		y1 = Math.max(y1, p.y + p.bitmap.height);
 	}
+	for (const bar of bars) {
+		x0 = Math.min(x0, bar.left); y0 = Math.min(y0, bar.top);
+		x1 = Math.max(x1, bar.right); y1 = Math.max(y1, bar.bottom);
+	}
 	const w = x1 - x0;
 	const h = y1 - y0;
 	if (w <= 0 || h <= 0 || w * h > 64 * 1024 * 1024) {
@@ -813,7 +837,7 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun): GdiText
 	}
 	const channels: 1 | 3 = placed.some((p) => p.bitmap.channels === 3) ? 3 : 1;
 	const data = new Uint8ClampedArray(w * h * channels);
-	const full = font.mode === 'mono' ? 1 : 16;
+	const full = font.mode === 'mono' ? 1 : options.grayLevels ?? 16;
 	for (const p of placed) {
 		const b = p.bitmap;
 		const bc = b.channels === 3 ? 3 : 1;
@@ -825,6 +849,11 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun): GdiText
 					if (v > data[i]) data[i] = v;
 				}
 			}
+		}
+	}
+	for (const bar of bars) {
+		for (let y = bar.top; y < bar.bottom; y++) {
+			data.fill(255, ((y - y0) * w + bar.left - x0) * channels, ((y - y0) * w + bar.right - x0) * channels);
 		}
 	}
 	return { x: x0, y: y0, width: w, height: h, channels, data };

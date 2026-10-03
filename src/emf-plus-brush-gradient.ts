@@ -11,8 +11,9 @@
  *   columns; TileFlipY mirrors rows, which a horizontal ramp cannot show).
  * - A path gradient interpolates, along each ray from its centre point, from
  *   the boundary polygon's surround colours to the centre colour, shaped by
- *   the boundary itself (not a circle). Clamp paints nothing outside the
- *   boundary; the tile modes repeat the boundary's bounding box.
+ *   the boundary itself (not a circle). Clamp paints the boundary and
+ *   independently scaled focus contours; the tile modes repeat the boundary's
+ *   bounding box.
  *
  * Both are rasterised once into a brush-space tile at device resolution and
  * installed as a `CanvasPattern` whose matrix is the full brush transform,
@@ -175,14 +176,84 @@ export function pathGradientColorAt(
 		bestS = Math.max(0, alpha);
 		bestU = alpha > 0 ? Math.min(1, Math.max(0, beta / alpha)) : 0;
 	}
-	if (found < 0) {
-		return null;
-	}
-	let s = bestS;
+	let s = found < 0 ? Infinity : bestS;
 	if (shape.focus) {
-		const f = Math.min(0.999, Math.max(0, (shape.focus.x + shape.focus.y) / 2));
-		s = s <= f ? 0 : (s - f) / (1 - f);
+		// The constant-colour focus boundary is scaled independently along
+		// x/y. Its contours expand to the outer boundary by interpolating
+		// those scales; a radial intersection is only equivalent when fx=fy.
+		const fx = Math.min(1, Math.max(0, shape.focus.x));
+		const fy = Math.min(1, Math.max(0, shape.focus.y));
+		if (fx === fy) {
+			s = s <= fx ? 0 : (s - fx) / (1 - fx);
+		} else if (s > 0) {
+			const dx = 1 - fx;
+			const dy = 1 - fy;
+			let distance = Infinity;
+			let inFocus = false;
+			for (let i = 0; i < n; i++) {
+				const a = boundary[i];
+				const b = boundary[(i + 1) % n];
+				const ax = a.x - center.x;
+				const ay = a.y - center.y;
+				const ex = b.x - a.x;
+				const ey = b.y - a.y;
+				const cross = ax * ey - ay * ex;
+				if (Math.abs(cross) < 1e-12) continue;
+				if ((fx > 0 || Math.abs(px) < eps) && (fy > 0 || Math.abs(py) < eps)) {
+					const x = fx > 0 ? px / fx : 0;
+					const y = fy > 0 ? py / fy : 0;
+					const alpha = (x * ey - y * ex) / cross;
+					const beta = (ax * y - ay * x) / cross;
+					if (alpha >= -eps && alpha <= 1 + eps && beta >= -eps && beta <= alpha + eps) {
+						inFocus = true;
+						if (found < 0) found = i;
+					}
+				}
+				// cross(P / scale(t), edge) = cross(vertex, edge).
+				const qa = cross * dx * dy;
+				const qb = cross * (fx * dy + fy * dx) - px * ey * dy + py * ex * dx;
+				const qc = cross * fx * fy - px * ey * fy + py * ex * fx;
+				const disc = qb * qb - 4 * qa * qc;
+				const roots = Math.abs(qa) < 1e-12 ? (Math.abs(qb) > 1e-12 ? [-qc / qb] : [])
+					: disc >= 0 ? [(-qb - Math.sqrt(disc)) / (2 * qa), (-qb + Math.sqrt(disc)) / (2 * qa)] : [];
+				let hits = 0;
+				let hitT = 0;
+				let hitU = 0;
+				for (const t of roots) {
+					if (t < -eps || t > 1 + eps) continue;
+					const sx = fx + dx * t;
+					const sy = fy + dy * t;
+					// A collapsed horizontal focus edge belongs to the expanding strip
+					// below this scanline; strips wholly above it do not cover it.
+					if (sy === 0 && sx > 0 && Math.abs(py) < eps && ey > 0 && Math.max(ay, ay + ey) > 0 && Math.abs(ex) > eps) {
+						const u = (px / sx - ax) / ex;
+						if (u >= -eps && u <= 1 + eps) {
+							hits = 1;
+							hitT = 0;
+							hitU = Math.min(1, Math.max(0, u));
+							break;
+						}
+					}
+					if (sx <= 0 || sy <= 0) continue;
+					const u = Math.abs(ex) > Math.abs(ey) ? (px / sx - ax) / ex : (py / sy - ay) / ey;
+					if (u >= -eps && u <= 1 + eps) {
+						hits++;
+						hitT = Math.max(0, t);
+						hitU = Math.min(1, Math.max(0, u));
+					}
+				}
+				// Folded strips use odd coverage: two intersections cancel.
+				// Later boundary strips paint over earlier ones.
+				if (hits === 1) {
+					distance = hitT;
+					found = i;
+					bestU = hitU;
+				}
+			}
+			s = inFocus ? 0 : Number.isFinite(distance) ? distance : s;
+		}
 	}
+	if (found < 0 || !Number.isFinite(s)) return null;
 	const pos = 1 - s;
 	if (shape.preset && shape.preset.positions.length > 0) {
 		const { positions, argb } = shape.preset;

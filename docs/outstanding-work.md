@@ -4,19 +4,37 @@ Open items, grouped by area. [Limitations](./limitations.md) describes current b
 
 Windows reference images come from `scripts/gdi-fixtures`. The **Windows fixtures** workflow (`.github/workflows/windows-fixtures.yml`) runs those scripts on a GitHub-hosted Windows runner and pushes the output to a `windows-fixtures/<run_id>` branch. See `scripts/gdi-fixtures/README.md`.
 
+## Current parity priorities (3 October 2026)
+
+The full suite passes: 100 files, 4,008 tests. Passing the existing bounds does not mean pixel-exact playback. `bun scripts/gdi-fixtures/report.ts` uses available Windows fixture fonts, reports both zero-tolerance and >8-level RGB differences, includes overlap edges, and prints rendered/reference dimensions. On this machine, 390 of 611 comparisons are RGB-exact over their common device area, with no render failures. No comparison omits reference ink through a smaller render extent, but 14 contain rendered ink beyond the captured reference. Expanded native playback now covers 87 formerly uncaptured extents and reproduces every original overlap pixel. The larger comparisons expose 6,618 additional differing pixels, chiefly text; 60 of these full-area controls are exact. The remaining 14 captures did not reproduce the original reference, and need independent capture investigation. This is a local baseline, not a claim of full-image or cross-environment parity: references are composited over white, alpha is not compared independently, dimensions can differ, and old font captures have incomplete provenance.
+
+Work in this order, using native captures and tighter regression bounds for every confirmed fix:
+
+| Priority | Gap | Evidence and next step |
+| --- | --- | --- |
+| 1 | End-to-end reference validity and coverage | Resolve the 14 remaining uncaptured extents, then the text residuals exposed by the 87 validated expanded native captures. `emfrec-ca-control-log-ramp` retains a 15.61% >8-level residual despite exact channel-curve tests: differences are isolated to 16 rows around colour-band transitions. The 144 `halftone-transitions` captures expose replicated and filtered enlargement paths; their selection rule remains unresolved. The eight pen anchor/dash reference-scaling discrepancies are closed. |
+| 2 | Text coverage and rasterisation | `textx-plus-antialias`, `textx-plus-antialiasgridfit`, `textx-plus-cleartype` and `gpx-rec-textcontrast` retain roughly 3.15%, 2.51%, 10.06% and 2.84% beyond eight levels. The three `textx-plus` antialias/ClearType PNGs were reproduced exactly with current native fonts, ruling out font drift for those comparisons. The 3,328 baseline-controlled `text-coverage` captures isolate glyphs from DrawString layout; 2,400 grayscale controls at quarter-pixel origins and every captured contrast mapping are exact. A further 1,664 ClearType captures verify 288 fractional-origin RGB controls and all per-channel contrast mappings. GDI+ coverage now truncates subpixel samples and reports natural widths to font hint programs. Fractional DriverString origins now preserve both grayscale phases and ClearType x phases. Of 144 independent DrawString controls, 88 closed glyph/format controls are exact. Independent 1/64-pixel x origins establish nearest-quarter grayscale placement: 1,280 additional controls are exact. Continue with diagonal hinting, finer vertical origins and remaining ClearType sampling. |
+| 3 | Path-gradient and image-sampling arithmetic | Independent FocusScales, folded contour coverage and curve subdivision are corrected. Seven rectangle/ellipse controls and six triangle controls are within one channel level; the collapsed vertical triangle control retains one >8-level pixel. Ellipse wrap fixtures differ at zero tolerance on 51–52% of pixels, mostly small channel changes; plain Bicubic differs on 44.54%, with maximum error seven. High-quality interpolation and rectangular blend gradients also retain widespread 1–3-level errors. Across 252 independent contour/order controls, 203 are within one level; the remaining 49 retain 84 boundary/overlap pixels beyond one level. Measure native intermediate arithmetic. Linear Blend tables are already exact. |
+| 4 | Red-eye and HALFTONE generalisation | Red-eye Only playback retains 44/131/582 differing pixels (left/both/whole) in this baseline. Close the fitted pupil/centre model and the enlargement-kernel formula on independent captures. Keep the existing exact mixed-axis fixtures exact. |
+| 5 | Fractional and transformed geometry | Scaled EMF inside-frame retains 80 pixels; scaled WMF shapes retain seven. Continue with half-FIX arc/roundrect geometry, square-capped curves, rotated/sheared and dashed nonuniform GDI pens, and unprobed EMF+ inset/compound figures. |
+
+Completion requires exact full-output comparisons (including alpha and painted pixels outside the current overlap), matching native environments, independent scale/transform captures, and PNG/SVG verification. Existing tolerance bounds must not be increased to make a candidate fix pass.
+
+Closed in this pass: native pen playback now names a pixel source rectangle, and the generator disables process DPI virtualisation; the six anchor-cap and two scale3-dash references now match exactly. PolyTextOut now preserves C1 glyphs as native metafile playback does, reducing its recorded fixture from 39 differing pixels to 12; eight focused controls pin both record families and IGNORELANGUAGE. EMF+ coverage masks retain underline/strike-out bars, use GDI+'s 16-shade mapping, and run its grayscale subpixel interpreter. ClearType uses natural-width interpreter flags and truncates subpixel coverage. Eighty-seven expanded playback references now validate ink beyond the old native surfaces without replacing the original PNGs. Solid GDI pens under unequal axis scales now use native elliptical geometry: all 216 image controls are exact, and all 3,600 widened outlines and a further 16,128 independent direction/corner controls are exact. Path-gradient boundaries share the fixed-point flattener and match all 1,556 native Flatten vertices; gradient contour and scanline corrections tighten twenty PNG/SVG focus controls to a one-level channel bound. Fractional text origins close 2,400 grayscale and 288 ClearType controls; nearest-quarter grayscale x placement closes another 1,280 independent fine-origin controls and 88 DrawString controls. The end-to-end unhinted antialias text fixture falls from 1,300 to 650 differing pixels. Native captures and environment manifests accompany these changes.
+
 ## EMF+ image effects
 
 The 74 Dual effect fixtures (`plus-effect-*`) and 74 Only equivalents (`plus-only-effect-*`) are in the parity test. They have been regenerated on Windows with corrected metafile type constants. `src/emf-plus-image-effects.fixture.test.ts` also checks the effect algorithms against the effected bitmaps that GDI+ records into each fixture.
 
 - **Not exact yet:**
-  - Red-eye uses a simple rule. GDI+ detects pupils and repaints them with a texture.
+  - Red-eye uses a measured sector/centre model, with remaining pupil, dark-pixel and multi-area residuals; see the detailed limitations.
   - The rotated blur's effected bitmap is exact and its playback is within 0.010% (`plus-effect-blur-r3-rotate30`, two pixels over 8 levels; 0.22% before the blur's first halo column was sampled at the right edge).
 
 Blur and sharpen are exact. Large blur reproduces the native per-axis algorithm (reduce each row by the factor measured at all 957 quarter radii, filter with the centre weight applied as two rounded halves, enlarge, then the same for columns, with products kept to 1/256 of a level), and the kernel weights are float32 values formed in truncating arithmetic (accumulated offset, ordered sum, multiply by the reciprocal normaliser; see `blurKernel`). They match native noise images at random radii from 1 to 255, ramps, impulses, the 957-radius and two-pixel-wide captures, the 504-draw expanded capture (fourteen rectangles, twelve radii, opaque/translucent patterns) and 150 narrow and edge-reaching draws, pixel for pixel. Expanded blur follows the native reduction (a cropped source rectangle reduces from its own corner, only its own samples are enlarged, samples beyond the buffer are transparent, a lone sample is continued toward a transparent neighbour).
 
 Sharpen strength now uses the native rational amount curve, quantized to 1/64 with half-down rounding. It matches every integer amount 0–100 and 19 radii when tested independently of blur convolution.
 
-- **JPEG rounding:** pixel-centred chroma reconstruction reduces the original native ramp's maximum error from 19 levels to two (mean 0.36). Odd-sized 4:4:4/4:2:2/4:2:0 and progressive JPEG are within three levels; RGB/greyscale JPEG are within one. GIF and lossless TIFF references remain exact, including offset/palette GIFs, LZW/multipage/bilevel TIFF, Deflate strips (both tags and horizontal prediction) and uncompressed/Deflate tiles. RGB JPEG TIFF strips and tiles are within one level; YCbCr JPEG TIFF is within four. The TIFF coverage target is now captured; JPEG IDCT/chroma rounding differences remain.
+- **JPEG coverage:** accurate integer IDCT, triangle chroma upsampling and fixed-point colour conversion now match the committed standalone JPEG and JPEG-TIFF references exactly. CMYK, arithmetic-coded and 12-bit JPEG still use a less exact fallback. GIF and lossless TIFF references remain exact, including offset/palette GIFs, LZW/multipage/bilevel TIFF, Deflate strips and uncompressed/Deflate tiles.
 
 ## EMF+ rotated high-quality DrawImage
 
@@ -31,7 +49,7 @@ Remaining: the rotated interior colour differs by up to about 9 levels on noise 
 
 ## EMF+ gradients
 
-Nothing outstanding: `buildLinearRampTable` reproduces all 4,352 native three-point Blend ramps (opaque and translucent) exactly; GDI+ forms each knot in float32 arithmetic that truncates toward zero.
+Linear Blend tables are closed: `buildLinearRampTable` reproduces all 4,352 native three-point ramps (opaque and translucent) exactly; GDI+ forms each knot in float32 arithmetic that truncates toward zero. Path-gradient sampling and edge coverage retain the zero-tolerance differences listed above.
 
 ## GDI color adjustment and HALFTONE
 
@@ -55,7 +73,7 @@ RoundRect controls now match native `GetPath` captures without exceptions. The c
   - Not reproduced: four paths with one control or end point one FIX off (arcs close to a full turn or to the 3 degree threshold, where the exact value is within 0.15 FIX of a rounding boundary), arcs of under 1 degree (a native point is up to 2 FIX away at a radius of 320,000 FIX, from fixed-point arithmetic that is not modelled), and the zero-length leading or trailing Bezier Windows emits where an arc starts or ends exactly on a boundary (dropped by the comparison).
 - Flat-capped round joins no longer include a vertex that lies exactly on the second ray, and keep a steep segment's extreme-x vertex on the left side (flat/round 5,999 random paths: 86 differing to 1). A wide pen on a curve is widened with per-segment curve rules: the pen rests on a flattened curve's support vertices and round joins, a joint between two cubics takes the tangent of the cubic with the longer control arm, and a curve end's perpendicular and square-cap extension follow its end tangent. `curve-widen-probe` captures 320 native `WidenPath` outlines (80 Beziers, 80 each of arcs, chords and pies; flat, square and round caps; round, bevel and miter joins): the Beziers are exact. Open: dash placement along curved Beziers, square caps on arcs, and line-to-curve corners of chords and pies.
 
-  Rectangular inside-frame native sweeps now cover 0.5–10 px widths. The narrow subpixel sweep is exact; wider half-pixel widths retain 0.39% mismatches.
+  Rectangular inside-frame native sweeps now cover 0.5–10 px widths and are exact; fractional transformed cases remain open.
 
 - `PS_INSIDEFRAME` geometry follows `GetPath` captures (`GM_ADVANCED` for EMF, `GM_COMPATIBLE` for WMF, five and six scales, 1,200 boxes per shape):
   - The pen width along each axis, `wx` and `wy`, is its logical width times that axis' scale in whole FIX of a device pixel (not the isotropic width: 1,200 of 1,200 boxes against 664 of 1,200). A pen under 1.5 pixels along both axes (24 FIX) is cosmetic and leaves the box alone; a box narrower than the pen along either axis is drawn unchanged (EMF).
@@ -66,8 +84,8 @@ RoundRect controls now match native `GetPath` captures without exceptions. The c
 
 ## Text
 
-- **Unresolved differences:** glyph-edge differences and the `PolyTextOut` C1 control glyph difference have no fix yet.
-- **Fonts in fixtures:** text fixtures generated on the Windows runner may differ from the original captures, because the runner's fonts can differ. New captures include font hashes and native library versions. The original text captures lack that provenance; matching their font environment remains unresolved.
+- **Unresolved differences:** ClearType, EMF+ antialiased text and TextContrast retain the fixture residuals above. PolyTextOut C1 suppression is fixed; the remaining 12 pixels in its original fixture and three pixels in the Arial C1 controls are glyph-edge differences. Courier C1 controls are exact.
+- **Fonts in fixtures:** runner fonts can differ from original captures. New captures include font hashes and native library versions. Current native fonts exactly reproduce the three `textx-plus` antialias/ClearType PNGs; other old captures still lack complete provenance.
 
 ## Tooling
 

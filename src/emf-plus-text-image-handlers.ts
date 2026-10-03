@@ -431,6 +431,7 @@ function realizePlusEngineFont(
 		// AntiAlias ignores the font's gasp table (measured: Arial 16 px is
 		// grayscale there, but single-bit under AntiAliasGridFit, as in GDI).
 		ignoreGasp: hint === 4,
+		gdiPlus: true,
 	};
 	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
 	if (!realized) {
@@ -470,7 +471,7 @@ function paintPlusEngineRun(
 		matrix: null,
 	};
 	if ((!ef.color || ef.solidViaCoverage) && ef.sampler) {
-		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: false, strikeOut: false });
+		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: ef.underline, strikeOut: ef.strikeOut }, { decorations: true, grayLevels: 15 });
 		if (!cov) {
 			return true;
 		}
@@ -522,11 +523,12 @@ function drawPlusStringWithEngine(
 	}
 	const { realized, emPx, m, unhinted } = ef;
 	const ttf = realized.ttf;
-	// Grid-fitted hints put the baseline on a whole pixel; the others keep
-	// GDI+'s fractional one (rounded when the glyphs are placed).
+	// DrawString rounds the font ascent before adding the layout position;
+	// DriverString supplies its baseline directly and retains its own phase.
 	const exactAscent = (emPx * ttf.winAscent) / ttf.unitsPerEm;
-	const ascent = unhinted ? exactAscent : Math.ceil(exactAscent);
-	const x = m[0] * layoutX + m[4] + emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
+	const ascent = unhinted ? Math.round(exactAscent) : Math.ceil(exactAscent);
+	let x = m[0] * layoutX + m[4] + emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
+	if (!unhinted) x = Math.round(x);
 	const y = m[3] * layoutY + m[5] + ascent;
 	const codes: number[] = [];
 	for (let i = 0; i < text.length; i++) {

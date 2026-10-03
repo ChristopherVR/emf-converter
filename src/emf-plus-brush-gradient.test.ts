@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
+import { compareFixture, diffImages, fixturePath, loadReference } from './__fixtures__/gdi-parity-harness';
+import { convertMetafileToSvg } from './index';
 
 import {
 	createBrushGradient,
@@ -173,6 +176,80 @@ describe('pathGradientColorAt', () => {
 		// Just inside the focus radius: should be exactly the centre colour,
 		// whereas without a focus the same point would already blend outward.
 		expect(pathGradientColorAt(withFocus, 0, -0.2)).toBe(0xffffffff);
+	});
+
+	it('keeps asymmetric focus scales independent, including diagonal contours', () => {
+		const shape = square({ boundaryArgb: [0xff000000, 0xff000000, 0xff000000, 0xff000000], focus: { x: 0.75, y: 0.25 } });
+		expect(pathGradientColorAt(shape, 0.75, 0)).toBe(0xffffffff);
+		expect(pathGradientColorAt(shape, 0.875, 0)).toBe(0xff808080);
+		expect(pathGradientColorAt(shape, 0, -0.5)).toBe(0xffaaaaaa);
+		expect(pathGradientColorAt(shape, 0.75, -0.75)).toBe(0xff555555);
+	});
+
+	it('retains a collapsed focus line without widening it into an area', () => {
+		const shape = square({ boundaryArgb: [0xff000000, 0xff000000, 0xff000000, 0xff000000], focus: { x: 0.5, y: 0 } });
+		expect(pathGradientColorAt(shape, 0.5, 0)).toBe(0xffffffff);
+		expect(pathGradientColorAt(shape, 0.75, 0)).toBe(0xff808080);
+		expect(pathGradientColorAt(shape, 0, 0.5)).toBe(0xff808080);
+	});
+});
+
+async function expectSvgPayload(name: string, tolerance = 1, count = 0, max = 1): Promise<void> {
+	const bytes = readFileSync(fixturePath(`${name}.emf`));
+	const svg = await convertMetafileToSvg(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, { dpiScale: 1 });
+	const payload = svg!.match(/href="data:image\/png;base64,([^"]+)"/);
+	expect(payload).not.toBeNull();
+	const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+	const image = await loadImage(Buffer.from(payload![1], 'base64'));
+	const canvas = createCanvas(image.width, image.height);
+	const ctx = canvas.getContext('2d');
+	ctx.fillStyle = '#ffffff';
+	ctx.fillRect(0, 0, image.width, image.height);
+	ctx.drawImage(image, 0, 0);
+	const svgDiff = diffImages({ width: image.width, height: image.height, data: ctx.getImageData(0, 0, image.width, image.height).data }, await loadReference(name), tolerance, 0);
+	expect(svgDiff.mismatched, JSON.stringify(svgDiff)).toBeLessThanOrEqual(count);
+	expect(svgDiff.maxDiff).toBeLessThanOrEqual(max);
+}
+
+describe('rectangular path-gradient focus against native GDI+', () => {
+	// No geometry/placement differences remain; native interpolation still
+	// differs by one channel level at some pixels. Do not hide it with >8.
+	it.each(['75-25', '25-75', '50-50', '50-0', '0-50', '100-25', '25-100'])('%s', async (focus) => {
+		const diff = await compareFixture(`grad-path-focus-${focus}`, 'emf', 1);
+		expect(diff).not.toBeNull();
+		expect(diff!.mismatched, JSON.stringify(diff)).toBe(0);
+		expect(diff!.maxDiff).toBeLessThanOrEqual(1);
+		// SVG retains the same device-resolution brush payload. Check its
+		// pixels independently of an SVG viewer's filtering and image loader.
+		const name = `grad-path-focus-${focus}`;
+		await expectSvgPayload(name);
+	});
+});
+
+describe('curved and triangular path-gradient focus against native GDI+', () => {
+	it.each(['75-25', '25-75', '50-50', '50-0', '0-50', '100-25', '25-100'])('ellipse %s', async (focus) => {
+		const name = `grad-path-focus-ellipse-${focus}`;
+		const diff = await compareFixture(name, 'emf', 1);
+		await expectSvgPayload(name);
+		expect(diff!.maxDiff, JSON.stringify(diff)).toBeLessThanOrEqual(1);
+		expect(diff!.mismatched).toBe(0);
+	});
+
+	it.each(['75-25', '25-75', '50-50', '50-0', '100-25', '25-100'])('triangle %s', async (focus) => {
+		const name = `grad-path-focus-triangle-${focus}`;
+		const diff = await compareFixture(name, 'emf', 1);
+		await expectSvgPayload(name);
+		expect(diff!.maxDiff, JSON.stringify(diff)).toBeLessThanOrEqual(1);
+		expect(diff!.mismatched).toBe(0);
+	});
+
+	// Collapsed triangle focus contours still have scanline residuals.
+	it.each([['0-50', 1, 23]] as const)('collapsed triangle %s', async (focus, count, max) => {
+		const name = `grad-path-focus-triangle-${focus}`;
+		const diff = await compareFixture(name, 'emf', 8);
+		await expectSvgPayload(name, 8, count, max);
+		expect(diff!.mismatched, JSON.stringify(diff)).toBeLessThanOrEqual(count);
+		expect(diff!.maxDiff).toBeLessThanOrEqual(max);
 	});
 });
 

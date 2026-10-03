@@ -115,8 +115,40 @@ export async function renderFixture(file: string, options: EmfConvertOptions = {
 	return image;
 }
 
-export async function loadReference(name: string): Promise<Rgba> {
+interface PlaybackExtent { name: string; ox: number; oy: number }
+const playbackExtents: PlaybackExtent[] = JSON.parse(readFileSync(fixturePath('playback-extents.json'), 'utf8'));
+
+/** Prefer validated expanded playback when requested; legacy tests keep their original captures. */
+export async function loadReference(name: string, extended = false): Promise<Rgba> {
+	const extent = extended ? playbackExtents.find((c) => c.name === name) : undefined;
+	if (extent) {
+		const image = await decodePng(readFileSync(fixturePath(`${name}.extent.png`)));
+		image.originX = extent.ox;
+		image.originY = extent.oy;
+		return image;
+	}
 	return decodePng(readFileSync(fixturePath(`${name}.png`)));
+}
+
+/**
+ * Painted RGB pixels outside the other image's device extent. A missing
+ * reference pixel cannot establish native parity; reference ink outside the
+ * render can expose clipping that an overlap-only difference hides. Inputs
+ * are already composited over white by this harness.
+ */
+export function inkOutside(image: Rgba, other: Rgba): number {
+	const ix = image.originX ?? 0, iy = image.originY ?? 0;
+	const ox = other.originX ?? 0, oy = other.originY ?? 0;
+	let ink = 0;
+	for (let y = 0; y < image.height; y++) {
+		for (let x = 0; x < image.width; x++) {
+			const dx = x + ix, dy = y + iy;
+			if (dx >= ox && dx < ox + other.width && dy >= oy && dy < oy + other.height) continue;
+			const i = (y * image.width + x) * 4;
+			if (image.data[i] !== 255 || image.data[i + 1] !== 255 || image.data[i + 2] !== 255) ink++;
+		}
+	}
+	return ink;
 }
 
 /**

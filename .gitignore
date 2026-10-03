@@ -2,6 +2,7 @@ node_modules/
 dist/
 site/
 *.tsbuildinfo
+gdi-report.txt
 .DS_Store
 .claude/worktrees/
 docs/.vitepress/dist/

@@ -1,0 +1,76 @@
+// Public WidenPath/GetPath controls; no native implementation is inspected.
+using System;
+using System.IO;
+using System.Text;
+using System.Globalization;
+using System.Runtime.InteropServices;
+
+public static class AnisotropicPenDirectionProbe
+{
+    [StructLayout(LayoutKind.Sequential)] struct Point { public int x, y; }
+    [StructLayout(LayoutKind.Sequential)] struct Brush { public uint style, color; public IntPtr hatch; }
+    [StructLayout(LayoutKind.Sequential)] struct Matrix { public float a, b, c, d, x, y; }
+    [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern int SetGraphicsMode(IntPtr dc, int mode);
+    [DllImport("gdi32.dll")] static extern bool SetWorldTransform(IntPtr dc, ref Matrix matrix);
+    [DllImport("gdi32.dll")] static extern IntPtr ExtCreatePen(uint style, uint width, ref Brush brush, uint count, IntPtr styles);
+    [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
+    [DllImport("gdi32.dll")] static extern bool BeginPath(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern bool EndPath(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern bool Polyline(IntPtr dc, Point[] points, int count);
+    [DllImport("gdi32.dll")] static extern bool WidenPath(IntPtr dc);
+    [DllImport("gdi32.dll")] static extern int GetPath(IntPtr dc, [Out] Point[] points, [Out] byte[] types, int count);
+
+    public static void Run(string dir)
+    {
+        IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
+        if (dc == IntPtr.Zero || SetGraphicsMode(dc, 2) == 0) throw new Exception("CreateCompatibleDC/SetGraphicsMode failed");
+        var json = new StringBuilder("[");
+        try {
+            foreach (int width in new[] { 2, 4, 8, 16 })
+            foreach (var scales in new[] { new[] { .5f, .75f }, new[] { .75f, .5f }, new[] { .75f, 1f }, new[] { 1f, .5f }, new[] { 1f, .75f }, new[] { 4f, 1f }, new[] { 1f, 4f } })
+            for (int cap = 0; cap < 2; cap++) for (int shape = 0; shape < 2; shape++)
+            for (int dx = -6; dx <= 6; dx++) for (int dy = -6; dy <= 6; dy++) {
+                if (dx == 0 || dy == 0) continue;
+                float sx = scales[0], sy = scales[1];
+                int join = 0;
+                var matrix = new Matrix { a = sx, d = sy };
+                if (!SetWorldTransform(dc, ref matrix)) throw new Exception("SetWorldTransform failed");
+                var brush = new Brush();
+                IntPtr pen = ExtCreatePen((uint)(0x10000 | cap * 0x100 | join * 0x1000), (uint)width, ref brush, 0, IntPtr.Zero);
+                if (pen == IntPtr.Zero) throw new Exception("ExtCreatePen failed");
+                IntPtr old = SelectObject(dc, pen);
+                try {
+                    var source = shape == 0 ? new[] { new Point { x = 20, y = 20 }, new Point { x = 20 + dx * 4, y = 20 + dy * 4 } }
+                        : new[] { new Point { x = 20, y = 20 }, new Point { x = 20 + dx * 4, y = 20 + dy * 4 }, new Point { x = 20 + dx * 4 - dy * 4, y = 20 + dy * 4 + dx * 4 } };
+                    if (!BeginPath(dc) || !Polyline(dc, source, source.Length) || !EndPath(dc) || !WidenPath(dc))
+                        throw new Exception("WidenPath failed");
+                    // GetPath returns logical integers. A 1/16 transform reads
+                    // the already widened device path at native FIX precision.
+                    matrix = new Matrix { a = 1f / 16, d = 1f / 16 };
+                    if (!SetWorldTransform(dc, ref matrix)) throw new Exception("SetWorldTransform failed");
+                    int n = GetPath(dc, null, null, 0);
+                    if (n < 0) throw new Exception("GetPath failed");
+                    var points = new Point[n]; var types = new byte[n];
+                    if (GetPath(dc, points, types, n) != n) throw new Exception("GetPath failed");
+                    if (json.Length > 1) json.Append(',');
+                    json.Append("{\"w\":").Append(width).Append(",\"sx\":").Append(sx.ToString(CultureInfo.InvariantCulture))
+                        .Append(",\"sy\":").Append(sy.ToString(CultureInfo.InvariantCulture))
+                        .Append(",\"dx\":").Append(dx).Append(",\"dy\":").Append(dy).Append(",\"cap\":").Append(cap).Append(",\"join\":").Append(join).Append(",\"shape\":").Append(shape).Append(",\"points\":[");
+                    for (int i = 0; i < n; i++) {
+                        if (i > 0) json.Append(',');
+                        json.Append(points[i].x).Append(',').Append(points[i].y).Append(',').Append(types[i]);
+                    }
+                    json.Append("]}");
+                } finally { SelectObject(dc, old); DeleteObject(pen); }
+            }
+            Directory.CreateDirectory(dir);
+            var bytes = Encoding.UTF8.GetBytes(json.Append(']').ToString());
+            using (var file = File.Create(Path.Combine(dir, "wide-pen-axis-directions.json.gz")))
+            using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+                zip.Write(bytes, 0, bytes.Length);
+        } finally { DeleteDC(dc); }
+    }
+}

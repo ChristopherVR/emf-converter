@@ -178,16 +178,13 @@ export function pathGradientSampler(
 	const lagY = pxY > 0 ? 1 / pxY : 0;
 	const mirrorX = wrap === 'tile-flip-x' || wrap === 'tile-flip-xy';
 	const mirrorY = wrap === 'tile-flip-y' || wrap === 'tile-flip-xy';
-	// Clamp paints the boundary polygon itself, whose right/bottom edges
-	// GDI+ leaves unpainted (a top-left fill rule): nudging the sample point
-	// a hair right/down moves a pixel exactly on such an edge outside, while
-	// one on a left/top edge stays inside. The tiled modes fold every point
-	// into the tile, where that edge IS the next tile's left/top edge, so
-	// they sample unbiased.
+	// Native gradient scanlines sample the integer y coordinate. Only x is
+	// nudged to select the left-inclusive, right-exclusive span; nudging y
+	// paints isolated top vertices and sloped right edges native leaves empty.
 	const bias = wrap === 'clamp' ? CLAMP_EDGE_BIAS : 0;
 	return (x0, y0, w, h, out) => {
 		for (let j = 0; j < h; j++) {
-			const dy = y0 + j + bias;
+			const dy = y0 + j;
 			for (let i = 0; i < w; i++) {
 				const dx = x0 + i + bias;
 				let bx = inv[0] * dx + inv[2] * dy + inv[4];
@@ -196,6 +193,7 @@ export function pathGradientSampler(
 					bx = foldIntoTile(bx, box.x, box.w, mirrorX, lagX);
 					by = foldIntoTile(by, box.y, box.h, mirrorY, lagY);
 				}
+				if (wrap === 'clamp' && by >= box.y + box.h) continue;
 				const c = pathGradientColorAt(shape, bx, by);
 				if (c === null) {
 					continue;

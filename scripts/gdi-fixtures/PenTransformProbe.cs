@@ -36,7 +36,11 @@ public static class PenTransformProbe
 		using (var played = new Metafile(emf))
 		using (var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb))
 		{
-			using (var g = Graphics.FromImage(bmp)) { g.DrawImage(played, new Rectangle(0, 0, w, h)); }
+			// The physical frame can describe more pixels than the recorded
+			// device bounds on a scaled display. An implicit source rectangle
+			// fits that frame to w x h and shrinks the drawing (150 -> 100 at
+			// 150% DPI). Replay the requested device-pixel rectangle explicitly.
+			using (var g = Graphics.FromImage(bmp)) { g.DrawImage(played, new Rectangle(0, 0, w, h), 0, 0, w, h, GraphicsUnit.Pixel); }
 			bmp.Save(Path.Combine(dir, name + ".png"), ImageFormat.Png);
 		}
 		using (var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb))

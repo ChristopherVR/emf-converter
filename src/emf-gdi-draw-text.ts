@@ -26,7 +26,7 @@ import {
 import { decodeAnsiRecord } from './emf-ansi';
 import { EMR_EXTTEXTOUTA, EMR_EXTTEXTOUTW, EMR_POLYTEXTOUTA, EMR_POLYTEXTOUTW, EMR_SMALLTEXTOUT } from './emf-constants';
 import { gmx, gmy, gmw, gmh, gdiDeviceMatrix, gmapPoint, hasWorldRotation } from './emf-gdi-coord';
-import { drawGdiTextCall, ETO_GLYPH_INDEX, ETO_PDY } from './gdi-text-render';
+import { drawGdiTextCall, ETO_GLYPH_INDEX, ETO_IGNORELANGUAGE, ETO_PDY } from './gdi-text-render';
 import {
 	cumulativeGlyphOffsets,
 	totalGlyphAdvance,
@@ -352,7 +352,9 @@ function handlePolyText(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, 
 			dx = Array.from({ length: dxCount }, (_, j) => view.getInt32(offset + offDx + j * 4, true));
 			if (!wide) dx = collapseAnsiDx(dx, ansi!.byteLengths, pdy);
 		}
-		drawTextCall(rCtx, x, y, codes, options, rect, dx);
+		// Metafile PolyTextOut playback paints C1 glyphs, even with options=0;
+		// ExtTextOut suppresses them unless ETO_IGNORELANGUAGE is set.
+		drawTextCall(rCtx, x, y, codes, options | ETO_IGNORELANGUAGE, rect, dx);
 	}
 	return true;
 }
