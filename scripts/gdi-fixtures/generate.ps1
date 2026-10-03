@@ -97,6 +97,12 @@ if ($Which -eq 'playback-extents') {
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
     return
 }
+if ($Which -eq 'text-diagonal-coverage') {
+    Add-Type -Path (Join-Path $here 'DiagonalCoverageProbe.cs') -ReferencedAssemblies System.Drawing
+    [DiagonalCoverageProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'text-diagonal-hinting') {
     Add-Type -Path (Join-Path $here 'DiagonalHintProbe.cs')
     [DiagonalHintProbe]::Run($outDir)
