@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.17](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.17) - 2026-10-03
+
+### Bug Fixes
+
+- Close native bicubic kernel coefficient rounding ([2b90a4b](https://github.com/ChristopherVR/emf-converter/commit/2b90a4bd2d3a5fcabcbfbe1e80f4d50ed698eb8c))
+
+### Testing
+
+- Measure native filtered halftone kernel responses ([da471e4](https://github.com/ChristopherVR/emf-converter/commit/da471e49a3498466899091937e9f2750f30e7651))
+
+## [4.8.16](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.16) - 2026-10-03
+
+### Testing
+
+- Isolate diagonal hinting across gdiplus rendering modes ([2d6e906](https://github.com/ChristopherVR/emf-converter/commit/2d6e906972b420aedc0171f2a3e8b26a9a700d2b))
+
 ## [4.8.15](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.15) - 2026-10-03
 
 ### Bug Fixes
