@@ -134,6 +134,8 @@ function drawSourceMapped(
 	}
 	canvasPutImageData(tile.ctx, createImageDataCompat(px.data, px.width, px.height), 0, 0);
 	target.save();
+	// Canvas pixels, whatever transform a nested metafile's host left active.
+	target.setTransform(1, 0, 0, 1, 0, 0);
 	target.globalCompositeOperation = 'source-over';
 	canvasDrawImage(target, tile.canvas, Math.round(dLeft), Math.round(dTop), px.width, px.height);
 	target.restore();
@@ -211,9 +213,13 @@ function fillRectWith(
 ): void {
 	const prevGco = ctx.globalCompositeOperation;
 	const prevFill = ctx.fillStyle;
+	ctx.save();
+	// Canvas pixels, whatever transform a nested metafile's host left active.
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.globalCompositeOperation = gco;
 	ctx.fillStyle = style;
 	ctx.fillRect(req.dx, req.dy, req.dw, req.dh);
+	ctx.restore();
 	ctx.globalCompositeOperation = prevGco;
 	ctx.fillStyle = prevFill;
 }
