@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.19](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.19) - 2026-10-04
+
+### Bug Fixes
+
+- Scale bitmaps in embedded EMF once under EmfPlusDrawImagePoints ([a065717](https://github.com/ChristopherVR/emf-converter/commit/a065717916aa2a3cc9aa3a42c6f3c8571e5b98b3))
+
 ## [4.8.18](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.18) - 2026-10-03
 
 ### Documentation
