@@ -58,8 +58,8 @@
 		"docs:preview": "vitepress preview docs"
 	},
 	"devDependencies": {
-		"@napi-rs/canvas": "^1.0.9",
-		"@types/node": "^26.5.1",
+		"@napi-rs/canvas": "^1.0.10",
+		"@types/node": "^26.6.4",
 		"@types/react": "^19.3.0",
 		"@types/react-dom": "^19.3.0",
 		"@types/utif": "^3.0.6",
@@ -71,8 +71,8 @@
 		"typescript": "^6.0.3",
 		"utif": "3.1.0",
 		"vitepress": "^1.6.4",
-		"vitest": "^5.0.0",
-		"vue-tsc": "^3.3.11"
+		"vitest": "^5.0.3",
+		"vue-tsc": "^3.3.12"
 	},
 	"peerDependencies": {
 		"@napi-rs/canvas": "^1.0.9"
