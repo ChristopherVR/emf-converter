@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.8.21](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.21) - 2026-10-06
+
+### Bug Fixes
+
+- Match native GetPath for odd-width inside-frame shapes at fractional scales ([d87fc6a](https://github.com/ChristopherVR/emf-converter/commit/d87fc6a1c1a9c6d1b07a542a4a7b825697308381))
+- Match native GetPath for clockwise inside-frame shapes at fractional scales ([14315cd](https://github.com/ChristopherVR/emf-converter/commit/14315cd751ecc320df10c7ff13993d8f00f46d9a))
+- Reproduce native paths for inside-frame pens as wide as the shape ([0edcef9](https://github.com/ChristopherVR/emf-converter/commit/0edcef908ee4780310008288925e2d0107291efa))
+
+### Testing
+
+- Require exact fractional RoundRect translation paths; refresh stale docs ([fc7faad](https://github.com/ChristopherVR/emf-converter/commit/fc7faad863584a1e4c15277da755e3c24fcedbed))
+
 ## [4.8.20](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.20) - 2026-10-05
 
 ### Build & CI
