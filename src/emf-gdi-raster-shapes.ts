@@ -394,12 +394,39 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 		state.penWidth * Math.abs(matrix[0]) * 16 >= 1 && state.penWidth * Math.abs(matrix[3]) * 16 >= 1 &&
 		Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6 &&
 		Math.abs(Math.abs(matrix[0]) - Math.abs(matrix[3])) > 1e-6;
+	// A rotated or sheared matrix that is not a rotation with a uniform scale: the pen is a circle in logical space.
+	const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+	const rotatedOrSheared = Math.abs(matrix[1]) >= 1e-6 || Math.abs(matrix[2]) >= 1e-6;
+	const similar =
+		(Math.abs(matrix[0] - matrix[3]) < 1e-6 && Math.abs(matrix[1] + matrix[2]) < 1e-6) ||
+		(Math.abs(matrix[0] + matrix[3]) < 1e-6 && Math.abs(matrix[1] - matrix[2]) < 1e-6);
+	const general =
+		!rCtx.wholeDevicePixels && rotatedOrSheared && !similar && Math.abs(det) > 1e-9 && state.penWidth * Math.sqrt(Math.abs(det)) * 16 >= 1;
 	const dashes = state.penExtended
-		? ellipse
+		? ellipse || general
 			? geometricStyle(flags, state.penWidth, state.penUserStyle, 1)
 			: geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1))
 		: null;
 	const dashMetric = ellipse && dashes ? ([Math.abs(matrix[0]), Math.abs(matrix[3])] as [number, number]) : undefined;
+	if (general) {
+		return {
+			width: Math.round(state.penWidth * 16),
+			matrix: [matrix[0], matrix[1], matrix[2], matrix[3]],
+			cap: opts.roundPen || !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
+			join: opts.roundPen
+				? 'round'
+				: opts.rectangle && !state.penExtended
+					? 'miter'
+					: !state.penExtended || joinBits === 0
+						? 'round'
+						: joinBits === 0x1000
+							? 'bevel'
+							: 'miter',
+			miterLimit: state.miterLimit ?? 10,
+			dashes: dashes ? dashes.map((v) => v * 16) : null,
+			shortenDashes: (flags & 0x0f) !== 7,
+		};
+	}
 	return {
 		width: Math.round((ellipse ? state.penWidth * Math.abs(matrix[0]) : widthPx) * 16),
 		...(ellipse ? { height: Math.round(state.penWidth * Math.abs(matrix[3]) * 16) } : {}),

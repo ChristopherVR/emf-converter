@@ -68,7 +68,7 @@
  * @module gdi-raster-widen
  */
 
-import { flattenBezierPath, ellipseBeziers, type GdiRasterPath } from './gdi-raster';
+import { flattenBezierPath, ellipseBeziers, GdiRasterPath, type GdiFigure } from './gdi-raster';
 
 /** Cap style (`PS_ENDCAP_*`). */
 export type CapStyle = 'round' | 'square' | 'flat';
@@ -108,6 +108,13 @@ export interface WidenOptions {
 	 * measured by its logical length (native WidenPath lays the pattern out in logical space).
 	 */
 	dashMetric?: [number, number];
+	/**
+	 * A rotated or sheared device matrix `[a, b, c, d]` (`x' = a x + c y`, `y' = b x + d y`) that is not a rotation with a
+	 * uniform scale: native WidenPath's pen is a circle in logical space. The path is mapped back through the inverse,
+	 * widened there (`width` and `dashes` in logical FIX), and the outline mapped forward. Not exact: the device-space
+	 * rounding rules are not reproduced (about 22 pixels a case against 266 for a uniform pen, on 360 native outlines).
+	 */
+	matrix?: [number, number, number, number];
 	/** Native Ellipse curve sides; retain the selected pen's inner triangle rule. */
 	roundCurveJoins?: boolean;
 }
@@ -816,11 +823,41 @@ function distinct(pts: readonly number[]): Pt[] {
 	return out;
 }
 
+/** {@link widenPath} for a general device matrix: widen in logical space, then map the outline to device FIX. */
+function widenInLogicalSpace(path: GdiRasterPath, opts: WidenOptions, m: [number, number, number, number]): number[][] {
+	const [a, b, c, d] = m;
+	const det = a * d - b * c;
+	const inverse = (x: number, y: number): Pt => [(d * x - c * y) / det, (-b * x + a * y) / det];
+	const logical = new GdiRasterPath();
+	for (const fig of path.figures) {
+		const pts: number[] = [];
+		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
+			pts.push(...inverse(fig.pts[i], fig.pts[i + 1]));
+		}
+		const copy: GdiFigure = { pts, closed: fig.closed, roundWiden: fig.roundWiden, curveSegs: fig.curveSegs };
+		if (fig.tangents) {
+			copy.tangents = new Map([...fig.tangents].map(([k, v]) => [k, inverse(v[0], v[1])]));
+		}
+		logical.figures.push(copy);
+	}
+	const outline = widenPath(logical, { ...opts, matrix: undefined, height: undefined });
+	return outline.map((poly) => {
+		const out: number[] = [];
+		for (let i = 0; i + 1 < poly.length; i += 2) {
+			out.push(Math.round(a * poly[i] + c * poly[i + 1]), Math.round(b * poly[i] + d * poly[i + 1]));
+		}
+		return out;
+	});
+}
+
 /**
  * The outline figures (flat FIX pairs) whose WINDING fill is the stroke of
  * `path` with a wide pen, as GDI builds them (see the module doc).
  */
 export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
+	if (opts.matrix) {
+		return widenInLogicalSpace(path, opts, opts.matrix);
+	}
 	const out: number[][] = [];
 	const dashed = !!opts.dashes && opts.dashes.length > 0;
 	for (const fig of path.figures) {

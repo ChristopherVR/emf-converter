@@ -290,6 +290,12 @@ if ($Which -eq 'dashed-pen-axis-probe') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'general-matrix-pen-probe') {
+    Add-Type -Path (Join-Path $here 'GeneralMatrixPenProbe.cs')
+    [GeneralMatrixPenProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-focus' -or $Which -eq 'halftone-transitions') {
     if ($Which -eq 'path-gradient-focus') {
         Add-Type -Path (Join-Path $here 'PathGradientFocusProbe.cs') -ReferencedAssemblies System.Drawing
