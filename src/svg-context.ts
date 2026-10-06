@@ -1665,7 +1665,11 @@ export class SvgContext {
 		if (this.defs.length) {
 			children.push({ tag: 'defs', attrs: {}, children: this.defs });
 		}
-		children.push(...pruneEmptySlots(this.body));
+		// Not `push(...nodes)`: a drawing can have hundreds of thousands of top-level shapes, and
+		// spreading that many arguments overflows the call stack.
+		for (const node of pruneEmptySlots(this.body)) {
+			children.push(node);
+		}
 		return { tag: 'svg', attrs, children };
 	}
 }
