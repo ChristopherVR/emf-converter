@@ -397,11 +397,10 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 	// A rotated or sheared matrix that is not a rotation with a uniform scale: the pen is a circle in logical space.
 	const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
 	const rotatedOrSheared = Math.abs(matrix[1]) >= 1e-6 || Math.abs(matrix[2]) >= 1e-6;
-	const similar =
-		(Math.abs(matrix[0] - matrix[3]) < 1e-6 && Math.abs(matrix[1] + matrix[2]) < 1e-6) ||
-		(Math.abs(matrix[0] + matrix[3]) < 1e-6 && Math.abs(matrix[1] - matrix[2]) < 1e-6);
+	// A quarter turn (the diagonal is zero) keeps the uniform device-space pen.
+	const quarterTurn = Math.abs(matrix[0]) < 1e-9 && Math.abs(matrix[3]) < 1e-9;
 	const general =
-		!rCtx.wholeDevicePixels && rotatedOrSheared && !similar && Math.abs(det) > 1e-9 && state.penWidth * Math.sqrt(Math.abs(det)) * 16 >= 1;
+		!rCtx.wholeDevicePixels && rotatedOrSheared && !quarterTurn && Math.abs(det) > 1e-9 && state.penWidth * Math.sqrt(Math.abs(det)) * 16 >= 1;
 	const dashes = state.penExtended
 		? ellipse || general
 			? geometricStyle(flags, state.penWidth, state.penUserStyle, 1)
@@ -412,6 +411,7 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 		return {
 			width: Math.round(state.penWidth * 16),
 			matrix: [matrix[0], matrix[1], matrix[2], matrix[3]],
+			deviceNib: true,
 			cap: opts.roundPen || !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
 			join: opts.roundPen
 				? 'round'

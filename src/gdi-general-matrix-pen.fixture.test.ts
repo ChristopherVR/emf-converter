@@ -1,12 +1,10 @@
 /**
  * Native `WidenPath` of solid and dashed geometric pens under rotated or sheared world transforms
  * (`general-matrix-pen-probe`, 576 outlines: eight matrices, widths 4 and 8, every cap, solid, dashed and user styles, four
- * line shapes). Native's pen is a circle in logical space, and a dashed pattern is laid out in logical length.
- *
- * `widenPath` with a `matrix` widens in logical space and maps the outline forward. It is not exact (the device-space
- * rounding rules, such as the half-pixel rule of 8 px pens, are not reproduced) but, for the five matrices that are not a
- * rotation with a uniform scale, it differs from native by about 22 pixels an outline where a uniform device-space pen
- * (the previous model) differed by about 266. The bounds below pin that.
+ * line shapes). Native's pen is a circle in logical space, and a dashed pattern is laid out in logical length. The pen
+ * polygon (`penPolygonMatrix`) is GDI's logical circle mapped through the matrix, rounded and flattened (`nib-matrix-pen`
+ * captures the native nibs). Pure shears and shear-with-scale (matrices 3, 4 and 6) are exact on all 72 outlines each; the
+ * matrices with a rotation keep a few pixels of residual, pinned below (the half-pixel rounding of a diagonal's perpendicular).
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -41,8 +39,8 @@ const SOURCES = [
 	[[10, 10], [60, 40]],
 	[[10, 10], [40, 55], [70, 20]],
 ];
-/** Pixel-difference bound per matrix (the sum over its 72 outlines), as measured. */
-const MATRIX_BOUND: Record<number, number> = { 3: 559, 4: 336, 5: 3195, 6: 1382, 7: 2647 };
+/** Pixel-difference bound per matrix (the sum over its 72 outlines), as measured; the exact ones are 0. */
+const MATRIX_BOUND: Record<number, number> = { 0: 1087, 1: 424, 3: 0, 4: 0, 5: 600, 6: 0, 7: 416 };
 
 function pixels(spans: SpanList): Set<number> {
 	const set = new Set<number>();
@@ -63,8 +61,8 @@ function oursPolygons(c: NativeCase): number[][] {
 	const m = MATRICES[c.m];
 	const path = new GdiRasterPath();
 	SOURCES[c.shape].forEach(([x, y], i) => {
-		const dx = (m[0] * x + m[2] * y) * 16;
-		const dy = (m[1] * x + m[3] * y) * 16;
+		const dx = Math.round((m[0] * x + m[2] * y) * 16);
+		const dy = Math.round((m[1] * x + m[3] * y) * 16);
 		if (i === 0) path.moveTo(dx, dy);
 		else path.lineTo(dx, dy);
 	});
@@ -72,6 +70,7 @@ function oursPolygons(c: NativeCase): number[][] {
 	return widenPath(path, {
 		width: c.w * 16,
 		matrix: m,
+		deviceNib: true,
 		cap: (['round', 'square', 'flat'] as const)[c.cap],
 		join: 'round',
 		miterLimit: 10,
@@ -80,19 +79,20 @@ function oursPolygons(c: NativeCase): number[][] {
 	});
 }
 
-it('approximates native rotated/sheared pens within the measured bounds', () => {
+it('matches native sheared pens exactly and rotated pens within the measured bounds', () => {
 	expect(cases).toHaveLength(576);
 	const total: Record<number, number> = {};
 	for (const c of cases) {
-		if (c.m < 3) continue;
+		if (c.m === 2) continue;
 		const native = pixels(fillPolygonSpans(nativePolygons(c), true));
 		expect(native.size).toBeGreaterThan(0);
 		const ours = pixels(fillPolygonSpans(oursPolygons(c), true));
 		let diff = 0;
 		for (const v of ours) if (!native.has(v)) diff++;
 		for (const v of native) if (!ours.has(v)) diff++;
-		// Even the worst outline stays within a fifth of its pixels.
-		expect(diff, JSON.stringify({ ...c, points: undefined })).toBeLessThanOrEqual(native.size * 0.22);
+		if (MATRIX_BOUND[c.m] === 0) {
+			expect(diff, JSON.stringify({ ...c, points: undefined })).toBe(0);
+		}
 		total[c.m] = (total[c.m] ?? 0) + diff;
 	}
 	for (const [m, bound] of Object.entries(MATRIX_BOUND)) {

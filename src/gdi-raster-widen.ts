@@ -109,12 +109,14 @@ export interface WidenOptions {
 	 */
 	dashMetric?: [number, number];
 	/**
-	 * A rotated or sheared device matrix `[a, b, c, d]` (`x' = a x + c y`, `y' = b x + d y`) that is not a rotation with a
-	 * uniform scale: native WidenPath's pen is a circle in logical space. The path is mapped back through the inverse,
-	 * widened there (`width` and `dashes` in logical FIX), and the outline mapped forward. Not exact: the device-space
-	 * rounding rules are not reproduced (about 22 pixels a case against 266 for a uniform pen, on 360 native outlines).
+	 * A rotated or sheared device matrix `[a, b, c, d]` (`x' = a x + c y`, `y' = b x + d y`): native WidenPath's pen is a
+	 * circle in logical space (`width` and `dashes` are then in logical FIX). With `deviceNib` and round joins the path is
+	 * widened in device space with the matrix's nib (`penPolygonMatrix`); otherwise it is mapped back through the inverse,
+	 * widened in logical space and the outline mapped forward, which does not reproduce the device-space rounding rules.
 	 */
 	matrix?: [number, number, number, number];
+	/** With `matrix`: widen in device space with the matrix's nib (`penPolygonMatrix`) instead of in logical space. */
+	deviceNib?: boolean;
 	/** Native Ellipse curve sides; retain the selected pen's inner triangle rule. */
 	roundCurveJoins?: boolean;
 }
@@ -206,6 +208,41 @@ export function penPolygon(width: number, height = width): Pt[] {
 	return pen;
 }
 
+const matrixPenCache = new Map<string, Pt[]>();
+
+type Matrix = [number, number, number, number];
+
+/**
+ * The pen polygon for a pen `width` logical FIX wide under the device matrix `m` (native WidenPath, nib probe): GDI's
+ * logical circle, its Bezier points mapped to device FIX and rounded, then flattened; the second half is the reflection of
+ * the first. A matrix that flips orientation mirrors the logical circle so the pen still runs counter-clockwise.
+ */
+export function penPolygonMatrix(width: number, m: Matrix): Pt[] {
+	const key = `${width},${m.join(',')}`;
+	const cached = matrixPenCache.get(key);
+	if (cached) {
+		return cached;
+	}
+	const r = Math.ceil(width / 2);
+	const mirror = m[0] * m[3] - m[1] * m[2] < 0 ? -1 : 1;
+	const bez = ellipseBeziers(-r, -r, r, r);
+	const dev: number[] = [];
+	for (let i = 0; i < 14; i += 2) {
+		const x = bez[i];
+		const y = bez[i + 1] * mirror;
+		dev.push(Math.round(m[0] * x + m[2] * y), Math.round(m[1] * x + m[3] * y));
+	}
+	const f = flattenBezierPath(dev);
+	const half: Pt[] = [];
+	for (let i = 0; i + 1 < f.length; i += 2) {
+		half.push([f[i], f[i + 1]]);
+	}
+	half.pop();
+	const pen = [...half, ...half.map((p): Pt => [0 - p[0] || 0, 0 - p[1] || 0])];
+	matrixPenCache.set(key, pen);
+	return pen;
+}
+
 /**
  * The pen's draw vertices for a segment running (`dx`, `dy`): the indices
  * of the vertex furthest to the left of the segment (in screen terms, the
@@ -214,14 +251,20 @@ export function penPolygon(width: number, height = width): Pt[] {
  * the one further along the segment's direction normalised to point
  * rightwards (or downwards when steeper than 2:1).
  */
-export function drawVertices(pen: readonly Pt[], dx: number, dy: number, width = 1, height = width): [number, number] {
+export function drawVertices(pen: readonly Pt[], dx: number, dy: number, width = 1, height = width, matrix?: Matrix): [number, number] {
 	const n = pen.length;
 	const axisVertex = pen.some((q) => q[1] === 0);
 	// Elliptical pens resolve parallel-edge ties in logical direction: the
 	// 45-degree boundary becomes height/width in device coordinates.
 	// Circular digital pens retain their measured 2:1 boundary.
-	const yMagnitude = Math.abs(dy) * (width === height ? 1 : width);
-	const xMagnitude = Math.abs(dx) * (width === height ? 2 : height);
+	let yMagnitude = Math.abs(dy) * (width === height ? 1 : width);
+	let xMagnitude = Math.abs(dx) * (width === height ? 2 : height);
+	if (matrix) {
+		// A general matrix: the 45-degree boundary is that of the logical direction.
+		const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+		xMagnitude = Math.abs((matrix[3] * dx - matrix[2] * dy) / det);
+		yMagnitude = Math.abs((-matrix[1] * dx + matrix[0] * dy) / det);
+	}
 	const steep = yMagnitude > xMagnitude || (yMagnitude === xMagnitude && axisVertex);
 	const s = (steep ? dy < 0 : dx < 0 || (dx === 0 && dy < 0)) ? -1 : 1;
 	let best = 0;
@@ -258,7 +301,7 @@ export function flatVector(width: number, dx0: number, dy0: number): Pt {
 }
 
 /** Rounded stroke sides and the unrounded tangent point used to select pen arcs. */
-function perpendicularVectors(width: number, dx0: number, dy0: number, height = width): { v: Pt; ray: Pt } {
+function perpendicularVectors(width: number, dx0: number, dy0: number, height = width, matrixPen?: readonly Pt[]): { v: Pt; ray: Pt } {
 	let dx = dx0;
 	let dy = dy0;
 	const flip = dx < 0 || (dx === 0 && dy < 0);
@@ -266,7 +309,7 @@ function perpendicularVectors(width: number, dx0: number, dy0: number, height = 
 		dx = -dx;
 		dy = -dy;
 	}
-	const pen = penPolygon(width, height);
+	const pen = matrixPen ?? penPolygon(width, height);
 	const n = pen.length;
 	const nx = -dy;
 	const ny = dx;
@@ -310,7 +353,16 @@ function perpendicularVectors(width: number, dx0: number, dy0: number, height = 
 }
 
 /** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
-export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width): Pt {
+export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width, matrix?: Matrix): Pt {
+	if (matrix) {
+		// Half the width along the logical direction, mapped to device.
+		const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+		const lx = (matrix[3] * dx - matrix[2] * dy) / det;
+		const ly = (-matrix[1] * dx + matrix[0] * dy) / det;
+		const l = Math.hypot(lx, ly);
+		const q = ((width / 2) * scale) / l;
+		return [Math.floor((matrix[0] * lx + matrix[2] * ly) * q + 0.5), Math.floor((matrix[1] * lx + matrix[3] * ly) * q + 0.5)];
+	}
 	const len = width === height ? Math.hypot(dx, dy) : Math.hypot(dx, dy * width / height);
 	const r = (width / 2) * scale;
 	return [Math.floor((dx / len) * r + 0.5), Math.floor((dy / len) * r + 0.5)];
@@ -365,7 +417,7 @@ class Outliner {
 		private readonly opts: WidenOptions,
 		private readonly out: number[][],
 	) {
-		this.pen = penPolygon(opts.width, opts.height);
+		this.pen = opts.matrix && opts.deviceNib ? penPolygonMatrix(opts.width, opts.matrix) : penPolygon(opts.width, opts.height);
 		this.n = this.pen.length;
 		this.rr = opts.cap === 'round' && opts.join === 'round';
 		this.originalRoundJoinSides = opts.join === 'round' && opts.cap !== 'flat';
@@ -381,11 +433,12 @@ class Outliner {
 		const dx = dir ? dir[0] : b[0] - a[0];
 		const dy = dir ? dir[1] : b[1] - a[1];
 		const d = drawDir ?? [dx, dy];
-		const [L, R] = drawVertices(this.pen, d[0], d[1], this.opts.width, this.opts.height);
+		const nibMatrix = this.opts.deviceNib ? this.opts.matrix : undefined;
+		const [L, R] = drawVertices(this.pen, d[0], d[1], this.opts.width, this.opts.height, nibMatrix);
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
-		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -508,7 +561,7 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e0: Pt = scale === 1 ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height);
+			const e0: Pt = scale === 1 ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined);
 			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
@@ -738,6 +791,7 @@ function dashPieces(
 	shorten: number,
 	wholePixelVectors: boolean,
 	metric?: [number, number],
+	matrix?: Matrix,
 ): DashPiece[] {
 	const out: DashPiece[] = [];
 	const dashes: number[] = [];
@@ -758,13 +812,18 @@ function dashPieces(
 		const [x0, y0] = P[i];
 		const [x1, y1] = P[i + 1];
 		const dir: Pt = [x1 - x0, y1 - y0];
-		const real = metric ? Math.hypot(dir[0] / metric[0], dir[1] / metric[1]) : Math.hypot(dir[0], dir[1]);
+		const det = matrix ? matrix[0] * matrix[3] - matrix[1] * matrix[2] : 1;
+		const real = matrix
+			? Math.hypot((matrix[3] * dir[0] - matrix[2] * dir[1]) / det, (-matrix[1] * dir[0] + matrix[0] * dir[1]) / det)
+			: metric
+				? Math.hypot(dir[0] / metric[0], dir[1] / metric[1])
+				: Math.hypot(dir[0], dir[1]);
 		// GDI measures a segment from its vector cut down to whole pixels (an
 		// arithmetic shift of the FIX components, so it rounds toward minus
 		// infinity), then places the cut at the same fraction of the real
 		// segment. Lines on whole pixels lose nothing; the odd-FIX segments of a
 		// flattened curve come out up to a pixel short or long.
-		const len = metric ? real : wholePixelVectors ? Math.hypot(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : Math.hypot(dir[0], dir[1]);
+		const len = metric || matrix ? real : wholePixelVectors ? Math.hypot(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : Math.hypot(dir[0], dir[1]);
 		if (len === 0) {
 			if (on && cur) {
 				cur.pts.push(P[i + 1]);
@@ -855,7 +914,7 @@ function widenInLogicalSpace(path: GdiRasterPath, opts: WidenOptions, m: [number
  * `path` with a wide pen, as GDI builds them (see the module doc).
  */
 export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
-	if (opts.matrix) {
+	if (opts.matrix && !(opts.deviceNib && opts.join === 'round')) {
 		return widenInLogicalSpace(path, opts, opts.matrix);
 	}
 	const out: number[][] = [];
@@ -892,7 +951,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 			const shorten = opts.cap === 'flat' || opts.shortenDashes === false ? 0 : opts.dashMetric ? opts.width / opts.dashMetric[0] : opts.width;
 			const runTangents = closed ? [...dirs, undefined] : dirs;
 			const runCurves = closed ? [...curves, !!fig.roundWiden] : curves;
-			for (const piece of dashPieces(run, runTangents, runCurves, opts.dashes as number[], shorten, !!opts.wholePixelDashVectors, opts.dashMetric)) {
+			for (const piece of dashPieces(run, runTangents, runCurves, opts.dashes as number[], shorten, !!opts.wholePixelDashVectors, opts.dashMetric, opts.deviceNib ? opts.matrix : undefined)) {
 				// Drop repeated points, keeping each remaining segment's direction.
 				const pts: Pt[] = [piece.pts[0]];
 				const pdirs: Pt[] = [];
