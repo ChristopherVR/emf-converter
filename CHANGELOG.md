@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.9.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.9.0) - 2026-10-06
+
+### Features
+
+- Lay out dashed pens in logical space under unequal axis scales ([daa5d96](https://github.com/ChristopherVR/emf-converter/commit/daa5d9669b5871342f0f4be533a8ef034a11c884))
+
 ## [4.8.21](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.8.21) - 2026-10-06
 
 ### Bug Fixes
