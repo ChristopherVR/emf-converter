@@ -35,6 +35,7 @@ import {
 	fillPathSpans,
 	fillPolygonSpans,
 	GdiRasterPath,
+	KAPPA,
 	roundRectCorners,
 	SpanList,
 	strokeCosmetic,
@@ -106,6 +107,10 @@ function flipBox(box: FixBox): FixBox {
  */
 export function rectRasterPath(box: FixBox, clockwise = false): GdiRasterPath {
 	const c = boxCorners(clockwise ? flipBox(box) : box);
+	if (box.halfXRect) {
+		c[4]--;
+		c[6]--;
+	}
 	const path = new GdiRasterPath();
 	path.moveTo(c[0], c[1]);
 	path.lineTo(c[2], c[3]);
@@ -177,10 +182,54 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, cloc
 		pts.push(...map(q[i], clockwise ? f.t + f.b - q[i + 1] : q[i + 1]));
 	}
 	if (box.halfX) {
-		// An odd inside-frame pen width (see `FixBox.halfX`); the rounding of the two side points on each edge is not
-		// reproduced (about half of them are a FIX off).
-		for (const k of [1, 2, 3, 4, 5, 6, 8, 15]) {
-			pts[2 * k]++;
+		// An odd inside-frame pen width (see `FixBox.halfX`).
+		if (box.halfXCompat || !clockwise) {
+			const cy = (f.t + f.b) / 2;
+			const ry = (f.b - f.t) / 2 || 1;
+			for (let k = 0; k < 16; k++) {
+				const v = (cy - pts[2 * k + 1]) / ry;
+				// A tie at the top rounds down (native GetPath, translation sweep: v = 0.5 exactly).
+				pts[2 * k] += k >= 8 ? Math.round(1 + v) : Math.ceil(v - 0.5);
+			}
+		} else {
+			for (const k of [1, 2, 3, 4, 5, 6, 8, 15]) {
+				pts[2 * k]++;
+			}
+		}
+	}
+	if (box.cornerExact && !clockwise && isAxisBox(box)) {
+		// An inside-frame pen's RoundRect: the edge end points and controls round from the unrounded corner scaled onto
+		// the box (native GetPath, 2,000 shapes at six scales in GM_ADVANCED and 1,500 at the WMF 0.96 scale, all exact):
+		// horizontally onto the width made even upwards (the top edge of an odd width a FIX right of the bottom's),
+		// vertically onto the height made even downwards.
+		const w = f.r - f.l;
+		const h = f.b - f.t;
+		if (w > 0 && h > 0) {
+			const hx = Math.round((box.cornerExact[0] * (w + (w % 2))) / w / 2);
+			const hy = Math.round((box.cornerExact[1] * (h - (h % 2))) / h / 2);
+			const hc = Math.ceil(KAPPA * hx);
+			const vc = Math.floor(KAPPA * hy);
+			const set = (k: number, x: number | null, y: number) => {
+				if (x !== null) pts[2 * k] = x;
+				pts[2 * k + 1] = y;
+			};
+			const a = box.halfX ? 1 : 0;
+			set(0, null, f.t + hy);
+			set(1, null, f.t + hy - vc);
+			set(2, f.r + a - hx + hc, f.t);
+			set(3, f.r + a - hx, f.t);
+			set(4, f.l + a + hx, f.t);
+			set(5, f.l + a + hx - hc, f.t);
+			set(6, null, f.t + hy - vc);
+			set(7, null, f.t + hy);
+			set(8, null, f.b - hy);
+			set(9, null, f.b - hy + vc);
+			set(10, f.l + hx - hc, f.b);
+			set(11, f.l + hx, f.b);
+			set(12, f.r - hx, f.b);
+			set(13, f.r - hx + hc, f.b);
+			set(14, null, f.b - hy + vc);
+			set(15, null, f.b - hy);
 		}
 	}
 	return pts;
@@ -245,7 +294,7 @@ export function arcRasterPath(
 			cw = !cw;
 		}
 	}
-	const bz = arcBeziers(f.l, f.t, f.r, f.b, sx, sy, ex, ey, cw);
+	const bz = arcBeziers(f.l, f.t, f.r, f.b, sx, sy, ex, ey, cw, !!box.halfX, !!box.framed);
 	const pts: number[] = [];
 	for (let i = 0; i < bz.length; i += 2) {
 		pts.push(...map(bz[i], bz[i + 1]));
@@ -259,7 +308,7 @@ export function arcRasterPath(
 	if (kind === 'pie') {
 		const w = f.r - f.l;
 		const h = f.b - f.t;
-		const [cx, cy] = map(f.l + Math.ceil(w / 2), f.t + Math.ceil(h / 2));
+		const [cx, cy] = map(f.l + Math.ceil(w / 2) + (box.halfX ? 1 : 0), f.t + Math.ceil(h / 2));
 		path.lineTo(cx, cy);
 	}
 	if (kind === 'pie' || kind === 'chord') {

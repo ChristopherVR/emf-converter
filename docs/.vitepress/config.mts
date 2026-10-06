@@ -44,6 +44,7 @@ export default defineConfig({
 				items: [
 					{ text: 'Getting started', link: '/getting-started' },
 					{ text: 'Usage', link: '/usage' },
+					{ text: 'How it works', link: '/how-it-works' },
 					{ text: 'Limitations', link: '/limitations' },
 					{ text: 'Outstanding work', link: '/outstanding-work' },
 				],

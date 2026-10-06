@@ -56,7 +56,7 @@ interface CompatBoxOptions {
 	curved?: boolean;
 	/** An Arc, too: any curved shape's inside-frame pen takes half its width rounded down on the left (a Rectangle's, up). */
 	roundFrame?: boolean;
-	/** An Ellipse or RoundRect: an odd inside-frame width puts its vertical edges on half a FIX (`FixBox.halfX`). */
+	/** An Ellipse, RoundRect, Chord, Pie or Arc: an odd inside-frame width puts its vertical edges on half a FIX (`FixBox.halfX`). */
 	half?: boolean;
 }
 
@@ -121,10 +121,14 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 }
 
 /** The {@link CompatBox} as the rasteriser's {@link FixBox}. */
-function fixBoxOf(box: CompatBox): FixBox {
+function fixBoxOf(box: CompatBox, cornerExact?: [number, number]): FixBox {
 	const fix = axisBox(box.x0, box.y0, Math.max(box.x0, box.x1), Math.max(box.y0, box.y1));
 	if (box.halfX) {
 		fix.halfX = true;
+		fix.halfXCompat = true;
+	}
+	if (cornerExact) {
+		fix.cornerExact = cornerExact;
 	}
 	return fix;
 }
@@ -192,7 +196,7 @@ export function wmfRectangle(p: WmfPlayer, l: number, t: number, r: number, b: n
 }
 
 /** The device FIX extents of a compatible-mode RoundRect's corner ellipse (logical `w` x `h`). */
-function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox, logical: readonly [number, number, number, number]): [number, number] {
+function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox, logical: readonly [number, number, number, number]): [number, number, [number, number]?] {
 	const m = gdiDeviceMatrix(p.rCtx);
 	const cw = Math.round(Math.abs(w * m[0]) * 16);
 	const ch = Math.round(Math.abs(h * m[3]) * 16);
@@ -206,7 +210,8 @@ function compatCorner(p: WmfPlayer, w: number, h: number, box: CompatBox, logica
 		const width = box.x1 - box.x0, height = box.y1 - box.y0;
 		const fullW = Math.abs((logical[2] - logical[0]) * m[0]) * 16 || width;
 		const fullH = Math.abs((logical[3] - logical[1]) * m[3]) * 16 || height;
-		return [Math.floor((Math.min(Math.abs(w * m[0]) * 16, fullW) * width) / fullW), Math.floor((Math.min(Math.abs(h * m[3]) * 16, fullH) * height) / fullH)];
+		const cornerW = (Math.min(Math.abs(w * m[0]) * 16, fullW) * width) / fullW;
+		return [Math.floor(cornerW), Math.floor((Math.min(Math.abs(h * m[3]) * 16, fullH) * height) / fullH), [cornerW, (Math.min(Math.abs(h * m[3]) * 16, fullH) * height) / fullH]];
 	}
 	// GDI constructs the corner on the original box, then scales it onto the
 	// box with its right/bottom pixel excluded. A cosmetic pen retains
@@ -239,8 +244,8 @@ export const wmfShapePath = {
 		if (box.x1 < box.x0 || box.y1 < box.y0) {
 			return null;
 		}
-		const [cw, ch] = compatCorner(p, w, h, box, [l, t, r, b]);
-		return roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx));
+		const [cw, ch, half] = compatCorner(p, w, h, box, [l, t, r, b]);
+		return roundRectRasterPath(fixBoxOf(box, half), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx));
 	},
 	ellipse(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
 		const box = compatBox(p, l, t, r, b, { curved: true, half: true });
@@ -278,7 +283,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
-	const [cw, ch] = compatCorner(p, w, h, box, [l, t, r, b]);
+	const [cw, ch, half] = compatCorner(p, w, h, box, [l, t, r, b]);
 	const cr = canvasRect(box);
 	paintGdiShape(p.rCtx, {
 		build: (c: CanvasContext) => {
@@ -303,7 +308,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 			c.ellipse(cr.x + ex, cr.y + ey, ex, ey, 0, 2 * q, 3 * q);
 			c.closePath();
 		},
-		raster: () => roundRectRasterPath(fixBoxOf(box), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx)),
+		raster: () => roundRectRasterPath(fixBoxOf(box, half), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx)),
 		roundPen: true,
 		fill: true,
 		stroke: true,
@@ -349,7 +354,7 @@ function compatArc(
 	xe: number,
 	ye: number,
 ): { box: CompatBox; s: [number, number]; e: [number, number] } | null {
-	const box = compatBox(p, l, t, r, b, { curved: kind === 'chord' || kind === 'pie', roundFrame: true });
+	const box = compatBox(p, l, t, r, b, { curved: kind === 'chord' || kind === 'pie', roundFrame: true, half: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return null;
 	}

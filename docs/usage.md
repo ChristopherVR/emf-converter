@@ -119,3 +119,5 @@ Conversion has three steps: parse, replay and export.
 3. PNG output draws onto a canvas: `OffscreenCanvas`, `HTMLCanvasElement`, `@napi-rs/canvas`, or the built-in JavaScript rasteriser. SVG output draws onto `SvgContext`, a recorder that implements the part of the Canvas 2D API used by the replay. Where a raster operation needs to read the destination, it is mirrored onto a hidden raster.
 
 Per-fixture comparison bounds against Windows output are in `src/gdi-parity.fixture.test.ts`.
+
+The full pipeline and the Windows-parity details are in [How it works](./how-it-works.md).

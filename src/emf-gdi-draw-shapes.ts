@@ -195,6 +195,8 @@ interface FrameInset {
 	bottom: number;
 	/** The left and right edges lie on half a FIX (an odd width): see `FixBox.halfX`. */
 	half: boolean;
+	/** A Rectangle of odd width: see `FixBox.halfXRect`. */
+	halfRect: boolean;
 }
 
 /**
@@ -243,7 +245,27 @@ function insideFrameInset(rCtx: EmfGdiReplayCtx, box: FixBox, rectangle = false,
 		top: y,
 		bottom: y,
 		half: wx % 2 === 1 && !rectangle,
+		halfRect: wx % 2 === 1 && rectangle,
 	};
+}
+
+/**
+ * True when a `PS_INSIDEFRAME` pen is wider than the box along an axis: an Arc, Chord or Pie then paints nothing and has
+ * an empty path (native, a DIB probe and `GetPath`), where an Ellipse, Rectangle or RoundRect keeps the box as given.
+ */
+function insideFramePenTooWide(rCtx: EmfGdiReplayCtx, box: FixBox): boolean {
+	if ((rCtx.state.penStyle & 0x0f) !== PS_INSIDEFRAME || !isAxisBox(box) || hasWorldRotation(rCtx)) {
+		return false;
+	}
+	const m = gdiDeviceMatrix(rCtx);
+	const px = gdiDevicePixelX(rCtx);
+	const py = gdiDevicePixelY(rCtx);
+	const widthX = (Math.abs(rCtx.state.penWidth * m[0]) / px) * 16;
+	const widthY = (Math.abs(rCtx.state.penWidth * m[3]) / py) * 16;
+	if (Math.max(widthX, widthY) < 24) {
+		return false;
+	}
+	return Math.abs(box.exx) / px < Math.round(widthX) || Math.abs(box.eyy) / py < Math.round(widthY);
 }
 
 /** `box` pulled in by `inset` (a mirrored box keeps its orientation). */
@@ -257,9 +279,13 @@ function insetFixBox(box: FixBox, inset: FrameInset): FixBox {
 		exy: 0,
 		eyx: 0,
 		eyy: box.eyy - sy * (inset.top + inset.bottom),
+		framed: true,
 	};
 	if (inset.half && sx > 0) {
 		framed.halfX = true;
+	}
+	if (inset.halfRect && sx > 0) {
+		framed.halfXRect = true;
 	}
 	return framed;
 }
@@ -368,7 +394,7 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const r = view.getInt32(dataOff + 8, true);
 		const b = view.getInt32(dataOff + 12, true);
 		const unframed = uprightFixBox(rCtx, l, t, r, b);
-		const inset = insideFrameInset(rCtx, unframed, true);
+		const inset = insideFrameInset(rCtx, unframed, true, rCtx.state.arcDirection === 2);
 		const box = inset ? insetFixBox(unframed, inset) : unframed;
 		const clockwise = rCtx.state.arcDirection === 2;
 		if (!inPath) {
@@ -616,6 +642,13 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 							gmh(rCtx, cornerH) / 2,
 							null,
 						);
+		if (inset) {
+			const fullW = Math.abs((r - l) * devM[0]) * 16;
+			const fullH = Math.abs((b - t) * devM[3]) * 16;
+			if (fullW > 0 && fullH > 0) {
+				framed.cornerExact = [(Math.min(cornerFixW, fullW) * Math.abs(framed.exx)) / fullW, (Math.min(cornerFixH, fullH) * Math.abs(framed.eyy)) / fullH];
+			}
+		}
 		const raster = (box = framed) => roundRectRasterPath(box, cw, ch, clockwise, cornerW === 0 || cornerH === 0);
 		if (inPath) {
 			const box = framed;
@@ -680,7 +713,7 @@ function handleEllipse(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number):
 		const b = view.getInt32(dataOff + 12, true);
 		const clockwise = rCtx.state.arcDirection === 2;
 		const unframed = uprightFixBox(rCtx, l, t, r, b);
-		const inset = insideFrameInset(rCtx, unframed);
+		const inset = insideFrameInset(rCtx, unframed, false, rCtx.state.arcDirection === 2);
 		const framed = inset ? insetFixBox(unframed, inset) : unframed;
 		const params = inset
 			? { cx: (framed.ax + framed.exx / 2) / 16, cy: (framed.ay + framed.eyy / 2) / 16, rx: Math.abs(framed.exx) / 32, ry: Math.abs(framed.eyy) / 32, rotation: 0 }
@@ -745,7 +778,10 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			: Math.atan2((endY - cyA) / (ry || 1), (endX - cxA) / (rx || 1));
 		const rotated = hasWorldRotation(rCtx);
 		const unframed = fixBox(rCtx, l, t, r, b);
-		const inset = insideFrameInset(rCtx, unframed);
+		if (recType !== EMR_ARCTO && insideFramePenTooWide(rCtx, unframed)) {
+			return true;
+		}
+		const inset = insideFrameInset(rCtx, unframed, false, rCtx.state.arcDirection === 2);
 		const framed = inset ? insetFixBox(unframed, inset) : unframed;
 		const params = inset
 			? { cx: (framed.ax + framed.exx / 2) / 16, cy: (framed.ay + framed.eyy / 2) / 16, rx: Math.abs(framed.exx) / 32, ry: Math.abs(framed.eyy) / 32, rotation: 0 }
@@ -787,20 +823,28 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 		const kind: ArcKind = isArcTo ? 'arcto' : recType === EMR_PIE ? 'pie' : recType === EMR_CHORD ? 'chord' : 'arc';
 		// An inside-frame pen draws the arc on the smaller box but keeps the radials' angles of the box as given: each
 		// radial point is carried onto the framed box about the centre.
-		const radialOnBox = (p: [number, number]): [number, number] => {
+		// The angles are measured on the unrounded device points (native GetPath at a fractional world scale), not on the FIX
+		// ones.
+		const devM = gdiDeviceMatrix(rCtx);
+		const rawFix = (x: number, y: number): [number, number] => [(devM[0] * x + devM[2] * y + devM[4]) * 16, (devM[1] * x + devM[3] * y + devM[5]) * 16];
+		const radialOnBox = (p: [number, number], raw: [number, number]): [number, number] => {
 			if (!inset) {
 				return p;
 			}
-			const kx = unframed.exx !== 0 ? framed.exx / unframed.exx : 1;
-			const ky = unframed.eyy !== 0 ? framed.eyy / unframed.eyy : 1;
-			return [framed.ax + framed.exx / 2 + (p[0] - (unframed.ax + unframed.exx / 2)) * kx, framed.ay + framed.eyy / 2 + (p[1] - (unframed.ay + unframed.eyy / 2)) * ky];
+			const [rl, rt] = rawFix(l, t);
+			const [rr, rb] = rawFix(r, b);
+			const kx = rr !== rl ? framed.exx / (rr - rl) : 1;
+			const ky = rb !== rt ? framed.eyy / (rb - rt) : 1;
+			// Float noise must not move a radial that lies exactly on an axis off it.
+			const snap = (v: number): number => (Math.abs(v) < 1e-6 ? 0 : v);
+			return [framed.ax + framed.exx / 2 + snap(raw[0] - (rl + rr) / 2) * kx, framed.ay + framed.eyy / 2 + snap(raw[1] - (rt + rb) / 2) * ky];
 		};
 		const rasterArgs = (immediate = false) => ({
 			box: inset ? framed : immediate && needsFill ? curvedFixBox(rCtx, l, t, r, b) : unframed,
-			s: radialOnBox(fixPoint(rCtx, startX, startY)),
+			s: radialOnBox(fixPoint(rCtx, startX, startY), rawFix(startX, startY)),
 			// Device FIX rounding can separate distinct radial points on the
 			// same logical ray. Preserve their proven endpoint identity.
-			e: fullEllipse ? radialOnBox(fixPoint(rCtx, startX, startY)) : radialOnBox(fixPoint(rCtx, endX, endY)),
+			e: fullEllipse ? radialOnBox(fixPoint(rCtx, startX, startY), rawFix(startX, startY)) : radialOnBox(fixPoint(rCtx, endX, endY), rawFix(endX, endY)),
 			from: currentFix(rCtx),
 		});
 		if (inPath) {

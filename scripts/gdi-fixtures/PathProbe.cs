@@ -135,6 +135,75 @@ public static class PathProbe
 	// arc-paths.json is counter-clockwise (the default arc direction); arc-paths-cw.json repeats every call under AD_CLOCKWISE; arc-precise.json adds arcs
 	// on a 40,000 px circle (radius 320,000 FIX), where one FIX is 3 millionths of the radius: single pieces from 0.3 to 85 degrees, arcs through every
 	// quadrant, nearly full turns and arcs starting and ending exactly on a quadrant boundary.
+	/** Native GetPath of Chord, Pie, Arc, Ellipse and RoundRect under a PS_INSIDEFRAME geometric pen at the WMF 0.96 scale (3800 x 2520 logical units onto 365 x 242 pixels), as `[x, y, type]` triples in FIX. */
+	public static void WmfScaledPaths(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var rnd=new Random(4242);var js=new StringBuilder("[");string Q=((char)34).ToString();
+		var lb=new LogBrush();
+		for(int k=0;k<1500;k++){
+			int kind=k%5;uint pw=(uint)rnd.Next(30,110);
+			int l=rnd.Next(0,3000),t=rnd.Next(0,1900),r=l+rnd.Next(100,800),b=t+rnd.Next(100,600);
+			double a1=rnd.NextDouble()*Math.PI*2,a2=rnd.NextDouble()*Math.PI*2;
+			double cx=(l+r)/2.0,cy=(t+b)/2.0,rx=(r-l)/2.0,ry=(b-t)/2.0;
+			int[] p1={(int)Math.Round(cx+Math.Cos(a1)*rx*1.3),(int)Math.Round(cy-Math.Sin(a1)*ry*1.3)};
+			int[] p2={(int)Math.Round(cx+Math.Cos(a2)*rx*1.3),(int)Math.Round(cy-Math.Sin(a2)*ry*1.3)};
+			int cw=rnd.Next(10,300),ch=rnd.Next(10,300);
+			IntPtr pen=ExtCreatePen(0x10000|6,pw,ref lb,0,IntPtr.Zero);IntPtr old=SelectObject(dc,pen);
+			SetMapMode(dc,8);SetWindowExtEx(dc,3800,2520,IntPtr.Zero);SetViewportExtEx(dc,365,242,IntPtr.Zero);
+			BeginPath(dc);
+			if(kind==0)Chord(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+			else if(kind==1)Pie(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+			else if(kind==2)Arc(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+			else if(kind==3)Ellipse(dc,l,t,r,b);
+			else RoundRect(dc,l,t,r,b,cw,ch);
+			EndPath(dc);
+			// logical = device FIX
+			SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+			int n=GetPath(dc,null,null,0);var q=new Point[n];var u=new byte[n];GetPath(dc,q,u,n);
+			SelectObject(dc,old);DeleteObject(pen);
+			if(k>0)js.Append(',');
+			js.Append("{"+Q+"kind"+Q+":"+kind+","+Q+"pw"+Q+":"+pw+","+Q+"box"+Q+":["+l+","+t+","+r+","+b+"],"+Q+"rad"+Q+":["+p1[0]+","+p1[1]+","+p2[0]+","+p2[1]+"],"+Q+"corner"+Q+":["+cw+","+ch+"],"+Q+"pts"+Q+":[");
+			for(int i=0;i<n;i++){if(i>0)js.Append(',');js.Append(q[i].X).Append(',').Append(q[i].Y).Append(',').Append(u[i]);}
+			js.Append("]}");
+		}
+		File.WriteAllText(Path.Combine(dir,"wmf-scaled-paths.json"),js.Append("]").ToString());
+	}
+	/** Native GetPath in GM_ADVANCED of Chord, Pie, Arc, Ellipse and RoundRect under a PS_INSIDEFRAME pen at fractional scales (window 16, viewport 11 to 29), both arc directions, as `[x, y, type]` triples in FIX. */
+	public static void EmfScaledPaths(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var rnd=new Random(7771);var js=new StringBuilder("[");string Q=((char)34).ToString();
+		SetGraphicsMode(dc,2);
+		int[] scales={11,17,22,23,29};
+		for(int k=0;k<2400;k++){
+			int kind=k%6,scale=scales[rnd.Next(scales.Length)],dr=rnd.Next(0,4)==0?2:1,pw=rnd.Next(2,14);
+			int l=rnd.Next(0,300),t=rnd.Next(0,300),r=l+rnd.Next(10,100),b=t+rnd.Next(10,100);
+			double a1=rnd.NextDouble()*Math.PI*2,a2=rnd.NextDouble()*Math.PI*2;
+			double cx=(l+r)/2.0,cy=(t+b)/2.0,rx=(r-l)/2.0,ry=(b-t)/2.0;
+			int[] p1={(int)Math.Round(cx+Math.Cos(a1)*rx*1.3),(int)Math.Round(cy-Math.Sin(a1)*ry*1.3)};
+			int[] p2={(int)Math.Round(cx+Math.Cos(a2)*rx*1.3),(int)Math.Round(cy-Math.Sin(a2)*ry*1.3)};
+			int cw=rnd.Next(4,40),ch=rnd.Next(4,40);
+			SetArcDirection(dc,dr);
+			SetMapMode(dc,8);SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,scale,scale,IntPtr.Zero);
+			IntPtr pen=CreatePenNative(6,pw,0);IntPtr old=SelectObject(dc,pen);
+			BeginPath(dc);
+			if(kind==0)Chord(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+			else if(kind==1)Pie(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+			else if(kind==2)Arc(dc,l,t,r,b,p1[0],p1[1],p2[0],p2[1]);
+			else if(kind==3)Ellipse(dc,l,t,r,b);
+			else if(kind==4)RoundRect(dc,l,t,r,b,cw,ch);
+			else Rectangle(dc,l,t,r,b);
+			EndPath(dc);
+			SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+			int n=GetPath(dc,null,null,0);var q=new Point[n>0?n:0];var u=new byte[n>0?n:0];if(n>0)GetPath(dc,q,u,n);
+			SelectObject(dc,old);DeleteObject(pen);
+			if(k>0)js.Append(',');
+			js.Append("{"+Q+"kind"+Q+":"+kind+","+Q+"scale"+Q+":"+scale+","+Q+"dir"+Q+":"+dr+","+Q+"pw"+Q+":"+pw+","+Q+"box"+Q+":["+l+","+t+","+r+","+b+"],"+Q+"rad"+Q+":["+p1[0]+","+p1[1]+","+p2[0]+","+p2[1]+"],"+Q+"corner"+Q+":["+cw+","+ch+"],"+Q+"pts"+Q+":[");
+			for(int i=0;i<n;i++){if(i>0)js.Append(',');js.Append(q[i].X).Append(',').Append(q[i].Y).Append(',').Append(u[i]);}
+			js.Append("]}");
+		}
+		SetArcDirection(dc,1);
+		File.WriteAllText(Path.Combine(dir,"emf-scaled-paths.json"),js.Append("]").ToString());
+	}
+	[DllImport("gdi32.dll")] static extern bool Rectangle(IntPtr dc,int l,int t,int r,int b);
+	[DllImport("gdi32.dll",EntryPoint="CreatePen")] static extern IntPtr CreatePenNative(int style,int width,uint color);
 	public static void ArcPaths(string dir) {
 		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(6047);var json=new StringBuilder("[");var jsonCw=new StringBuilder("[");
 		try {

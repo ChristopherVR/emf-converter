@@ -335,8 +335,8 @@ const RASTER_CASES: ParityCase[] = [
 	raster('emf-insideframe-pie'),
 	raster('emf-insideframe-polygon'),
 	// The same shapes under a 1.37 world scale: an odd pen width (in 1/16 pixel) puts the vertical edges on half a
-	// 1/16 pixel, which the Ellipse and RoundRect paths model, the Arc, Chord and Pie paths do not.
-	raster('emf-insideframe-scaled', 0.0006), // measured 0.047% (80 pixels), before 0.096% with the box alone
+	// 1/16 pixel and shears the curved paths; arc radials are measured on the unrounded device points.
+	raster('emf-insideframe-scaled'), // 0%, before 0.047% (80 pixels)
 ];
 
 /**
@@ -748,9 +748,7 @@ const SMOOTHING_CASES: ParityCase[] = [
  * measured 4.9% to 100% of pixels off. Now `wmf-shapes`, `wmf-shapes-twips`,
  * `wmf-pixels*` and the PS_INSIDEFRAME rectangle, ellipse and RoundRect
  * sweeps, including the inside-frame Chord, Pie and Arc, are pixel-exact;
- * the residuals are `wmf-shapes-scaled` (0.008%: 7 pixels of the
- * inside-frame row and the Pies at the 0.96 scale),
- * `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
+ * the residuals are `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
  * own wide-pen residual).
  */
 const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', tolerance: 0, maxMismatch });
@@ -758,7 +756,7 @@ const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', 
 const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-shapes'), // measured 0%
 	wmf('wmf-shapes-twips'), // measured 0%
-	wmf('wmf-shapes-scaled', 0.0001), // measured 0.008% (7 pixels), before 0.014%, 0.017%, 0.027% and 0.158%
+	wmf('wmf-shapes-scaled'), // 0%, before 0.008% (7 pixels): odd inside-frame widths shear Chord/Pie/Arc/RoundRect points (native GetPath)
 	wmf('wmf-roundrect-corners'), // 0%, before 500+ pixels: wide-pen and null-pen corners scale onto the drawn box
 	wmf('wmf-roundrect-corners-scaled'), // 0%, before 813+ pixels
 	wmf('wmf-insideframe-subpixel'),

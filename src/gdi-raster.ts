@@ -534,7 +534,7 @@ export function flattenBezier(
 // ---------------------------------------------------------------------------
 
 /** 4/3 (sqrt 2 - 1): the Bezier control distance of a quarter circle. */
-const KAPPA = 0.5522847498307936;
+export const KAPPA = 0.5522847498307936;
 
 /**
  * A box in device FIX as GDI holds it: the corner `A` that the logical
@@ -561,6 +561,22 @@ export interface FixBox {
 	 * box puts it. Honoured by {@link ellipseBeziersBox} and the RoundRect path.
 	 */
 	halfX?: boolean;
+	/**
+	 * With {@link halfX}, a `GM_COMPATIBLE` (WMF) shape. Native `GetPath` (1,500 shapes at the 0.96 scale) then shears
+	 * the half FIX with height: a RoundRect point at `v` (+1 at the top edge, -1 at the bottom, relative to the box's
+	 * middle) moves `round(v)` FIX right on the top half and `round(1 + v)` on the bottom half; an arc, chord or pie
+	 * point `round(1 + v)`, and a pie's centre one FIX (see {@link arcBeziers}).
+	 */
+	halfXCompat?: boolean;
+	/**
+	 * An inside-frame pen's RoundRect: the corner ellipse's unrounded width and height in FIX, already scaled onto
+	 * the box, which GDI rounds into the path's edge end points (see `roundRectDeviceBeziers`).
+	 */
+	cornerExact?: [number, number];
+	/** An odd inside-frame width on a Rectangle: native `GetPath` puts its bottom edge a FIX left of the top's. */
+	halfXRect?: boolean;
+	/** The box was pulled in by an inside-frame pen (see {@link arcBeziers} for what that changes for arcs). */
+	framed?: boolean;
 }
 
 /** The axis-aligned {@link FixBox} for the inclusive box `l..r` x `t..b` (FIX). */
@@ -981,6 +997,8 @@ export function arcBeziers(
 	xe: number,
 	ye: number,
 	clockwise: boolean,
+	halfX = false,
+	framed = false,
 ): number[] {
 	const w = r - l;
 	const h = b - t;
@@ -1003,14 +1021,23 @@ export function arcBeziers(
 	} else {
 		while (a1 >= a0) a1 -= 2 * Math.PI;
 	}
-	const px = (u: number) => Math.round(cx + rx * u);
+	const px = (u: number, v: number) => Math.round(cx + rx * u + (halfX ? 1 + v : 0));
 	const py = (v: number) => Math.round(cy - ry * v);
 	// A clockwise arc's whole quadrants round their vertical control
 	// distances up (measured: 449 of 452 quadrants), the mirror image of
 	// the counter-clockwise ellipse's rounding down.
-	const E = clockwise ? clockwiseEllipseBeziersBox(axisBox(l, t, r, b)) : ellipseBeziers(l, t, r, b);
+	const eb = axisBox(l, t, r, b);
+	if (halfX) eb.halfX = true;
+	const E = clockwise ? clockwiseEllipseBeziersBox(eb) : ellipseBeziersBox(eb);
 	const startUnit = small ? [Math.cos(a0), Math.sin(a0)] : polygonTrig(a0);
-	const out: number[] = [px(startUnit[0]), py(startUnit[1])];
+	const out: number[] = [px(startUnit[0], startUnit[1]), py(startUnit[1])];
+	// Under an inside-frame pen, a counter-clockwise radial exactly on an axis adds a zero-length piece: before the first
+	// piece when the arc starts on 90 or 180 degrees, after the last when it ends on 270 or 0 (native GetPath).
+	const onAxis = (angle: number): boolean => Math.abs(angle / Q - Math.round(angle / Q)) < 1e-9;
+	const axisQuadrant = (angle: number): number => ((Math.round(angle / Q) % 4) + 4) % 4;
+	if (framed && s > 0 && onAxis(a0) && (axisQuadrant(a0) === 1 || axisQuadrant(a0) === 2)) {
+		out.push(out[0], out[1], out[0], out[1], out[0], out[1]);
+	}
 	let a = a0;
 	for (let guard = 0; guard < 8 && (s > 0 ? a < a1 - 1e-12 : a > a1 + 1e-12); guard++) {
 		const next = s > 0 ? Math.floor(a / Q + 1e-9) * Q + Q : Math.ceil(a / Q - 1e-9) * Q - Q;
@@ -1037,9 +1064,16 @@ export function arcBeziers(
 		const e = s > 0 ? Math.min(next, a1) : Math.max(next, a1);
 		const piece = unitPiece(a, e, small);
 		for (let i = 0; i < 6; i += 2) {
-			out.push(px(piece.ctrl[i]), py(piece.ctrl[i + 1]));
+			out.push(px(piece.ctrl[i], piece.ctrl[i + 1]), py(piece.ctrl[i + 1]));
 		}
 		a = e;
+	}
+	if (framed && s > 0 && onAxis(a1) && (axisQuadrant(a1) === 3 || axisQuadrant(a1) === 0)) {
+		// The zero-length piece sits on the generic arc point of the end radial, which can be a FIX from the last piece's.
+		const endUnit = polygonTrig(a1);
+		const ex = px(endUnit[0], endUnit[1]);
+		const ey = py(endUnit[1]);
+		out.push(ex, ey, ex, ey, ex, ey);
 	}
 	return out;
 }
