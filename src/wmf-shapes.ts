@@ -58,6 +58,8 @@ interface CompatBoxOptions {
 	roundFrame?: boolean;
 	/** An Ellipse, RoundRect, Chord, Pie or Arc: an odd inside-frame width puts its vertical edges on half a FIX (`FixBox.halfX`). */
 	half?: boolean;
+	/** An Ellipse or RoundRect whose inside-frame pen leaves no box: GDI keeps the box without the pen's inset (native GetPath). */
+	clampEmpty?: boolean;
 }
 
 /**
@@ -96,6 +98,7 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 	if ((p.rCtx.state.penStyle & 0x0f) === PS_INSIDEFRAME) {
 		const w = Math.round(penDeviceWidth(p.rCtx) / p.kx);
 		if (w > 1) {
+			const whole = { ...box };
 			// The pen width in whole FIX of a device pixel along each axis (not the isotropic width), split about the
 			// edges: the top and bottom each take half rounded up; on the horizontal axis a Rectangle takes half rounded
 			// up on the left and down on the right, any curved shape half rounded down on both (native GetPath, 1,200
@@ -115,14 +118,17 @@ export function compatBox(p: WmfPlayer, l: number, t: number, r: number, b: numb
 			if (half) {
 				box.halfX = true;
 			}
+			if (opts.clampEmpty && (box.x1 < box.x0 || box.y1 < box.y0)) {
+				return { x0: whole.x0, y0: whole.y0, x1: whole.x1 + Math.round(ux), y1: whole.y1 + Math.round(uy) };
+			}
 		}
 	}
 	return box;
 }
 
 /** The {@link CompatBox} as the rasteriser's {@link FixBox}. */
-function fixBoxOf(box: CompatBox, cornerExact?: [number, number]): FixBox {
-	const fix = axisBox(box.x0, box.y0, Math.max(box.x0, box.x1), Math.max(box.y0, box.y1));
+function fixBoxOf(box: CompatBox, cornerExact?: [number, number], keepInverted = false): FixBox {
+	const fix = keepInverted ? axisBox(box.x0, box.y0, box.x1, box.y1) : axisBox(box.x0, box.y0, Math.max(box.x0, box.x1), Math.max(box.y0, box.y1));
 	if (box.halfX) {
 		fix.halfX = true;
 		fix.halfXCompat = true;
@@ -240,7 +246,7 @@ export const wmfShapePath = {
 		return box.x1 < box.x0 || box.y1 < box.y0 ? null : rectRasterPath(fixBoxOf(box), clockwiseOf(p));
 	},
 	roundRect(p: WmfPlayer, l: number, t: number, r: number, b: number, w: number, h: number): GdiRasterPath | null {
-		const box = compatBox(p, l, t, r, b, { curved: true, half: true });
+		const box = compatBox(p, l, t, r, b, { curved: true, half: true, clampEmpty: true });
 		if (box.x1 < box.x0 || box.y1 < box.y0) {
 			return null;
 		}
@@ -248,7 +254,7 @@ export const wmfShapePath = {
 		return roundRectRasterPath(fixBoxOf(box, half), cw, ch, clockwiseOf(p), w === 0 || h === 0, !penIsNull(p) && penIsCosmetic(p.rCtx));
 	},
 	ellipse(p: WmfPlayer, l: number, t: number, r: number, b: number): GdiRasterPath | null {
-		const box = compatBox(p, l, t, r, b, { curved: true, half: true });
+		const box = compatBox(p, l, t, r, b, { curved: true, half: true, clampEmpty: true });
 		return box.x1 < box.x0 || box.y1 < box.y0 ? null : ellipseRasterPath(fixBoxOf(box), clockwiseOf(p));
 	},
 	/**
@@ -269,17 +275,17 @@ export const wmfShapePath = {
 		path: GdiRasterPath,
 		from?: [number, number],
 	): [number, number] | null {
-		const geom = compatArc(p, kind, l, t, r, b, xs, ys, xe, ye);
+		const geom = compatArc(p, kind, l, t, r, b, xs, ys, xe, ye, true);
 		if (!geom) {
 			return null;
 		}
-		return arcRasterPath(fixBoxOf(geom.box), geom.s, geom.e, p.rCtx.state.arcDirection === 2, kind, from, path).end;
+		return arcRasterPath(fixBoxOf(geom.box, undefined, true), geom.s, geom.e, p.rCtx.state.arcDirection === 2, kind, from, path).end;
 	},
 };
 
 /** `META_ROUNDRECT`: `w`, `h` are the corner ellipse's logical width and height. */
 export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: number, w: number, h: number): void {
-	const box = compatBox(p, l, t, r, b, { curved: true, half: true });
+	const box = compatBox(p, l, t, r, b, { curved: true, half: true, clampEmpty: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
@@ -317,7 +323,7 @@ export function wmfRoundRect(p: WmfPlayer, l: number, t: number, r: number, b: n
 
 /** `META_ELLIPSE`. */
 export function wmfEllipse(p: WmfPlayer, l: number, t: number, r: number, b: number): void {
-	const box = compatBox(p, l, t, r, b, { curved: true, half: true });
+	const box = compatBox(p, l, t, r, b, { curved: true, half: true, clampEmpty: true });
 	if (box.x1 < box.x0 || box.y1 < box.y0) {
 		return;
 	}
@@ -353,9 +359,12 @@ function compatArc(
 	ys: number,
 	xe: number,
 	ye: number,
+	keepInverted = false,
 ): { box: CompatBox; s: [number, number]; e: [number, number] } | null {
 	const box = compatBox(p, l, t, r, b, { curved: kind === 'chord' || kind === 'pie', roundFrame: true, half: true });
-	if (box.x1 < box.x0 || box.y1 < box.y0) {
+	// An inside-frame pen wider than the box: an arc's path keeps a box inverted in x (a negative width, native GetPath), but
+	// has none when it is inverted in y.
+	if (box.y1 < box.y0 || (!keepInverted && box.x1 < box.x0)) {
 		return null;
 	}
 	// The radials' angles are those on the box as given (its own centre and

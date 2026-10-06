@@ -207,9 +207,9 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, cloc
 		// vertically onto the height made even downwards.
 		const w = f.r - f.l;
 		const h = f.b - f.t;
-		if (w > 0 && h > 0) {
-			const hx = Math.round((box.cornerExact[0] * (w + (w % 2))) / w / 2);
-			const hy = Math.round((box.cornerExact[1] * (clockwise ? h + (h % 2) : h - (h % 2))) / h / 2);
+		if (w >= 0 && h >= 0) {
+			const hx = w === 0 ? 0 : Math.round((box.cornerExact[0] * (w + (w % 2))) / w / 2);
+			const hy = h === 0 ? 0 : Math.round((box.cornerExact[1] * (clockwise ? h + (h % 2) : h - (h % 2))) / h / 2);
 			const hc = Math.ceil(KAPPA * hx);
 			const vc = clockwise ? Math.ceil(KAPPA * hy) : Math.floor(KAPPA * hy);
 			const set = (k: number, x: number | null, y: number) => {

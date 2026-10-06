@@ -2,7 +2,7 @@
  * Native `GetPath` of Chord, Pie, Arc, Ellipse and RoundRect under a `PS_INSIDEFRAME` geometric pen at the WMF 0.96 scale
  * (`wmf-scaled-path-probe`, 1,500 shapes). An odd device pen width puts the shape's vertical edges on half a FIX and
  * shears its points with height, and a RoundRect's edge end points are rounded from the unrounded corner; every shape
- * matches Windows point for point (apart from the pen-as-wide-as-the-shape cases below).
+ * matches Windows point for point (a pen as wide as the shape: an Ellipse or RoundRect keeps the box without the pen's inset, and one chord is a FIX off, see SLIVER).
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -23,8 +23,11 @@ interface NativeShape {
 }
 
 const KINDS = ['chord', 'pie', 'arc', 'ellipse', 'roundrect'] as const;
-/** Shapes drawn with a pen as wide as they are (see the early return below). */
-const DEGENERATE = new Set([985, 1169, 1493]);
+/**
+ * A chord whose pen is as wide as its box (99 units on 100): the inset box is inverted in x, which Windows still builds as a
+ * sliver of 8 FIX. Four of its values are a FIX off (whole-quadrant rounding at that width).
+ */
+const SLIVER = 985;
 
 describe('WMF shapes at the 0.96 scale against native GetPath', () => {
 	const bytes = readFileSync(fixturePath('wmf-shapes-scaled.wmf'));
@@ -52,9 +55,9 @@ describe('WMF shapes at the 0.96 scale against native GetPath', () => {
 			} else {
 				path = wmfShapePath.roundRect(p, l, t, r, b, c.corner[0], c.corner[1]);
 			}
-			if (c.pts.length > 0 && (!path || path.getPath.types.length === 0)) {
-				// A pen about as wide as the shape (three of the 1,500): Windows still builds a path from a clamped box; not reproduced.
-				expect(DEGENERATE.has(index)).toBe(true);
+			if (!path || path.getPath.types.length === 0) {
+				// A pen wider than the box in y: an arc has no path.
+				expect(c.pts.length).toBe(0);
 				return;
 			}
 			const got = path?.getPath ?? { pts: [], types: [] };
@@ -63,6 +66,10 @@ describe('WMF shapes at the 0.96 scale against native GetPath', () => {
 			for (let i = 0; i < got.types.length; i++) {
 				expect(got.types[i]).toBe(c.pts[3 * i + 2]);
 				worst = Math.max(worst, Math.abs(got.pts[2 * i] - c.pts[3 * i]), Math.abs(got.pts[2 * i + 1] - c.pts[3 * i + 1]));
+			}
+			if (index === SLIVER) {
+				expect(worst).toBeLessThanOrEqual(1);
+				return;
 			}
 			maxDelta = Math.max(maxDelta, worst);
 			if (worst > 0) {
