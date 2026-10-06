@@ -385,15 +385,21 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 		: penDeviceWidth(rCtx);
 	const capBits = flags & 0xf00;
 	const joinBits = flags & 0xf000;
-	const dashes = state.penExtended ? geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1)) : null;
 	// Unequal axis scales form an elliptical nib. Its device ellipse is
 	// flattened before the stroke's sides/caps are selected, as WidenPath
-	// controls show. Dash measurement under anisotropy still needs its own
-	// logical-space metric, so retain the existing dashed path here.
-	const ellipse = !dashes && !rCtx.wholeDevicePixels &&
+	// controls show. A dashed pen lays its pattern out in logical space
+	// (native WidenPath, 2,160 outlines): the dashes are in logical units and
+	// each segment is measured by its logical length (`dashMetric`).
+	const ellipse = !rCtx.wholeDevicePixels &&
 		state.penWidth * Math.abs(matrix[0]) * 16 >= 1 && state.penWidth * Math.abs(matrix[3]) * 16 >= 1 &&
 		Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6 &&
 		Math.abs(Math.abs(matrix[0]) - Math.abs(matrix[3])) > 1e-6;
+	const dashes = state.penExtended
+		? ellipse
+			? geometricStyle(flags, state.penWidth, state.penUserStyle, 1)
+			: geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1))
+		: null;
+	const dashMetric = ellipse && dashes ? ([Math.abs(matrix[0]), Math.abs(matrix[3])] as [number, number]) : undefined;
 	return {
 		width: Math.round((ellipse ? state.penWidth * Math.abs(matrix[0]) : widthPx) * 16),
 		...(ellipse ? { height: Math.round(state.penWidth * Math.abs(matrix[3]) * 16) } : {}),
@@ -409,6 +415,7 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 						: 'miter',
 		miterLimit: state.miterLimit ?? 10,
 		dashes: dashes ? dashes.map((v) => v * 16) : null,
+		...(dashMetric ? { dashMetric } : {}),
 		shortenDashes: (flags & 0x0f) !== 7,
 		// One logical unit per device pixel, unrotated: GDI measures dash
 		// segments in whole pixels.

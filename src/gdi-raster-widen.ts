@@ -103,6 +103,11 @@ export interface WidenOptions {
 	 * pixel; measured at that scale only, other scales stay exact).
 	 */
 	wholePixelDashVectors?: boolean;
+	/**
+	 * Unequal axis scales (device per logical unit along x and y): `dashes` are then in logical FIX and each segment is
+	 * measured by its logical length (native WidenPath lays the pattern out in logical space).
+	 */
+	dashMetric?: [number, number];
 	/** Native Ellipse curve sides; retain the selected pen's inner triangle rule. */
 	roundCurveJoins?: boolean;
 }
@@ -718,7 +723,15 @@ interface DashPiece {
  * pen width so the caps end where the dash does; a dash no longer than the
  * width becomes a single capped point.
  */
-function dashPieces(P: Pt[], tangents: (Pt | undefined)[], curveFlags: boolean[], pattern: number[], shorten: number, wholePixelVectors: boolean): DashPiece[] {
+function dashPieces(
+	P: Pt[],
+	tangents: (Pt | undefined)[],
+	curveFlags: boolean[],
+	pattern: number[],
+	shorten: number,
+	wholePixelVectors: boolean,
+	metric?: [number, number],
+): DashPiece[] {
 	const out: DashPiece[] = [];
 	const dashes: number[] = [];
 	for (let i = 0; i < pattern.length; i += 2) {
@@ -738,13 +751,13 @@ function dashPieces(P: Pt[], tangents: (Pt | undefined)[], curveFlags: boolean[]
 		const [x0, y0] = P[i];
 		const [x1, y1] = P[i + 1];
 		const dir: Pt = [x1 - x0, y1 - y0];
-		const real = Math.hypot(dir[0], dir[1]);
+		const real = metric ? Math.hypot(dir[0] / metric[0], dir[1] / metric[1]) : Math.hypot(dir[0], dir[1]);
 		// GDI measures a segment from its vector cut down to whole pixels (an
 		// arithmetic shift of the FIX components, so it rounds toward minus
 		// infinity), then places the cut at the same fraction of the real
 		// segment. Lines on whole pixels lose nothing; the odd-FIX segments of a
 		// flattened curve come out up to a pixel short or long.
-		const len = wholePixelVectors ? Math.hypot(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : Math.hypot(dir[0], dir[1]);
+		const len = metric ? real : wholePixelVectors ? Math.hypot(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : Math.hypot(dir[0], dir[1]);
 		if (len === 0) {
 			if (on && cur) {
 				cur.pts.push(P[i + 1]);
@@ -839,10 +852,10 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 		}
 		if (dashed) {
 			const run = closed ? [...P, P[0]] : P;
-			const shorten = opts.cap === 'flat' || opts.shortenDashes === false ? 0 : opts.width;
+			const shorten = opts.cap === 'flat' || opts.shortenDashes === false ? 0 : opts.dashMetric ? opts.width / opts.dashMetric[0] : opts.width;
 			const runTangents = closed ? [...dirs, undefined] : dirs;
 			const runCurves = closed ? [...curves, !!fig.roundWiden] : curves;
-			for (const piece of dashPieces(run, runTangents, runCurves, opts.dashes as number[], shorten, !!opts.wholePixelDashVectors)) {
+			for (const piece of dashPieces(run, runTangents, runCurves, opts.dashes as number[], shorten, !!opts.wholePixelDashVectors, opts.dashMetric)) {
 				// Drop repeated points, keeping each remaining segment's direction.
 				const pts: Pt[] = [piece.pts[0]];
 				const pdirs: Pt[] = [];

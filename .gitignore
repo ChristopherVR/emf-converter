@@ -7,3 +7,4 @@ gdi-report.txt
 .claude/worktrees/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+.scratch/

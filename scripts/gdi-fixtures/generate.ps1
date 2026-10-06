@@ -284,6 +284,12 @@ if ($Which -eq 'wide-pen-axis-probe') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'dashed-pen-axis-probe') {
+    Add-Type -Path (Join-Path $here 'DashedAnisotropicPenProbe.cs')
+    [DashedAnisotropicPenProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-focus' -or $Which -eq 'halftone-transitions') {
     if ($Which -eq 'path-gradient-focus') {
         Add-Type -Path (Join-Path $here 'PathGradientFocusProbe.cs') -ReferencedAssemblies System.Drawing
