@@ -4,7 +4,7 @@ Open items, grouped by area. [Limitations](./limitations.md) describes current b
 
 Windows reference images come from `scripts/gdi-fixtures`. The **Windows fixtures** workflow (`.github/workflows/windows-fixtures.yml`) runs those scripts on a GitHub-hosted Windows runner and pushes the output to a `windows-fixtures/<run_id>` branch. See `scripts/gdi-fixtures/README.md`.
 
-Independent fractional RoundRect translation controls now cover 576 paths. Every native translation is exact; 228 replay paths match and all remaining coordinates differ by at most one FIX, with per-case bounds. Coordinate magnitude is ruled out as the cause; side-point and corner-end rounding remain open.
+Independent fractional RoundRect translation controls cover 576 paths in both arc directions; every native translation and every replay path is exact.
 
 ## Current parity priorities (3 October 2026)
 
