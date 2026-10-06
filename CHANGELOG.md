@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.11.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.1) - 2026-10-06
+
+### Testing
+
+- Pin native rotated-pen perpendiculars with a direction sweep ([d5e2bfc](https://github.com/ChristopherVR/emf-converter/commit/d5e2bfc271231434bf9b91785ef8c549883084d5))
+
 ## [4.11.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.0) - 2026-10-06
 
 ### Features
