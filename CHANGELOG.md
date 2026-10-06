@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.11.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.0) - 2026-10-06
+
+### Features
+
+- Widen rotated/sheared pens in device space with the matrix's own nib ([99ba022](https://github.com/ChristopherVR/emf-converter/commit/99ba02282809e97f2c4a97487518940bcee0b47f))
+
 ## [4.10.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.10.0) - 2026-10-06
 
 ### Features
