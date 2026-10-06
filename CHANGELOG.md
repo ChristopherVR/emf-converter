@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.11.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.3) - 2026-10-06
+
+### Bug Fixes
+
+- Build the SVG tree without spreading every top-level node into push() (#23) ([93123c2](https://github.com/ChristopherVR/emf-converter/commit/93123c2804a3164676c8ad6057a0e13e2015dd0e))
+
 ## [4.11.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.2) - 2026-10-06
 
 ### Documentation
