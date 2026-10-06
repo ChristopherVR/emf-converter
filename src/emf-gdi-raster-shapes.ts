@@ -192,12 +192,15 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, cloc
 				pts[2 * k] += k >= 8 ? Math.round(1 + v) : Math.ceil(v - 0.5);
 			}
 		} else {
-			for (const k of [1, 2, 3, 4, 5, 6, 8, 15]) {
+			// Clockwise: the half first drawn, but its two end points stay when the corner is at least half the box high
+			// (native GetPath).
+			const tall = box.cornerExact !== undefined && box.cornerExact[1] * 2 >= Math.abs(box.eyy) - 1e-9;
+			for (const k of tall ? [1, 2, 3, 4, 5, 6, 8, 15] : [0, 1, 2, 3, 4, 5, 6, 7]) {
 				pts[2 * k]++;
 			}
 		}
 	}
-	if (box.cornerExact && !clockwise && isAxisBox(box)) {
+	if (box.cornerExact && isAxisBox(box)) {
 		// An inside-frame pen's RoundRect: the edge end points and controls round from the unrounded corner scaled onto
 		// the box (native GetPath, 2,000 shapes at six scales in GM_ADVANCED and 1,500 at the WMF 0.96 scale, all exact):
 		// horizontally onto the width made even upwards (the top edge of an odd width a FIX right of the bottom's),
@@ -206,12 +209,12 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, cloc
 		const h = f.b - f.t;
 		if (w > 0 && h > 0) {
 			const hx = Math.round((box.cornerExact[0] * (w + (w % 2))) / w / 2);
-			const hy = Math.round((box.cornerExact[1] * (h - (h % 2))) / h / 2);
+			const hy = Math.round((box.cornerExact[1] * (clockwise ? h + (h % 2) : h - (h % 2))) / h / 2);
 			const hc = Math.ceil(KAPPA * hx);
-			const vc = Math.floor(KAPPA * hy);
+			const vc = clockwise ? Math.ceil(KAPPA * hy) : Math.floor(KAPPA * hy);
 			const set = (k: number, x: number | null, y: number) => {
 				if (x !== null) pts[2 * k] = x;
-				pts[2 * k + 1] = y;
+				pts[2 * k + 1] = clockwise ? f.t + f.b - y : y;
 			};
 			const a = box.halfX ? 1 : 0;
 			set(0, null, f.t + hy);

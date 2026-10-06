@@ -607,10 +607,22 @@ export function ellipseBeziersBox(box: FixBox, clockwise = false): number[] {
 	if (!clockwise) {
 		return ellipsePoints(box, false);
 	}
-	const e = clockwiseEllipseBeziersBox(box);
+	const { halfX, ...plain } = box;
+	const e = clockwiseEllipseBeziersBox(plain);
 	const out: number[] = [];
 	for (let i = e.length - 2; i >= 0; i -= 2) {
 		out.push(e[i], e[i + 1]);
+	}
+	// An odd width: the top mid point rounds up and the bottom's down (the counter-clockwise ellipse's the other way).
+	const odd = Math.abs(plain.exx) % 2;
+	out[18] += odd;
+	out[6] -= odd;
+	if (halfX) {
+		// Native GetPath shifts the first half of the path as drawn (heading down) a FIX right, as a counter-clockwise
+		// ellipse's.
+		for (const k of [0, 1, 2, 3, 4, 5, 12]) {
+			out[2 * k]++;
+		}
 	}
 	return out;
 }
@@ -637,10 +649,10 @@ function ellipsePoints(box: FixBox, cwControls: boolean): number[] {
 	const vCtl = (v: number) => Math.floor(v / 2) - Math.floor(KAPPA * Math.floor(v / 2)); // upper control
 	const vCtlR = (v: number) => v - vCtl(v); // lower control
 	// A clockwise arc's controls: a rounded-up distance about each mid point.
-	const vDist = (v: number) => Math.ceil(KAPPA * Math.floor(v / 2));
-	const rightUpper = cwControls ? (v: number) => vMidHi(v) - vDist(v) : vCtl;
+	const vDist = (v: number) => (v % 2 === 0 ? Math.ceil(KAPPA * Math.floor(v / 2)) : Math.floor(KAPPA * Math.ceil(v / 2)));
+	const rightUpper = cwControls ? (v: number) => vMidLo(v) - vDist(v) : vCtl;
 	const leftUpper = cwControls ? (v: number) => vMidLo(v) - vDist(v) : vCtl;
-	const leftLower = cwControls ? (v: number) => vMidLo(v) + vDist(v) : vCtlR;
+	const leftLower = cwControls ? (v: number) => vMidHi(v) + vDist(v) : vCtlR;
 	const rightLower = cwControls ? (v: number) => vMidHi(v) + vDist(v) : vCtlR;
 	const zero = () => 0;
 	const full = (v: number) => v;
@@ -1021,21 +1033,29 @@ export function arcBeziers(
 	} else {
 		while (a1 >= a0) a1 -= 2 * Math.PI;
 	}
-	const px = (u: number, v: number) => Math.round(cx + rx * u + (halfX ? 1 + v : 0));
+	const px = (u: number, v: number) => (clockwise && halfX ? Math.ceil(cx + rx * u + 0.5 - v) : Math.round(cx + rx * u + (halfX ? 1 + v : 0)));
 	const py = (v: number) => Math.round(cy - ry * v);
 	// A clockwise arc's whole quadrants round their vertical control
 	// distances up (measured: 449 of 452 quadrants), the mirror image of
 	// the counter-clockwise ellipse's rounding down.
 	const eb = axisBox(l, t, r, b);
 	if (halfX) eb.halfX = true;
-	const E = clockwise ? clockwiseEllipseBeziersBox(eb) : ellipseBeziersBox(eb);
+	const E = ellipseBeziersBox(eb);
+	if (clockwise) {
+		// The clockwise ellipse's own points (drawn heading down), back in the counter-clockwise order that `qi` indexes.
+		const cwPts = ellipseBeziersBox(eb, true);
+		for (let i = 0; i < cwPts.length; i += 2) {
+			E[cwPts.length - 2 - i] = cwPts[i];
+			E[cwPts.length - 1 - i] = cwPts[i + 1];
+		}
+	}
 	const startUnit = small ? [Math.cos(a0), Math.sin(a0)] : polygonTrig(a0);
 	const out: number[] = [px(startUnit[0], startUnit[1]), py(startUnit[1])];
 	// Under an inside-frame pen, a counter-clockwise radial exactly on an axis adds a zero-length piece: before the first
 	// piece when the arc starts on 90 or 180 degrees, after the last when it ends on 270 or 0 (native GetPath).
 	const onAxis = (angle: number): boolean => Math.abs(angle / Q - Math.round(angle / Q)) < 1e-9;
 	const axisQuadrant = (angle: number): number => ((Math.round(angle / Q) % 4) + 4) % 4;
-	if (framed && s > 0 && onAxis(a0) && (axisQuadrant(a0) === 1 || axisQuadrant(a0) === 2)) {
+	if (framed && onAxis(a0) && (s > 0 ? axisQuadrant(a0) === 1 || axisQuadrant(a0) === 2 : axisQuadrant(a0) === 2 || axisQuadrant(a0) === 3)) {
 		out.push(out[0], out[1], out[0], out[1], out[0], out[1]);
 	}
 	let a = a0;
@@ -1068,7 +1088,7 @@ export function arcBeziers(
 		}
 		a = e;
 	}
-	if (framed && s > 0 && onAxis(a1) && (axisQuadrant(a1) === 3 || axisQuadrant(a1) === 0)) {
+	if (framed && onAxis(a1) && (s > 0 ? axisQuadrant(a1) === 3 || axisQuadrant(a1) === 0 : axisQuadrant(a1) === 1 || axisQuadrant(a1) === 0)) {
 		// The zero-length piece sits on the generic arc point of the end radial, which can be a FIX from the last piece's.
 		const endUnit = polygonTrig(a1);
 		const ex = px(endUnit[0], endUnit[1]);
