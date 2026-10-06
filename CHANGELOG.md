@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.10.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.10.0) - 2026-10-06
+
+### Features
+
+- Widen pens under rotated/sheared matrices as a circle in logical space ([cb673e9](https://github.com/ChristopherVR/emf-converter/commit/cb673e9d6ee0840b12512979d0fb6711065960df))
+
 ## [4.9.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.9.0) - 2026-10-06
 
 ### Features
