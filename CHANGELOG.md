@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.11.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.2) - 2026-10-06
+
+### Documentation
+
+- Record what was ruled out for the rotated-pen nib and perpendicular rounding ([3faaf02](https://github.com/ChristopherVR/emf-converter/commit/3faaf02094ba99ec4aa8ec75ae00fbfb9e48cffd))
+
 ## [4.11.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.1) - 2026-10-06
 
 ### Testing
