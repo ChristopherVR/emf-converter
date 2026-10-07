@@ -995,7 +995,9 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 		} else if (closed && P.length >= 3) {
 			outliner.closed(P, dirs, curves);
 		} else if (closed && P.length === 2) {
-			outliner.open([P[0], P[1], P[0]]);
+			// A closed figure of two vertices (a chord whose arc is one flattened segment) is a closed polygon whose second
+			// segment retraces the first: joins at both vertices and no caps, as native WidenPath draws it.
+			outliner.closed(P, dirs, curves);
 		} else {
 			outliner.open(P, undefined, dirs, curves);
 		}

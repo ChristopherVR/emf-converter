@@ -290,6 +290,30 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"curve-widen.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
+	// Native WidenPath of chords whose arc is very short (1 to 15 degrees in half-degree steps on a circle of radius 100 px, so the arc flattens
+	// to one or two segments that the closing line retraces), at two widths under every cap and join (chord-sweep.json.gz): the chord's
+	// own GetPath points ("source", FIX) and the widened outline ("expected").
+	public static void ChordSweep(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			foreach(int width in new[]{9,16})foreach(int start in new[]{0,37})for(int tenths=10;tenths<=150;tenths+=5)for(int cap=0;cap<3;cap++)for(int join=0;join<3;join++){
+				double a0=Math.PI*start/180.0,a1=Math.PI*(start+tenths/10.0)/180.0;
+				int[] p1=new[]{(int)Math.Round(200+Math.Cos(a0)*1000),(int)Math.Round(200-Math.Sin(a0)*1000)},p2=new[]{(int)Math.Round(200+Math.Cos(a1)*1000),(int)Math.Round(200-Math.Sin(a1)*1000)};
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|cap*0x100|join*0x1000),(uint)width,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					BeginPath(dc);Chord(dc,100,100,300,300,p1[0],p1[1],p2[0],p2[1]);EndPath(dc);
+					string source=ReadFixPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"width\":").Append(width).Append(",\"start\":").Append(start).Append(",\"tenths\":").Append(tenths).Append(",\"cap\":").Append(cap).Append(",\"join\":").Append(join).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"chord-sweep.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
 	// Native WidenPath of a square-capped, round-joined arc on a circle of radius 100 px, sweeping the end angle in whole degrees
 	// (1..359) at two widths and two start angles (arc-cap-sweep.json.gz): the arc's own GetPath points ("source", FIX) and the
 	// widened outline ("expected"), isolating the cap extension from every other stage.
