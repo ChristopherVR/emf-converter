@@ -10,13 +10,113 @@ public static class CodecProbe
 	{
 		foreach (string name in new[] { "deflate-strips", "deflate-legacy-strips", "deflate-predictor-strips", "uncompressed-tiles", "deflate-tiles", "deflate-legacy-tiles", "jpeg-ycbcr-strips", "jpeg-rgb-tiles", "jpeg-ycbcr-tiles", "jpeg-rgb-strips" })
 			Reference(Path.Combine(dir, "codec-tiff-" + name + ".bin"));
-		foreach (string name in new[] { "444", "422", "420", "progressive", "rgb", "grey" })
+		foreach (string name in new[] { "444", "422", "420", "progressive", "rgb", "grey", "cmyk-patches", "cmyk-noadobe", "cmyk-ramps", "cmyk-photo", "cmyk-photo-420", "ycck-patches", "ycck-photo", "ycck-photo-420", "arithmetic" })
 			Reference(Path.Combine(dir, "codec-jpeg-" + name + ".bin"));
+		// GDI+ refuses a 12-bit JPEG ("Unsupported JPEG data precision 12"), so only the metafile playback is recorded.
+		foreach (string name in new[] { "12bit", "arithmetic", "cmyk-photo" })
+			JpegPlayback(dir, name);
+	}
+	/// <summary>
+	/// Records an EMF+ metafile that draws a placeholder JPEG, swaps the embedded JPEG bytes for codec-jpeg-NAME.bin
+	/// and writes GDI+'s playback of it (a magenta surface, the metafile on it) as codec-jpeg-NAME-playback.png.
+	/// </summary>
+	static void JpegPlayback(string dir, string name)
+	{
+		string emf = Path.Combine(dir, "codec-jpeg-" + name + "-playback.emf");
+		byte[] replacement = File.ReadAllBytes(Path.Combine(dir, "codec-jpeg-" + name + ".bin"));
+		using (var surface = new Bitmap(300, 200))
+		using (var host = Graphics.FromImage(surface))
+		{
+			IntPtr hdc = host.GetHdc();
+			try
+			{
+				using (var recording = new Metafile(emf, hdc, EmfType.EmfPlusOnly))
+				using (var g = Graphics.FromImage(recording))
+				using (var placeholder = Image.FromFile(Path.Combine(dir, "codec-jpeg-444.bin")))
+				{
+					g.Clear(Color.White);
+					g.DrawImage(placeholder, new Rectangle(20, 10, 260, 170));
+				}
+			}
+			finally { host.ReleaseHdc(hdc); }
+		}
+		byte[] source = File.ReadAllBytes(emf);
+		var patched = new MemoryStream();
+		int position = 0;
+		while (position < source.Length)
+		{
+			int type = BitConverter.ToInt32(source, position), size = BitConverter.ToInt32(source, position + 4);
+			byte[] record = new byte[size];
+			Array.Copy(source, position, record, 0, size);
+			if (type == 70 && size > 16 && record[12] == 'E' && record[13] == 'M' && record[14] == 'F' && record[15] == '+')
+				record = PatchComment(record, replacement);
+			patched.Write(record, 0, record.Length);
+			position += size;
+		}
+		byte[] result = patched.ToArray();
+		BitConverter.GetBytes(result.Length).CopyTo(result, 48);
+		File.WriteAllBytes(emf, result);
+		using (var mf = new Metafile(emf))
+		using (var output = new Bitmap(300, 200, PixelFormat.Format32bppArgb))
+		using (var g = Graphics.FromImage(output))
+		{
+			g.Clear(Color.Magenta);
+			g.DrawImage(mf, new Rectangle(0, 0, mf.Width, mf.Height), 0, 0, mf.Width, mf.Height, GraphicsUnit.Pixel);
+			output.Save(Path.Combine(dir, "codec-jpeg-" + name + "-playback.png"), ImageFormat.Png);
+		}
+	}
+	/// <summary>Rebuilds an EMR_COMMENT holding EMF+ records with the JPEG inside its image object replaced.</summary>
+	static byte[] PatchComment(byte[] comment, byte[] jpeg)
+	{
+		var records = new MemoryStream();
+		int end = 12 + BitConverter.ToInt32(comment, 8), position = 16;
+		while (position < end)
+		{
+			ushort type = BitConverter.ToUInt16(comment, position), flags = BitConverter.ToUInt16(comment, position + 2);
+			int size = BitConverter.ToInt32(comment, position + 4), dataSize = BitConverter.ToInt32(comment, position + 8);
+			byte[] body = new byte[size];
+			Array.Copy(comment, position, body, 0, size);
+			if (type == 0x4008 && ((flags >> 8) & 0x7f) == 5)
+			{
+				int start = 12;
+				while (!(body[start] == 0xff && body[start + 1] == 0xd8 && body[start + 2] == 0xff)) start++;
+				int length = start - 12 + jpeg.Length;
+				length += (4 - length % 4) % 4;
+				var rebuilt = new byte[12 + length];
+				BitConverter.GetBytes(type).CopyTo(rebuilt, 0);
+				BitConverter.GetBytes(flags).CopyTo(rebuilt, 2);
+				BitConverter.GetBytes(rebuilt.Length).CopyTo(rebuilt, 4);
+				BitConverter.GetBytes(length).CopyTo(rebuilt, 8);
+				Array.Copy(body, 12, rebuilt, 12, start - 12);
+				Array.Copy(jpeg, 0, rebuilt, start, jpeg.Length);
+				body = rebuilt;
+			}
+			records.Write(body, 0, body.Length);
+			position += size;
+		}
+		int payload = 4 + (int)records.Length, total = 12 + payload;
+		total += (4 - total % 4) % 4;
+		var output = new byte[total];
+		BitConverter.GetBytes(70).CopyTo(output, 0);
+		BitConverter.GetBytes(total).CopyTo(output, 4);
+		BitConverter.GetBytes(payload).CopyTo(output, 8);
+		output[12] = (byte)'E'; output[13] = (byte)'M'; output[14] = (byte)'F'; output[15] = (byte)'+';
+		records.ToArray().CopyTo(output, 16);
+		return output;
 	}
 	static void Reference(string path)
 	{
 		using (var decoded = Image.FromFile(path))
 			decoded.Save(Path.ChangeExtension(path, ".png"), ImageFormat.Png);
+	}
+	/// <summary>Decodes every .jpg in a directory to a PNG next to it; a file GDI+ cannot decode gets a .failed.txt holding the error.</summary>
+	public static void DecodeDirectory(string dir)
+	{
+		foreach (string path in Directory.GetFiles(dir, "*.jpg"))
+		{
+			try { Reference(path); }
+			catch (Exception e) { File.WriteAllText(Path.ChangeExtension(path, ".failed.txt"), e.GetType().Name + ": " + e.Message); }
+		}
 	}
 	static void GifFrame(BinaryWriter writer, bool transparent, int transparentIndex, int left, int top, int width, int height, byte[] pixels, bool localPalette = false)
 	{

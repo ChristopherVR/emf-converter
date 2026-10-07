@@ -319,6 +319,12 @@ if ($Which -eq 'path-gradient-focus' -or $Which -eq 'halftone-transitions') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'image-codecs-cmyk-lut') {
+    if (!$TablesDir) { throw 'Pass the directory written by cmyk-lut-inputs.py' }
+    Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing
+    [CodecProbe]::DecodeDirectory((Resolve-Path -LiteralPath $TablesDir).Path)
+    return
+}
 if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra' -or $Which -eq 'image-codecs-advanced') {
     Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing
     if ($Which -eq 'image-codecs-advanced') {
