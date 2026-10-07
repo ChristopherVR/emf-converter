@@ -1,0 +1,8 @@
+[
+  { "name": "textx-arial-q0-default", "w": 1209, "h": 602, "ox": 0, "oy": 0, "shares": ["textx-arial-q1-draft", "textx-arial-q2-proof", "textx-arial-cleartype"] },
+  { "name": "textx-arial-ctnatural", "w": 1209, "h": 602, "ox": 0, "oy": 0, "shares": [] },
+  { "name": "textx-fon-fixedsys", "w": 964, "h": 628, "ox": 0, "oy": 0, "shares": [] },
+  { "name": "textx-fon-system", "w": 948, "h": 629, "ox": 0, "oy": 0, "shares": [] },
+  { "name": "textx-segoeui-cell-mono", "w": 678, "h": 464, "ox": 0, "oy": 0, "shares": [] },
+  { "name": "rotate-text-25deg", "w": 201, "h": 140, "ox": 0, "oy": 0, "shares": [] }
+]

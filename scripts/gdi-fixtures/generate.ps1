@@ -12,7 +12,7 @@
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
 # playback of the recorded metafile.
-param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '')
+param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '', [switch]$PlaybackOpen)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # GetDeviceCaps and enhanced-metafile headers must use the same physical
@@ -91,6 +91,16 @@ if ($Which -eq 'text-coverage' -or $Which -eq 'text-cleartype-coverage') {
 if ($Which -eq 'playback-extents') {
     Add-Type -Path (Join-Path $here 'PlaybackExtentProbe.cs') -ReferencedAssemblies System.Drawing
     $cases = Get-Content -LiteralPath (Join-Path $outDir 'playback-extents.json') -Raw | ConvertFrom-Json
+    # Candidates whose native playback does not reproduce the original overlap:
+    # kept as `.wide.png` evidence of how far Windows paints, never as references.
+    $open = Get-Content -LiteralPath (Join-Path $outDir 'playback-extents-open.json') -Raw | ConvertFrom-Json
+    if ($PlaybackCase -and $PlaybackOpen) {
+        $case = @($open | Where-Object { $_.name -eq $PlaybackCase })
+        if ($case.Count -ne 1) { throw "Unknown open playback case: $PlaybackCase" }
+        $case = $case[0]
+        [void][PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $false, $false, $false, '.wide.png')
+        return
+    }
     if ($PlaybackCase) {
         $case = @($cases | Where-Object { $_.name -eq $PlaybackCase })
         if ($case.Count -ne 1) { throw "Unknown expanded playback case: $PlaybackCase" }
@@ -105,10 +115,18 @@ if ($Which -eq 'playback-extents') {
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extents -PlaybackCase $case.name
         if ($LASTEXITCODE -ne 0) { throw "Expanded playback capture failed: $($case.name)" }
     }
-    $files = @((Join-Path $outDir 'playback-extents.json')) + @($cases | ForEach-Object {
+    foreach ($case in $open) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extents -PlaybackCase $case.name -PlaybackOpen
+        if ($LASTEXITCODE -ne 0) { throw "Open playback capture failed: $($case.name)" }
+    }
+    $files = @((Join-Path $outDir 'playback-extents.json'), (Join-Path $outDir 'playback-extents-open.json')) + @($cases | ForEach-Object {
         Join-Path $outDir ($_.name + '.emf')
         Join-Path $outDir ($_.name + '.png')
         Join-Path $outDir ($_.name + '.extent.png')
+    }) + @($open | ForEach-Object {
+        Join-Path $outDir ($_.name + '.emf')
+        Join-Path $outDir ($_.name + '.png')
+        Join-Path $outDir ($_.name + '.wide.png')
     })
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
     return
