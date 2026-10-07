@@ -1,6 +1,8 @@
 """Encode TIFF variants for native Windows decoding (requires Python + Pillow)."""
 import io
 import json
+import math
+import random
 from pathlib import Path
 import struct
 import sys
@@ -84,6 +86,59 @@ for name, subsampling, progressive in [("444", 0, False), ("422", 1, False),
                 subsampling=subsampling, progressive=progressive)
 source.save(destination / "codec-jpeg-rgb.bin", format="JPEG", quality=85, keep_rgb=True)
 source.convert("L").save(destination / "codec-jpeg-grey.bin", format="JPEG", quality=85)
+
+
+# CMYK and YCCK JPEG. Pillow writes four-component JPEG with an Adobe APP14 marker (transform 0) and inverted
+# samples; the YCCK files get transform 2 patched in. Flat 8 x 8 blocks at quality 100 carry exactly the stored
+# components (no AC terms), so the decoded ink amounts are known; the "photo" files are lossy, smooth content.
+def adobe_transform(data, transform):
+    patched = bytearray(data)
+    patched[patched.find(b"Adobe") + 11] = transform
+    return bytes(patched)
+
+
+def without_adobe(data):
+    start = data.find(b"\xff\xee")
+    return data[:start] + data[start + 2 + int.from_bytes(data[start + 2:start + 4], "big"):]
+
+
+def encode(image, **options):
+    stream = io.BytesIO()
+    image.save(stream, format="JPEG", **options)
+    return stream.getvalue()
+
+
+rng = random.Random(5)
+patches = Image.new("CMYK", (128, 128))
+ycck_patches = Image.new("CMYK", (128, 128))
+for index in range(256):
+    x, y = (index % 16) * 8, (index // 16) * 8
+    patches.paste(tuple(rng.randrange(256) for _ in range(4)), (x, y, x + 8, y + 8))
+    ycck_patches.paste(tuple(rng.randrange(256) for _ in range(3)) + (rng.choice([0, 0, 80, 255]),), (x, y, x + 8, y + 8))
+cmyk_patches = encode(patches, quality=100, subsampling=0)
+(destination / "codec-jpeg-cmyk-patches.bin").write_bytes(cmyk_patches)
+(destination / "codec-jpeg-cmyk-noadobe.bin").write_bytes(without_adobe(cmyk_patches))
+(destination / "codec-jpeg-ycck-patches.bin").write_bytes(adobe_transform(encode(ycck_patches, quality=100, subsampling=0), 2))
+ramps = Image.new("CMYK", (256, 64))
+ramp_pixels = ramps.load()
+for x in range(256):
+    for y in range(64):
+        ink = [0, 0, 0, 0]
+        ink[y // 16] = x
+        ramp_pixels[x, y] = tuple(ink)
+(destination / "codec-jpeg-cmyk-ramps.bin").write_bytes(encode(ramps, quality=100, subsampling=0))
+photo = Image.new("RGB", (96, 64))
+photo.putdata([(int(127 + 120 * math.sin(x / 11 + y / 17)), int(127 + 120 * math.sin(x / 7 - y / 5 + 1)),
+                int(127 + 120 * math.cos(x / 13 + y / 9))) for y in range(64) for x in range(96)])
+photo_cmyk = photo.convert("CMYK")
+(destination / "codec-jpeg-cmyk-photo.bin").write_bytes(encode(photo_cmyk, quality=85, subsampling=0))
+(destination / "codec-jpeg-cmyk-photo-420.bin").write_bytes(encode(photo_cmyk, quality=85, subsampling=2))
+ycc = photo.convert("YCbCr")
+black = Image.new("L", photo.size)
+black.putdata([int(60 + 60 * math.sin(x / 9 + y / 7)) for y in range(64) for x in range(96)])
+ycck_photo = Image.merge("CMYK", (*ycc.split(), black))
+(destination / "codec-jpeg-ycck-photo.bin").write_bytes(adobe_transform(encode(ycck_photo, quality=85, subsampling=0), 2))
+(destination / "codec-jpeg-ycck-photo-420.bin").write_bytes(adobe_transform(encode(ycck_photo, quality=85, subsampling=2), 2))
 (destination / "codec-advanced-encoder.json").write_text(json.dumps({
     "python": sys.version.split()[0], "pillow": PIL.__version__,
     "libtiff": features.version_codec("libtiff"), "jpeg": features.version_codec("jpg"),

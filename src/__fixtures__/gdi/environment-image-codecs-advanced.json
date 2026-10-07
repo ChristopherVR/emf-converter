@@ -1,15 +1,15 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-09-30T22:38:29.0087487Z",
+    "capturedAt":  "2026-10-07T20:25:01.0748778Z",
     "groups":  "image-codecs-advanced",
-    "os":  "Microsoft Windows NT 10.0.26200.0",
+    "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
     "architecture":  "AMD64",
     "runnerImage":  null,
     "runnerImageVersion":  null,
     "screenDpi":  [
-                      96,
-                      96
+                      144,
+                      144
                   ],
     "libraries":  [
                       {
@@ -3386,12 +3386,20 @@
                            "sha256":  "464e867c79a656196d53cc673a180eb675f94bf5729b041b6ba6d2dfd526f3a5"
                        },
                        {
+                           "name":  "codec-jpeg-12bit-playback.emf",
+                           "sha256":  "8361e78fd9b4be1356ceb3378a631c4b47b1d4a1d159b88d15a251b4e603d70b"
+                       },
+                       {
+                           "name":  "codec-jpeg-12bit-playback.png",
+                           "sha256":  "a0ca75b3abcbb66a8abcf225d9b2668007764e8abafe57e0c832e2b364c4e06b"
+                       },
+                       {
                            "name":  "codec-jpeg-420.bin",
                            "sha256":  "9364afefde5e14d10abbd5122862a0072189cabeaea12c27432a1013e42ae808"
                        },
                        {
                            "name":  "codec-jpeg-420.png",
-                           "sha256":  "52b22d589321150c19a7a54cf52a7719363ef8f0ec8df1caf6511e5f598ce91d"
+                           "sha256":  "f42fa12487ed675104300518708015b197f6ed0aff7a1810723a732f6f37a6ed"
                        },
                        {
                            "name":  "codec-jpeg-422.bin",
@@ -3399,7 +3407,7 @@
                        },
                        {
                            "name":  "codec-jpeg-422.png",
-                           "sha256":  "e7c6e8b6c42eecbacf3c915bf48bbcadc381a5411cc446ca17b2bac1cb97ec3c"
+                           "sha256":  "7a6e17a85180d55f366810503f953c33ddd48ddd618964616885192c1049b529"
                        },
                        {
                            "name":  "codec-jpeg-444.bin",
@@ -3407,7 +3415,67 @@
                        },
                        {
                            "name":  "codec-jpeg-444.png",
-                           "sha256":  "6aaac35f527ce74cd85b175c201f58d309370dc7a7c6c589072201d1f580f0bb"
+                           "sha256":  "e718890eb3adba22169cdcb55e18572681e1d29afa22af09bfc3535ddd417d29"
+                       },
+                       {
+                           "name":  "codec-jpeg-arithmetic.png",
+                           "sha256":  "518b5a471f1c3d35b7c35d049e75bc7f75653ad25d5e9111b25beb84286dde69"
+                       },
+                       {
+                           "name":  "codec-jpeg-arithmetic-playback.emf",
+                           "sha256":  "8d1b3b9f1e53f4ce4de911e3909d7142ab67872b477985de3608e20fb90a122e"
+                       },
+                       {
+                           "name":  "codec-jpeg-arithmetic-playback.png",
+                           "sha256":  "25a88442ff46b7113871e2660c11154ee0bed360c19b5a96e5cfcdb30ca10f5e"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-noadobe.bin",
+                           "sha256":  "7865b798d784e522954ab395b5c64f3742c6fe312690d9d6f4175c686e819ead"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-noadobe.png",
+                           "sha256":  "bd8f661bd14aa208a44e69b0f686bcb69c06890429999d68a3294062588be032"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-patches.bin",
+                           "sha256":  "f48af5ee0a35d27a9a06c7c7800b141370c15fe7bcf3d437bd59d80cc5aad6d7"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-patches.png",
+                           "sha256":  "bd8f661bd14aa208a44e69b0f686bcb69c06890429999d68a3294062588be032"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-photo.bin",
+                           "sha256":  "93d0824d0bdb66d214f5fd29872d925f7f9804d7a86f9fd23c3089867afaf17b"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-photo.png",
+                           "sha256":  "d9db3f6409d782395330d67b111fbbd0c3d45dbf322370ab94a1f570e8ae6e24"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-photo-420.bin",
+                           "sha256":  "1904e0ba1e858a60cbfcd148b7dafc77d4f49ce7afe8baa6fe38fa9781afd607"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-photo-420.png",
+                           "sha256":  "2a51206036ab789247f198c9735a08e7c3afb9041277559b32e5a2259c59a388"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-photo-playback.emf",
+                           "sha256":  "09df36424445fdd00ec5bff34760c5472ffa6f5688217a04d614b55af407fa7f"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-photo-playback.png",
+                           "sha256":  "62cbbcee59b738c4baed08a3d94087ab3998007462e104d5b081672a72143d97"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-ramps.bin",
+                           "sha256":  "84bfb7862f14138c97d96064718af71050ca604fe7c2f3eb8faae0c8f9e4f895"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-ramps.png",
+                           "sha256":  "9371b412cc87e802244f5447280e00e57a216e22578ce8ee75dcfdde3ccbe588"
                        },
                        {
                            "name":  "codec-jpeg-grey.bin",
@@ -3415,7 +3483,7 @@
                        },
                        {
                            "name":  "codec-jpeg-grey.png",
-                           "sha256":  "d1b258cab133790e86c22d227b95d590a4a99c9493cadf5604dcc420203b32e5"
+                           "sha256":  "9f805492f18401e2aa359070709fb3eeb1fb374335295ee65a769d4ef4a51fde"
                        },
                        {
                            "name":  "codec-jpeg-progressive.bin",
@@ -3423,7 +3491,7 @@
                        },
                        {
                            "name":  "codec-jpeg-progressive.png",
-                           "sha256":  "52b22d589321150c19a7a54cf52a7719363ef8f0ec8df1caf6511e5f598ce91d"
+                           "sha256":  "f42fa12487ed675104300518708015b197f6ed0aff7a1810723a732f6f37a6ed"
                        },
                        {
                            "name":  "codec-jpeg-rgb.bin",
@@ -3431,7 +3499,31 @@
                        },
                        {
                            "name":  "codec-jpeg-rgb.png",
-                           "sha256":  "3acb658563f603fb589d00eb6fb2bf65ec241aac3037ca13d269dd3211d59916"
+                           "sha256":  "0620daeed2d8ef80a43f2ff34d7eaeed9cc885784c05c2da439618b682f433fc"
+                       },
+                       {
+                           "name":  "codec-jpeg-ycck-patches.bin",
+                           "sha256":  "6fc31d767551ddaafe8e0d1da9cbd98e578757b5d4135cd6ebc6c8e0253a86b8"
+                       },
+                       {
+                           "name":  "codec-jpeg-ycck-patches.png",
+                           "sha256":  "5512901ec1c72791121212eaf83aea4291e3ee8821363393d85faeeedd142301"
+                       },
+                       {
+                           "name":  "codec-jpeg-ycck-photo.bin",
+                           "sha256":  "e0bd4cf39a1c131b0e03e3f6a0f3e7cb3d8eff65069b317b58dcca94bc6100f3"
+                       },
+                       {
+                           "name":  "codec-jpeg-ycck-photo.png",
+                           "sha256":  "6e84885dd141d74b68d0bdf751193f812fc00183b003a9acbad1a7da518ba827"
+                       },
+                       {
+                           "name":  "codec-jpeg-ycck-photo-420.bin",
+                           "sha256":  "107ba4ddaa859233e31de80ac0890750c3d0a5ef47b615d07d756015404addd5"
+                       },
+                       {
+                           "name":  "codec-jpeg-ycck-photo-420.png",
+                           "sha256":  "19ba502fe7dc299768147b64325e950134e57308da4e33753f71655b73e5655d"
                        },
                        {
                            "name":  "codec-tiff-deflate-legacy-strips.bin",
@@ -3439,7 +3531,7 @@
                        },
                        {
                            "name":  "codec-tiff-deflate-legacy-strips.png",
-                           "sha256":  "b4f051c5bfe2d7861a1b98384bb59c635d7a0706ca4dc67d8f6c8b8f8e2503ec"
+                           "sha256":  "326d3ad5643b47aff85f464e57e5e1c7cb3c798af2c55f411485bd75833f2de3"
                        },
                        {
                            "name":  "codec-tiff-deflate-legacy-tiles.bin",
@@ -3447,7 +3539,7 @@
                        },
                        {
                            "name":  "codec-tiff-deflate-legacy-tiles.png",
-                           "sha256":  "b4f051c5bfe2d7861a1b98384bb59c635d7a0706ca4dc67d8f6c8b8f8e2503ec"
+                           "sha256":  "326d3ad5643b47aff85f464e57e5e1c7cb3c798af2c55f411485bd75833f2de3"
                        },
                        {
                            "name":  "codec-tiff-deflate-predictor-strips.bin",
@@ -3455,7 +3547,7 @@
                        },
                        {
                            "name":  "codec-tiff-deflate-predictor-strips.png",
-                           "sha256":  "b4f051c5bfe2d7861a1b98384bb59c635d7a0706ca4dc67d8f6c8b8f8e2503ec"
+                           "sha256":  "326d3ad5643b47aff85f464e57e5e1c7cb3c798af2c55f411485bd75833f2de3"
                        },
                        {
                            "name":  "codec-tiff-deflate-strips.bin",
@@ -3463,7 +3555,7 @@
                        },
                        {
                            "name":  "codec-tiff-deflate-strips.png",
-                           "sha256":  "b4f051c5bfe2d7861a1b98384bb59c635d7a0706ca4dc67d8f6c8b8f8e2503ec"
+                           "sha256":  "326d3ad5643b47aff85f464e57e5e1c7cb3c798af2c55f411485bd75833f2de3"
                        },
                        {
                            "name":  "codec-tiff-deflate-tiles.bin",
@@ -3471,7 +3563,7 @@
                        },
                        {
                            "name":  "codec-tiff-deflate-tiles.png",
-                           "sha256":  "b4f051c5bfe2d7861a1b98384bb59c635d7a0706ca4dc67d8f6c8b8f8e2503ec"
+                           "sha256":  "326d3ad5643b47aff85f464e57e5e1c7cb3c798af2c55f411485bd75833f2de3"
                        },
                        {
                            "name":  "codec-tiff-jpeg-rgb-strips.bin",
@@ -3479,7 +3571,7 @@
                        },
                        {
                            "name":  "codec-tiff-jpeg-rgb-strips.png",
-                           "sha256":  "6acd68d46be5cb3a1768e3307b2d2392d294e4094a875d6b22d318521aba6b01"
+                           "sha256":  "820d6e293d75b37782cd3f3f5cc750ad1e00947d73906e5352646908e3b87fba"
                        },
                        {
                            "name":  "codec-tiff-jpeg-rgb-tiles.bin",
@@ -3487,7 +3579,7 @@
                        },
                        {
                            "name":  "codec-tiff-jpeg-rgb-tiles.png",
-                           "sha256":  "3e4a1e42bc069a3d962e08fde922163c44e6558d75725440d5886a451145eee4"
+                           "sha256":  "d8fd81956b50b1f74bd94d977ec231a20d85308539ea27c586de2a791cfb6194"
                        },
                        {
                            "name":  "codec-tiff-jpeg-ycbcr-strips.bin",
@@ -3495,7 +3587,7 @@
                        },
                        {
                            "name":  "codec-tiff-jpeg-ycbcr-strips.png",
-                           "sha256":  "bc228a772a64179d743a45f70cb3483a50cd2187811e7cb649d57cf5a02c187d"
+                           "sha256":  "f83343bfe940e1c925369272a432acdc2bdb7dd6cf077239fabb3b644835c2ec"
                        },
                        {
                            "name":  "codec-tiff-jpeg-ycbcr-tiles.bin",
@@ -3503,7 +3595,7 @@
                        },
                        {
                            "name":  "codec-tiff-jpeg-ycbcr-tiles.png",
-                           "sha256":  "e63addc199ccd6826df4e2cb633485763ac017b793800619111765f0c43e6114"
+                           "sha256":  "6b22fa27be8f62fa36e23fba15fb612f54333505dbd0371048fb69f670f60db6"
                        },
                        {
                            "name":  "codec-tiff-uncompressed-tiles.bin",
@@ -3511,7 +3603,7 @@
                        },
                        {
                            "name":  "codec-tiff-uncompressed-tiles.png",
-                           "sha256":  "b4f051c5bfe2d7861a1b98384bb59c635d7a0706ca4dc67d8f6c8b8f8e2503ec"
+                           "sha256":  "326d3ad5643b47aff85f464e57e5e1c7cb3c798af2c55f411485bd75833f2de3"
                        }
                    ]
 }

@@ -8,6 +8,7 @@
  */
 
 import { decodeDibToImageData } from './emf-dib-decoder';
+import { jpegFamily } from './jpeg-decoder';
 import type { ImagePayload } from './svg-context';
 
 /** Identifies image bytes browsers and SVG renderers display natively. */
@@ -17,7 +18,9 @@ export function sniffImageMime(bytes: Uint8Array): string | null {
 		return 'image/png';
 	}
 	if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
-		return 'image/jpeg';
+		// Arithmetic-coded and CMYK JPEG are not embedded as is: renderers decode them differently from Windows
+		// (or not at all); they are decoded to pixels instead. A 12-bit JPEG draws nothing, as in Windows.
+		return jpegFamily(b) === 'standard' ? 'image/jpeg' : null;
 	}
 	if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
 		return 'image/gif';
