@@ -4,6 +4,35 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.12.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.12.0) - 2026-10-07
+
+### Features
+
+- Add MAC_CHARSET (77) support to ANSI text decoding ([d12a085](https://github.com/ChristopherVR/emf-converter/commit/d12a08564ee97a8f8ca3aa39ccf867dfab67cc10))
+- Decode arithmetic-coded, CMYK and YCCK JPEG; refuse 12-bit JPEG as Windows does ([499589b](https://github.com/ChristopherVR/emf-converter/commit/499589b5dde931ba3ea1067c59fc2c48b18ce635))
+
+### Bug Fixes
+
+- Widen arc, chord and pie ends like WidenPath (whole-pixel cap extension, line-to-curve tangent corners) ([f196e54](https://github.com/ChristopherVR/emf-converter/commit/f196e5496725375f87658b5bc812e93fb3b2666c))
+- Apply the whole-pixel cap extension to every segment at unit scale; add the arc end-angle sweep capture ([97c5174](https://github.com/ChristopherVR/emf-converter/commit/97c5174d36223752336fbae06e3ec6601ad9fb5a))
+
+### Refactor
+
+- Type curve end tangents as [x, y, role] and fix a missing space ([b598485](https://github.com/ChristopherVR/emf-converter/commit/b59848591497c0997b9eeb97ed8ddc64887987ff))
+
+### Documentation
+
+- Fix intro structure, parity numbers, and mojibake in documentation ([39e908b](https://github.com/ChristopherVR/emf-converter/commit/39e908b27cf6f97fe434ab4c033e7c8bece752c9))
+- Fix factual errors in parity documentation ([64636e6](https://github.com/ChristopherVR/emf-converter/commit/64636e65b26cca43e0aba5f34401f4a5e276f087))
+- Update limitations for complete ANSI charset support ([9f8a4b5](https://github.com/ChristopherVR/emf-converter/commit/9f8a4b51640f98f4782502b70383bced2cabd0af))
+- Correct ANSI charset decoding description ([155bc57](https://github.com/ChristopherVR/emf-converter/commit/155bc5764a7df6cc9a59a8068dced464a68f207f))
+
+### Testing
+
+- Add comprehensive charset coverage tests for ANSI decoding ([eea49bc](https://github.com/ChristopherVR/emf-converter/commit/eea49bcbefd71988ed02e97e05fc30c0e12f081c))
+- Pin CMYK, YCCK, arithmetic and 12-bit JPEG against native captures; docs ([6c5fd00](https://github.com/ChristopherVR/emf-converter/commit/6c5fd006d5d350176e75891dc3b8a86c19d6e14d))
+- Allow 60 s for the 92-case playback-extent sweeps ([a08a5b7](https://github.com/ChristopherVR/emf-converter/commit/a08a5b7d43fe6674174a58ddd253e31a78103843))
+
 ## [4.11.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.11.3) - 2026-10-06
 
 ### Bug Fixes
