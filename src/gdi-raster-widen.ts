@@ -356,6 +356,14 @@ function perpendicularVectors(width: number, dx0: number, dy0: number, height = 
 	return { v: flip ? [-vx, -vy] : [vx, vy], ray: flip ? [-x, -y] : [x, y] };
 }
 
+/**
+ * Euclidean length of a vector of whole numbers. The sum of squares is exact, so the square root is correctly rounded on every
+ * engine; `Math.hypot` is not (V8 and JavaScriptCore differ in the last bit), which flips exact rounding ties in cap extensions.
+ */
+function norm(x: number, y: number): number {
+	return Math.sqrt(x * x + y * y);
+}
+
 /** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
 export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width, matrix?: Matrix, wholePixelNorm = false, symmetric = wholePixelNorm): Pt {
 	if (matrix) {
@@ -367,10 +375,10 @@ export function squareExtension(width: number, dx: number, dy: number, scale = 1
 		const q = ((width / 2) * scale) / l;
 		return [Math.floor((matrix[0] * lx + matrix[2] * ly) * q + 0.5), Math.floor((matrix[1] * lx + matrix[3] * ly) * q + 0.5)];
 	}
-	let len = width === height ? Math.hypot(dx, dy) : Math.hypot(dx, dy * width / height);
+	let len = width === height ? norm(dx, dy) : norm(dx, dy * width / height);
 	if (wholePixelNorm && width === height) {
 		// A curve end normalises its vector cut down to whole pixels (arithmetic shift of the components), as dashes measure segments.
-		const whole = Math.hypot(Math.floor(dx / 16), Math.floor(dy / 16)) * 16;
+		const whole = norm(Math.floor(dx / 16), Math.floor(dy / 16)) * 16;
 		// A vector of less than a pixel (both components in 0..15) normalises to nothing: no extension.
 		if (whole === 0) return [0, 0];
 		len = whole;
@@ -837,13 +845,13 @@ function dashPieces(
 			? Math.hypot((matrix[3] * dir[0] - matrix[2] * dir[1]) / det, (-matrix[1] * dir[0] + matrix[0] * dir[1]) / det)
 			: metric
 				? Math.hypot(dir[0] / metric[0], dir[1] / metric[1])
-				: Math.hypot(dir[0], dir[1]);
+				: norm(dir[0], dir[1]);
 		// GDI measures a segment from its vector cut down to whole pixels (an
 		// arithmetic shift of the FIX components, so it rounds toward minus
 		// infinity), then places the cut at the same fraction of the real
 		// segment. Lines on whole pixels lose nothing; the odd-FIX segments of a
 		// flattened curve come out up to a pixel short or long.
-		const len = metric || matrix ? real : wholePixelVectors ? Math.hypot(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : Math.hypot(dir[0], dir[1]);
+		const len = metric || matrix ? real : wholePixelVectors ? norm(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : norm(dir[0], dir[1]);
 		if (len === 0) {
 			if (on && cur) {
 				cur.pts.push(P[i + 1]);
@@ -975,21 +983,12 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 			const runTangents = closed ? [...dirs, undefined] : dirs;
 			const runCurves = closed ? [...curves, !!fig.roundWiden] : curves;
 			for (const piece of dashPieces(run, runTangents, runCurves, opts.dashes as number[], shorten, !!opts.wholePixelDashVectors, opts.dashMetric, opts.deviceNib ? opts.matrix : undefined)) {
-				// Drop repeated points, keeping each remaining segment's direction.
-				const pts: Pt[] = [piece.pts[0]];
-				const pdirs: Pt[] = [];
-				const pdraws: (Tangent | undefined)[] = [];
-				const pcurves: boolean[] = [];
-				for (let i = 1; i < piece.pts.length; i++) {
-					const q = piece.pts[i];
-					const last = pts[pts.length - 1];
-					if (q[0] !== last[0] || q[1] !== last[1]) {
-						pts.push(q);
-						pdirs.push(piece.dirs[i - 1]);
-						pdraws.push(piece.draws[i - 1]);
-						pcurves.push(piece.curves[i - 1]);
-					}
-				}
+				// Every piece segment keeps its path direction, zero-length ones included: native WidenPath joins them, so a dash that
+				// starts or ends on a flattened vertex follows the segment it was cut from.
+				const pts: Pt[] = piece.pts;
+				const pdirs: Pt[] = piece.dirs;
+				const pdraws: (Tangent | undefined)[] = piece.draws;
+				const pcurves: boolean[] = piece.curves;
 				outliner.open(pts, pdirs.length > 0 ? pdirs : [piece.dirs[0]], pdirs.length > 0 ? pdraws : [piece.draws[0]], pdirs.length > 0 ? pcurves : [piece.curves[0]], piece.startScale, piece.endScale);
 			}
 		} else if (closed && P.length >= 3) {
