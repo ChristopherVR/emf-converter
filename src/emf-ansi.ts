@@ -12,7 +12,7 @@ export function ansiToCode(b: number, charSet: number): number {
 }
 
 const CHARSET_ENCODING: Record<number, string> = {
-	0: 'windows-1252', 1: 'windows-1252', 128: 'shift_jis', 129: 'euc-kr', 130: 'johab', 134: 'gbk', 136: 'big5',
+	0: 'windows-1252', 1: 'windows-1252', 77: 'macintosh', 128: 'shift_jis', 129: 'euc-kr', 130: 'johab', 134: 'gbk', 136: 'big5',
 	161: 'windows-1253', 162: 'windows-1254', 163: 'windows-1258', 177: 'windows-1255', 178: 'windows-1256',
 	186: 'windows-1257', 204: 'windows-1251', 222: 'windows-874', 238: 'windows-1250', 255: 'ibm437',
 };
