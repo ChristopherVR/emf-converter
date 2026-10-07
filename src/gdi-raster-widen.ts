@@ -98,9 +98,11 @@ export interface WidenOptions {
 	 */
 	shortenDashes?: boolean;
 	/**
-	 * Measure each path segment for the dash pattern from its vector cut down
-	 * to whole device pixels (GDI's rule when one logical unit is one device
-	 * pixel; measured at that scale only, other scales stay exact).
+	 * Measure each path segment from its vector cut down to whole device
+	 * pixels (GDI's rule when one logical unit is one device pixel; measured at
+	 * that scale only, other scales stay exact): the dash pattern lays out
+	 * along it, and a square cap's extension (half the width) is the segment's
+	 * vector over the length of that cut vector.
 	 */
 	wholePixelDashVectors?: boolean;
 	/**
@@ -122,6 +124,8 @@ export interface WidenOptions {
 }
 
 type Pt = [number, number];
+/** A curve end tangent `[x, y, role]`; role 1 is a Bezier's start tangent, 2 its end tangent, 3 both. */
+type Tangent = [number, number, number];
 
 /**
  * Hobby's digital pens for widths of one to six pixels, as GDI holds them
@@ -353,7 +357,7 @@ function perpendicularVectors(width: number, dx0: number, dy0: number, height = 
 }
 
 /** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
-export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width, matrix?: Matrix): Pt {
+export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width, matrix?: Matrix, wholePixelNorm = false, symmetric = wholePixelNorm): Pt {
 	if (matrix) {
 		// Half the width along the logical direction, mapped to device.
 		const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
@@ -363,9 +367,18 @@ export function squareExtension(width: number, dx: number, dy: number, scale = 1
 		const q = ((width / 2) * scale) / l;
 		return [Math.floor((matrix[0] * lx + matrix[2] * ly) * q + 0.5), Math.floor((matrix[1] * lx + matrix[3] * ly) * q + 0.5)];
 	}
-	const len = width === height ? Math.hypot(dx, dy) : Math.hypot(dx, dy * width / height);
+	let len = width === height ? Math.hypot(dx, dy) : Math.hypot(dx, dy * width / height);
+	if (wholePixelNorm && width === height) {
+		// A curve end normalises its vector cut down to whole pixels (arithmetic shift of the components), as dashes measure segments.
+		const whole = Math.hypot(Math.floor(dx / 16), Math.floor(dy / 16)) * 16;
+		// A vector of less than a pixel (both components in 0..15) normalises to nothing: no extension.
+		if (whole === 0) return [0, 0];
+		len = whole;
+	}
 	const r = (width / 2) * scale;
-	return [Math.floor((dx / len) * r + 0.5), Math.floor((dy / len) * r + 0.5)];
+	// Ties on a whole-pixel vector round away from zero.
+	const round = symmetric ? (v: number) => Math.sign(v) * Math.floor(Math.abs(v) + 0.5) : (v: number) => Math.floor(v + 0.5);
+	return [round((dx / len) * r), round((dy / len) * r)];
 }
 
 /** Turn sign at a join: `cross(a, b)`, and for an exact reversal the side GDI treats as outer. */
@@ -398,6 +411,8 @@ interface Seg {
 	/** The vector the extension and perpendicular follow. */
 	pe: Pt;
 	curveEnd: boolean;
+	/** Which end of its cubic the tangent belongs to: 1 start, 2 end, 3 both. */
+	role: number;
 	/** Squared length of the curve end tangent (0 without one): a short tangent from rounded control points is unreliable. */
 	tangentLength: number;
 	/** The segment is a piece of a flattened curve (the pen then rests on its support vertices). */
@@ -429,7 +444,7 @@ class Outliner {
 	 * `drawDir` (a curve's end tangent) only picks the draw vertices, the
 	 * perpendicular following the chord (measured on Bezier ends).
 	 */
-	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Pt, curve = false): Seg {
+	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Tangent, curve = false): Seg {
 		const dx = dir ? dir[0] : b[0] - a[0];
 		const dy = dir ? dir[1] : b[1] - a[1];
 		const d = drawDir ?? [dx, dy];
@@ -438,7 +453,7 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix, !!this.opts.wholePixelDashVectors), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -561,7 +576,7 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e0: Pt = scale === 1 ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined);
+			const e0: Pt = scale === 1 || s.curveEnd ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined, false, !!this.opts.wholePixelDashVectors);
 			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
@@ -585,12 +600,17 @@ class Outliner {
 		let sb = this.joinSide(b, side);
 		const rayA: Pt = side === 'R' ? a.vRaw : [-a.vRaw[0], -a.vRaw[1]];
 		const rayB: Pt = side === 'R' ? b.vRaw : [-b.vRaw[0], -b.vRaw[1]];
-		if (curveJoin && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
+		if (curveJoin && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd && ((side === 'R' ? a : b).role & 2) !== 0 && ((side === 'R' ? b : a).role & 1) !== 0) {
 			// At the boundary of two ellipse cubics, these styles use the
 			// true tangent's perpendicular rather than a pen support vertex.
 			// Both cubics describe the same tangent: the one with the longer arm is the reliable one.
 			const t = a.tangentLength >= b.tangentLength ? a : b;
 			sa = sb = side === 'R' ? t.v : [-t.v[0], -t.v[1]];
+		}
+		if (!curveJoin && !this.originalRoundJoinSides) {
+			// A line meeting the end of a curve: the curve side takes the perpendicular of its end tangent.
+			if (a.curve && a.curveEnd) sa = side === 'R' ? a.v : [-a.v[0], -a.v[1]];
+			if (b.curve && b.curveEnd) sb = side === 'R' ? b.v : [-b.v[0], -b.v[1]];
 		}
 		const Da = side === 'R' ? a.R : a.L;
 		const Db = side === 'R' ? b.R : b.L;
@@ -671,7 +691,7 @@ class Outliner {
 	 * lets a single point stand for a zero-length dash along `dirs[0]`;
 	 * `draws` (curve end tangents) picks draw vertices only.
 	 */
-	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[], curves?: boolean[], startScale = 1, endScale = 1): void {
+	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Tangent | undefined)[], curves?: boolean[], startScale = 1, endScale = 1): void {
 		if (P.length < 2 && !dirs?.[0]) {
 			this.dot(P[0]);
 			return;
@@ -713,7 +733,7 @@ class Outliner {
 	}
 
 	/** Outlines a closed polygon (distinct consecutive points, not repeating the first). */
-	closed(P: Pt[], draws?: (Pt | undefined)[], curves?: boolean[]): void {
+	closed(P: Pt[], draws?: (Tangent | undefined)[], curves?: boolean[]): void {
 		const m = P.length;
 		const segs: Seg[] = [];
 		for (let i = 0; i < m; i++) {
@@ -764,7 +784,7 @@ interface DashPiece {
 	pts: Pt[];
 	dirs: Pt[];
 	/** Curve end tangents (draw vertices only) per piece segment. */
-	draws: (Pt | undefined)[];
+	draws: (Tangent | undefined)[];
 	/** Per piece segment, whether it comes from a flattened curve. */
 	curves: boolean[];
 	/**
@@ -785,7 +805,7 @@ interface DashPiece {
  */
 function dashPieces(
 	P: Pt[],
-	tangents: (Pt | undefined)[],
+	tangents: (Tangent | undefined)[],
 	curveFlags: boolean[],
 	pattern: number[],
 	shorten: number,
@@ -893,7 +913,7 @@ function widenInLogicalSpace(path: GdiRasterPath, opts: WidenOptions, m: [number
 		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
 			pts.push(...inverse(fig.pts[i], fig.pts[i + 1]));
 		}
-		const copy: GdiFigure = { pts, closed: fig.closed, roundWiden: fig.roundWiden, curveSegs: fig.curveSegs };
+		const copy: GdiFigure = { pts, closed: fig.closed, roundWiden: fig.roundWiden, curveSegs: fig.curveSegs, tangentRoles: fig.tangentRoles };
 		if (fig.tangents) {
 			copy.tangents = new Map([...fig.tangents].map(([k, v]) => [k, inverse(v[0], v[1])]));
 		}
@@ -924,7 +944,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 		// Distinct points, and per remaining segment the curve tangent GDI
 		// widens it with (when it is a flattened Bezier's first or last).
 		let P: Pt[] = [];
-		const dirs: (Pt | undefined)[] = [];
+		const dirs: (Tangent | undefined)[] = [];
 		const curves: boolean[] = [];
 		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
 			const q: Pt = [fig.pts[i], fig.pts[i + 1]];
@@ -933,7 +953,10 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 				continue;
 			}
 			if (last) {
-				dirs.push(fig.tangents?.get(i / 2 - 1));
+				{
+					const t = fig.tangents?.get(i / 2 - 1);
+					dirs.push(t && [t[0], t[1], (fig.roundWiden ? 3 : fig.tangentRoles?.get(i / 2 - 1)) ?? 3]);
+				}
 				curves.push(!!fig.roundWiden || !!fig.curveSegs?.has(i / 2 - 1));
 			}
 			P.push(q);
@@ -955,7 +978,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 				// Drop repeated points, keeping each remaining segment's direction.
 				const pts: Pt[] = [piece.pts[0]];
 				const pdirs: Pt[] = [];
-				const pdraws: (Pt | undefined)[] = [];
+				const pdraws: (Tangent | undefined)[] = [];
 				const pcurves: boolean[] = [];
 				for (let i = 1; i < piece.pts.length; i++) {
 					const q = piece.pts[i];

@@ -7,8 +7,8 @@
     "oy": 0,
     "plus": false,
     "playbackSucceeded": true,
-    "maxMismatched": 2,
-    "maxDiff": 160
+    "maxMismatched": 0,
+    "maxDiff": 0
   },
   {
     "name": "emfrec-coloradjustment",
@@ -243,8 +243,8 @@
     "oy": 0,
     "plus": false,
     "playbackSucceeded": true,
-    "maxMismatched": 4,
-    "maxDiff": 160
+    "maxMismatched": 0,
+    "maxDiff": 0
   },
   {
     "name": "emfrec-path-widen-outline",

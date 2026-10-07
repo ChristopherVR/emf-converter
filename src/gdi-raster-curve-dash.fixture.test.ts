@@ -79,7 +79,7 @@ describe('native WidenPath of dashed wide pens on curves', () => {
 		expect(summary(0, true)).toEqual({ differing: 0, total: 0 });
 	});
 
-	it('keeps flat and square caps within a few pixels of the native outlines', () => {
+	it('keeps flat caps within a few pixels and square caps within one pixel of the native outlines', () => {
 		// Flat: 14 of 100 differ by 48 pixels, almost all arcs. Square: 78 of 100 by 524 (path-end caps and arcs remain).
 		const flat = summary(2, true);
 		expect(flat.differing).toBeLessThanOrEqual(14);

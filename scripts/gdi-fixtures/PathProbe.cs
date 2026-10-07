@@ -290,6 +290,31 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"curve-widen.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
+	// Native WidenPath of a square-capped, round-joined arc on a circle of radius 100 px, sweeping the end angle in whole degrees
+	// (1..359) at two widths and two start angles (arc-cap-sweep.json.gz): the arc's own GetPath points ("source", FIX) and the
+	// widened outline ("expected"), isolating the cap extension from every other stage.
+	public static void ArcCapSweep(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			foreach(int width in new[]{9,16})foreach(int start in new[]{0,37})for(int a=1;a<360;a++){
+				int end=(start+a)%360;
+				Func<int,int[]> rad=delegate(int deg){double r=Math.PI*deg/180.0;return new[]{(int)Math.Round(200+Math.Cos(r)*1000),(int)Math.Round(200-Math.Sin(r)*1000)};};
+				int[] p1=rad(start),p2=rad(end);
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|1*0x100|0*0x1000),(uint)width,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					BeginPath(dc);Arc(dc,100,100,300,300,p1[0],p1[1],p2[0],p2[1]);EndPath(dc);
+					string source=ReadFixPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"width\":").Append(width).Append(",\"start\":").Append(start).Append(",\"sweep\":").Append(a).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"arc-cap-sweep.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
 	[DllImport("gdi32.dll",EntryPoint="ExtCreatePen")] static extern IntPtr ExtCreatePenDashes(uint style,uint width,ref LogBrush brush,uint count,uint[] dashes);
 	// Native WidenPath of dashed wide pens on Beziers and arcs at the identity scale: the stock dash styles and user-defined patterns
 	// under round, square and flat caps, and the pixel-vector dash measurement they reveal (curve-dash.json).
