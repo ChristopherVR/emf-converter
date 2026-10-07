@@ -3,10 +3,14 @@
  * for bit: accurate integer IDCT (`jidctint`), "fancy" triangle chroma
  * upsampling and fixed-point YCbCr -> RGB. Windows decodes JPEG the same way,
  * and the native references match it exactly. Supports baseline, extended
- * sequential and progressive Huffman JPEG with one or three components.
- * `decodeJpegTurbo` returns `null` for anything else (arithmetic coding,
- * 12-bit, CMYK) so the caller can fall back.
+ * sequential and progressive JPEG, Huffman or arithmetic coded, with one,
+ * three or four (CMYK, YCCK; see `jpeg-cmyk.ts`) components.
+ * `decodeJpegTurbo` returns `null` for anything else (12-bit, lossless,
+ * hierarchical) so the caller can fall back.
  */
+import { cmykPlanesToRgba } from './jpeg-cmyk';
+import { ArithDecoder, defaultArithConditioning, type ArithConditioning } from './jpeg-arith';
+
 export interface TurboJpeg {
 	width: number;
 	height: number;
@@ -15,6 +19,8 @@ export interface TurboJpeg {
 }
 
 interface Component {
+	/** DC conditioning category, arithmetic coding only. */
+	ctx: number;
 	id: number;
 	h: number;
 	v: number;
@@ -284,7 +290,23 @@ export function decodeJpegTurbo(bytes: Uint8Array, colorTransform?: boolean): Tu
 	}
 }
 
+/** Unconverted full-resolution component planes of a decoded JPEG. */
+export interface JpegPlanes {
+	width: number;
+	height: number;
+	planes: Uint8Array[];
+	ids: number[];
+	/** Adobe APP14 colour transform byte, when present. */
+	adobe: number | undefined;
+}
+
 function decodeInner(data: Uint8Array, colorTransform?: boolean): TurboJpeg | null {
+	const p = decodeJpegPlanes(data);
+	return p ? convertPlanes(p, colorTransform) : null;
+}
+
+/** Decode entropy-coded data to unconverted component planes. */
+export function decodeJpegPlanes(data: Uint8Array): JpegPlanes | null {
 	if (data[0] !== 0xff || data[1] !== 0xd8) return null;
 	const quant: Int32Array[] = [];
 	const dcTables: Huffman[] = [];
@@ -293,6 +315,8 @@ function decodeInner(data: Uint8Array, colorTransform?: boolean): TurboJpeg | nu
 	let width = 0;
 	let height = 0;
 	let progressive = false;
+	let arithmetic = false;
+	const conditioning = defaultArithConditioning();
 	let restart = 0;
 	let adobe: number | undefined;
 	let maxH = 1;
@@ -329,19 +353,20 @@ function decodeInner(data: Uint8Array, colorTransform?: boolean): TurboJpeg | nu
 				}
 				quant[tq] = table;
 			}
-		} else if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+		} else if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2 || marker === 0xc9 || marker === 0xca) {
 			if (data[seg] !== 8) return null;
-			progressive = marker === 0xc2;
+			progressive = marker === 0xc2 || marker === 0xca;
+			arithmetic = marker >= 0xc9;
 			height = data[seg + 1] * 256 + data[seg + 2];
 			width = data[seg + 3] * 256 + data[seg + 4];
 			const n = data[seg + 5];
-			if ((n !== 1 && n !== 3) || !width || !height) return null;
+			if ((n !== 1 && n !== 3 && n !== 4) || !width || !height) return null;
 			comps = [];
 			for (let i = 0; i < n; i++) {
 				const h = data[seg + 7 + i * 3] >> 4;
 				const v = data[seg + 7 + i * 3] & 15;
 				if (!h || !v) return null;
-				comps.push({ id: data[seg + 6 + i * 3], h, v, tq: data[seg + 8 + i * 3], blocksW: 0, blocksH: 0, coefs: new Int16Array(0), pred: 0, dc: 0, ac: 0 });
+				comps.push({ id: data[seg + 6 + i * 3], h, v, tq: data[seg + 8 + i * 3], blocksW: 0, blocksH: 0, coefs: new Int16Array(0), pred: 0, ctx: 0, dc: 0, ac: 0 });
 			}
 			maxH = Math.max(...comps.map(c => c.h));
 			maxV = Math.max(...comps.map(c => c.v));
@@ -352,8 +377,18 @@ function decodeInner(data: Uint8Array, colorTransform?: boolean): TurboJpeg | nu
 				c.blocksH = mcusY * c.v;
 				c.coefs = new Int16Array(c.blocksW * c.blocksH * 64);
 			}
-		} else if (marker === 0xc3 || (marker >= 0xc5 && marker <= 0xcf && marker !== 0xc8 && marker !== 0xcc)) {
+		} else if (marker === 0xc3 || (marker >= 0xc5 && marker <= 0xcf && marker !== 0xc8 && marker !== 0xcc && marker !== 0xc9 && marker !== 0xca)) {
 			return null;
+		} else if (marker === 0xcc) {
+			for (let p = seg; p + 1 < end; p += 2) {
+				const index = data[p] & 15;
+				if (data[p] >> 4 === 0) {
+					conditioning.dcL[index] = data[p + 1] & 15;
+					conditioning.dcU[index] = data[p + 1] >> 4;
+				} else {
+					conditioning.acK[index] = data[p + 1];
+				}
+			}
 		} else if (marker === 0xc4) {
 			let p = seg;
 			while (p < end) {
@@ -387,7 +422,7 @@ function decodeInner(data: Uint8Array, colorTransform?: boolean): TurboJpeg | nu
 			const se = data[seg + 2 + ns * 2];
 			const ah = data[seg + 3 + ns * 2] >> 4;
 			const al = data[seg + 3 + ns * 2] & 15;
-			pos = decodeScan(data, end, scanComps, comps, width, height, maxH, maxV, progressive, restart, ss, se, ah, al, dcTables, acTables);
+			pos = decodeScan(data, end, scanComps, comps, width, height, maxH, maxV, progressive, restart, ss, se, ah, al, dcTables, acTables, arithmetic ? conditioning : null);
 			sawScan = true;
 			continue;
 		}
@@ -407,9 +442,17 @@ function decodeInner(data: Uint8Array, colorTransform?: boolean): TurboJpeg | nu
 		const ch = Math.ceil((height * c.v) / maxV);
 		return upsample(plane, stride, cw, ch, maxH / c.h, maxV / c.v, width, height);
 	});
+	return { width, height, planes: full, ids: comps.map(c => c.id), adobe };
+}
+
+function convertPlanes({ width, height, planes: full, ids, adobe }: JpegPlanes, colorTransform?: boolean): TurboJpeg | null {
+	if (full.length === 4) {
+		// libjpeg treats an Adobe transform of 0, or no marker, as CMYK and anything else as YCCK.
+		return { width, height, data: cmykPlanesToRgba(full, width, height, adobe !== undefined && adobe !== 0) };
+	}
 	const out = new Uint8Array(width * height * 4);
-	const transform = colorTransform ?? (adobe !== undefined ? adobe !== 0 : !comps.every((c, i) => c.id === [82, 71, 66][i]));
-	if (comps.length === 1) {
+	const transform = colorTransform ?? (adobe !== undefined ? adobe !== 0 : !ids.every((id, i) => id === [82, 71, 66][i]));
+	if (full.length === 1) {
 		for (let i = 0; i < width * height; i++) {
 			out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = full[0][i];
 			out[i * 4 + 3] = 255;
@@ -458,12 +501,19 @@ function decodeScan(
 	ah: number,
 	al: number,
 	dcTables: Huffman[],
-	acTables: Huffman[]
+	acTables: Huffman[],
+	arith: ArithConditioning | null
 ): number {
 	const br = new BitReader(data, start);
+	const ar = arith ? new ArithDecoder(data, start, arith, scan) : null;
+	const reader = ar ?? br;
 	let eobrun = 0;
 	const single = scan.length === 1;
 	const decodeBlock = (c: Component, off: number): void => {
+		if (ar) {
+			ar.block(c, off, progressive, ss, se, ah, al);
+			return;
+		}
 		const coefs = c.coefs;
 		if (!progressive) {
 			const t = br.decode(dcTables[c.dc]);
@@ -580,7 +630,7 @@ function decodeScan(
 	while (n < total) {
 		for (const c of all) c.pred = 0;
 		eobrun = 0;
-		br.reset();
+		reader.reset();
 		const limit = restart ? Math.min(total, n + restart) : total;
 		for (; n < limit; n++) {
 			if (single) {
@@ -594,10 +644,10 @@ function decodeScan(
 				}
 			}
 		}
-		const p = nextMarker(br.pos);
+		const p = nextMarker(reader.pos);
 		if (n >= total) return p;
-		if (data[p + 1] >= 0xd0 && data[p + 1] <= 0xd7) br.pos = p + 2;
+		if (data[p + 1] >= 0xd0 && data[p + 1] <= 0xd7) reader.pos = p + 2;
 		else return p;
 	}
-	return nextMarker(br.pos);
+	return nextMarker(reader.pos);
 }

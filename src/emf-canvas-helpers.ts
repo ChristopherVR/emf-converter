@@ -28,6 +28,7 @@ import {
 import { emfLog, emfWarn } from './emf-logging';
 import { decodePng, isPng } from './png-decoder';
 import { decodeImageCodecFallback } from './image-codec-fallback';
+import { jpegFamily } from './jpeg-decoder';
 import { loadNodeCanvasModule } from './node-canvas-loader';
 import { encodePng } from './png-encoder';
 import { cosmeticStyle } from './gdi-raster';
@@ -735,12 +736,18 @@ export async function decodeDeferredImageBytes(
 	bytes: ArrayBuffer,
 	mime?: string,
 ): Promise<{ drawable: DecodedDrawable; width: number; height: number; close: () => void } | null> {
+	// Windows cannot decode a 12-bit JPEG and draws nothing for it; arithmetic-coded and CMYK JPEG are
+	// decoded here because canvas backends refuse the former and convert the latter differently.
+	const family = jpegFamily(new Uint8Array(bytes));
+	if (family === 'unsupported') return null;
 	if (usingSoftwareCanvas()) {
 		// Bundled decoders provide pixels without a native canvas backend.
 		const pixels = await decodeImageBytesBuiltIn(new Uint8Array(bytes));
 		return pixels ? { drawable: pixels, width: pixels.width, height: pixels.height, close: () => {} } : null;
 	}
-	if (nodeCanvasModule) {
+	if (family === 'bundled') {
+		// Decoded by the bundled decoder below.
+	} else if (nodeCanvasModule) {
 		try {
 			const image = await nodeCanvasModule.loadImage(new Uint8Array(bytes));
 			return { drawable: image, width: image.width, height: image.height, close: () => {} };
