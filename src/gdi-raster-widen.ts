@@ -98,9 +98,11 @@ export interface WidenOptions {
 	 */
 	shortenDashes?: boolean;
 	/**
-	 * Measure each path segment for the dash pattern from its vector cut down
-	 * to whole device pixels (GDI's rule when one logical unit is one device
-	 * pixel; measured at that scale only, other scales stay exact).
+	 * Measure each path segment from its vector cut down to whole device
+	 * pixels (GDI's rule when one logical unit is one device pixel; measured at
+	 * that scale only, other scales stay exact): the dash pattern lays out
+	 * along it, and a square cap's extension (half the width) is the segment's
+	 * vector over the length of that cut vector.
 	 */
 	wholePixelDashVectors?: boolean;
 	/**
@@ -367,7 +369,9 @@ export function squareExtension(width: number, dx: number, dy: number, scale = 1
 	if (wholePixelNorm && width === height) {
 		// A curve end normalises its vector cut down to whole pixels (arithmetic shift of the components), as dashes measure segments.
 		const whole = Math.hypot(Math.floor(dx / 16), Math.floor(dy / 16)) * 16;
-		if (whole > 0) len = whole;
+		// A vector of less than a pixel (both components in 0..15) normalises to nothing: no extension.
+		if (whole === 0) return [0, 0];
+		len = whole;
 	}
 	const r = (width / 2) * scale;
 	// Ties on a whole-pixel vector round away from zero.
@@ -447,7 +451,7 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix, !!drawDir), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: (drawDir as number[] | undefined)?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix, !!this.opts.wholePixelDashVectors), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: (drawDir as number[] | undefined)?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -570,7 +574,7 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e0: Pt = scale === 1 || s.curveEnd ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined, false, true);
+			const e0: Pt = scale === 1 || s.curveEnd ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined, false, !!this.opts.wholePixelDashVectors);
 			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);

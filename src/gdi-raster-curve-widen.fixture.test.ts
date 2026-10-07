@@ -35,7 +35,7 @@ function differingPixels(c: (typeof nativeCurves)[number]): number {
 		arcRasterPath(axisBox(l, t, r - 16, b - 16), radial(radials[0], radials[1]), radial(radials[2], radials[3]), false, c.kind as 'arc' | 'chord' | 'pie', undefined, path);
 	}
 	const ours = pixelSet(fillPolygonSpans(widenPath(path, {
-		width: c.width * 16, cap: (['round', 'square', 'flat'] as const)[c.cap], join: (['round', 'bevel', 'miter'] as const)[c.join], miterLimit: 10,
+		width: c.width * 16, cap: (['round', 'square', 'flat'] as const)[c.cap], join: (['round', 'bevel', 'miter'] as const)[c.join], miterLimit: 10, wholePixelDashVectors: true,
 	}), true));
 	const native = pixelSet(fillPolygonSpans(nativePolygons(c.expected), true));
 	let diff = 0;
@@ -52,7 +52,7 @@ describe('native WidenPath of wide curves', () => {
 		expect(exact).toBeGreaterThanOrEqual(80);
 	});
 
-	it('matches arcs and pies exactly except for one arc, and chords except for four near-reversals', () => {
+	it('matches every arc and pie and all but four chords', () => {
 		const rest = nativeCurves.filter((c) => c.kind !== 'bezier');
 		expect(rest).toHaveLength(240);
 		const perKind: Record<string, { differing: number; total: number }> = {};
@@ -62,14 +62,13 @@ describe('native WidenPath of wide curves', () => {
 			k.total += d;
 			if (d > 0) k.differing++;
 		}
-		// Measured: 5 of 240 curves differ in 316 pixels (before: 148 in 1,437). A curve end's square-cap extension is its end
-		// tangent cut down to whole pixels (the dash measure), a line meeting a curve end takes the curve's tangent perpendicular,
-		// and the join inside one flattened cubic keeps its own pen vertices. Remaining: a chord whose arc nearly retraces it
-		// (three cases, 284 pixels) and one square-capped miter arc (32 pixels).
+		// Measured: 4 of 240 curves differ in 327 pixels (before: 148 in 1,437). A segment's square-cap extension is its vector
+		// cut down to whole pixels (the dash measure; a curve end uses its end tangent), a line meeting a curve end takes the curve's tangent perpendicular,
+		// and the join inside one flattened cubic keeps its own pen vertices. Remaining: a chord whose arc is a single
+		// flattened segment that the closing line retraces (four cases, 327 pixels).
 		expect(perKind.pie).toEqual({ differing: 0, total: 0 });
-		expect(perKind.arc.differing).toBeLessThanOrEqual(1);
-		expect(perKind.arc.total).toBeLessThanOrEqual(32);
+		expect(perKind.arc).toEqual({ differing: 0, total: 0 });
 		expect(perKind.chord.differing).toBeLessThanOrEqual(4);
-		expect(perKind.chord.total).toBeLessThanOrEqual(284);
+		expect(perKind.chord.total).toBeLessThanOrEqual(327);
 	});
 });

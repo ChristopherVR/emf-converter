@@ -26,9 +26,9 @@ describe.skipIf(!windowsFonts())('playback across the complete recorded device e
 		// right margin needs a larger surface.
 		expect(inkOutside(rendered!, original)).toBe(340);
 		expect(inkOutside(rendered!, expanded)).toBe(0);
-		expect(diffImages(rendered!, expanded, 0, 0).mismatched).toBe(4);
+		expect(diffImages(rendered!, expanded, 0, 0).mismatched).toBe(0);
 	});
-	it('keeps the 64 exact controls exact and pins every remaining full-area residual', async () => {
+	it('keeps the 66 exact controls exact and pins every remaining full-area residual', async () => {
 		let exact = 0;
 		for (const c of cases) {
 			const rendered = await renderFixture(`${c.name}.emf`, { fonts: windowsFonts()! });
@@ -40,6 +40,6 @@ describe.skipIf(!windowsFonts())('playback across the complete recorded device e
 			expect(d.maxDiff, c.name).toBeLessThanOrEqual(c.maxDiff);
 			if (c.maxMismatched === 0) exact++;
 		}
-		expect(exact).toBe(64);
+		expect(exact).toBe(66);
 	});
 });
