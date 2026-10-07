@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.13.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.13.0) - 2026-10-07
+
+### Features
+
+- Replace the fitted CMYK grid with the Windows ICM table; decode CMYK JPEG in TIFF ([b58db02](https://github.com/ChristopherVR/emf-converter/commit/b58db02fe25d1fb531a694ed7a4cc9417d6b5a39))
+
+### Other
+
+- Merge origin/main into R1 CMYK branch ([381109d](https://github.com/ChristopherVR/emf-converter/commit/381109d738df7b10acf673eee236315fdf1498bd))
+
 ## [4.12.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.12.2) - 2026-10-07
 
 ### Documentation
