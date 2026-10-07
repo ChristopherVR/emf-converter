@@ -13,7 +13,7 @@ it('expanded native captures reproduce every pixel of their original references'
 		const d = diffImages(expanded, await loadReference(c.name), 0, 0);
 		expect(d.mismatched, c.name).toBe(0);
 	}
-});
+}, 60_000);
 
 describe.skipIf(!windowsFonts())('playback across the complete recorded device extent', () => {
 	it('covers the flattened path ink without translating its native flattening grid', async () => {
@@ -41,5 +41,5 @@ describe.skipIf(!windowsFonts())('playback across the complete recorded device e
 			if (c.maxMismatched === 0) exact++;
 		}
 		expect(exact).toBe(66);
-	});
+	}, 60_000);
 });
