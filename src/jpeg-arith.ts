@@ -13,7 +13,7 @@
  */
 
 /** The 113 probability states of Table D.3 plus the fixed 0.5 estimate (index 113): [Qe, next index after LPS, next after MPS, switch MPS]. */
-const STATES: readonly (readonly [number, number, number, number])[] = [
+export const STATES: readonly (readonly [number, number, number, number])[] = [
 	[0x5a1d, 1, 1, 1], [0x2586, 14, 2, 0], [0x1114, 16, 3, 0], [0x080b, 18, 4, 0], [0x03d8, 20, 5, 0], [0x01da, 23, 6, 0], [0x00e5, 25, 7, 0],
 	[0x006f, 28, 8, 0], [0x0036, 30, 9, 0], [0x001a, 33, 10, 0], [0x000d, 35, 11, 0], [0x0006, 9, 12, 0], [0x0003, 10, 13, 0], [0x0001, 12, 13, 0],
 	[0x5a7f, 15, 15, 1], [0x3f25, 36, 16, 0], [0x2cf2, 38, 17, 0], [0x207c, 39, 18, 0], [0x17b9, 40, 19, 0], [0x1182, 42, 20, 0], [0x0cef, 43, 21, 0],

@@ -137,6 +137,10 @@ src/jpeg-arith.ts decodes arithmetic-coded JPEG and is a port of the entropy
 decoder in libjpeg's jdarith.c and the probability table in jaricom.c. This
 software is based in part on the work of the Independent JPEG Group.
 
+scripts/gdi-fixtures/arith-jpeg-encoder.ts, a test tool that is not part of the
+published package, is a port of the arithmetic encoder in libjpeg's jcarith.c
+and is covered by the same license.
+
 The following is the IJG license under which libjpeg (as distributed in
 libjpeg-turbo's README.ijg) is provided:
 

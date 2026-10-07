@@ -1,8 +1,8 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-03T04:19:29.3076150Z",
+    "capturedAt":  "2026-10-07T22:42:09.0120234Z",
     "groups":  "playback-extents",
-    "os":  "Microsoft Windows NT 10.0.26200.0",
+    "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
     "architecture":  "AMD64",
     "runnerImage":  null,
@@ -3382,6 +3382,18 @@
               ],
     "references":  [
                        {
+                           "name":  "emf-insideframe-rect.emf",
+                           "sha256":  "20233eb3e6b1f4974c1d4cb659793bff8b6f92f4e53b91b9b54ba8c69b4f0de6"
+                       },
+                       {
+                           "name":  "emf-insideframe-rect.extent.png",
+                           "sha256":  "03aab8866778fdbd55798f19072c38f8975d0c05bb92e22b19fe09497d0c771e"
+                       },
+                       {
+                           "name":  "emf-insideframe-rect.png",
+                           "sha256":  "77d7e6187a1c0d94df1637debef72acf69cee48885ca5b32bd20580ab0a4aa3b"
+                       },
+                       {
                            "name":  "emfrec-anglearc.emf",
                            "sha256":  "94553a2d3dde70b7dae5dfcea38cc99ba30aea21de08e20900e1075edc953649"
                        },
@@ -3428,6 +3440,18 @@
                        {
                            "name":  "emfrec-fillrgn-scaled.png",
                            "sha256":  "ef723ca83f57de2c46b30c2439b9e45f1ea22cff5ba90ec829999be532e10024"
+                       },
+                       {
+                           "name":  "emfrec-floodfill.emf",
+                           "sha256":  "1910c73ef607b7497e2ee1afaa36b35cb44655f95ffd78ae94941f61ec428178"
+                       },
+                       {
+                           "name":  "emfrec-floodfill.extent.png",
+                           "sha256":  "036ffca2bf65b1e2aec318d7311cf4fc6b7280ef06caf218743f156b09471e98"
+                       },
+                       {
+                           "name":  "emfrec-floodfill.png",
+                           "sha256":  "9d3609a829b569f14a133949a2aed250091991fc3c6b443b6d813079de41c0d4"
                        },
                        {
                            "name":  "emfrec-halftone-checker-0p5x.emf",
@@ -3827,7 +3851,11 @@
                        },
                        {
                            "name":  "playback-extents.json",
-                           "sha256":  "c124788a1bd457c97e36c2a78fafa71dfb9ba7f2294857afe2560102eb851aa5"
+                           "sha256":  "dae4fa7c4c198a44ec6f8fe6cbc5bea0014cd0ceee5901a0ceca566b4a7e57a1"
+                       },
+                       {
+                           "name":  "playback-extents-open.json",
+                           "sha256":  "0f91dbb3aa14a77eb9c4868c8d446582b7347e97bbb12b6230900ad8e9b490f5"
                        },
                        {
                            "name":  "plus-effect-blur-r4-subrect.emf",
@@ -4118,6 +4146,18 @@
                            "sha256":  "0d7878ca96e3fa9c607314d97587ade8405060016f2546f7126739a7c4e2b507"
                        },
                        {
+                           "name":  "rotate-text-25deg.emf",
+                           "sha256":  "003b741b2528aa8d649b6f4c23dbf308d3dc78cc48387db3204e45be2e1e3cd8"
+                       },
+                       {
+                           "name":  "rotate-text-25deg.png",
+                           "sha256":  "aceb8a3adc8b01e75c8a07b6e4e08ccb712652f72cb4a374333adb9fa7c1ac8f"
+                       },
+                       {
+                           "name":  "rotate-text-25deg.wide.png",
+                           "sha256":  "2e947456516c69d4fed9828cbdd2e03fb4a76262edd9e08a08496b8315e16a2c"
+                       },
+                       {
                            "name":  "skew-rect.emf",
                            "sha256":  "3043609c306a4ec257d67db1f2fc866d54c76b082abc3adddd77ebc6b3b2384b"
                        },
@@ -4154,6 +4194,18 @@
                            "sha256":  "90d0a19300684e50e08726c2f04c8d61dcecf96d25c76bcaef6c1883b34d8a10"
                        },
                        {
+                           "name":  "textx-arial-ctnatural.emf",
+                           "sha256":  "7e886609358ad9e8783f7b0edbc94737ec46519fa455fea95e0f79e707162851"
+                       },
+                       {
+                           "name":  "textx-arial-ctnatural.png",
+                           "sha256":  "ff9052875941a6e7822f3d3cc369ec29b808bf9ca6d786236d117823166cb352"
+                       },
+                       {
+                           "name":  "textx-arial-ctnatural.wide.png",
+                           "sha256":  "59cb61ac9be4dd04435b7b25a64cf0d7c083529c6db1a93ee3e1b9be1f5e10ea"
+                       },
+                       {
                            "name":  "textx-arial-mono.emf",
                            "sha256":  "f7a7669e53a30371a2e72e7cac4437a27dc99505c5558425b213f21caa578f24"
                        },
@@ -4164,6 +4216,18 @@
                        {
                            "name":  "textx-arial-mono.png",
                            "sha256":  "7fa1e0f36190a08bffe4552cb7b44c4b6694c2f21f110d2228bfafdfc81ed928"
+                       },
+                       {
+                           "name":  "textx-arial-q0-default.emf",
+                           "sha256":  "1ba5dc64c6b488d3809f755f7fc7c5c49bd1757fc051bd393297f09dd892eaa5"
+                       },
+                       {
+                           "name":  "textx-arial-q0-default.png",
+                           "sha256":  "35fbc45dedd1aeb149f75ec5d2497e179994aca6ce417088c1f2cf3ea104dc83"
+                       },
+                       {
+                           "name":  "textx-arial-q0-default.wide.png",
+                           "sha256":  "4cc32323b9ca80828aa3135a9a806eadfe27b1b7dded3eba848f0d8d461df1bb"
                        },
                        {
                            "name":  "textx-arial-styles-aa.emf",
@@ -4250,6 +4314,18 @@
                            "sha256":  "96072eef6e7482ec0c1f1f80eeb1f8dadac523e02302750174a2818acfbe0b05"
                        },
                        {
+                           "name":  "textx-fon-fixedsys.emf",
+                           "sha256":  "9014024cd9ce4c7467d7b2dd5206299ba8ce26e7c2d689696f317736d288af55"
+                       },
+                       {
+                           "name":  "textx-fon-fixedsys.png",
+                           "sha256":  "784afb8b9cc950bbbbc40306eb50cb7a583933f010e8960a6b4724e777ecebc1"
+                       },
+                       {
+                           "name":  "textx-fon-fixedsys.wide.png",
+                           "sha256":  "7b0a83a57cc4bf2d39703aeae4e858fb481c73658683fd17a93091d4b662c9a3"
+                       },
+                       {
                            "name":  "textx-fon-helv.emf",
                            "sha256":  "0d27013b72959a18ff51fe93d0be80af27e9817b76922d1d105e5332b1e4ebdc"
                        },
@@ -4334,6 +4410,18 @@
                            "sha256":  "1bc9e447baf94eaf9a88370c988d081c625223a1096b83b1ffa3cf33ae9aa7d1"
                        },
                        {
+                           "name":  "textx-fon-system.emf",
+                           "sha256":  "cce9111c15191f6a052798a8c7ba94333a25ce3b2e46b777c7ae34cb7d6cf974"
+                       },
+                       {
+                           "name":  "textx-fon-system.png",
+                           "sha256":  "bebf953c172530532f1260eb4319fbd0e1adc2ab91c3fb186daba70f0305dedd"
+                       },
+                       {
+                           "name":  "textx-fon-system.wide.png",
+                           "sha256":  "16199bcfa13c7f0b4523275ecd94b69268e3c8a0b7fa552f08faf397e3bc514e"
+                       },
+                       {
                            "name":  "textx-fon-terminal.emf",
                            "sha256":  "574e814c050ee7c0b2fd453895fb5d804d72494970719f8390128b8ed73c0732"
                        },
@@ -4368,6 +4456,18 @@
                        {
                            "name":  "textx-segoeui-aa.png",
                            "sha256":  "319db427e99099e1c208fdefcf985f32d511bd1cb29ec6bcf9d64fcf756cab5d"
+                       },
+                       {
+                           "name":  "textx-segoeui-cell-mono.emf",
+                           "sha256":  "3e92d4e0cbdc4562e9495fd1d2a8919d3a387ff84a82a41c53369c599585b367"
+                       },
+                       {
+                           "name":  "textx-segoeui-cell-mono.png",
+                           "sha256":  "648d2bd7a8fd0d4627c0e743c8bfde59184f427e5993c770df51b61552b88b2f"
+                       },
+                       {
+                           "name":  "textx-segoeui-cell-mono.wide.png",
+                           "sha256":  "7ce78f8f8515cdb7a26a4fbc34fde11a21909d488658beb8fe0254c76ceb72f5"
                        },
                        {
                            "name":  "textx-segoeui-cleartype.emf",

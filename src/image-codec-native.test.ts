@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import { canvasDrawImage, canvasGetImageData, createTempCanvas, decodeDeferredImageBytes, ensureNodeCanvasModule } from './emf-canvas-helpers';
 import { sniffImageMime } from './emf-image-payload';
@@ -115,6 +115,64 @@ it('draws nothing for a 12-bit JPEG, as GDI+ does ("Unsupported JPEG data precis
 			for (let k = 0; k < 3; k++) expect(rendered.data[(y * rendered.width + x) * 4 + k]).toBe(reference.data[(y * reference.width + x) * 4 + k]);
 		}
 	}
+});
+
+// Arithmetic-coded JPEG beyond the single libjpeg-turbo sample: `scripts/gdi-fixtures/arith-jpeg-encoder.ts` (a port
+// of libjpeg's jcarith.c) writes sequential and progressive files with restart intervals, custom DAC conditioning,
+// 4:2:0/4:2:2/4:4:0 sampling, greyscale, CMYK and YCCK, and Pillow (libjpeg-turbo) decodes each to the same pixels as
+// a Huffman file with the same coefficients. GDI+ decodes all 28 variants, progressive and restart ones included.
+const arithFixtures = readdirSync(new URL('./__fixtures__/gdi/', import.meta.url))
+	.filter(f => /^codec-jpeg-arith-.*\.bin$/.test(f) && !f.endsWith('-huffman.bin'))
+	.map(f => f.slice('codec-jpeg-'.length, -'.bin'.length))
+	.sort();
+const arithIsFourComponent = (name: string): boolean => /cmyk|ycck/.test(name);
+
+it('has the 28 native arithmetic JPEG captures', () => {
+	expect(arithFixtures).toHaveLength(28);
+	expect(arithFixtures.filter(name => arithIsFourComponent(name))).toHaveLength(5);
+});
+
+it.each(arithFixtures.filter(name => !arithIsFourComponent(name)))('decodes arithmetic JPEG %s exactly like GDI+', async name => {
+	const result = await compareJpeg(name);
+	expect(result.exact).toBe(result.total);
+});
+
+// Four-component files go through Windows' colour-managed CMYK conversion, which the entropy decoder does not
+// control (src/jpeg-cmyk.ts). What the decoder owns is the coefficients, so each file must decode to the same pixels
+// as the Huffman-coded copy of those coefficients, and GDI+ must accept it.
+it.each(arithFixtures.filter(name => arithIsFourComponent(name)))('decodes four-component arithmetic JPEG %s like its Huffman copy', async name => {
+	const read = (file: string) => new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/${file}`, import.meta.url)));
+	const arithmetic = decodeJpegPixels(read(`codec-jpeg-${name}.bin`));
+	const huffman = decodeJpegPixels(read(`codec-jpeg-${name}-huffman.bin`));
+	expect(arithmetic.width).toBe(37);
+	expect(Array.from(arithmetic.data)).toEqual(Array.from(huffman.data));
+	const native = (await decodePng(read(`codec-jpeg-${name}.png`)))!;
+	expect([native.width, native.height]).toEqual([arithmetic.width, arithmetic.height]);
+});
+
+it('sorts every arithmetic JPEG variant into the bundled family', () => {
+	for (const name of arithFixtures) {
+		expect(jpegFamily(new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/codec-jpeg-${name}.bin`, import.meta.url))))).toBe('bundled');
+	}
+});
+
+it('plays an EMF+ DrawImage of a progressive 4:2:0 arithmetic JPEG with restart intervals like GDI+', async () => {
+	const rendered = (await renderFixture('codec-jpeg-arith-prog-420-dri2-playback.emf'))!;
+	const reference = await loadReference('codec-jpeg-arith-prog-420-dri2-playback');
+	let exact = 0;
+	let max = 0;
+	for (let y = 0; y < rendered.height; y++) {
+		for (let x = 0; x < rendered.width; x++) {
+			for (let k = 0; k < 3; k++) {
+				const d = Math.abs(rendered.data[(y * rendered.width + x) * 4 + k] - reference.data[(y * reference.width + x) * 4 + k]);
+				if (d === 0) exact++;
+				max = Math.max(max, d);
+			}
+		}
+	}
+	// The decoded 37 x 19 source is exact (above); the one-level differences are the 7x enlargement done by DrawImage.
+	expect(exact).toBe(148274);
+	expect(max).toBeLessThanOrEqual(1);
 });
 
 it.each([

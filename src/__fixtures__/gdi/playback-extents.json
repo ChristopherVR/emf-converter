@@ -1,5 +1,16 @@
 [
   {
+    "name": "emf-insideframe-rect",
+    "w": 556,
+    "h": 293,
+    "ox": -47,
+    "oy": -42,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
+  },
+  {
     "name": "emfrec-anglearc",
     "w": 222,
     "h": 241,
@@ -42,6 +53,17 @@
     "oy": 0,
     "plus": false,
     "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
+  },
+  {
+    "name": "emfrec-floodfill",
+    "w": 4480,
+    "h": 1440,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "playbackSucceeded": false,
     "maxMismatched": 0,
     "maxDiff": 0
   },
