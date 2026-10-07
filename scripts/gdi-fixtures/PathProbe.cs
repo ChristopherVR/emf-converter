@@ -290,6 +290,140 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"curve-widen.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
+	[StructLayout(LayoutKind.Sequential)] struct Xform { public float M11,M12,M21,M22,Dx,Dy; }
+	[DllImport("gdi32.dll")] static extern bool SetWorldTransform(IntPtr dc,ref Xform x);
+	[DllImport("gdi32.dll")] static extern bool ModifyWorldTransform(IntPtr dc,ref Xform x,uint mode);
+	// Native WidenPath of square-capped arcs under world scales and map modes other than one logical unit per pixel
+	// (scaled-cap-sweep.json.gz): scale 2, 0.5, 0.75, 1.5, a 30 degree rotation, a 1/16 x anisotropic map mode (one logical unit is a FIX
+	// across), and a 2 by 1 anisotropic one. "source" is the arc's device GetPath points (FIX) and "expected" the widened outline, both read
+	// back with the transform reset, every 2 degrees of sweep at two start angles. "penDevice" is the pen's device width in pixels.
+	public static void ScaledCapSweep(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		// name, circle centre (logical), radius (logical x, y), pen logical width, setup
+		string[] names={"s2","s0.5","s0.75","s1.5","rot30","aniso16","aniso2"};
+		try {
+			foreach(string name in names)foreach(int start in new[]{0,37})for(int a=2;a<360;a+=2){
+				SetGraphicsMode(dc,2);SetMapMode(dc,1);var id=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref id);
+				double cx,cy,rx,ry;int width;string setup;
+				Action apply;
+				if(name=="s2"){cx=100;cy=100;rx=ry=50;width=6;apply=delegate(){var t=new Xform{M11=2,M22=2};SetWorldTransform(dc,ref t);};}
+				else if(name=="s0.5"){cx=400;cy=400;rx=ry=200;width=24;apply=delegate(){var t=new Xform{M11=0.5f,M22=0.5f};SetWorldTransform(dc,ref t);};}
+				else if(name=="s0.75"){cx=264;cy=264;rx=ry=132;width=16;apply=delegate(){var t=new Xform{M11=0.75f,M22=0.75f};SetWorldTransform(dc,ref t);};}
+				else if(name=="s1.5"){cx=128;cy=128;rx=ry=64;width=8;apply=delegate(){var t=new Xform{M11=1.5f,M22=1.5f};SetWorldTransform(dc,ref t);};}
+				else if(name=="rot30"){cx=0;cy=0;rx=ry=100;width=12;apply=delegate(){double c=Math.Cos(Math.PI/6),s=Math.Sin(Math.PI/6);var t=new Xform{M11=(float)c,M12=(float)s,M21=(float)-s,M22=(float)c,Dx=300,Dy=300};SetWorldTransform(dc,ref t);};}
+				else if(name=="aniso16"){cx=3200;cy=200;rx=1600;ry=100;width=48;apply=delegate(){SetMapMode(dc,8);SetWindowExtEx(dc,16,1,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);};}
+				else {cx=100;cy=200;rx=100;ry=100;width=12;apply=delegate(){SetMapMode(dc,8);SetWindowExtEx(dc,2,1,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);};}
+				setup=name;
+				Func<int,int[]> rad=delegate(int deg){double r=Math.PI*deg/180.0;return new[]{(int)Math.Round(cx+Math.Cos(r)*rx*10),(int)Math.Round(cy-Math.Sin(r)*ry*10)};};
+				int[] p1=rad(start),p2=rad((start+a)%360);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|1*0x100|0*0x1000),(uint)width,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					apply();
+					BeginPath(dc);Arc(dc,(int)(cx-rx),(int)(cy-ry),(int)(cx+rx),(int)(cy+ry),p1[0],p1[1],p2[0],p2[1]);EndPath(dc);
+					SetMapMode(dc,1);var idn=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref idn);
+					string source=ReadFixPath(dc);
+					apply();
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);SetWorldTransform(dc,ref idn);
+					string expected=ReadFixPath(dc);
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"scale\":\"").Append(setup).Append("\",\"width\":").Append(width).Append(",\"start\":").Append(start).Append(",\"sweep\":").Append(a).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(expected).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen);SetMapMode(dc,1);var idn2=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref idn2); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"scaled-cap-sweep.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
+	// Native WidenPath of one square-capped straight segment per logical vector (dx, dy) under the same transforms as ScaledCapSweep
+	// (scaled-line-caps.json.gz): "source" is the segment's device points (FIX), "expected" the widened rectangle. Vectors run over
+	// -40..40 logical units in both axes (an irregular subset) so the cap extension can be fitted as a function of the vector alone.
+	public static void ScaledLineCaps(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		string[] names={"s1","s2","s0.5","s0.75","s1.5","s0.7","s1.3","s2.5","s0.6","rot30","aniso16","aniso2","c10:7","c4:3","c3:4"};
+		int[] comps={-40,-23,-13,-7,-3,-1,0,1,2,3,5,7,10,13,17,23,31,40};
+		try {
+			foreach(string name in names)foreach(int dx in comps)foreach(int dy in comps){
+				if(dx==0&&dy==0)continue;
+				SetGraphicsMode(dc,2);SetMapMode(dc,1);var id=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref id);
+				int width;Action apply;
+				if(name=="s1"){width=12;apply=delegate(){};}
+				else if(name=="s2"){width=6;apply=delegate(){var t=new Xform{M11=2,M22=2};SetWorldTransform(dc,ref t);};}
+				else if(name=="s0.5"){width=24;apply=delegate(){var t=new Xform{M11=0.5f,M22=0.5f};SetWorldTransform(dc,ref t);};}
+				else if(name=="s0.75"){width=16;apply=delegate(){var t=new Xform{M11=0.75f,M22=0.75f};SetWorldTransform(dc,ref t);};}
+				else if(name=="s1.5"){width=8;apply=delegate(){var t=new Xform{M11=1.5f,M22=1.5f};SetWorldTransform(dc,ref t);};}
+				else if(name=="rot30"){width=12;apply=delegate(){double c=Math.Cos(Math.PI/6),s=Math.Sin(Math.PI/6);var t=new Xform{M11=(float)c,M12=(float)s,M21=(float)-s,M22=(float)c,Dx=300,Dy=300};SetWorldTransform(dc,ref t);};}
+				else if(name=="aniso16"){width=48;apply=delegate(){SetMapMode(dc,8);SetWindowExtEx(dc,16,1,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);};}
+				else if(name.StartsWith("s")){float sc=float.Parse(name.Substring(1),System.Globalization.CultureInfo.InvariantCulture);width=(int)Math.Round(12/sc);apply=delegate(){var t=new Xform{M11=sc,M22=sc};SetWorldTransform(dc,ref t);};}
+				else if(name.StartsWith("c")){string[] ab=name.Substring(1).Split((char)58);int wa=int.Parse(ab[0]),vb=int.Parse(ab[1]);width=(int)Math.Round(12.0*wa/vb);apply=delegate(){SetGraphicsMode(dc,1);SetMapMode(dc,8);SetWindowExtEx(dc,wa,wa,IntPtr.Zero);SetViewportExtEx(dc,vb,vb,IntPtr.Zero);};}
+				else {width=12;apply=delegate(){SetMapMode(dc,8);SetWindowExtEx(dc,2,1,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);};}
+				int x0=name=="aniso16"?1600:200,y0=200;
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|1*0x100|0*0x1000),(uint)width,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					apply();
+					int sx=name=="aniso16"?dx*16:dx;
+					BeginPath(dc);Polyline(dc,new[]{new Point{X=x0,Y=y0},new Point{X=x0+sx,Y=y0+dy}},2);EndPath(dc);
+					SetMapMode(dc,1);var idn=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref idn);
+					string source=ReadFixPath(dc);
+					apply();
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);SetWorldTransform(dc,ref idn);
+					string expected=ReadFixPath(dc);
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"scale\":\"").Append(name).Append("\",\"width\":").Append(width).Append(",\"dx\":").Append(sx).Append(",\"dy\":").Append(dy).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(expected).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen);SetMapMode(dc,1);var idn2=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref idn2); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"scaled-line-caps.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
+	// The device width of a geometric pen under a uniform world scale (scaled-pen-widths.json): a flat-capped horizontal line per logical
+	// width 1..40 and scale; "expected" holds the widened rectangle, whose height is the device width in FIX, and "expectedVertical" the same for a vertical line (whose width is the device x width).
+	public static void ScaledPenWidths(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			foreach(float sc in new[]{0.3f,0.5f,0.7f,0.9f,1.1f,1.3f,1.7f,2f,2.5f,3.3f})for(int width=1;width<=40;width++){
+				SetGraphicsMode(dc,2);SetMapMode(dc,1);var id=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref id);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|2*0x100),(uint)width,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					var t=new Xform{M11=sc,M22=sc};SetWorldTransform(dc,ref t);
+					BeginPath(dc);Polyline(dc,new[]{new Point{X=100,Y=100},new Point{X=140,Y=100}},2);EndPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);SetWorldTransform(dc,ref id);
+					string horizontal=ReadFixPath(dc);
+					SetWorldTransform(dc,ref t);
+					BeginPath(dc);Polyline(dc,new[]{new Point{X=100,Y=100},new Point{X=100,Y=140}},2);EndPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);SetWorldTransform(dc,ref id);
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"scale\":").Append(sc.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"width\":").Append(width).Append(",\"expected\":").Append(horizontal).Append(",\"expectedVertical\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen);SetMapMode(dc,1);var idn2=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref idn2); }
+			}
+			// The same through a map mode: window/viewport extents 10:7 (scale 0.7) and 16:1 (a logical unit is a FIX), so the world
+			// transform's rounding of the width can be told from the map mode's.
+			foreach(int[] ext in new[]{new[]{10,7},new[]{16,1},new[]{4,3},new[]{1,3}})for(int width=1;width<=40;width++){
+				SetGraphicsMode(dc,2);SetMapMode(dc,1);var id=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref id);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|2*0x100),(uint)(width*(ext[0]==16?4:1)),ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					SetMapMode(dc,8);SetWindowExtEx(dc,ext[0],ext[0],IntPtr.Zero);SetViewportExtEx(dc,ext[1],ext[1],IntPtr.Zero);
+					BeginPath(dc);Polyline(dc,new[]{new Point{X=100,Y=100},new Point{X=140,Y=100}},2);EndPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);
+					string horizontal=ReadFixPath(dc);
+					SetMapMode(dc,8);SetWindowExtEx(dc,ext[0],ext[0],IntPtr.Zero);SetViewportExtEx(dc,ext[1],ext[1],IntPtr.Zero);
+					BeginPath(dc);Polyline(dc,new[]{new Point{X=100,Y=100},new Point{X=100,Y=140}},2);EndPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"scale\":\"mm").Append(ext[0]).Append(':').Append(ext[1]).Append("\",\"width\":").Append(width*(ext[0]==16?4:1)).Append(",\"expected\":").Append(horizontal).Append(",\"expectedVertical\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen);SetMapMode(dc,1); }
+			}
+			File.WriteAllText(Path.Combine(dir,"scaled-pen-widths.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
 	// Native WidenPath of chords whose arc is very short (1 to 15 degrees in half-degree steps on a circle of radius 100 px, so the arc flattens
 	// to one or two segments that the closing line retraces), at two widths under every cap and join (chord-sweep.json.gz): the chord's
 	// own GetPath points ("source", FIX) and the widened outline ("expected").

@@ -425,10 +425,19 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 			miterLimit: state.miterLimit ?? 10,
 			dashes: dashes ? dashes.map((v) => v * 16) : null,
 			shortenDashes: (flags & 0x0f) !== 7,
+			// Under a rotation the device vector is converted back to logical units for a square cap's extension.
+			cutToLogicalUnits: !dashes,
 		};
 	}
+	// A world scale (not one logical unit per pixel, not GM_COMPATIBLE's whole device pixels): GDI converts a segment's device
+	// vector back to logical units and normalises a square cap's extension by it cut to the nearest whole unit (native
+	// WidenPath: 323 lines under eight scales, 344 to 329 of 358 arcs), and rounds the pen to whole pixels.
+	const unrotated = Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6;
+	const scaled = !rCtx.wholeDevicePixels && unrotated && (Math.abs(Math.abs(matrix[0]) - 1) > 1e-6 || Math.abs(Math.abs(matrix[3]) - 1) > 1e-6);
+	const uniform = scaled && !ellipse && state.penExtended && (flags & 0xf) !== 6;
+	const nibWidth = uniform ? Math.max(1, Math.floor(widthPx + 0.5)) : widthPx;
 	return {
-		width: Math.round((ellipse ? state.penWidth * Math.abs(matrix[0]) : widthPx) * 16),
+		width: Math.round((ellipse ? state.penWidth * Math.abs(matrix[0]) : nibWidth) * 16),
 		...(ellipse ? { height: Math.round(state.penWidth * Math.abs(matrix[3]) * 16) } : {}),
 		cap: opts.roundPen || !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
 		join: opts.roundPen
@@ -448,6 +457,14 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 		// segments in whole pixels.
 		wholePixelDashVectors:
 			Math.abs(matrix[0] - 1) < 1e-6 && Math.abs(matrix[3] - 1) < 1e-6 && Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6,
+		...(scaled && !dashes
+			? {
+					cutToLogicalUnits: true,
+					logicalScale: (ellipse ? [Math.abs(matrix[0]), Math.abs(matrix[3])] : Math.abs(matrix[0])) as number | [number, number],
+					// The pen rounds to whole pixels, but a square cap extends by half the unrounded width.
+					...(uniform ? { capWidth: state.penWidth * Math.abs(matrix[0]) * 16 } : {}),
+				}
+			: {}),
 	};
 }
 

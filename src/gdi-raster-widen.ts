@@ -100,11 +100,20 @@ export interface WidenOptions {
 	/**
 	 * Measure each path segment from its vector cut down to whole device
 	 * pixels (GDI's rule when one logical unit is one device pixel; measured at
-	 * that scale only, other scales stay exact): the dash pattern lays out
+	 * that scale only, other scales stay exact; a square cap under another scale uses `cutToLogicalUnits`): the dash pattern lays out
 	 * along it, and a square cap's extension (half the width) is the segment's
 	 * vector over the length of that cut vector.
 	 */
 	wholePixelDashVectors?: boolean;
+	/**
+	 * Under a world transform, normalise a square cap's extension by the segment's vector cut to whole logical units (the device
+	 * vector converted back to logical units, rounded to the nearest unit), with `logicalScale` the device pixels per logical unit
+	 * (or per axis) for a scale without rotation and `matrix` for a rotated one.
+	 */
+	cutToLogicalUnits?: boolean;
+	logicalScale?: number | [number, number];
+	/** The pen's unrounded device width (FIX) when it differs from `width`, which GDI rounds to whole pixels: square caps extend by half of it. */
+	capWidth?: number;
 	/**
 	 * Unequal axis scales (device per logical unit along x and y): `dashes` are then in logical FIX and each segment is
 	 * measured by its logical length (native WidenPath lays the pattern out in logical space).
@@ -364,28 +373,57 @@ function norm(x: number, y: number): number {
 	return Math.sqrt(x * x + y * y);
 }
 
-/** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
-export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width, matrix?: Matrix, wholePixelNorm = false, symmetric = wholePixelNorm): Pt {
+/**
+ * GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX.
+ *
+ * `wholePixelNorm` normalises the vector cut down to whole logical units instead of its exact length (a vector under one unit in
+ * both components extends nothing). At the identity scale that is an arithmetic shift of the FIX components (floor). Under a world
+ * transform GDI converts the device vector back to logical units first, and the conversion rounds to the nearest unit: the vector
+ * over the scale (`logicalScale`, device pixels per logical unit per axis; or `matrix`) plus half a unit, then floor. The result
+ * is the logical vector over its cut length times the half width: its device rounding is what makes an extension 94 FIX under a
+ * 0.7 scale where the exact vector gives 96.
+ */
+export function squareExtension(
+	width: number,
+	dx: number,
+	dy: number,
+	scale = 1,
+	height = width,
+	matrix?: Matrix,
+	wholePixelNorm = false,
+	symmetric = wholePixelNorm,
+	logicalScale: number | [number, number] = 1,
+): Pt {
+	// Half a logical unit: the device vector is converted back to logical units rounding to the nearest unit.
+	const slack = 8;
 	if (matrix) {
 		// Half the width along the logical direction, mapped to device.
 		const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
 		const lx = (matrix[3] * dx - matrix[2] * dy) / det;
 		const ly = (-matrix[1] * dx + matrix[0] * dy) / det;
-		const l = Math.hypot(lx, ly);
+		let l = Math.hypot(lx, ly);
+		if (wholePixelNorm) {
+			l = norm(Math.floor((lx + slack) / 16) * 16, Math.floor((ly + slack) / 16) * 16);
+			if (l === 0) return [0, 0];
+		}
 		const q = ((width / 2) * scale) / l;
 		return [Math.floor((matrix[0] * lx + matrix[2] * ly) * q + 0.5), Math.floor((matrix[1] * lx + matrix[3] * ly) * q + 0.5)];
 	}
-	let len = width === height ? norm(dx, dy) : norm(dx, dy * width / height);
-	if (wholePixelNorm && width === height) {
-		// A curve end normalises its vector cut down to whole pixels (arithmetic shift of the components), as dashes measure segments.
-		const whole = norm(Math.floor(dx / 16), Math.floor(dy / 16)) * 16;
-		// A vector of less than a pixel (both components in 0..15) normalises to nothing: no extension.
-		if (whole === 0) return [0, 0];
-		len = whole;
-	}
+	const [ax, ay] = typeof logicalScale === 'number' ? [logicalScale, logicalScale] : logicalScale;
 	const r = (width / 2) * scale;
 	// Ties on a whole-pixel vector round away from zero.
 	const round = symmetric ? (v: number) => Math.sign(v) * Math.floor(Math.abs(v) + 0.5) : (v: number) => Math.floor(v + 0.5);
+	if (wholePixelNorm && (width === height || ax !== ay)) {
+		const lx = dx / ax;
+		const ly = dy / ay;
+		const cut = ax === 1 && ay === 1 ? 0 : slack;
+		const whole = norm(Math.floor((lx + cut) / 16) * 16, Math.floor((ly + cut) / 16) * 16);
+		// A vector of less than a unit (both components in 0..15) normalises to nothing: no extension.
+		if (whole === 0) return [0, 0];
+		// Along the ellipse nib the x half width is `r` and the y one `r * ay / ax`, as for the exact vector below.
+		return [round((lx / whole) * r), round(((ly * ay) / ax / whole) * r)];
+	}
+	const len = width === height ? norm(dx, dy) : norm(dx, (dy * width) / height);
 	return [round((dx / len) * r), round((dy / len) * r)];
 }
 
@@ -461,7 +499,7 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix, !!this.opts.wholePixelDashVectors), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.capWidth ?? this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height ?? this.opts.capWidth, nibMatrix, !!(this.opts.wholePixelDashVectors || this.opts.cutToLogicalUnits), undefined, this.opts.logicalScale), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
