@@ -353,7 +353,7 @@ function perpendicularVectors(width: number, dx0: number, dy0: number, height = 
 }
 
 /** GDI's square-cap extension for a segment running (`dx`, `dy`): half the width along it, rounded to FIX. */
-export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width, matrix?: Matrix): Pt {
+export function squareExtension(width: number, dx: number, dy: number, scale = 1, height = width, matrix?: Matrix, wholePixelNorm = false, symmetric = wholePixelNorm): Pt {
 	if (matrix) {
 		// Half the width along the logical direction, mapped to device.
 		const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
@@ -363,9 +363,16 @@ export function squareExtension(width: number, dx: number, dy: number, scale = 1
 		const q = ((width / 2) * scale) / l;
 		return [Math.floor((matrix[0] * lx + matrix[2] * ly) * q + 0.5), Math.floor((matrix[1] * lx + matrix[3] * ly) * q + 0.5)];
 	}
-	const len = width === height ? Math.hypot(dx, dy) : Math.hypot(dx, dy * width / height);
+	let len = width === height ? Math.hypot(dx, dy) : Math.hypot(dx, dy * width / height);
+	if (wholePixelNorm && width === height) {
+		// A curve end normalises its vector cut down to whole pixels (arithmetic shift of the components), as dashes measure segments.
+		const whole = Math.hypot(Math.floor(dx / 16), Math.floor(dy / 16)) * 16;
+		if (whole > 0) len = whole;
+	}
 	const r = (width / 2) * scale;
-	return [Math.floor((dx / len) * r + 0.5), Math.floor((dy / len) * r + 0.5)];
+	// Ties on a whole-pixel vector round away from zero.
+	const round = symmetric ? (v: number) => Math.sign(v) * Math.floor(Math.abs(v) + 0.5) : (v: number) => Math.floor(v + 0.5);
+	return [round((dx / len) * r), round((dy / len) * r)];
 }
 
 /** Turn sign at a join: `cross(a, b)`, and for an exact reversal the side GDI treats as outer. */
@@ -398,6 +405,8 @@ interface Seg {
 	/** The vector the extension and perpendicular follow. */
 	pe: Pt;
 	curveEnd: boolean;
+	/** Which end of its cubic the tangent belongs to: 1 start, 2 end, 3 both. */
+	role: number;
 	/** Squared length of the curve end tangent (0 without one): a short tangent from rounded control points is unreliable. */
 	tangentLength: number;
 	/** The segment is a piece of a flattened curve (the pen then rests on its support vertices). */
@@ -438,7 +447,7 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix, !!drawDir), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: (drawDir as number[] | undefined)?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -561,7 +570,7 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e0: Pt = scale === 1 ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined);
+			const e0: Pt = scale === 1 || s.curveEnd ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined, false, true);
 			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
@@ -585,16 +594,21 @@ class Outliner {
 		let sb = this.joinSide(b, side);
 		const rayA: Pt = side === 'R' ? a.vRaw : [-a.vRaw[0], -a.vRaw[1]];
 		const rayB: Pt = side === 'R' ? b.vRaw : [-b.vRaw[0], -b.vRaw[1]];
-		if (curveJoin && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd) {
+		if (curveJoin && !this.originalRoundJoinSides && a.curveEnd && b.curveEnd && ((side === 'R' ? a : b).role & 2) !== 0 && ((side === 'R' ? b : a).role & 1) !== 0) {
 			// At the boundary of two ellipse cubics, these styles use the
 			// true tangent's perpendicular rather than a pen support vertex.
 			// Both cubics describe the same tangent: the one with the longer arm is the reliable one.
 			const t = a.tangentLength >= b.tangentLength ? a : b;
 			sa = sb = side === 'R' ? t.v : [-t.v[0], -t.v[1]];
 		}
+		if (!curveJoin && !this.originalRoundJoinSides) {
+			// A line meeting the end of a curve: the curve side takes the perpendicular of its end tangent.
+			if (a.curve && a.curveEnd) sa = side === 'R' ? a.v : [-a.v[0], -a.v[1]];
+			if (b.curve && b.curveEnd) sb = side === 'R' ? b.v : [-b.v[0], -b.v[1]];
+		}
 		const Da = side === 'R' ? a.R : a.L;
 		const Db = side === 'R' ? b.R : b.L;
-		if (roundSides && (Da === Db || (curveJoin && sa[0] === sb[0] && sa[1] === sb[1]))) {
+		if (roundSides &&(Da === Db || (curveJoin && sa[0] === sb[0] && sa[1] === sb[1]))) {
 			this.push(p, sa);
 			return;
 		}
@@ -893,7 +907,7 @@ function widenInLogicalSpace(path: GdiRasterPath, opts: WidenOptions, m: [number
 		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
 			pts.push(...inverse(fig.pts[i], fig.pts[i + 1]));
 		}
-		const copy: GdiFigure = { pts, closed: fig.closed, roundWiden: fig.roundWiden, curveSegs: fig.curveSegs };
+		const copy: GdiFigure = { pts, closed: fig.closed, roundWiden: fig.roundWiden, curveSegs: fig.curveSegs, tangentRoles: fig.tangentRoles };
 		if (fig.tangents) {
 			copy.tangents = new Map([...fig.tangents].map(([k, v]) => [k, inverse(v[0], v[1])]));
 		}
@@ -933,7 +947,10 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 				continue;
 			}
 			if (last) {
-				dirs.push(fig.tangents?.get(i / 2 - 1));
+				{
+					const t = fig.tangents?.get(i / 2 - 1);
+					dirs.push(t && ([t[0], t[1], (fig.roundWiden ? 3 : fig.tangentRoles?.get(i / 2 - 1)) ?? 3] as unknown as Pt));
+				}
 				curves.push(!!fig.roundWiden || !!fig.curveSegs?.has(i / 2 - 1));
 			}
 			P.push(q);

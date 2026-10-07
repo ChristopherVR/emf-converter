@@ -52,19 +52,24 @@ describe('native WidenPath of wide curves', () => {
 		expect(exact).toBeGreaterThanOrEqual(80);
 	});
 
-	it('keeps arcs, chords and pies within a few pixels of the native outline', () => {
+	it('matches arcs and pies exactly except for one arc, and chords except for four near-reversals', () => {
 		const rest = nativeCurves.filter((c) => c.kind !== 'bezier');
 		expect(rest).toHaveLength(240);
-		let total = 0;
-		let differing = 0;
+		const perKind: Record<string, { differing: number; total: number }> = {};
 		for (const c of rest) {
 			const d = differingPixels(c);
-			total += d;
-			if (d > 0) differing++;
+			const k = (perKind[c.kind] ??= { differing: 0, total: 0 });
+			k.total += d;
+			if (d > 0) k.differing++;
 		}
-		// Measured: 148 of 320 curves differ in 1,437 pixels; before the per-segment curve model 259 differed in 14,199 pixels
-		// (square caps on arcs and the corners of chords and pies remain).
-		expect(differing).toBeLessThanOrEqual(150);
-		expect(total).toBeLessThanOrEqual(1450);
+		// Measured: 5 of 240 curves differ in 316 pixels (before: 148 in 1,437). A curve end's square-cap extension is its end
+		// tangent cut down to whole pixels (the dash measure), a line meeting a curve end takes the curve's tangent perpendicular,
+		// and the join inside one flattened cubic keeps its own pen vertices. Remaining: a chord whose arc nearly retraces it
+		// (three cases, 284 pixels) and one square-capped miter arc (32 pixels).
+		expect(perKind.pie).toEqual({ differing: 0, total: 0 });
+		expect(perKind.arc.differing).toBeLessThanOrEqual(1);
+		expect(perKind.arc.total).toBeLessThanOrEqual(32);
+		expect(perKind.chord.differing).toBeLessThanOrEqual(4);
+		expect(perKind.chord.total).toBeLessThanOrEqual(284);
 	});
 });

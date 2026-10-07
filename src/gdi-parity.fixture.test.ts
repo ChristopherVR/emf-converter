@@ -867,10 +867,8 @@ const TEXT_CONTRAST_CASES: ParityCase[] = [
  * PaintRgn, ExtFloodFill, AngleArc, PolyDraw / PolyDraw16,
  * PolyPolyline16 and Flatten / Widen / AbortPath. Every one is pixel-exact
  * but for the wide-pen widener's known residual (`gdi-raster-widen.ts`):
- * `emfrec-anglearc` (2 pixels of a 7 px flat-capped miter pen along the arc;
- * the AngleArc path itself matches GDI's `GetPath` point for point),
- * `emfrec-path-flatten` (the same pen on a flattened curve) and the
- * WidenPath outlines (16 pixels).
+ * `emfrec-path-flatten` (a 7 px flat-capped miter pen on a flattened curve,
+ * 4 pixels) and the WidenPath outlines (16 pixels).
  */
 const emfrec = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
 
@@ -895,7 +893,7 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-polydraw32'),
 	emfrec('emfrec-polypolyline16'),
 	emfrec('emfrec-path-abort'),
-	emfrec('emfrec-anglearc', 0.0001), // measured 0.0046% (2 pixels), before 0.062%
+	emfrec('emfrec-anglearc'), // exact (before 2 pixels, 0.0046%; earlier 0.062%)
 	emfrec('emfrec-path-flatten', 0.0005), // measured 0.011%
 	emfrec('emfrec-path-widen', 0.0004), // measured 0.034% (16 pixels), before 0.157%
 	emfrec('emfrec-path-widen-outline'), // ellipse curve sides and duplicated inner triangles

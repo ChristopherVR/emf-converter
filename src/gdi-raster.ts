@@ -1116,6 +1116,8 @@ export interface GdiFigure {
 	 * tangents at its ends; measured on ellipse outlines).
 	 */
 	tangents?: Map<number, [number, number]>;
+	/** Per tangent (keyed like `tangents`): 1 when it is a Bezier's start tangent, 2 its end tangent, 3 both (one flattened segment). */
+	tangentRoles?: Map<number, number>;
 	/** Indices of the segments (keyed like `tangents`) that are pieces of a flattened Bezier. */
 	curveSegs?: Set<number>;
 }
@@ -1201,6 +1203,14 @@ export class GdiRasterPath {
 		flattenBezier(x0, y0, c1x, c1y, c2x, c2y, x3, y3, f.pts);
 		const last = f.pts.length / 2 - 2;
 		if (last <= first) {
+			if (last === first) {
+				// A curve flattened to one segment: its extension and perpendicular follow that segment, normalised like any curve end.
+				const n = f.pts.length;
+				f.tangents ??= new Map();
+				f.tangentRoles ??= new Map();
+				f.tangents.set(first, [f.pts[n - 2] - f.pts[n - 4], f.pts[n - 1] - f.pts[n - 3]]);
+				f.tangentRoles.set(first, 3);
+			}
 			return;
 		}
 		const tangent = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): [number, number] | null => {
@@ -1216,8 +1226,15 @@ export class GdiRasterPath {
 			f.curveSegs.add(k);
 		}
 		f.tangents ??= new Map();
-		if (t0) f.tangents.set(first, t0);
-		if (t1) f.tangents.set(last, t1);
+		f.tangentRoles ??= new Map();
+		if (t0) {
+			f.tangents.set(first, t0);
+			f.tangentRoles.set(first, 1);
+		}
+		if (t1) {
+			f.tangents.set(last, t1);
+			f.tangentRoles.set(last, 2);
+		}
 	}
 
 	/**
@@ -1251,7 +1268,7 @@ export class GdiRasterPath {
 	/** Appends every figure of `other`. */
 	append(other: GdiRasterPath): void {
 		for (const f of other.figures) {
-			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents), curveSegs: f.curveSegs && new Set(f.curveSegs), roundWiden: f.roundWiden });
+			this.figures.push({ pts: f.pts.slice(), closed: f.closed, tangents: f.tangents && new Map(f.tangents), tangentRoles: f.tangentRoles && new Map(f.tangentRoles), curveSegs: f.curveSegs && new Set(f.curveSegs), roundWiden: f.roundWiden });
 		}
 		for (let i = 0; i < other.getPath.types.length; i++) {
 			this.log(other.getPath.pts[2 * i], other.getPath.pts[2 * i + 1], other.getPath.types[i]);
