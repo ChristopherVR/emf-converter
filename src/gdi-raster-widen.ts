@@ -124,6 +124,8 @@ export interface WidenOptions {
 }
 
 type Pt = [number, number];
+/** A curve end tangent `[x, y, role]`; role 1 is a Bezier's start tangent, 2 its end tangent, 3 both. */
+type Tangent = [number, number, number];
 
 /**
  * Hobby's digital pens for widths of one to six pixels, as GDI holds them
@@ -442,7 +444,7 @@ class Outliner {
 	 * `drawDir` (a curve's end tangent) only picks the draw vertices, the
 	 * perpendicular following the chord (measured on Bezier ends).
 	 */
-	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Pt, curve = false): Seg {
+	private seg(a: Pt, b: Pt, dir?: Pt, drawDir?: Tangent, curve = false): Seg {
 		const dx = dir ? dir[0] : b[0] - a[0];
 		const dy = dir ? dir[1] : b[1] - a[1];
 		const d = drawDir ?? [dx, dy];
@@ -451,7 +453,7 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix, !!this.opts.wholePixelDashVectors), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: (drawDir as number[] | undefined)?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height, nibMatrix, !!this.opts.wholePixelDashVectors), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -612,7 +614,7 @@ class Outliner {
 		}
 		const Da = side === 'R' ? a.R : a.L;
 		const Db = side === 'R' ? b.R : b.L;
-		if (roundSides &&(Da === Db || (curveJoin && sa[0] === sb[0] && sa[1] === sb[1]))) {
+		if (roundSides && (Da === Db || (curveJoin && sa[0] === sb[0] && sa[1] === sb[1]))) {
 			this.push(p, sa);
 			return;
 		}
@@ -689,7 +691,7 @@ class Outliner {
 	 * lets a single point stand for a zero-length dash along `dirs[0]`;
 	 * `draws` (curve end tangents) picks draw vertices only.
 	 */
-	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Pt | undefined)[], curves?: boolean[], startScale = 1, endScale = 1): void {
+	open(P: Pt[], dirs?: (Pt | undefined)[], draws?: (Tangent | undefined)[], curves?: boolean[], startScale = 1, endScale = 1): void {
 		if (P.length < 2 && !dirs?.[0]) {
 			this.dot(P[0]);
 			return;
@@ -731,7 +733,7 @@ class Outliner {
 	}
 
 	/** Outlines a closed polygon (distinct consecutive points, not repeating the first). */
-	closed(P: Pt[], draws?: (Pt | undefined)[], curves?: boolean[]): void {
+	closed(P: Pt[], draws?: (Tangent | undefined)[], curves?: boolean[]): void {
 		const m = P.length;
 		const segs: Seg[] = [];
 		for (let i = 0; i < m; i++) {
@@ -782,7 +784,7 @@ interface DashPiece {
 	pts: Pt[];
 	dirs: Pt[];
 	/** Curve end tangents (draw vertices only) per piece segment. */
-	draws: (Pt | undefined)[];
+	draws: (Tangent | undefined)[];
 	/** Per piece segment, whether it comes from a flattened curve. */
 	curves: boolean[];
 	/**
@@ -803,7 +805,7 @@ interface DashPiece {
  */
 function dashPieces(
 	P: Pt[],
-	tangents: (Pt | undefined)[],
+	tangents: (Tangent | undefined)[],
 	curveFlags: boolean[],
 	pattern: number[],
 	shorten: number,
@@ -942,7 +944,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 		// Distinct points, and per remaining segment the curve tangent GDI
 		// widens it with (when it is a flattened Bezier's first or last).
 		let P: Pt[] = [];
-		const dirs: (Pt | undefined)[] = [];
+		const dirs: (Tangent | undefined)[] = [];
 		const curves: boolean[] = [];
 		for (let i = 0; i + 1 < fig.pts.length; i += 2) {
 			const q: Pt = [fig.pts[i], fig.pts[i + 1]];
@@ -953,7 +955,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 			if (last) {
 				{
 					const t = fig.tangents?.get(i / 2 - 1);
-					dirs.push(t && ([t[0], t[1], (fig.roundWiden ? 3 : fig.tangentRoles?.get(i / 2 - 1)) ?? 3] as unknown as Pt));
+					dirs.push(t && [t[0], t[1], (fig.roundWiden ? 3 : fig.tangentRoles?.get(i / 2 - 1)) ?? 3]);
 				}
 				curves.push(!!fig.roundWiden || !!fig.curveSegs?.has(i / 2 - 1));
 			}
@@ -976,7 +978,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
 				// Drop repeated points, keeping each remaining segment's direction.
 				const pts: Pt[] = [piece.pts[0]];
 				const pdirs: Pt[] = [];
-				const pdraws: (Pt | undefined)[] = [];
+				const pdraws: (Tangent | undefined)[] = [];
 				const pcurves: boolean[] = [];
 				for (let i = 1; i < piece.pts.length; i++) {
 					const q = piece.pts[i];
