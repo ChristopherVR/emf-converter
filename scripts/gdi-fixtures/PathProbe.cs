@@ -202,6 +202,34 @@ public static class PathProbe
 		SetArcDirection(dc,1);
 		File.WriteAllText(Path.Combine(dir,"emf-scaled-paths.json"),js.Append("]").ToString());
 	}
+	/** Native GetPath in GM_COMPATIBLE of RoundRect at the identity scale under a null pen, a one-pixel cosmetic pen, a wide plain pen and a wide geometric pen, both arc directions (emf-roundrect-wide-paths.json.gz): the path ends one pixel short of the call's right and bottom edge (an EMF record stores that edge) and the corner ellipse is scaled onto the drawn box. */
+	public static void EmfRoundRectWide(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var rnd=new Random(8881);var js=new StringBuilder("[");string Q=((char)34).ToString();
+		SetGraphicsMode(dc,1);
+		int[] scales={16};
+		LogBrush lb=new LogBrush();
+		for(int k=0;k<1800;k++){
+			int pen=k%4,scale=scales[rnd.Next(scales.Length)],dr=rnd.Next(0,4)==0?2:1,pw=pen>=2?rnd.Next(2,14):1;
+			int l=rnd.Next(0,300),t=rnd.Next(0,300),r=l+rnd.Next(10,100),b=t+rnd.Next(10,100);
+			int cw=rnd.Next(4,40),ch=rnd.Next(4,40);
+			SetArcDirection(dc,dr);
+			SetMapMode(dc,8);SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,scale,scale,IntPtr.Zero);
+			IntPtr h=pen==0?CreatePenNative(5,0,0):pen==1?CreatePenNative(0,1,0):pen==2?CreatePenNative(0,pw,0):ExtCreatePen((uint)(0x10000|0x200),(uint)pw,ref lb,0,IntPtr.Zero);
+			IntPtr old=SelectObject(dc,h);
+			BeginPath(dc);RoundRect(dc,l,t,r,b,cw,ch);EndPath(dc);
+			SetWindowExtEx(dc,16,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+			int n=GetPath(dc,null,null,0);var q=new Point[n>0?n:0];var u=new byte[n>0?n:0];if(n>0)GetPath(dc,q,u,n);
+			SelectObject(dc,old);DeleteObject(h);
+			if(k>0)js.Append(',');
+			js.Append("{"+Q+"pen"+Q+":"+pen+","+Q+"scale"+Q+":"+scale+","+Q+"dir"+Q+":"+dr+","+Q+"pw"+Q+":"+pw+","+Q+"box"+Q+":["+l+","+t+","+r+","+b+"],"+Q+"corner"+Q+":["+cw+","+ch+"],"+Q+"pts"+Q+":[");
+			for(int i=0;i<n;i++){if(i>0)js.Append(',');js.Append(q[i].X).Append(',').Append(q[i].Y).Append(',').Append(u[i]);}
+			js.Append("]}");
+		}
+		SetArcDirection(dc,1);
+		var bytes=Encoding.UTF8.GetBytes(js.Append("]").ToString());
+		using(var file=File.Create(Path.Combine(dir,"emf-roundrect-wide-paths.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		DeleteDC(dc);
+	}
 	[DllImport("gdi32.dll")] static extern bool Rectangle(IntPtr dc,int l,int t,int r,int b);
 	[DllImport("gdi32.dll",EntryPoint="CreatePen")] static extern IntPtr CreatePenNative(int style,int width,uint color);
 	public static void ArcPaths(string dir) {

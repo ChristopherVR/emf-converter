@@ -865,10 +865,7 @@ const TEXT_CONTRAST_CASES: ParityCase[] = [
  * TransparentBlt, MaskBlt, PlgBlt (mask included), banded SetDIBitsToDevice,
  * GradientFill rectangles and triangles, FillRgn / FrameRgn / InvertRgn /
  * PaintRgn, ExtFloodFill, AngleArc, PolyDraw / PolyDraw16,
- * PolyPolyline16 and Flatten / Widen / AbortPath. Every one is pixel-exact
- * but for one residual: `emfrec-path-widen` (16 pixels at the corners of a
- * RoundRect widened with a 5 px pen; the widener is exact on native RoundRect
- * outlines from their own GetPath points).
+ * PolyPolyline16 and Flatten / Widen / AbortPath. Every one is pixel-exact.
  */
 const emfrec = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'emf', tolerance: 0, maxMismatch });
 
@@ -895,7 +892,7 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-path-abort'),
 	emfrec('emfrec-anglearc'), // exact (before 2 pixels, 0.0046%; earlier 0.062%)
 	emfrec('emfrec-path-flatten'), // exact (before 4 pixels, 0.011%)
-	emfrec('emfrec-path-widen', 0.0004), // measured 0.034% (16 pixels), before 0.157%
+	emfrec('emfrec-path-widen'), // exact (before 16 pixels, 0.034%; earlier 0.157%): the RoundRect corner is scaled onto the drawn box
 	emfrec('emfrec-path-widen-outline'), // ellipse curve sides and duplicated inner triangles
 ];
 
