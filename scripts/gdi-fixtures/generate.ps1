@@ -319,6 +319,28 @@ if ($Which -eq 'path-gradient-focus' -or $Which -eq 'halftone-transitions') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'icm-cmyk-probe') {
+    if (!$TablesDir) { throw 'Pass the directory holding <name>.ink files (raw C,M,Y,K ink bytes; see the R1 export script)' }
+    Add-Type -Path (Join-Path $here 'IcmProbe.cs')
+    $dir = (Resolve-Path -LiteralPath $TablesDir).Path
+    foreach ($ink in Get-ChildItem -LiteralPath $dir -Filter *.ink) {
+        foreach ($intent in 0, 1) { [IcmProbe]::RunXyz($ink.FullName, (Join-Path $dir ($ink.BaseName + '.xyz' + $intent)), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm', $intent, 3) }
+        [IcmProbe]::RunSrgb16($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb16')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm', 0, 3)
+        [IcmProbe]::Run($ink.FullName, (Join-Path $dir ('icm-' + $ink.BaseName)), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm')
+    }
+    return
+}
+if ($Which -eq 'icm-cmyk-srgb16') {
+    # Lightweight variant of icm-cmyk-probe: only the 16-bit best-mode sRGB translation, for large input files.
+    if (!$TablesDir) { throw 'Pass the directory holding <name>.ink files' }
+    Add-Type -Path (Join-Path $here 'IcmProbe.cs')
+    $dir = (Resolve-Path -LiteralPath $TablesDir).Path
+    foreach ($ink in Get-ChildItem -LiteralPath $dir -Filter *.ink) {
+        [IcmProbe]::RunSrgb16($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb16')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm', 0, 3)
+        [IcmProbe]::RunSrgb8($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb8')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm')
+    }
+    return
+}
 if ($Which -eq 'image-codecs-cmyk-lut') {
     if (!$TablesDir) { throw 'Pass the directory written by cmyk-lut-inputs.py' }
     Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing

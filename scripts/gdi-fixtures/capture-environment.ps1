@@ -17,7 +17,7 @@ foreach ($directory in @("$env:WINDIR\Fonts", "$env:LOCALAPPDATA\Microsoft\Windo
         [ordered]@{ name = $_.Name; location = $(if ($directory -eq "$env:WINDIR\Fonts") { 'system' } else { 'user' }); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
     })
 }
-$libraries = @('gdi32.dll', 'gdiplus.dll', 'win32u.dll') | ForEach-Object {
+$libraries = @('gdi32.dll', 'gdiplus.dll', 'win32u.dll', 'mscms.dll') | ForEach-Object {
     $library = Get-Item -LiteralPath "$env:WINDIR\System32\$_" -ErrorAction SilentlyContinue
     if ($library) { [ordered]@{ name = $_; version = $library.VersionInfo.FileVersion; sha256 = (Get-FileHash -LiteralPath $library.FullName -Algorithm SHA256).Hash.ToLowerInvariant() } }
 }

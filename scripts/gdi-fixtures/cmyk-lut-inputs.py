@@ -5,8 +5,10 @@
 `grid.jpg` holds the 17^4 grid of ink values 0, 16, ..., 255 (round(255 j / 16)); `rand*.jpg` and `hold*.jpg` hold
 random ink values. Every sample is one flat 8 x 8 block at quality 100 (4:4:4), so its decoded components are
 exactly the ink values the file stores. Pillow writes Adobe APP14 CMYK with inverted samples.
-`generate.ps1 image-codecs-cmyk-lut -TablesDir <directory>` makes Windows decode each one to a PNG, and
-`bun scripts/gdi-fixtures/generate-cmyk-lut.ts <directory>` fits `src/jpeg-cmyk-data.ts` to the pairs.
+`generate.ps1 image-codecs-cmyk-lut -TablesDir <directory>` makes GDI+ decode each one to a PNG. These pairs were the
+input of the 17^4 grid fitted before the transform was identified as the Windows ICM module; they remain the way to
+check any CMYK table against what GDI+ itself draws (738,881 samples: `generate-cmyk-lut.ts` now solves the 16^4 ICM
+table from `mscms.dll` instead, see its header). The IcmProbe output matches these PNGs byte for byte.
 """
 import random
 import sys

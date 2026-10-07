@@ -8,7 +8,7 @@ public static class CodecProbe
 {
 	public static void AdvancedReferences(string dir)
 	{
-		foreach (string name in new[] { "deflate-strips", "deflate-legacy-strips", "deflate-predictor-strips", "uncompressed-tiles", "deflate-tiles", "deflate-legacy-tiles", "jpeg-ycbcr-strips", "jpeg-rgb-tiles", "jpeg-ycbcr-tiles", "jpeg-rgb-strips" })
+		foreach (string name in new[] { "deflate-strips", "deflate-legacy-strips", "deflate-predictor-strips", "uncompressed-tiles", "deflate-tiles", "deflate-legacy-tiles", "jpeg-ycbcr-strips", "jpeg-rgb-tiles", "jpeg-ycbcr-tiles", "jpeg-rgb-strips", "jpeg-cmyk-strips" })
 			Reference(Path.Combine(dir, "codec-tiff-" + name + ".bin"));
 		foreach (string name in new[] { "444", "422", "420", "progressive", "rgb", "grey", "cmyk-patches", "cmyk-noadobe", "cmyk-ramps", "cmyk-photo", "cmyk-photo-420", "ycck-patches", "ycck-photo", "ycck-photo-420", "arithmetic" })
 			Reference(Path.Combine(dir, "codec-jpeg-" + name + ".bin"));

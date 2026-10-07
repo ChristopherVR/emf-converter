@@ -1,10 +1,15 @@
 /**
  * CMYK and YCCK JPEG to RGB, as Windows does it.
  *
- * Windows keeps a four-component JPEG as CMYK and, when it is drawn, converts it through a colour-managed
- * transform to sRGB (measured: it tracks the Windows "RSWOP" profile, perceptual or relative intent, but not
- * a plain `R = (255 - C)(255 - K) / 255`). The exact transform is not public, so it is reproduced by a
- * 17 x 17 x 17 x 17 grid (`jpeg-cmyk-data.ts`) fitted to what GDI+ draws and interpolated linearly.
+ * GDI+ draws a four-component JPEG through the Windows ICM colour-management module (`mscms.dll`): the RSWOP
+ * profile to sRGB, perceptual intent, best-quality transform. Measured with `scripts/gdi-fixtures/IcmProbe.cs`,
+ * that transform is byte for byte what GDI+ writes. The module resamples the profile chain onto a table of
+ * 16 x 16 x 16 x 16 colours over the 8-bit sample taken as `v << 8` (node `j` sits at 4369 j, so ink `v` is at grid
+ * position `v * 256 / 4369`, and the last node is never reached), interpolates tetrahedrally (the four fractions
+ * sorted in descending order; node weights are the steps between them) and keeps the top eight bits of the 16-bit
+ * result. Nodes beyond the sRGB gamut are not clipped, so a colour crossing the gamut edge inside a cell clips
+ * only after interpolation. The table (`jpeg-cmyk-data.ts`) is solved from `mscms.dll` samples (see
+ * `scripts/gdi-fixtures/generate-cmyk-lut.ts`); the profile data itself is not bundled.
  *
  * Sample conventions, all measured against GDI+:
  *   - the samples are stored inverted (Adobe style), with or without an Adobe APP14 marker: ink = 255 - sample;
@@ -16,28 +21,30 @@
 import { CMYK_LUT_DATA } from './jpeg-cmyk-data';
 import { inflateZlibSync } from './png-decoder';
 
-/** Levels added to every node before it is stored (nodes beyond the gamut lie below 0 or above 255). */
-export const CMYK_NODE_OFFSET = 128;
 /** Grid nodes per ink. */
-export const CMYK_GRID = 17;
+export const CMYK_GRID = 16;
+/** Node values are stored in steps of this many 16-bit levels (a level of the 8-bit result is 256). */
+export const CMYK_QUANT = 4;
+/** Nodes beyond the gamut are held within this many 16-bit levels of 0..65535. */
+export const CMYK_NODE_LIMIT = 2048;
 const N = CMYK_GRID;
 const GRID_SIZE = N ** 4;
+const SCALE = 256 / 4369;
 
-let table: Uint16Array | null = null;
+let table: Int32Array | null = null;
 
 /** Characters of the base-85 text the table is stored as (4 bytes become 5 digits, most significant first). */
 export const CMYK_DATA_ALPHABET = Array.from({ length: 90 }, (_, i) => String.fromCharCode(35 + i))
-	.filter(c => c !== "'" && c !== '\\' && c !== '`')
+	.filter(c => c !== "'" && c !== '\\' &&c !== '`')
 	.slice(0, 85)
 	.join('');
 
 /**
- * The decoded grid: R, G and B planes of `GRID_SIZE` nodes (index `((c * N + m) * N + y) * N + k`), in sixteenths of
- * a level above -CMYK_NODE_OFFSET. They are stored as the 4-D difference of the grid (each node minus the
- * inclusion-exclusion sum of its lower neighbours), zigzag coded as one byte or, from 255, an escape byte and
- * three more, deflated and written in base 85; decoding sums the differences along K, Y, M and C.
+ * The decoded grid: `GRID_SIZE` nodes of R, G and B interleaved (index `(((c * N + m) * N + y) * N + k) * 3 + channel`),
+ * in steps of `CMYK_QUANT`. They are stored as the 4-D difference of the grid, zigzag coded as one byte or, from
+ * 255, an escape byte and three more, deflated and written in base 85; decoding sums the differences along C, M, Y and K.
  */
-function nodeTable(): Uint16Array {
+function nodeTable(): Int32Array {
 	if (table) return table;
 	const lookup = new Int16Array(128).fill(-1);
 	for (let i = 0; i < 85; i++) lookup[CMYK_DATA_ALPHABET.charCodeAt(i)] = i;
@@ -61,35 +68,12 @@ function nodeTable(): Uint16Array {
 		}
 		values[i] = v & 1 ? -((v + 1) >> 1) : v >> 1;
 	}
-	const strides = [N ** 3, N ** 2, N, 1];
-	for (let channel = 0; channel < 3; channel++) {
-		const base = channel * GRID_SIZE;
-		for (let d = 3; d >= 0; d--) {
-			for (let i = 0; i < GRID_SIZE; i++) {
-				if (Math.floor(i / strides[d]) % N) values[base + i] += values[base + i - strides[d]];
-			}
+	for (const stride of [N ** 3, N ** 2, N, 1]) {
+		for (let i = 0; i < GRID_SIZE; i++) {
+			if (Math.floor(i / stride) % N) for (let c = 0; c < 3; c++) values[i * 3 + c] += values[(i - stride) * 3 + c];
 		}
 	}
-	return (table = Uint16Array.from(values));
-}
-
-/** The grid nodes around an ink combination and their linear weights (used when fitting the table). */
-export function cmykCorners(c: number, m: number, y: number, k: number): [number, number][] {
-	const pos = [c, m, y, k].map(v => (v * (N - 1)) / 255);
-	const base = pos.map(v => Math.min(N - 2, Math.floor(v)));
-	const frac = pos.map((v, i) => v - base[i]);
-	const out: [number, number][] = [];
-	for (let corner = 0; corner < 16; corner++) {
-		let weight = 1;
-		let index = 0;
-		for (let d = 0; d < 4; d++) {
-			const high = (corner >> (3 - d)) & 1;
-			weight *= high ? frac[d] : 1 - frac[d];
-			index = index * N + base[d] + high;
-		}
-		if (weight) out.push([index, weight]);
-	}
-	return out;
+	return (table = values);
 }
 
 const clamp8 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
@@ -103,11 +87,11 @@ export function cmykPlanesToRgba(planes: Uint8Array[], width: number, height: nu
 	const baseOf = new Int32Array(256);
 	const fracOf = new Float64Array(256);
 	for (let v = 0; v < 256; v++) {
-		const pos = (v * (N - 1)) / 255;
+		const pos = v * SCALE;
 		baseOf[v] = Math.min(N - 2, Math.floor(pos));
 		fracOf[v] = pos - baseOf[v];
 	}
-	const strides = [N * N * N, N * N, N, 1];
+	const strides = [N * N * N * 3, N * N * 3, N * 3, 3];
 	const out = new Uint8Array(width * height * 4);
 	const fix = (x: number): number => Math.floor(x * 65536 + 0.5);
 	const half = 1 << 15;
@@ -115,47 +99,60 @@ export function cmykPlanesToRgba(planes: Uint8Array[], width: number, height: nu
 	const cbB = fix(1.772);
 	const crG = -fix(0.71414);
 	const cbG = -fix(0.34414);
+	const inks = [0, 0, 0, 0];
+	const frac = [0, 0, 0, 0];
+	const order = [0, 1, 2, 3];
 	for (let p = 0; p < width * height; p++) {
-		let c: number;
-		let m: number;
-		let y: number;
 		if (ycck) {
 			const lum = planes[0][p];
 			const cb = planes[1][p] - 128;
 			const cr = planes[2][p] - 128;
-			c = clamp8(lum + ((crR * cr + half) >> 16));
-			m = clamp8(lum + ((cbG * cb + half + crG * cr) >> 16));
-			y = clamp8(lum + ((cbB * cb + half) >> 16));
+			inks[0] = clamp8(lum + ((crR * cr + half) >> 16));
+			inks[1] = clamp8(lum + ((cbG * cb + half + crG * cr) >> 16));
+			inks[2] = clamp8(lum + ((cbB * cb + half) >> 16));
 		} else {
-			c = 255 - planes[0][p];
-			m = 255 - planes[1][p];
-			y = 255 - planes[2][p];
+			inks[0] = 255 - planes[0][p];
+			inks[1] = 255 - planes[1][p];
+			inks[2] = 255 - planes[2][p];
 		}
-		const k = 255 - planes[3][p];
-		const b0 = baseOf[c] * strides[0] + baseOf[m] * strides[1] + baseOf[y] * strides[2] + baseOf[k];
-		const f0 = fracOf[c];
-		const f1 = fracOf[m];
-		const f2 = fracOf[y];
-		const f3 = fracOf[k];
-		let r = 0;
-		let g = 0;
-		let b = 0;
-		for (let corner = 0; corner < 16; corner++) {
-			const hc = (corner >> 3) & 1;
-			const hm = (corner >> 2) & 1;
-			const hy = (corner >> 1) & 1;
-			const hk = corner & 1;
-			const weight = (hc ? f0 : 1 - f0) * (hm ? f1 : 1 - f1) * (hy ? f2 : 1 - f2) * (hk ? f3 : 1 - f3);
-			if (weight === 0) continue;
-			const node = b0 + hc * strides[0] + hm * strides[1] + hy * strides[2] + hk;
-			r += weight * nodes[node];
-			g += weight * nodes[GRID_SIZE + node];
-			b += weight * nodes[2 * GRID_SIZE + node];
+		inks[3] = 255 - planes[3][p];
+		let at = 0;
+		for (let d = 0; d < 4; d++) {
+			at += baseOf[inks[d]] * strides[d];
+			frac[d] = fracOf[inks[d]];
+			order[d] = d;
 		}
-		out[p * 4] = clamp8(Math.floor(r / 16 - CMYK_NODE_OFFSET + 0.5));
-		out[p * 4 + 1] = clamp8(Math.floor(g / 16 - CMYK_NODE_OFFSET + 0.5));
-		out[p * 4 + 2] = clamp8(Math.floor(b / 16 - CMYK_NODE_OFFSET + 0.5));
+		// Descending by fraction, ties keeping the lower ink first (insertion sort).
+		for (let i = 1; i < 4; i++) {
+			const o = order[i];
+			let j = i - 1;
+			while (j >= 0 && frac[order[j]] < frac[o]) {
+				order[j + 1] = order[j];
+				j--;
+			}
+			order[j + 1] = o;
+		}
+		let weight = 1 - frac[order[0]];
+		let r = weight * nodes[at];
+		let g = weight * nodes[at + 1];
+		let b = weight * nodes[at + 2];
+		for (let s = 0; s < 4; s++) {
+			at += strides[order[s]];
+			weight = frac[order[s]] - (s < 3 ? frac[order[s + 1]] : 0);
+			r += weight * nodes[at];
+			g += weight * nodes[at + 1];
+			b += weight * nodes[at + 2];
+		}
+		out[p * 4] = level(r);
+		out[p * 4 + 1] = level(g);
+		out[p * 4 + 2] = level(b);
 		out[p * 4 + 3] = 255;
 	}
 	return out;
+}
+
+/** The top eight bits of an interpolated node value (in `CMYK_QUANT` steps), clamped to the 16-bit range. */
+function level(v: number): number {
+	const x = v * CMYK_QUANT;
+	return x <= 0 ? 0 : x >= 65535 ? 255 : Math.floor(x / 256);
 }

@@ -39,23 +39,49 @@ async function compareJpeg(name: string): Promise<{ exact: number; total: number
 	return { exact, total: (got.length / 4) * 3, max };
 }
 
-// Windows converts CMYK/YCCK JPEG through a colour-managed transform that cannot be reproduced bit for bit; a fitted
-// 17^4 grid (src/jpeg-cmyk.ts) reproduces 87-95% of the channel values exactly. The jpeg-js fallback used before
-// matched 1% to 11% of them (and refused an Adobe-less file) with errors up to 135.
+// Windows converts CMYK/YCCK JPEG through the ICM colour-management module (RSWOP profile to sRGB, best mode), which
+// resamples the profile onto a 16^4 table of 16-bit colours and interpolates it tetrahedrally; `src/jpeg-cmyk.ts`
+// bundles that table (solved from `mscms.dll` samples, `generate-cmyk-lut.ts`). 99.3% to 99.6% of the channel values
+// are exact and none is off by more than one level. The 17^4 grid fitted to GDI+ captures before it matched 87% to 95%
+// with errors up to 6; the jpeg-js fallback before that matched 1% to 11% (and refused an Adobe-less file).
 it.each([
-	['cmyk-patches', 42944, 2],
-	['cmyk-noadobe', 42944, 2],
-	['cmyk-ramps', 46672, 3],
-	['cmyk-photo', 16791, 6],
-	['cmyk-photo-420', 16856, 6],
-	['ycck-patches', 44608, 4],
-	['ycck-photo', 16413, 4],
-	['ycck-photo-420', 16448, 4],
-])('decodes CMYK/YCCK JPEG %s like GDI+ (exact channel values, largest error)', async (name, exactCount, maxError) => {
+	['cmyk-patches', 48960],
+	['cmyk-noadobe', 48960],
+	['cmyk-ramps', 48976],
+	['cmyk-photo', 18311],
+	['cmyk-photo-420', 18311],
+	['ycck-patches', 48704],
+	['ycck-photo', 18331],
+	['ycck-photo-420', 18338],
+])('decodes CMYK/YCCK JPEG %s like GDI+ (exact channel values, largest error one level)', async (name, exactCount) => {
 	const result = await compareJpeg(name);
 	expect(result.exact).toBe(exactCount);
-	expect(result.max).toBeLessThanOrEqual(maxError);
-	expect(result.exact / result.total).toBeGreaterThan(0.85);
+	expect(result.max).toBeLessThanOrEqual(1);
+	expect(result.exact / result.total).toBeGreaterThan(0.99);
+});
+
+// CMYK JPEG inside TIFF (PhotometricInterpretation 5): the samples are the ink amounts as stored, not inverted as in an
+// Adobe CMYK JPEG, and go through the same ICM transform. Before this case utif decoded the strips as plain RGB.
+it('decodes CMYK JPEG strips in a TIFF like GDI+ (exact channel values, largest error one level)', async () => {
+	await ensureNodeCanvasModule();
+	const bytes = new Uint8Array(readFileSync(new URL('./__fixtures__/gdi/codec-tiff-jpeg-cmyk-strips.bin', import.meta.url)));
+	const image = (await decodeDeferredImageBytes(bytes.buffer))!;
+	const surface = createTempCanvas(image.width, image.height)!;
+	canvasDrawImage(surface.ctx, image.drawable, 0, 0, image.width, image.height);
+	const got = canvasGetImageData(surface.ctx, 0, 0, image.width, image.height).data;
+	const expected = (await decodePng(new Uint8Array(readFileSync(new URL('./__fixtures__/gdi/codec-tiff-jpeg-cmyk-strips.png', import.meta.url)))))!;
+	let exact = 0;
+	let max = 0;
+	for (let i = 0; i < got.length; i++) {
+		if (i % 4 === 3) continue;
+		const d = Math.abs(got[i] - expected.data[i]);
+		if (d === 0) exact++;
+		max = Math.max(max, d);
+	}
+	image.close();
+	expect([image.width, image.height]).toEqual([96, 64]);
+	expect(exact).toBe(18310);
+	expect(max).toBeLessThanOrEqual(1);
 });
 
 it('decodes arithmetic-coded JPEG exactly like GDI+', async () => {
@@ -93,7 +119,7 @@ it('draws nothing for a 12-bit JPEG, as GDI+ does ("Unsupported JPEG data precis
 
 it.each([
 	['arithmetic', 151086, 1],
-	['cmyk-photo', 141750, 3],
+	['cmyk-photo', 150107, 1],
 ])('plays an EMF+ DrawImage of the %s JPEG like GDI+ (exact channel values, largest error)', async (name, exactCount, maxError) => {
 	const rendered = (await renderFixture(`codec-jpeg-${name}-playback.emf`))!;
 	const reference = await loadReference(`codec-jpeg-${name}-playback`);

@@ -132,6 +132,8 @@ photo.putdata([(int(127 + 120 * math.sin(x / 11 + y / 17)), int(127 + 120 * math
                 int(127 + 120 * math.cos(x / 13 + y / 9))) for y in range(64) for x in range(96)])
 photo_cmyk = photo.convert("CMYK")
 (destination / "codec-jpeg-cmyk-photo.bin").write_bytes(encode(photo_cmyk, quality=85, subsampling=0))
+# CMYK JPEG inside TIFF (PhotometricInterpretation 5, four samples, shared JPEGTables), strips.
+photo_cmyk.save(destination / "codec-tiff-jpeg-cmyk-strips.bin", format="TIFF", compression="jpeg")
 (destination / "codec-jpeg-cmyk-photo-420.bin").write_bytes(encode(photo_cmyk, quality=85, subsampling=2))
 ycc = photo.convert("YCbCr")
 black = Image.new("L", photo.size)
