@@ -611,8 +611,17 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const cornerFixW = inset ? Math.abs(cornerW * devM[0]) * 16 : fixExtent(rCtx, cornerW, 0);
 		const cornerFixH = inset ? Math.abs(cornerH * devM[3]) * 16 : fixExtent(rCtx, cornerH, 1);
 		const cornerOnFrame = (fix: number, size: number, framedSize: number): number => (inset && size !== 0 ? Math.floor((Math.min(fix, size) * framedSize) / size) : fix);
-		const cw = cornerOnFrame(cornerFixW, Math.abs((r - l) * devM[0]) * 16, Math.abs(framed.exx));
-		const ch = cornerOnFrame(cornerFixH, Math.abs((b - t) * devM[3]) * 16, Math.abs(framed.eyy));
+		let cw = cornerOnFrame(cornerFixW, Math.abs((r - l) * devM[0]) * 16, Math.abs(framed.exx));
+		let ch = cornerOnFrame(cornerFixH, Math.abs((b - t) * devM[3]) * 16, Math.abs(framed.eyy));
+		if (!inset && rCtx.state.penStyle !== 6 && cornerW !== 0 && cornerH !== 0 && Math.abs(devM[1]) < 1e-9 && Math.abs(devM[2]) < 1e-9 && rCtx.state.penStyle !== 5 && !penIsCosmetic(rCtx) && rCtx.state.worldTransform.every((v, i) => v === [1, 0, 0, 1, 0, 0][i])) {
+			// GM_COMPATIBLE (no world transform; GM_ADVANCED keeps the corner unscaled): GDI builds the corner on the logical box with its right and bottom pixel included (the record's box is inclusive), then
+			// scales it onto the drawn box, truncating to whole FIX under a wide or null pen (native GetPath of RoundRect(165, 145, 230,
+			// 192, 20, 20): corners of 157 and 156 FIX where the unscaled 160 gave the 16 pixels of emfrec-path-widen).
+			const fullW = (Math.abs(r - l) + 1) * Math.abs(devM[0]) * 16;
+			const fullH = (Math.abs(b - t) + 1) * Math.abs(devM[3]) * 16;
+			cw = Math.floor((Math.min(cornerFixW, fullW) * Math.abs(framed.exx)) / fullW);
+			ch = Math.floor((Math.min(cornerFixH, fullH) * Math.abs(framed.eyy)) / fullH);
+		}
 		// Rotated/skewed: build in LOGICAL space and map every point (Bezier
 		// control points included) through the full affine. Otherwise the
 		// device mapping is a plain per-axis scale + offset, so build directly

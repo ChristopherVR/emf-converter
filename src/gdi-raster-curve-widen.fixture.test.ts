@@ -52,7 +52,7 @@ describe('native WidenPath of wide curves', () => {
 		expect(exact).toBeGreaterThanOrEqual(80);
 	});
 
-	it('matches every arc and pie and all but four chords', () => {
+	it('matches every arc and pie and all but one chord', () => {
 		const rest = nativeCurves.filter((c) => c.kind !== 'bezier');
 		expect(rest).toHaveLength(240);
 		const perKind: Record<string, { differing: number; total: number }> = {};
@@ -62,13 +62,13 @@ describe('native WidenPath of wide curves', () => {
 			k.total += d;
 			if (d > 0) k.differing++;
 		}
-		// Measured: 4 of 240 curves differ in 327 pixels (before: 148 in 1,437). A segment's square-cap extension is its vector
+		// Measured: 1 of 240 curves differs in 1 pixel (before: 148 in 1,437; 4 in 327 until the two-vertex chord). A segment's square-cap extension is its vector
 		// cut down to whole pixels (the dash measure; a curve end uses its end tangent), a line meeting a curve end takes the curve's tangent perpendicular,
-		// and the join inside one flattened cubic keeps its own pen vertices. Remaining: a chord whose arc is a single
-		// flattened segment that the closing line retraces (four cases, 327 pixels).
+		// and the join inside one flattened cubic keeps its own pen vertices. Remaining: one pixel at a line/curve-end join of a nearly full chord. A chord whose arc is a single
+		// flattened segment is now a closed two-vertex polygon (see chord-sweep).
 		expect(perKind.pie).toEqual({ differing: 0, total: 0 });
 		expect(perKind.arc).toEqual({ differing: 0, total: 0 });
-		expect(perKind.chord.differing).toBeLessThanOrEqual(4);
-		expect(perKind.chord.total).toBeLessThanOrEqual(327);
+		expect(perKind.chord.differing).toBeLessThanOrEqual(1);
+		expect(perKind.chord.total).toBeLessThanOrEqual(1);
 	});
 });

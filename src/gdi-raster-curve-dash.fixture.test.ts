@@ -79,13 +79,15 @@ describe('native WidenPath of dashed wide pens on curves', () => {
 		expect(summary(0, true)).toEqual({ differing: 0, total: 0 });
 	});
 
-	it('keeps flat caps within a few pixels and square caps within one pixel of the native outlines', () => {
-		// Flat: 14 of 100 differ by 48 pixels, almost all arcs. Square: 78 of 100 by 524 (path-end caps and arcs remain).
+	it('keeps flat and square caps within one pixel of the native outlines', () => {
+		// Flat: 1 of 100 differs by 1 pixel (before: 5 by 24; a dash that starts or ends on a flattened vertex keeps a zero-length piece along the
+		// segment it was cut from, which native joins). Square: 1 of 100 by 1 pixel (a cut point one FIX away; before: 2 by 5, the second an
+		// exact rounding tie that Math.hypot put either side of x.5 depending on the engine, now Math.sqrt of the exact sum of squares).
 		const flat = summary(2, true);
-		expect(flat.differing).toBeLessThanOrEqual(14);
-		expect(flat.total).toBeLessThanOrEqual(48);
+		expect(flat.differing).toBeLessThanOrEqual(1);
+		expect(flat.total).toBeLessThanOrEqual(1);
 		const square = summary(1, true);
-		expect(square.differing).toBeLessThanOrEqual(78);
-		expect(square.total).toBeLessThanOrEqual(524);
+		expect(square.differing).toBeLessThanOrEqual(1);
+		expect(square.total).toBeLessThanOrEqual(1);
 	});
 });
