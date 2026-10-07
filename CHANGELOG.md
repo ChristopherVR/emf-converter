@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.12.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.12.1) - 2026-10-07
+
+### Testing
+
+- Verify arithmetic JPEG against 28 encoder-made native captures ([72ab73e](https://github.com/ChristopherVR/emf-converter/commit/72ab73e0451b91c3b5237a4a32c875845d9f6b4a))
+
 ## [4.12.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.12.0) - 2026-10-07
 
 ### Features
