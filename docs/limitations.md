@@ -2,7 +2,7 @@
 
 Output is compared with images rendered by Windows. This page describes the current rendering behaviour and known differences from native Windows playback. The exact per-fixture bounds and tolerance levels are defined in `src/gdi-parity.fixture.test.ts`.
 
-Parity is measured by comparing rendered output pixel-for-pixel against images captured from Windows GDI and GDI+. Each test fixture includes both a zero-tolerance bound (pixel-exact match) and a best-effort bound that allows for fixed-point rounding and platform differences. A passing test may allow nonzero pixel and channel tolerances. See [the current parity priorities](./outstanding-work.md#current-parity-priorities-8-october-2026) for the zero-tolerance review, text coverage gaps and reference-environment issues.
+Parity is measured by comparing rendered output pixel-for-pixel against images captured from Windows GDI and GDI+. Each case in `src/gdi-parity.fixture.test.ts` carries a single mismatch tolerance bound, many of them nonzero to allow for fixed-point rounding and platform differences. The report script `bun scripts/gdi-fixtures/report.ts` reports zero-tolerance differences separately. See [the current parity priorities](./outstanding-work.md#current-parity-priorities-8-october-2026) for the zero-tolerance review, text coverage gaps and reference-environment issues.
 
 ## Color adjustment and image effects
 
