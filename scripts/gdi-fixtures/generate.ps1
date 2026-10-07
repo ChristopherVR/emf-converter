@@ -325,6 +325,17 @@ if ($Which -eq 'image-codecs-cmyk-lut') {
     [CodecProbe]::DecodeDirectory((Resolve-Path -LiteralPath $TablesDir).Path)
     return
 }
+if ($Which -eq 'image-codecs-arithmetic') {
+    # Encodes the arithmetic JPEG variants (arith-jpeg-encoder.ts) and has GDI+ decode each one; -PlaybackCase takes
+    # a comma-separated list of variant names whose EMF+ DrawImage playback is recorded too.
+    bun (Join-Path $here 'arith-jpeg-encoder.ts') $outDir
+    if ($LASTEXITCODE -ne 0) { throw 'arith-jpeg-encoder.ts failed' }
+    Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing
+    [CodecProbe]::ArithmeticReferences($outDir)
+    if ($PlaybackCase) { [CodecProbe]::ArithmeticPlayback($outDir, @($PlaybackCase -split ',' | ForEach-Object { 'arith-' + $_ })) }
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'image-codecs' -or $Which -eq 'image-codecs-extra' -or $Which -eq 'image-codecs-advanced') {
     Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing
     if ($Which -eq 'image-codecs-advanced') {

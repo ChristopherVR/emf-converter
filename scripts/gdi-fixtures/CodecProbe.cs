@@ -118,6 +118,26 @@ public static class CodecProbe
 			catch (Exception e) { File.WriteAllText(Path.ChangeExtension(path, ".failed.txt"), e.GetType().Name + ": " + e.Message); }
 		}
 	}
+	/// <summary>
+	/// Decodes every codec-jpeg-arith-*.bin (written by arith-jpeg-encoder.ts) to a PNG next to it. A variant GDI+
+	/// refuses gets a .failed.txt holding the error instead, so the refused set is part of the capture.
+	/// </summary>
+	public static void ArithmeticReferences(string dir)
+	{
+		foreach (string path in Directory.GetFiles(dir, "codec-jpeg-arith-*.bin"))
+		{
+			string png = Path.ChangeExtension(path, ".png"), failed = Path.ChangeExtension(path, ".failed.txt");
+			if (File.Exists(png)) File.Delete(png);
+			if (File.Exists(failed)) File.Delete(failed);
+			try { Reference(path); }
+			catch (Exception e) { File.WriteAllText(failed, e.GetType().Name + ": " + e.Message); }
+		}
+	}
+	/// <summary>Playback of an EMF+ DrawImage of each named codec-jpeg-NAME.bin, as JpegPlayback records it.</summary>
+	public static void ArithmeticPlayback(string dir, string[] names)
+	{
+		foreach (string name in names) JpegPlayback(dir, name);
+	}
 	static void GifFrame(BinaryWriter writer, bool transparent, int transparentIndex, int left, int top, int width, int height, byte[] pixels, bool localPalette = false)
 	{
 		writer.Write(new byte[] { 0x21, 0xf9, 4, (byte)(transparent ? 1 : 0), 1, 0, (byte)transparentIndex, 0, 0x2c });
