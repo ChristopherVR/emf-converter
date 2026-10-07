@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.14.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.14.0) - 2026-10-07
+
+### Features
+
+- Square caps and pen widths under world scales, rotations and anisotropic maps ([e8fd124](https://github.com/ChristopherVR/emf-converter/commit/e8fd12449d72d9cfb483c0251a7c4222229831d8))
+
+### Bug Fixes
+
+- Widen a one-segment chord as a closed two-vertex polygon ([0ba7909](https://github.com/ChristopherVR/emf-converter/commit/0ba7909144d060871120103296e5eb5267cabfd6))
+- Keep zero-length dash pieces and exact lengths in wide dashed curves ([a1e9013](https://github.com/ChristopherVR/emf-converter/commit/a1e901399e8903a309d6b29c131fbbf4cf9d16c3))
+- Scale the RoundRect corner onto the drawn box under a wide pen in compatible playback ([dc30865](https://github.com/ChristopherVR/emf-converter/commit/dc30865f363fe221bc697cd7f9233c4094f7e014))
+
+### Documentation
+
+- Update the measured test count after the curve-pen and CMYK rounds ([8b2c642](https://github.com/ChristopherVR/emf-converter/commit/8b2c64211935ac75df6db3c7d4adff5283c7f587))
+
 ## [4.13.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.13.0) - 2026-10-07
 
 ### Features
