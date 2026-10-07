@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.12.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.12.2) - 2026-10-07
+
+### Documentation
+
+- Record the nine clipped-reference extent verdicts ([c043140](https://github.com/ChristopherVR/emf-converter/commit/c0431406a868d14208d369e206cad9ba627e4962))
+- Update the measured test count after merging the extent and arithmetic-JPEG rounds ([7e3c32e](https://github.com/ChristopherVR/emf-converter/commit/7e3c32e482e4521cb1723247f657b3cb5d20b6e2))
+
+### Testing
+
+- Validate two more native playback extents and pin the nine clipped text references ([777f6ff](https://github.com/ChristopherVR/emf-converter/commit/777f6ff0afeaba2b02b78d6164509658e8b3f46e))
+
 ## [4.12.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.12.1) - 2026-10-07
 
 ### Testing
