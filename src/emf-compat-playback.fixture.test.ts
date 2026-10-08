@@ -13,8 +13,10 @@
  *  - `compat-ellipses-<map>-<pen>`: 315 null-pen Ellipses at the same phases: the quarter-pixel growth of a null pen's box
  *    happens exactly when all four device edges are whole pixels, at any scale.
  *
- * What is left in `compat-playback-*` is arcs (radials of Arc, Chord and Pie, one to four pixels each, and one dotted
- * Chord of 37): see docs/outstanding-work.md.
+ * Arc, Chord and Pie are exact in every sheet (259 differing pixels over the sheets before, 24 now): Windows measures their
+ * radials in logical space, which `emf-compat-playback-paths.fixture.test.ts` pins on 3,600 native playback paths. What is
+ * left (24 pixels, every one in a RoundRect cell) is the RoundRect under a map whose ratio is not a multiple of 1/16: see
+ * docs/outstanding-work.md.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -26,28 +28,13 @@ const sweeps = ['r43', 'r107', 'r34', 'r73', 'r54', 'r12', 'r43o', 'r12o', 'w43'
 
 /** Differing pixels per sheet; every sheet not listed is pixel-exact. */
 const residual: Record<string, number> = {
-	'compat-playback-id-null': 2,
-	'compat-playback-r107-cosmetic': 8,
-	'compat-playback-r107-dash': 37,
-	'compat-playback-r107-geo5': 12,
-	'compat-playback-r107-geosq9': 20,
-	'compat-playback-r107-null': 3,
-	'compat-playback-r107-wide3': 12,
-	'compat-playback-r107-wide7': 7,
-	'compat-playback-r21-null': 3,
+	'compat-playback-r107-cosmetic': 2,
+	'compat-playback-r107-wide7': 3,
 	'compat-playback-r32x11-cosmetic': 1,
-	'compat-playback-r32x11-dash': 4,
-	'compat-playback-r32x11-geo5': 10,
-	'compat-playback-r32x11-geosq9': 2,
-	'compat-playback-r32x11-null': 3,
-	'compat-playback-r32x11-wide7': 7,
-	'compat-playback-r34-cosmetic': 14,
-	'compat-playback-r34-dash': 21,
-	'compat-playback-r34-geo5': 18,
-	'compat-playback-r34-geosq9': 55,
-	'compat-playback-r34-null': 3,
-	'compat-playback-r34-wide3': 11,
-	'compat-playback-r34-wide7': 6,
+	'compat-playback-r34-dash': 1,
+	'compat-playback-r34-geo5': 1,
+	'compat-playback-r34-geosq9': 14,
+	'compat-playback-r34-null': 2,
 };
 
 const sheets = [

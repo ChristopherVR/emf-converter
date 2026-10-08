@@ -169,6 +169,98 @@ public static class CompatPlaybackProbe
 		SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(p); if (pen == 1) DeleteObject(br);
 	}
 
+	[DllImport("gdi32.dll")] static extern bool BeginPath(IntPtr dc);
+	[DllImport("gdi32.dll")] static extern bool EndPath(IntPtr dc);
+	[DllImport("gdi32.dll")] static extern int GetPath(IntPtr dc, [Out] Point[] pts, [Out] byte[] types, int n);
+	[DllImport("gdi32.dll")] static extern bool AbortPath(IntPtr dc);
+	[DllImport("gdi32.dll")] static extern int SaveDC(IntPtr dc);
+	[DllImport("gdi32.dll")] static extern bool RestoreDC(IntPtr dc, int n);
+	delegate int EnhMetaFileProc(IntPtr hdc, IntPtr handleTable, IntPtr record, int nObjects, IntPtr data);
+	[DllImport("gdi32.dll")] static extern bool EnumEnhMetaFile(IntPtr dc, IntPtr emf, EnhMetaFileProc proc, IntPtr data, ref RECT rect);
+	[DllImport("gdi32.dll")] static extern bool PlayEnhMetaFileRecord(IntPtr dc, IntPtr table, IntPtr record, int n);
+
+	[DllImport("gdi32.dll")] static extern bool ModifyWorldTransform(IntPtr dc, IntPtr xform, int mode);
+	static string PathJson(IntPtr dc, bool resetWorld = false)
+	{
+		if (resetWorld) { SetGraphicsMode(dc, 2); ModifyWorldTransform(dc, IntPtr.Zero, 1); }
+		SetMapMode(dc, 8); SetWindowExtEx(dc, 16, 16, IntPtr.Zero); SetViewportExtEx(dc, 1, 1, IntPtr.Zero);
+		SetWindowOrgEx(dc, 0, 0, IntPtr.Zero); SetViewportOrgEx(dc, 0, 0, IntPtr.Zero);
+		int n = GetPath(dc, null, null, 0);
+		if (n < 0) return "null";
+		var q = new Point[n]; var u = new byte[n];
+		if (n > 0) GetPath(dc, q, u, n);
+		var js = new System.Text.StringBuilder("[");
+		for (int i = 0; i < n; i++) { if (i > 0) js.Append(','); js.Append(q[i].X).Append(',').Append(q[i].Y).Append(',').Append(u[i]); }
+		return js.Append(']').ToString();
+	}
+
+	/** Native GetPath of the Arc, Chord and Pie records of `compat-playback` played back (`PlayEnhMetaFile` between BeginPath and EndPath of the target DC) and, for comparison, the same call drawn straight in the same map (`compat-playback-paths.json.gz`). Each entry: map, kind, dir, the call's eight arguments, `played` and `direct` as `[x, y, type]` FIX triples. */
+	public static void PathPlayback(string dir)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		var js = new System.Text.StringBuilder("[");
+		int count = 0;
+		for (int map = 0; map < Maps.Length; map++)
+		{
+			var m = Maps[map];
+			var rnd = new Random(31000 + map);
+			for (int k = 0; k < 600; k++)
+			{
+				double kx = (double)m[0] / m[2], ky = (double)m[1] / m[3];
+				int cx = rnd.Next(0, 6) * (W / 6) + 2, cy = rnd.Next(0, 6) * (H / 6) + 2;
+				int l = (int)Math.Round((cx + rnd.Next(0, 5)) * kx), t = (int)Math.Round((cy + rnd.Next(0, 5)) * ky);
+				int r = l + (int)Math.Round(rnd.Next(18, 56) * kx), b = t + (int)Math.Round(rnd.Next(14, 40) * ky);
+				int w = r - l, h = b - t;
+				int x1 = l + rnd.Next(0, w + 1), y1 = t, x2 = l, y2 = t + rnd.Next(0, h + 1);
+				if (rnd.Next(2) == 0) { x1 = r; y1 = t + rnd.Next(0, h + 1); x2 = l + rnd.Next(0, w + 1); y2 = b; }
+				int kind = k % 3, dirn = (k / 3) % 4 == 3 ? 2 : 1;
+				IntPtr mdc = CreateEnhMetaFileW(screen, null, ref frame, null);
+				SetMapMode(mdc, 8); SetWindowExtEx(mdc, m[0], m[1], IntPtr.Zero); SetViewportExtEx(mdc, m[2], m[3], IntPtr.Zero);
+				SetArcDirection(mdc, dirn);
+				if (kind == 0) Arc(mdc, l, t, r, b, x1, y1, x2, y2); else if (kind == 1) Chord(mdc, l, t, r, b, x1, y1, x2, y2); else Pie(mdc, l, t, r, b, x1, y1, x2, y2);
+				IntPtr emf = CloseEnhMetaFile(mdc);
+				IntPtr dc, bmp;
+				Surface(screen, out dc, out bmp);
+				var rect = new RECT { Right = W, Bottom = H };
+				string played = "[]", recJson = "[]";
+				// PlayEnhMetaFile adds nothing to a path bracket of the target DC; the arc record is played alone inside one instead.
+				EnumEnhMetaFile(dc, emf, delegate(IntPtr hdc, IntPtr table, IntPtr rec, int n, IntPtr data)
+				{
+					int type = Marshal.ReadInt32(rec);
+					if (type >= 45 && type <= 47)
+					{
+						SaveDC(hdc);
+						BeginPath(hdc);
+						PlayEnhMetaFileRecord(hdc, table, rec, n);
+						EndPath(hdc);
+						played = PathJson(hdc, true);
+						recJson = "[" + Marshal.ReadInt32(rec, 8) + "," + Marshal.ReadInt32(rec, 12) + "," + Marshal.ReadInt32(rec, 16) + "," + Marshal.ReadInt32(rec, 20) + "," + Marshal.ReadInt32(rec, 24) + "," + Marshal.ReadInt32(rec, 28) + "," + Marshal.ReadInt32(rec, 32) + "," + Marshal.ReadInt32(rec, 36) + "]";
+						RestoreDC(hdc, -1);
+					}
+					else PlayEnhMetaFileRecord(hdc, table, rec, n);
+					return 1;
+				}, IntPtr.Zero, ref rect);
+				DeleteEnhMetaFile(emf); DeleteDC(dc); DeleteObject(bmp);
+				Surface(screen, out dc, out bmp);
+				SetMapMode(dc, 8); SetWindowExtEx(dc, m[0], m[1], IntPtr.Zero); SetViewportExtEx(dc, m[2], m[3], IntPtr.Zero);
+				SetArcDirection(dc, dirn);
+				BeginPath(dc);
+				if (kind == 0) Arc(dc, l, t, r, b, x1, y1, x2, y2); else if (kind == 1) Chord(dc, l, t, r, b, x1, y1, x2, y2); else Pie(dc, l, t, r, b, x1, y1, x2, y2);
+				EndPath(dc);
+				string direct = PathJson(dc);
+				DeleteDC(dc); DeleteObject(bmp);
+				if (count++ > 0) js.Append(',');
+				js.Append("{\"map\":").Append(map).Append(",\"kind\":").Append(kind).Append(",\"dir\":").Append(dirn).Append(",\"args\":[").Append(l).Append(',').Append(t).Append(',').Append(r).Append(',').Append(b).Append(',').Append(x1).Append(',').Append(y1).Append(',').Append(x2).Append(',').Append(y2).Append("],\"rec\":").Append(recJson).Append(",\"played\":").Append(played).Append(",\"direct\":").Append(direct).Append('}');
+			}
+		}
+		ReleaseDC(IntPtr.Zero, screen);
+		var bytes = System.Text.Encoding.UTF8.GetBytes(js.Append(']').ToString());
+		using (var file = File.Create(Path.Combine(dir, "compat-playback-paths.json.gz")))
+		using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress)) zip.Write(bytes, 0, bytes.Length);
+	}
+
 	public static void RectSweep(string dir)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);

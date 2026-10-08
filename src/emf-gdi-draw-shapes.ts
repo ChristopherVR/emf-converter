@@ -852,32 +852,31 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			}
 		};
 		const kind: ArcKind = isArcTo ? 'arcto' : recType === EMR_PIE ? 'pie' : recType === EMR_CHORD ? 'chord' : 'arc';
-		// An inside-frame pen draws the arc on the smaller box but keeps the radials' angles of the box as given: each
-		// radial point is carried onto the framed box about the centre.
-		// The angles are measured on the unrounded device points (native GetPath at a fractional world scale), not on the FIX
-		// ones.
-		const devM = gdiDeviceMatrix(rCtx);
-		const rawFix = (x: number, y: number): [number, number] => [(devM[0] * x + devM[2] * y + devM[4]) * 16, (devM[1] * x + devM[3] * y + devM[5]) * 16];
-		const radialOnBox = (p: [number, number], raw: [number, number]): [number, number] => {
-			if (!inset) {
-				return p;
+		// Windows measures a radial's angle in logical space, as the fraction of the record's box it sits at, and carries that
+		// fraction onto the device box it draws (an inside-frame pen's smaller box, a curved shape's grown one). A radial
+		// rounded to FIX first moves by up to half a FIX against the box, which flips points of an arc under a map whose
+		// ratio is not a multiple of 1/16 (the 3,600 native playback paths of `compat-playback-paths.json.gz`).
+		const radialOnBox = (box: FixBox, x: number, y: number): [number, number] => {
+			const wl = r - l;
+			const hl = b - t;
+			if (wl === 0 || hl === 0) {
+				return fixPoint(rCtx, x, y);
 			}
-			const [rl, rt] = rawFix(l, t);
-			const [rr, rb] = rawFix(r, b);
-			const kx = rr !== rl ? framed.exx / (rr - rl) : 1;
-			const ky = rb !== rt ? framed.eyy / (rb - rt) : 1;
-			// Float noise must not move a radial that lies exactly on an axis off it.
-			const snap = (v: number): number => (Math.abs(v) < 1e-6 ? 0 : v);
-			return [framed.ax + framed.exx / 2 + snap(raw[0] - (rl + rr) / 2) * kx, framed.ay + framed.eyy / 2 + snap(raw[1] - (rt + rb) / 2) * ky];
+			const u = (x - l) / wl;
+			const v = (y - t) / hl;
+			return [box.ax + box.exx * u + box.eyx * v, box.ay + box.exy * u + box.eyy * v];
 		};
-		const rasterArgs = (immediate = false) => ({
-			box: inset ? framed : immediate && needsFill ? curvedFixBox(rCtx, l, t, r, b) : unframed,
-			s: radialOnBox(fixPoint(rCtx, startX, startY), rawFix(startX, startY)),
-			// Device FIX rounding can separate distinct radial points on the
-			// same logical ray. Preserve their proven endpoint identity.
-			e: fullEllipse ? radialOnBox(fixPoint(rCtx, startX, startY), rawFix(startX, startY)) : radialOnBox(fixPoint(rCtx, endX, endY), rawFix(endX, endY)),
-			from: currentFix(rCtx),
-		});
+		const rasterArgs = (immediate = false) => {
+			const box = inset ? framed : immediate && needsFill ? curvedFixBox(rCtx, l, t, r, b) : unframed;
+			return {
+				box,
+				s: radialOnBox(box, startX, startY),
+				// Device FIX rounding can separate distinct radial points on the
+				// same logical ray. Preserve their proven endpoint identity.
+				e: fullEllipse ? radialOnBox(box, startX, startY) : radialOnBox(box, endX, endY),
+				from: currentFix(rCtx),
+			};
+		};
 		if (inPath) {
 			if (isArcTo) {
 				continueFigure(rCtx);
