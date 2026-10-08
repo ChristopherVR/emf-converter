@@ -245,6 +245,40 @@ describe('curved and triangular path-gradient focus against native GDI+', () => 
 
 });
 
+describe('path-gradient step quantisation against native playback', () => {
+	// Native paints a path gradient as nested copies of its boundary, so each
+	// pixel is one of `pathGradientQuantum` steps. A uniform-surround fill with a
+	// Blend curve, or with an isotropic focus, is then identical to native.
+	it.each([
+		'grad-path-focus-50-50',
+		'grad-path-focus-ellipse-50-50',
+		'grad-path-focus-triangle-50-50',
+		'grad-path-rect-blend-clamp',
+		'grad-path-rect-blend-tile',
+		'grad-path-rect-blend-flipx',
+		'grad-path-rect-blend-flipy',
+		'grad-path-rect-blend-flipxy',
+	])('%s is pixel-exact', async (name) => {
+		const diff = await compareFixture(name, 'emf', 0);
+		expect(diff!.mismatched, JSON.stringify(diff)).toBe(0);
+		await expectSvgPayload(name, 0, 0, 0);
+	});
+
+	// Remaining pixels: the flattened ellipse edge rounding the other way (a
+	// single step) and, in the tiled modes, the seams where antialiased tiles meet.
+	it.each([
+		['grad-path-ellipse-clamp', 14],
+		['grad-path-ellipse-tile', 144],
+		['grad-path-ellipse-flipx', 136],
+		['grad-path-ellipse-flipy', 143],
+		['grad-path-ellipse-flipxy', 136],
+		['gpx-pen-pathgrad', 48],
+	] as const)('%s keeps at most %i pixels off', async (name, count) => {
+		const diff = await compareFixture(name, 'emf', 0);
+		expect(diff!.mismatched, JSON.stringify(diff)).toBeLessThanOrEqual(count);
+	});
+});
+
 describe('createBrushGradient', () => {
 	it('returns null for a degenerate (zero-length) linear gradient with no rect', () => {
 		const ctx = { createLinearGradient: vi.fn() } as unknown as CanvasContext;

@@ -31,7 +31,7 @@
  */
 
 import { canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
-import { mulMatrix, pathGradientColorAt } from './emf-plus-brush-gradient';
+import { mulMatrix, pathGradientColorAt, pathGradientQuantum } from './emf-plus-brush-gradient';
 import { hatchSampler } from './emf-plus-brush-hatch';
 import { writeTextureColor } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
@@ -155,6 +155,23 @@ export function foldIntoTile(v: number, origin: number, size: number, mirror: bo
 	return origin + local;
 }
 
+/** True when the boundary's device-space bounding box sits on whole pixels. */
+function pixelAligned(boundary: ReadonlyArray<{ x: number; y: number }>, m: TransformMatrix): boolean {
+	let x0 = Infinity;
+	let y0 = Infinity;
+	let x1 = -Infinity;
+	let y1 = -Infinity;
+	for (const p of boundary) {
+		const x = m[0] * p.x + m[2] * p.y + m[4];
+		const y = m[1] * p.x + m[3] * p.y + m[5];
+		x0 = Math.min(x0, x);
+		y0 = Math.min(y0, y);
+		x1 = Math.max(x1, x);
+		y1 = Math.max(y1, y);
+	}
+	return [x0, y0, x1, y1].every((v) => Math.abs(v - Math.round(v)) < 1e-6);
+}
+
 /**
  * A path-gradient brush sampled per device pixel: each pixel's integer
  * origin maps into brush space, folds into the boundary's bounding box per
@@ -172,6 +189,17 @@ export function pathGradientSampler(
 	if (!box || !inv) {
 		return null;
 	}
+	// Native paints a path gradient as nested copies of its boundary, so each pixel
+	// is one of `pathGradientQuantum` steps. Three cases are not reproduced yet and
+	// keep the smooth ratio: surround colours that differ from vertex to vertex (a
+	// Blend or preset curve is read at the step instead), an anisotropic focus (its
+	// strips put about one pixel in 500 a step off) and a tile cut from a bounding
+	// box on fractional pixels (its colours sit on a shifted grid).
+	const anisotropicFocus = !!shape.focus && Math.abs(shape.focus.x - shape.focus.y) > 1e-9;
+	const uniformSurround = shape.boundaryArgb.every((color) => color === shape.boundaryArgb[0]);
+	const smooth = (!uniformSurround && !shape.preset) || anisotropicFocus ||
+		(wrap !== 'clamp' && !pixelAligned(shape.boundary, full));
+	const quantum = smooth ? 0 : pathGradientQuantum(shape.boundary, full);
 	const pxX = Math.hypot(full[0], full[1]);
 	const pxY = Math.hypot(full[2], full[3]);
 	const lagX = pxX > 0 ? 1 / pxX : 0;
@@ -194,11 +222,11 @@ export function pathGradientSampler(
 					by = foldIntoTile(by, box.y, box.h, mirrorY, lagY);
 				}
 				if (wrap === 'clamp' && by >= box.y + box.h) continue;
-				// The coverage nudge selects a span; it must not displace a
-				// collapsed vertical focus line's constant-colour samples.
-				const focusPoint = bias && shape.focus?.x === 0
+				// The coverage nudge only selects a span: the colour (a collapsed vertical focus
+				// line's constant samples, a step edge) is taken at the unnudged location.
+				const focusPoint = bias
 					? { x: bx - inv[0] * bias, y: by - inv[1] * bias } : undefined;
-				const c = pathGradientColorAt(shape, bx, by, focusPoint);
+				const c = pathGradientColorAt(shape, bx, by, focusPoint, quantum);
 				if (c === null) {
 					continue;
 				}
