@@ -1,7 +1,7 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T06:48:51.1913676Z",
-    "groups":  "general-matrix-pen-probe",
+    "capturedAt":  "2026-10-08T06:59:51.7386614Z",
+    "groups":  "emfplus-pens",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
     "architecture":  "AMD64",
@@ -3387,12 +3387,84 @@
               ],
     "references":  [
                        {
-                           "name":  "general-matrix-pen.json.gz",
-                           "sha256":  "22da4bc40ddb8d794162db7a65f957b761c9f022b6d566382f14067e7bb74924"
+                           "name":  "gpx-pen-center-miter-aa.emf",
+                           "sha256":  "8a44c238c916937d6f8bfd459a620c65ccc5470b7e51d23e1eaf3443058c9e97"
                        },
                        {
-                           "name":  "general-matrix-pen-joins.json.gz",
-                           "sha256":  "659900f037a60bca7d3ed5ef2885899248098a33091f5517aa534195a0a69777"
+                           "name":  "gpx-pen-center-miter-aa.png",
+                           "sha256":  "2b42ce34b5a5efe4ea10c2d248a681e31981529f027b9fe45deffce5538094f4"
+                       },
+                       {
+                           "name":  "gpx-pen-center-miter-aliased.emf",
+                           "sha256":  "567b2465967a0b4d8e66081e27ba43fff2e7431bba92426cb395e3100c4ce174"
+                       },
+                       {
+                           "name":  "gpx-pen-center-miter-aliased.png",
+                           "sha256":  "7b372e2ddd1e202aae42150bfcb7fb78332371265cb1f9da16372fb58a816180"
+                       },
+                       {
+                           "name":  "gpx-pen-compound-center-aa.emf",
+                           "sha256":  "22de67859fa3f34346622b7b007ca05e5e633e94e6b3c07b82c0c587dddd6b48"
+                       },
+                       {
+                           "name":  "gpx-pen-compound-center-aa.png",
+                           "sha256":  "c8341a4cc598cdeb16ab51511f7dd7b10e52364db6fa403ca31a1732154e2f71"
+                       },
+                       {
+                           "name":  "gpx-pen-compound-center-aliased.emf",
+                           "sha256":  "df8692c24672d9a34e86788f1c4cc405fc39f9b61f9a2ede469f0f7f6b9504a0"
+                       },
+                       {
+                           "name":  "gpx-pen-compound-center-aliased.png",
+                           "sha256":  "ca971bb4071a5b4a8cee712aca573408ec44676bc0de93761dea64d22509b4be"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-bevel-aa.emf",
+                           "sha256":  "2f01c2cb5878decce56bd710d1d007a0a9078d2c52c530cf76eb61bc84ec0a64"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-bevel-aa.png",
+                           "sha256":  "eb1eb18860a487c47f2c826a153b5ca9fe62b22a18e6cfc44963fecda2c6f39d"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-bevel-aliased.emf",
+                           "sha256":  "40a423e48d0097791f6146b629b7bdc52d0d7e6dcdde4078cb696a1f7e531996"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-bevel-aliased.png",
+                           "sha256":  "a92cd4358a3947a0575c4d6504517cc125827ddf5edf214edac010f33bbb6fe9"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-miter-aa.emf",
+                           "sha256":  "968ccb3cb2bb28973a631593337f7d1859c7c954b42ed7ad93f158e144ef9a96"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-miter-aa.png",
+                           "sha256":  "667654efec6a43e363780882407e358eb49ed7730c581580904e99d17a654755"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-miter-aliased.emf",
+                           "sha256":  "52d7abe2e56ed284ef489564b6c9da03870784239a2b96bc162958167ff94e78"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-miter-aliased.png",
+                           "sha256":  "03efaa8e69b2734f3a87f0b522a9de94b0b6b29831595a51009a76ad10f32cc9"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-round-aa.emf",
+                           "sha256":  "1f2d96d11039be177d7ea7bf985d97d59b23e86e40d8b8a034def51435a8bdc4"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-round-aa.png",
+                           "sha256":  "04dd8b43a83e8120d5d901e20e1842c1f04bf18a03d4437a26edc47549a41262"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-round-aliased.emf",
+                           "sha256":  "32804e5476e069669d01c8172fa80e7614798c00cb0344eccfa8b2922ee19433"
+                       },
+                       {
+                           "name":  "gpx-pen-inset-round-aliased.png",
+                           "sha256":  "fec21feea98f5a9fdb746f34221ca1220a2319a5a3ce6b5a7861e82105ede86f"
                        }
                    ]
 }

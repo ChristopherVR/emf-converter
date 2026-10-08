@@ -2331,6 +2331,79 @@ public static class GdiFixtures
 		}
 	}
 
+	/**
+	 * Inset-aligned and compound-array pens on closed figures (group `emfplus-pens`): a grid of rectangle, ellipse, triangle, concave star, closed
+	 * curve and rounded path per sheet, each drawn with the pen of the column (width 3, 6, 9, 14), aliased and antialiased.
+	 * `gpx-pen-inset-<join>-<aa|aliased>` (miter, bevel and round joins), `gpx-pen-compound-<center|inset>-<aa|aliased>`.
+	 */
+	static void GpxPenFigureShapes(Graphics g, int col, int row, Pen pen)
+	{
+		float x = 10 + col * 120, y = 8 + row * 78;
+		switch (row)
+		{
+			case 0: g.DrawRectangle(pen, x, y + 4, 90, 58); break;
+			case 1: g.DrawEllipse(pen, x, y + 4, 90, 58); break;
+			case 2: g.DrawPolygon(pen, new PointF[] { new PointF(x + 45, y + 2), new PointF(x + 92, y + 64), new PointF(x + 2, y + 52) }); break;
+			case 3: g.DrawPolygon(pen, new PointF[] { new PointF(x + 45, y), new PointF(x + 58, y + 22), new PointF(x + 90, y + 26), new PointF(x + 64, y + 42), new PointF(x + 72, y + 68), new PointF(x + 45, y + 52), new PointF(x + 18, y + 68), new PointF(x + 26, y + 42), new PointF(x, y + 26), new PointF(x + 32, y + 22) }); break;
+			case 4: g.DrawClosedCurve(pen, new PointF[] { new PointF(x + 6, y + 20), new PointF(x + 50, y + 2), new PointF(x + 88, y + 28), new PointF(x + 60, y + 64), new PointF(x + 20, y + 54) }); break;
+			default:
+				using (var path = new GraphicsPath())
+				{
+					path.AddArc(x, y + 4, 28, 28, 180, 90); path.AddArc(x + 62, y + 4, 28, 28, 270, 90);
+					path.AddArc(x + 62, y + 34, 28, 28, 0, 90); path.AddArc(x, y + 34, 28, 28, 90, 90);
+					path.CloseFigure();
+					g.DrawPath(pen, path);
+				}
+				break;
+		}
+	}
+
+	static void GpxPenFigureCases()
+	{
+		const int W = 500, H = 480;
+		float[] widths = { 3f, 6f, 9f, 14f };
+		foreach (bool aa in new[] { false, true })
+		{
+			string suffix = aa ? "aa" : "aliased";
+			foreach (LineJoin join in new[] { LineJoin.Miter, LineJoin.Bevel, LineJoin.Round })
+				GpCase("gpx-pen-inset-" + join.ToString().ToLowerInvariant() + "-" + suffix, W, H, delegate (Graphics g)
+				{
+					g.SmoothingMode = aa ? SmoothingMode.AntiAlias : SmoothingMode.None;
+					g.FillRectangle(Brushes.White, 0, 0, W, H);
+					for (int col = 0; col < 4; col++)
+						using (var pen = new Pen(Color.FromArgb(255, 20, 110, 200), widths[col]))
+						{
+							pen.Alignment = PenAlignment.Inset; pen.LineJoin = join;
+							for (int row = 0; row < 6; row++) GpxPenFigureShapes(g, col, row, pen);
+						}
+				});
+			GpCase("gpx-pen-center-miter-" + suffix, W, H, delegate (Graphics g)
+			{
+				g.SmoothingMode = aa ? SmoothingMode.AntiAlias : SmoothingMode.None;
+				g.FillRectangle(Brushes.White, 0, 0, W, H);
+				for (int col = 0; col < 4; col++)
+					using (var pen = new Pen(Color.FromArgb(255, 20, 110, 200), widths[col]))
+					{
+						pen.LineJoin = LineJoin.Miter;
+						for (int row = 0; row < 6; row++) GpxPenFigureShapes(g, col, row, pen);
+					}
+			});
+			foreach (PenAlignment al in new[] { PenAlignment.Center })
+				GpCase("gpx-pen-compound-" + (al == PenAlignment.Center ? "center" : "inset") + "-" + suffix, W, H, delegate (Graphics g)
+				{
+					g.SmoothingMode = aa ? SmoothingMode.AntiAlias : SmoothingMode.None;
+					g.FillRectangle(Brushes.White, 0, 0, W, H);
+					for (int col = 0; col < 4; col++)
+						using (var pen = new Pen(Color.FromArgb(255, 200, 60, 20), widths[col] + 3))
+						{
+							pen.Alignment = al; pen.LineJoin = LineJoin.Miter;
+							pen.CompoundArray = col % 2 == 0 ? new float[] { 0f, 0.3f, 0.6f, 1f } : new float[] { 0f, 0.2f, 0.4f, 0.6f, 0.8f, 1f };
+							for (int row = 0; row < 6; row++) GpxPenFigureShapes(g, col, row, pen);
+						}
+				});
+		}
+	}
+
 	static void GpxPenTextCases()
 	{
 		const int W = 160, H = 100;
@@ -6465,5 +6538,6 @@ public static class GdiFixtures
 		if (which == "wmf-roundrect-corners") { WmfRoundRectCorners(); }
 		if (which == "emf-insideframe") { EmfInsideFrameCases(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
+		if (which == "emfplus-pens") { GpxPenFigureCases(); }
 	}
 }
