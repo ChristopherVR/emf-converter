@@ -263,6 +263,12 @@ if ($Which -eq 'path-gradient-focus-ties') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-large') {
+    Add-Type -Path (Join-Path $here 'PathGradientLargeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientLargeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-edges') {
     Add-Type -Path (Join-Path $here 'PathGradientEdgeProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientEdgeProbe]::Run($outDir)

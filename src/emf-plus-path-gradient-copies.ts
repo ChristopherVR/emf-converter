@@ -142,9 +142,9 @@ function floatCopyIndex(g: CopiesGradient, edge: number, dx: number, dy: number)
 	const ay = g.vy[edge] - g.cy;
 	const ex = g.vx[(edge + 1) % n] - g.vx[edge];
 	const ey = g.vy[(edge + 1) % n] - g.vy[edge];
-	const denominator = ex * dy - ey * dx;
+	const denominator = down32(down32(ex * dy) - down32(ey * dx));
 	if (denominator === 0) return null;
-	const u = down32((ay * dx - ax * dy) / denominator);
+	const u = down32(down32(down32(ay * dx) - down32(ax * dy)) / denominator);
 	const bx = down32(ax + down32(u * ex));
 	const by = down32(ay + down32(u * ey));
 	const useX = Math.abs(bx) >= Math.abs(by);
