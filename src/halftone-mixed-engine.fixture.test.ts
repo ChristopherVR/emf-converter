@@ -66,8 +66,8 @@ describe('native mixed enlarge-and-reduce engine and despeckle bands', () => {
 	it('pins both axes under a dithered colorfulness adjustment (mixed stretches dither the source from the equal-area line up)', () => {
 		// 96 mixed, enlarged and reduced stretches with every mirroring: 0.25% of the channel values, four levels at most.
 		// Before the area rule picked the dither stage, the mixed ones were 32% to 45% of their values wrong by up to 200 levels.
-		expect(groups['dithered-mode3']).toEqual({ count: 48, exact: 1, values: 1939, maximum: 3 });
-		expect(groups['dithered-mode4']).toEqual({ count: 48, exact: 4, values: 1542, maximum: 4 });
+		expect(groups['dithered-mode3']).toEqual({ count: 48, exact: 1, values: 1809, maximum: 3 });
+		expect(groups['dithered-mode4']).toEqual({ count: 48, exact: 4, values: 1390, maximum: 4 });
 	});
 });
 

@@ -737,13 +737,16 @@ function ditherFilteredSource(rect: Int32Array, SW: number, SH: number, W: numbe
 			Int32Array.from({ length: SH + 1 }, (_, j) => (flipY ? H - 1 - j : j)));
 		return further;
 	}
-	// The extension rows are the first and last row replicated, dithered like any other row.
-	const extended = new Int32Array((SH + 2) * SW * 3);
+	// The edge rows are replicated twice on each side and dithered like any other row (continuing the pattern):
+	// the inner replicas are the extension rows the interpolation reads, the outer ones only feed their sharpen.
+	const extended = new Int32Array((SH + 4) * SW * 3);
 	extended.set(rect.subarray(0, SW * 3), 0);
-	extended.set(rect, SW * 3);
-	extended.set(rect.subarray((SH - 1) * SW * 3), (SH + 1) * SW * 3);
-	ditherPixels(extended, SW, SH + 2, { startX: dither.startX, startY: (dither.startY + (flipY ? 63 : 2)) % 65 }, false, false, undefined,
-		Int32Array.from({ length: SH + 2 }, (_, e) => (flipY ? H - e : e - 1)));
+	extended.set(rect.subarray(0, SW * 3), SW * 3);
+	extended.set(rect, 2 * SW * 3);
+	extended.set(rect.subarray((SH - 1) * SW * 3), (SH + 2) * SW * 3);
+	extended.set(rect.subarray((SH - 1) * SW * 3), (SH + 3) * SW * 3);
+	ditherPixels(extended, SW, SH + 4, { startX: dither.startX, startY: (dither.startY + (flipY ? 63 : 2)) % 65 }, false, false, undefined,
+		Int32Array.from({ length: SH + 4 }, (_, e) => (flipY ? H - e + 1 : e - 2)));
 	return extended;
 }
 
@@ -832,18 +835,30 @@ export function halftoneFilterEnlarge(rgb: Int32Array, w: number, h: number, W: 
 	}
 	const rows = h + 2;
 	const sharp = new Int32Array(w * rows * 3);
-	let padded = extended;
-	if (!padded) {
-		padded = new Int32Array(w * rows * 3);
-		padded.set(rgb.subarray(0, w * 3), 0);
-		padded.set(rgb, w * 3);
-		padded.set(rgb.subarray((h - 1) * w * 3), (h + 1) * w * 3);
+	// The source with the edge rows replicated twice on each side (`h + 4` rows): the inner replicas are the
+	// extension rows, sharpened against the outer ones. Dithered separately under a combined adjustment, the
+	// replicas differ from the edge rows (measured on native captures, see ditherFilteredSource).
+	let padded: Int32Array;
+	if (extended && extended.length === (h + 4) * w * 3) padded = extended;
+	else {
+		padded = new Int32Array(w * (h + 4) * 3);
+		if (extended && extended.length === rows * w * 3) {
+			// Only one extension row per side was given: the neighbour past it is the row on the other side (a mirror).
+			padded.set(extended.subarray(w * 3, 2 * w * 3), 0);
+			padded.set(extended, w * 3);
+			padded.set(extended.subarray(h * w * 3, (h + 1) * w * 3), (h + 3) * w * 3);
+		} else {
+			padded.set(rgb.subarray(0, w * 3), 0);
+			padded.set(rgb.subarray(0, w * 3), w * 3);
+			padded.set(rgb, 2 * w * 3);
+			padded.set(rgb.subarray((h - 1) * w * 3), (h + 2) * w * 3);
+			padded.set(rgb.subarray((h - 1) * w * 3), (h + 3) * w * 3);
+		}
 	}
 	const source = padded;
-	// Past the extension rows the neighbour is the row on the other side (a mirrored edge; identical
-	// to repeating the extension row unless the extension rows were dithered separately).
+	// Row `y` of the sharpened output is row `y + 1` of the padded source.
 	const at = (x: number, y: number, c: number): number =>
-		source[((y < 0 ? 1 : y > rows - 1 ? rows - 2 : y) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
+		source[((y + 1) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
 	for (let y = 0; y < rows; y++) {
 		for (let x = 0; x < w; x++) {
 			for (let c = 0; c < 3; c++) {

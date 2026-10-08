@@ -20,11 +20,11 @@ const cases = filteredCases();
 // Every other case is pinned exact. The remainder is the colour-adjustment residual the replicated branch
 // has as well (the chroma stage, at most two levels) plus the mirrored vertical phase.
 const dithered: Record<string, [number, number, number]> = {
-	'dithered-2x-m3-f0': [50, 50, 2], 'dithered-2x-m3-f4': [50, 50, 2], 'dithered-2x-m3-f8': [81, 85, 2],
-	'dithered-3x-m3-f0': [146, 149, 2], 'dithered-3x-m3-f8': [190, 194, 2],
-	'dithered-2x-m4-f0': [49, 49, 2], 'dithered-2x-m4-f8': [80, 84, 2],
+	'dithered-2x-m3-f0': [35, 35, 2], 'dithered-2x-m3-f4': [35, 35, 2], 'dithered-2x-m3-f8': [53, 53, 2],
+	'dithered-3x-m3-f0': [86, 86, 2], 'dithered-3x-m3-f8': [112, 112, 2],
+	'dithered-2x-m4-f0': [35, 35, 2], 'dithered-2x-m4-f8': [52, 52, 2],
 	'dithered-7x-m3-f0': [573, 573, 2],
-	'dithered-160x100-m3-f0': [102, 102, 2], 'dithered-160x100-m3-f8': [134, 136, 2],
+	'dithered-160x100-m3-f0': [69, 69, 2], 'dithered-160x100-m3-f8': [87, 87, 2],
 };
 
 function run(c: (typeof cases)[number]): { pixels: number; values: number; maximum: number } {
