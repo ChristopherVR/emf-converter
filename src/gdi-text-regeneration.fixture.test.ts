@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { diffImages, fixturePath, loadReference, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
 
@@ -8,8 +9,16 @@ import { diffImages, fixturePath, loadReference, renderFixture, windowsFonts } f
  * `text-recorded-advance` for the mechanism). Seven reproduce pixel for pixel as
  * direct drawings; their recordings do not replay to them (the recorded advance
  * array is not the direct drawing's), so they stay the references. The two
- * raster-face cases do not reproduce here at all.
+ * raster-face cases do not reproduce here: this machine's session has the
+ * 120 dpi System and Fixedsys faces (8514sys.fon, 8514fix.fon) in its font set,
+ * which the 96 dpi session of the originals did not use, and the converter
+ * reproduces each capture exactly once it is given the matching font set.
  */
+function eightFiveOneFour(): Buffer[] | null {
+	const dir = process.env.GDI_FIXTURE_FONTS ?? join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts');
+	const paths = ['8514sys.fon', '8514fix.fon'].map((f) => join(dir, f));
+	return paths.every((p) => existsSync(p)) ? paths.map((p) => readFileSync(p)) : null;
+}
 interface Capture {
 	name: string; height: number; directVsReferencePng: number; directVsPlayback: number; directAnisotropicVsPlayback: number;
 	directVsDirectWithRecordedAdvances: number; directWithRecordedAdvancesVsPlayback: number; glyphs: number;
@@ -50,11 +59,10 @@ describe('direct drawing versus the recording of the same text sheet', () => {
 });
 
 describe('raster System and Fixedsys faces regenerated on this machine', () => {
-	// name -> [regenerated vs original over the overlap, regenerated playback vs original playback,
-	//          converter vs regenerated direct, converter vs regenerated playback]
-	const expected: Record<string, [number, number, number, number]> = {
-		'textx-fon-fixedsys': [28896, 32464, 22190, 27714],
-		'textx-fon-system': [16138, 17888, 13261, 15584],
+	// name -> [regenerated vs original over the overlap, regenerated playback vs original playback]
+	const expected: Record<string, [number, number]> = {
+		'textx-fon-fixedsys': [28896, 32464],
+		'textx-fon-system': [16138, 17888],
 	};
 	it('direct drawing and native playback agree over the overlap but differ from the original reference', async () => {
 		for (const [name, [vsOriginal, wideVsOriginalWide]] of Object.entries(expected)) {
@@ -65,12 +73,25 @@ describe('raster System and Fixedsys faces regenerated on this machine', () => {
 			expect(diffImages(playback, await loadReference(`${name}.wide`), 0, 0).mismatched, name).toBe(wideVsOriginalWide);
 		}
 	});
-	it.skipIf(!windowsFonts())('the converter matches the original references it was built against, not the regenerated ones', async () => {
-		for (const [name, [, , directMismatch, playbackMismatch]] of Object.entries(expected)) {
-			const rendered = await renderFixture(`${name}.regen.emf`, { fonts: windowsFonts()! });
+	it.skipIf(!windowsFonts())('the converter given the fixture font set reproduces the original references, captured without the 8514 faces', async () => {
+		for (const name of Object.keys(expected)) {
+			const rendered = await renderFixture(`${name}.emf`, { fonts: windowsFonts()! });
 			expect(rendered, name).not.toBeNull();
-			expect(diffImages(rendered!, await loadReference(`${name}.regen`), 0, 0).mismatched, name).toBe(directMismatch);
-			expect(diffImages(rendered!, await loadReference(`${name}.regen.wide`), 0, 0).mismatched, name).toBe(playbackMismatch);
+			expect(diffImages(rendered!, await loadReference(name), 0, 0).mismatched, name).toBe(0);
+		}
+	});
+	it.skipIf(!windowsFonts() || !eightFiveOneFour())('the converter given 8514sys.fon and 8514fix.fon reproduces the regenerated captures exactly, direct and played back', async () => {
+		for (const name of Object.keys(expected)) {
+			const rendered = await renderFixture(`${name}.regen.emf`, { fonts: [...windowsFonts()!, ...eightFiveOneFour()!] });
+			expect(rendered, name).not.toBeNull();
+			expect(diffImages(rendered!, await loadReference(`${name}.regen`), 0, 0).mismatched, name).toBe(0);
+			expect(diffImages(rendered!, await loadReference(`${name}.regen.wide`), 0, 0).mismatched, name).toBe(0);
+		}
+	});
+	it.skipIf(!windowsFonts())('without those faces it picks other sizes than this machine does', async () => {
+		for (const name of Object.keys(expected)) {
+			const rendered = await renderFixture(`${name}.regen.emf`, { fonts: windowsFonts()! });
+			expect(diffImages(rendered!, await loadReference(`${name}.regen`), 0, 0).mismatched, name).toBeGreaterThan(10000);
 		}
 	});
 });
