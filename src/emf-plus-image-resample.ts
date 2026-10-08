@@ -152,8 +152,21 @@ export interface ResampledBlock {
 	y: number;
 	w: number;
 	h: number;
-	/** Non-premultiplied RGBA, `w * h * 4` bytes. */
+	/** Non-premultiplied RGBA (premultiplied when `premultiplied` is set), `w * h * 4` bytes. */
 	rgba: Uint8ClampedArray;
+	premultiplied?: boolean;
+}
+
+/** Internal switches of {@link resampleImage} for the passes of a rotated high-quality draw. */
+export interface ResampleOptions {
+	/** The plain Bicubic pass of a rotated high-quality draw: integer arithmetic. */
+	plainRotated?: boolean;
+	/** Use `spec.toDevice` as given instead of snapping its origin to 1/16 pixel. */
+	keepOrigin?: boolean;
+	/** The source bytes are premultiplied. */
+	premultSource?: boolean;
+	/** Return premultiplied bytes (where the draw takes the phased high-quality path). */
+	premultOut?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +334,7 @@ function blendSeparable(
 	verticalFirst: boolean,
 	edge: EdgeMode = { wrap: undefined, clamp: null },
 	integerBicubic = false,
+	premult = false,
 ): [number, number, number, number] {
 	const [outer0, outerW, inner0, innerW] = verticalFirst ? [iu0, wu, iv0, wv] : [iv0, wv, iu0, wu];
 	const [oMin, oMax, iMin, iMax] = verticalFirst ? [box.x0, box.x1, box.y0, box.y1] : [box.y0, box.y1, box.x0, box.x1];
@@ -362,9 +376,9 @@ function blendSeparable(
 			}
 			const alpha = px[s + 3];
 			const wa = (wi * alpha) / 255;
-			lr += integerBicubic ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
-			lg += integerBicubic ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
-			lb += integerBicubic ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
+			lr += premult ? wi * px[s] : integerBicubic ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
+			lg += premult ? wi * px[s + 1] : integerBicubic ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
+			lb += premult ? wi * px[s + 2] : integerBicubic ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
 			la += wi * alpha;
 		}
 		if (integerBicubic) {
@@ -444,8 +458,10 @@ export function resampleImage(
 	height: number,
 	spec: DeferredImageResample,
 	surface: { w: number; h: number },
-	plainRotatedPass = false,
+	options: ResampleOptions | boolean = {},
 ): ResampledBlock | null {
+	const { plainRotated: plainRotatedPass = false, keepOrigin = false, premultSource = false, premultOut = false }: ResampleOptions =
+		typeof options === 'boolean' ? { plainRotated: options } : options;
 	if (spec.rightHalo && spec.rightHalo.length === height * 4) {
 		// Append the halo column to the bitmap, then sample it as an ordinary one.
 		const grown = new Uint8ClampedArray((width + 1) * height * 4);
@@ -458,7 +474,7 @@ export function resampleImage(
 	if (spec.kernel === 'nearest' && !spec.wrap) {
 		return resampleNearest(rgba, width, height, spec, surface);
 	}
-	let m = snapToDeviceGrid(spec);
+	let m = keepOrigin ? spec.toDevice : snapToDeviceGrid(spec);
 	let kernel = spec.kernel;
 	const hq = kernel === 'hq-bilinear' || kernel === 'hq-bicubic';
 	if (hq && (m[1] !== 0 || m[2] !== 0) && Math.abs(m[1]) <= AXIS_ALIGNED_SHEAR * Math.abs(m[0]) && Math.abs(m[2]) <= AXIS_ALIGNED_SHEAR * Math.abs(m[3])) {
@@ -503,8 +519,8 @@ export function resampleImage(
 		}
 	}
 	const integerBicubic = kernel === 'bicubic' && (axisAligned || plainRotated);
-	if (hq && axisAligned && !spec.wrap) {
-		const phased = resampleHqAxisAligned(rgba, width, height, spec, surface, m);
+	if (hq && axisAligned && !spec.wrap && !premultSource) {
+		const phased = resampleHqAxisAligned(rgba, width, height, spec, surface, m, premultOut);
 		if (phased !== undefined) {
 			return phased;
 		}
@@ -645,7 +661,7 @@ export function resampleImage(
 				for (let t = iv0; t <= iv1; t++) {
 					wv.push(integerBicubic ? Math.round(fv.weight(t, cv) * 65536) / 65536 : fv.weight(t, cv));
 				}
-				return blendSeparable(rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge, integerBicubic);
+				return blendSeparable(rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge, integerBicubic, premultSource);
 			};
 			let [r, g, b, a] = sampleAt(u, v);
 			if (farFade && !spec.wrap && a > 0) {
@@ -671,6 +687,13 @@ export function resampleImage(
 				g = Math.trunc(g);
 				b = Math.trunc(b);
 				a = Math.trunc(a);
+				if (a <= 0) continue;
+			} else if (premultSource) {
+				// The plain pass of a rotated high-quality draw writes whole premultiplied bytes.
+				r = Math.round(r);
+				g = Math.round(g);
+				b = Math.round(b);
+				a = Math.round(a);
 				if (a <= 0) continue;
 			}
 			const alpha = Math.min(255, a);
@@ -716,6 +739,7 @@ function resampleHqAxisAligned(
 	spec: DeferredImageResample,
 	surface: { w: number; h: number },
 	m: TransformMatrix,
+	premultOut: boolean,
 ): ResampledBlock | null | undefined {
 	const kernel = spec.kernel;
 	const scaleU = m[0];
@@ -849,13 +873,14 @@ function resampleHqAxisAligned(
 				continue;
 			}
 			const d = (j * w + i) * 4;
-			out[d] = (Math.min(alpha, Math.max(0, Math.round(pr))) * 255) / alpha;
-			out[d + 1] = (Math.min(alpha, Math.max(0, Math.round(pg))) * 255) / alpha;
-			out[d + 2] = (Math.min(alpha, Math.max(0, Math.round(pb))) * 255) / alpha;
+			const k = premultOut ? 1 : 255 / alpha;
+			out[d] = Math.min(alpha, Math.max(0, Math.round(pr))) * k;
+			out[d + 1] = Math.min(alpha, Math.max(0, Math.round(pg))) * k;
+			out[d + 2] = Math.min(alpha, Math.max(0, Math.round(pb))) * k;
 			out[d + 3] = alpha;
 		}
 	}
-	return { x: cx0, y: cy0, w, h, rgba: out };
+	return { x: cx0, y: cy0, w, h, rgba: out, premultiplied: premultOut };
 }
 
 function resampleRotatedTwoStage(
@@ -878,12 +903,23 @@ function resampleRotatedTwoStage(
 		srcX: spec.srcX, srcY: spec.srcY, srcW: spec.srcW, srcH: spec.srcH,
 		toDevice: [kx, 0, 0, ky, -spec.srcX * kx, -spec.srcY * ky],
 		kernel, halfPixelOffset: false,
-	}, { w: W, h: H });
+	}, { w: W, h: H }, { premultOut: true });
 	if (!pre) {
 		return null;
 	}
-	const half = spec.halfPixelOffset;
-	const pad = half ? 2 : 0;
+	if (!pre.premultiplied) {
+		// A reduction takes the general path, which returns straight colours.
+		for (let i = 0; i < pre.rgba.length; i += 4) {
+			const al = pre.rgba[i + 3];
+			pre.rgba[i] = Math.round((pre.rgba[i] * al) / 255);
+			pre.rgba[i + 1] = Math.round((pre.rgba[i + 1] * al) / 255);
+			pre.rgba[i + 2] = Math.round((pre.rgba[i + 2] * al) / 255);
+		}
+	}
+	// The intermediate sits in a transparent border wide enough for the
+	// plain kernels' taps, so the pixels the destination polygon covers just
+	// outside the intermediate's own edge read their fade.
+	const pad = 2;
 	const pw = W + 2 * pad;
 	const ph = H + 2 * pad;
 	const img = new Uint8ClampedArray(pw * ph * 4);
@@ -896,50 +932,41 @@ function resampleRotatedTwoStage(
 			}
 		}
 	}
-	let ex = m[0] * spec.srcX + m[2] * spec.srcY + m[4];
-	let ey = m[1] * spec.srcX + m[3] * spec.srcY + m[5];
+	const ex = m[0] * spec.srcX + m[2] * spec.srcY + m[4];
+	const ey = m[1] * spec.srcX + m[3] * spec.srcY + m[5];
 	const a = m[0] / kx;
 	const b = m[1] / kx;
 	const c = m[2] / ky;
 	const d = m[3] / ky;
-	const plain = kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear';
-	if (!half) {
-		// Stage 2: the plain Bicubic or Bilinear kernel at unit scale.
-		return resampleImage(img, W, H, {
-			srcX: 0, srcY: 0, srcW: W, srcH: H, toDevice: [a, b, c, d, ex, ey],
-			kernel: plain, halfPixelOffset: false,
-		}, surface, true);
-	}
-	// Half: a device pixel is the point at its centre, and the intermediate's
-	// texels sit half a texel further along each of its own axes (the same
-	// half-pixel convention as the stage-1 rectangle). The sample grid is
-	// that of a None-mode draw whose origin is moved by -0.5 device pixels
-	// and by +0.5 intermediate pixels along both axes; coverage is the
-	// destination parallelogram tested at pixel centres.
-	const lu = Math.hypot(a, b);
-	const lv = Math.hypot(c, d);
-	const e2x = ex - 0.5 + 0.5 * (a / lu + c / lv);
-	const e2y = ey - 0.5 + 0.5 * (b / lu + d / lv);
+	// Stage 2: the plain Bicubic or Bilinear kernel at about unit scale. A
+	// None-mode pixel is the point (x, y); a Half-mode pixel is the point at its
+	// centre and the intermediate's texels sit half a texel further along each
+	// of its own axes, which moves the sample grid by -0.5 device pixels and by
+	// +0.5 intermediate texels (not device pixels: the intermediate is not
+	// exactly one pixel per texel when the length is not whole).
+	const half = spec.halfPixelOffset;
+	const e2x = half ? ex - 0.5 + 0.5 * (a + c) : ex;
+	const e2y = half ? ey - 0.5 + 0.5 * (b + d) : ey;
 	const block = resampleImage(img, pw, ph, {
 		srcX: 0, srcY: 0, srcW: pw, srcH: ph,
 		toDevice: [a, b, c, d, e2x - a * pad - c * pad, e2y - b * pad - d * pad],
-		kernel: plain, halfPixelOffset: false,
-	}, surface, true);
-	const inv = invert(m);
-	if (!block || !inv) {
+		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false,
+	}, surface, { plainRotated: true, keepOrigin: true, premultSource: true });
+	if (!block) {
 		return block;
 	}
-	const uMax = spec.srcX + spec.srcW;
-	const vMax = spec.srcY + spec.srcH;
-	for (let j = 0; j < block.h; j++) {
-		for (let i = 0; i < block.w; i++) {
-			const px = block.x + i + 0.5 + COVERAGE_NUDGE_X;
-			const py = block.y + j + 0.5 + COVERAGE_NUDGE_Y;
-			const eu = inv[0] * px + inv[2] * py + inv[4];
-			const ev = inv[1] * px + inv[3] * py + inv[5];
-			if (eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax) {
-				block.rgba.fill(0, (j * block.w + i) * 4, (j * block.w + i) * 4 + 4);
-			}
+	// Coverage is the destination parallelogram scan-converted from its 28.4
+	// corners by the aliased fill rule, as for NearestNeighbor.
+	const corners = [
+		[spec.srcX, spec.srcY],
+		[spec.srcX + spec.srcW, spec.srcY],
+		[spec.srcX + spec.srcW, spec.srcY + spec.srcH],
+		[spec.srcX, spec.srcY + spec.srcH],
+	].flatMap(([u, v]) => [toPlusFix(m[0] * u + m[2] * v + m[4]), toPlusFix(m[1] * u + m[3] * v + m[5])]);
+	const coverage = rasterizePlusFill([corners], false, false, half, { x: block.x, y: block.y, w: block.w, h: block.h });
+	for (let i = 0; i < block.w * block.h; i++) {
+		if (!coverage[i]) {
+			block.rgba.fill(0, i * 4, i * 4 + 4);
 		}
 	}
 	return block;
