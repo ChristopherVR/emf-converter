@@ -174,6 +174,117 @@ function pixelAligned(boundary: ReadonlyArray<{ x: number; y: number }>, m: Tran
 	return [x0, y0, x1, y1].every((v) => Math.abs(v - Math.round(v)) < 1e-6);
 }
 
+/** Steps of the bilinear weights native uses when it resamples a tile (see {@link fractionalTileSampler}). */
+const TILE_WEIGHT_STEPS = 2048;
+
+/** The index of a tile texel, wrapped (`mirror`: every other tile reversed). */
+function tileIndex(i: number, n: number, mirror: boolean): number {
+	if (!mirror) {
+		return ((i % n) + n) % n;
+	}
+	const m = ((i % (2 * n)) + 2 * n) % (2 * n);
+	return m < n ? m : 2 * n - 1 - m;
+}
+
+/**
+ * A tiled path gradient whose bounding box is not on whole pixels. Native does not step such a tile from its
+ * own fractional bounds: it renders the gradient into a bitmap of `round(right) - round(left)` by
+ * `round(bottom) - round(top)` pixels, the shape scaled into it, and then draws that bitmap as a texture whose
+ * origin is the real bounds' corner and whose scale is the real bounds over the bitmap, with a bilinear filter
+ * (weights rounded to 1/2048). A tile of whole-pixel size at a fractional origin is therefore the whole-pixel
+ * gradient shifted by the fraction. Reproduced: 99.98% of the 1.5 million pixels of the rectangles in
+ * `path-gradient-tiles.json.gz` (all four tile modes). Only a scale and translation (no rotation) and
+ * uniform-surround shapes are handled; anything else keeps the smooth ratio.
+ */
+function fractionalTileSampler(
+	shape: EmfPlusPathGradientShape,
+	wrap: EmfPlusGradientWrapMode,
+	full: TransformMatrix,
+): DeviceBrushSampler | null {
+	if (Math.abs(full[1]) > 1e-9 || Math.abs(full[2]) > 1e-9 || full[0] <= 0 || full[3] <= 0) return null;
+	if (!shape.boundaryArgb.every((color) => color === shape.boundaryArgb[0])) return null;
+	let x0 = Infinity;
+	let y0 = Infinity;
+	let x1 = -Infinity;
+	let y1 = -Infinity;
+	for (const point of shape.boundary) {
+		const x = full[0] * point.x + full[4];
+		const y = full[3] * point.y + full[5];
+		x0 = Math.min(x0, x);
+		y0 = Math.min(y0, y);
+		x1 = Math.max(x1, x);
+		y1 = Math.max(y1, y);
+	}
+	const round = (v: number): number => Math.floor(v + 0.5);
+	const width = round(x1) - round(x0);
+	const height = round(y1) - round(y0);
+	if (!(x1 > x0) || !(y1 > y0) || width < 1 || height < 1 || width * height > 4 * 1024 * 1024) return null;
+	const kx = width / (x1 - x0);
+	const ky = height / (y1 - y0);
+	const toTile = (point: { x: number; y: number }): { x: number; y: number } => ({
+		x: (full[0] * point.x + full[4] - x0) * kx,
+		y: (full[3] * point.y + full[5] - y0) * ky,
+	});
+	const inner = pathGradientSampler({
+		...shape,
+		boundary: shape.boundary.map(toTile),
+		center: toTile(shape.center),
+		transform: null,
+	}, 'clamp', IDENTITY);
+	if (!inner) return null;
+	const mirrorX = wrap === 'tile-flip-x' || wrap === 'tile-flip-xy';
+	const mirrorY = wrap === 'tile-flip-y' || wrap === 'tile-flip-xy';
+	// The tile bitmap as premultiplied channels, rendered on first use.
+	let texels: Float64Array | null = null;
+	const texel = (): Float64Array => {
+		if (texels) return texels;
+		const rgba = new Uint8ClampedArray(width * height * 4);
+		inner(0, 0, width, height, rgba);
+		texels = new Float64Array(width * height * 4);
+		for (let i = 0; i < width * height; i++) {
+			const a = rgba[i * 4 + 3];
+			texels[i * 4] = (rgba[i * 4] * a) / 255;
+			texels[i * 4 + 1] = (rgba[i * 4 + 1] * a) / 255;
+			texels[i * 4 + 2] = (rgba[i * 4 + 2] * a) / 255;
+			texels[i * 4 + 3] = a;
+		}
+		return texels;
+	};
+	return (px, py, w, h, out) => {
+		const t = texel();
+		for (let j = 0; j < h; j++) {
+			const v = ky * (py + j - y0);
+			const iv = Math.floor(v);
+			const wy = Math.floor((v - iv) * TILE_WEIGHT_STEPS + 0.5) / TILE_WEIGHT_STEPS;
+			const r0 = tileIndex(iv, height, mirrorY) * width;
+			const r1 = tileIndex(iv + 1, height, mirrorY) * width;
+			for (let i = 0; i < w; i++) {
+				const u = kx * (px + i - x0);
+				const iu = Math.floor(u);
+				const wx = Math.floor((u - iu) * TILE_WEIGHT_STEPS + 0.5) / TILE_WEIGHT_STEPS;
+				const c0 = tileIndex(iu, width, mirrorX);
+				const c1 = tileIndex(iu + 1, width, mirrorX);
+				const o = (j * w + i) * 4;
+				const sample = (k: number): number =>
+					(1 - wx) * (1 - wy) * t[(r0 + c0) * 4 + k] + wx * (1 - wy) * t[(r0 + c1) * 4 + k] +
+					(1 - wx) * wy * t[(r1 + c0) * 4 + k] + wx * wy * t[(r1 + c1) * 4 + k];
+				const coverage = sample(3);
+				const alpha = Math.floor(coverage + 0.5);
+				if (alpha <= 0) {
+					out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0;
+					continue;
+				}
+				// An opaque neighbourhood keeps its channels as they are; otherwise the premultiplied value is un-premultiplied.
+				const scale = coverage >= 255 ? 1 : 255 / coverage;
+				out[o] = Math.min(255, Math.floor(sample(0) * scale + 0.5));
+				out[o + 1] = Math.min(255, Math.floor(sample(1) * scale + 0.5));
+				out[o + 2] = Math.min(255, Math.floor(sample(2) * scale + 0.5));
+				out[o + 3] = alpha;
+			}
+		}
+	};
+}
+
 /**
  * A path-gradient brush sampled per device pixel: each pixel's integer
  * origin maps into brush space, folds into the boundary's bounding box per
@@ -190,6 +301,10 @@ export function pathGradientSampler(
 	const inv = invertAffine(full);
 	if (!box || !inv) {
 		return null;
+	}
+	if (wrap !== 'clamp' && !pixelAligned(shape.boundary, full)) {
+		const tiled = fractionalTileSampler(shape, wrap, full);
+		if (tiled) return tiled;
 	}
 	// Native paints a path gradient as nested copies of its boundary, so each pixel
 	// is one of `pathGradientQuantum` steps. Three cases are not reproduced yet and
