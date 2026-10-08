@@ -1,0 +1,3394 @@
+{
+    "schemaVersion":  1,
+    "capturedAt":  "2026-10-08T07:50:35.1538472Z",
+    "groups":  "halftone-mixed-engine",
+    "os":  "Microsoft Windows NT 10.0.26300.0",
+    "build":  9457,
+    "architecture":  "AMD64",
+    "runnerImage":  null,
+    "runnerImageVersion":  null,
+    "screenDpi":  [
+                      96,
+                      96
+                  ],
+    "libraries":  [
+                      {
+                          "name":  "gdi32.dll",
+                          "version":  "10.0.26100.8328 (WinBuild.160101.0800)",
+                          "sha256":  "772c73e294a4c5f5e0d4146288af95287a85c074d3aee3fa9f320dc010d7dbfe"
+                      },
+                      {
+                          "name":  "gdiplus.dll",
+                          "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
+                          "sha256":  "ce338c682031358a3f599430b6c7f3baa80a72ae392e8a885489bb02a5231a8c"
+                      },
+                      {
+                          "name":  "win32u.dll",
+                          "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
+                          "sha256":  "9cd636e8a1b300e2f4b16f339d650eda71fa02b92b100e4b2f89ce7c04811767"
+                      },
+                      {
+                          "name":  "mscms.dll",
+                          "version":  "10.0.26100.1 (WinBuild.160101.0800)",
+                          "sha256":  "062d1ca19c5b7d076c11baa3fb41d23e3b05b37d3f5852a5d1fa14f86b95d528"
+                      }
+                  ],
+    "fonts":  [
+                  {
+                      "name":  "8514fix.fon",
+                      "location":  "system",
+                      "sha256":  "9d79657757c94d0c8ce4de56f4a3b9faa8087d651961dbea9eaa201513c05389"
+                  },
+                  {
+                      "name":  "8514fixe.fon",
+                      "location":  "system",
+                      "sha256":  "a759e33f495962390c837430eecf0d0c0e337a29bf0842da33bc859a3b567bde"
+                  },
+                  {
+                      "name":  "8514fixg.fon",
+                      "location":  "system",
+                      "sha256":  "3923cd47aabc282967831ab1571644c8ba5b3ac6d2e8b06bea51667604e09e83"
+                  },
+                  {
+                      "name":  "8514fixr.fon",
+                      "location":  "system",
+                      "sha256":  "f857078946c68241da69409bca67b64cd29b9a16317302a0bc1005a25be68315"
+                  },
+                  {
+                      "name":  "8514fixt.fon",
+                      "location":  "system",
+                      "sha256":  "231f67c6f23f9f9f8a17e9cbc17311879cb9674c49d639c7587d0ea84e4becd6"
+                  },
+                  {
+                      "name":  "8514oem.fon",
+                      "location":  "system",
+                      "sha256":  "7e2d2fd03615a83a8246efb5d3df60c120f23a9ae0e31f73c44721ce57cea83e"
+                  },
+                  {
+                      "name":  "8514oeme.fon",
+                      "location":  "system",
+                      "sha256":  "fe05ecb88dfdcb4bd45dc846903930a2b75695d22fb27f5dbe4a3dd97dce51ea"
+                  },
+                  {
+                      "name":  "8514oemg.fon",
+                      "location":  "system",
+                      "sha256":  "e5cb8dd0d096fd6703ec44de539daf3284b87ffb02ffa863ca8cb1c21ce7f737"
+                  },
+                  {
+                      "name":  "8514oemr.fon",
+                      "location":  "system",
+                      "sha256":  "7f411475c0185f9dfecf704ad8c3ee5fcfdf42722a595babe7cb93dd7ba6200c"
+                  },
+                  {
+                      "name":  "8514oemt.fon",
+                      "location":  "system",
+                      "sha256":  "4eac0ae30c93c0eeed69b647e0dfc8f2dbc9be7f8f7e62e041690fc28dbf98c6"
+                  },
+                  {
+                      "name":  "8514sys.fon",
+                      "location":  "system",
+                      "sha256":  "dc7e1c9bb168e22b7a8b1a10c5d9555d71ea8486dc0d628fa17d117698bae61b"
+                  },
+                  {
+                      "name":  "8514syse.fon",
+                      "location":  "system",
+                      "sha256":  "8c9c9bcb4b9971d6acbbc3205bf4d6bd1983b156aa3bf27b4d5628128ae1a05d"
+                  },
+                  {
+                      "name":  "8514sysg.fon",
+                      "location":  "system",
+                      "sha256":  "a685ce24284a81856f626cc2931a48ebb7aad97fa8a17115cdda318e66cc1a31"
+                  },
+                  {
+                      "name":  "8514sysr.fon",
+                      "location":  "system",
+                      "sha256":  "1dbcf0197ed2a6e4e0532593a70994ba584e9a39a3ef153a1fa941124ed0224a"
+                  },
+                  {
+                      "name":  "8514syst.fon",
+                      "location":  "system",
+                      "sha256":  "eb95ae18c7d35bee9855927d4a65142cd1edcc411037aae44cb456000c486366"
+                  },
+                  {
+                      "name":  "85775.fon",
+                      "location":  "system",
+                      "sha256":  "b0a408d3453269fe80eb6f82fc700a746427ecc5f34eb366315af93e052d241d"
+                  },
+                  {
+                      "name":  "85855.fon",
+                      "location":  "system",
+                      "sha256":  "19bff2fb9ea139f2ea81bea70ec977d9a583c2ae826141489ed84d225f6fc7c9"
+                  },
+                  {
+                      "name":  "85f1255.fon",
+                      "location":  "system",
+                      "sha256":  "63c47136e1196949ee076e7d64dc7571270c900a9e30644d9381a5dda3b9e9b2"
+                  },
+                  {
+                      "name":  "85f1256.fon",
+                      "location":  "system",
+                      "sha256":  "d2f7649f00ceceda86ff6f30721c2818b53dca291d80104c3d8963b2d4d7e447"
+                  },
+                  {
+                      "name":  "85f1257.fon",
+                      "location":  "system",
+                      "sha256":  "95fda1d9fe0057428e91cbce6a2c5676ec934634c9231f8bc6bfa96a10cca34a"
+                  },
+                  {
+                      "name":  "85f874.fon",
+                      "location":  "system",
+                      "sha256":  "d8990dc5eee6c7f7168fabcfe7b334940434728de1367b061f52c4ed1f802f4f"
+                  },
+                  {
+                      "name":  "85s1255.fon",
+                      "location":  "system",
+                      "sha256":  "f8d79640d3d9c54e0722a693641b4ebc95ceaafb4b15df92f50d4c951ccb9b99"
+                  },
+                  {
+                      "name":  "85s1256.fon",
+                      "location":  "system",
+                      "sha256":  "304b41be9419ade2f73c9c820fecbb05f6bb76a0f8461ebbf6608d94dba88870"
+                  },
+                  {
+                      "name":  "85s1257.fon",
+                      "location":  "system",
+                      "sha256":  "ddd9cc04ae29e95eb2cd5735f9b3e6f81831d6805c0c5d64f7b412729f8ecf6f"
+                  },
+                  {
+                      "name":  "85s874.fon",
+                      "location":  "system",
+                      "sha256":  "e7b34f803da510990f6d4abaf729d129887bff2c17ceadb39fec823e7f15a1dd"
+                  },
+                  {
+                      "name":  "AGENCYB.TTF",
+                      "location":  "system",
+                      "sha256":  "4fde694cc486b55266f7561c685fbd9153ea0003f0c0c39fc744b132051d40c5"
+                  },
+                  {
+                      "name":  "AGENCYR.TTF",
+                      "location":  "system",
+                      "sha256":  "d672eb87a3787bdaf8f75df50f9ade864e2d5c9cdec5b07ce6de9d7d39433ea2"
+                  },
+                  {
+                      "name":  "Alef-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "39c262cf1aedb7f404c03f35c629fd74a62630f1544e53b999e80b000bb33d20"
+                  },
+                  {
+                      "name":  "Alef-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "d424d553c4b1ab0473ca7198a980d767c1e697f2d74a1d95705c9855c02f41de"
+                  },
+                  {
+                      "name":  "ALGER.TTF",
+                      "location":  "system",
+                      "sha256":  "d0b3b7cd48a047cdb7fa610d060807be44fca80f05ce4bf7557c4800f908e48a"
+                  },
+                  {
+                      "name":  "Amiri-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "c20c5fda0b648bfd7672fd3ded17488daa3a4810673b9b012fbb4a0af6a26aab"
+                  },
+                  {
+                      "name":  "Amiri-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "0ea3471e45795c04fd90c630575546df7c6d77c13ab976dde0a0e1354b38d3ac"
+                  },
+                  {
+                      "name":  "Amiri-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "7a678bab178232bb154bdf045bc7eaa0ab4193c312ff618037b4ac8977ac1b2a"
+                  },
+                  {
+                      "name":  "AmiriQuran.ttf",
+                      "location":  "system",
+                      "sha256":  "8dcb435b14cb706d79024df4b994221e18474d4be1ec18b04d8120eeaf1844f5"
+                  },
+                  {
+                      "name":  "Amiri-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "b092096eb992aebe59084b0cb5cf0015ae82c7e76b0aac5e7d60ae5113af5f54"
+                  },
+                  {
+                      "name":  "ANTQUAB.TTF",
+                      "location":  "system",
+                      "sha256":  "134a9f8ecf618660305d7d34b6905375c1d5d7838ea15cdb2789ba94317f4117"
+                  },
+                  {
+                      "name":  "ANTQUABI.TTF",
+                      "location":  "system",
+                      "sha256":  "bc546e3e96f8cdd9e6cf02eb5c8ac5551ef20ef4639ff701c338ea281f56fbd0"
+                  },
+                  {
+                      "name":  "ANTQUAI.TTF",
+                      "location":  "system",
+                      "sha256":  "6b00590bd7a52a94e9e90e35a28c1d2fa03f83f458d2f2dfbced70a9c1ea0c80"
+                  },
+                  {
+                      "name":  "app775.fon",
+                      "location":  "system",
+                      "sha256":  "8c986307ca810affed23478218bc2415c626c921b24b725552c3704edec4f596"
+                  },
+                  {
+                      "name":  "app850.fon",
+                      "location":  "system",
+                      "sha256":  "f5920991ef1bddb00d4ae09f844d0ba04672a5f26936567547815725a439e3fc"
+                  },
+                  {
+                      "name":  "app852.fon",
+                      "location":  "system",
+                      "sha256":  "3f5816f7490eb903c346cd0207fd14996032f4664a8b069395828a90a24c4c7b"
+                  },
+                  {
+                      "name":  "app855.fon",
+                      "location":  "system",
+                      "sha256":  "88848136cf7a08fb736b8cbd46389ba6a0618d39c709308b6ad3b3e615b64045"
+                  },
+                  {
+                      "name":  "app857.fon",
+                      "location":  "system",
+                      "sha256":  "a6c56be4ec14b3fea7080eae98a165bc35a218b90b016fb91d8b03a34657ad6e"
+                  },
+                  {
+                      "name":  "app866.fon",
+                      "location":  "system",
+                      "sha256":  "18186536db15e2dffe640920d4b186bb15665177cc3b01a897ba3cc19c7c03d2"
+                  },
+                  {
+                      "name":  "app932.fon",
+                      "location":  "system",
+                      "sha256":  "f880eac4ec426f6055fd82434d4a0f2eba62b9e62103a09b772acbeba3ec0b50"
+                  },
+                  {
+                      "name":  "app936.fon",
+                      "location":  "system",
+                      "sha256":  "6e7cf06a6ee644f5d0fff9361affc0a947d4f890c5d92aca9840cb9ecd7d4167"
+                  },
+                  {
+                      "name":  "app949.fon",
+                      "location":  "system",
+                      "sha256":  "cea1d9697b1d0985394e63ca635a31fbe94bed163ff428377d5951a2e6756a89"
+                  },
+                  {
+                      "name":  "app950.fon",
+                      "location":  "system",
+                      "sha256":  "a23e6b523d0e3d16cd197e5a525e3f299144577dbdb860ab91e7c14652aad3d4"
+                  },
+                  {
+                      "name":  "arial.ttf",
+                      "location":  "system",
+                      "sha256":  "b3658eadae55e682b5f69eb64c439c1ecc8f196c0bb8d4756d145d13bc86476a"
+                  },
+                  {
+                      "name":  "arialbd.ttf",
+                      "location":  "system",
+                      "sha256":  "e8f4e3baf6cc35fed6fcce3a540e8b39e8f6cda1d22a28f2ec8f526fef7a43f5"
+                  },
+                  {
+                      "name":  "arialbi.ttf",
+                      "location":  "system",
+                      "sha256":  "267a411525980d648f10a7222a6ff1ebe4d4feeefbf9b3100cae2b5cfab5594a"
+                  },
+                  {
+                      "name":  "ariali.ttf",
+                      "location":  "system",
+                      "sha256":  "86b32db9a06f9694e2a3760c42e5117bcdc5cc1255bb5186ca8ce0305e22f288"
+                  },
+                  {
+                      "name":  "ARIALN.TTF",
+                      "location":  "system",
+                      "sha256":  "cad552553cf2a75afca01955751aaa115e2a64fd6c6eea42e1fbd236630b7e0a"
+                  },
+                  {
+                      "name":  "ARIALNB.TTF",
+                      "location":  "system",
+                      "sha256":  "6c4a4b643461def5411e0217b74a625dcf2fb681252ef5da1db0af4eae80aa7e"
+                  },
+                  {
+                      "name":  "ARIALNBI.TTF",
+                      "location":  "system",
+                      "sha256":  "161b859efd20c69ddebb23012a49f4f2030d56a0c1b9bcfd4df753217ce3e358"
+                  },
+                  {
+                      "name":  "ARIALNI.TTF",
+                      "location":  "system",
+                      "sha256":  "faf73aa7ce40b77ad19c09507a2263fe3f3ce9fa5642e8a1cd54fb3c9f52d599"
+                  },
+                  {
+                      "name":  "ariblk.ttf",
+                      "location":  "system",
+                      "sha256":  "10df702864b1f89cb29ba0d6b97c04228338d16807e13e8d8c74b91aba5e5f23"
+                  },
+                  {
+                      "name":  "ARLRDBD.TTF",
+                      "location":  "system",
+                      "sha256":  "d9352e7d73711f006a27f44e71808a74fec109e2342e680e054c4458569f0a94"
+                  },
+                  {
+                      "name":  "bahnschrift.ttf",
+                      "location":  "system",
+                      "sha256":  "eaad201da94cb323401fdb8cc760650803ddf8fd704cb9fa56317e6c69bc6fd6"
+                  },
+                  {
+                      "name":  "BASKVILL.TTF",
+                      "location":  "system",
+                      "sha256":  "529c972a6d5c1992c76e908255f655f98989b74b146058c90555af6d925a1715"
+                  },
+                  {
+                      "name":  "BAUHS93.TTF",
+                      "location":  "system",
+                      "sha256":  "8afb4da281e19745d582814bdc66006bd56f43eb2fd0d2f88d854771472420b3"
+                  },
+                  {
+                      "name":  "BELL.TTF",
+                      "location":  "system",
+                      "sha256":  "986a5b8bb70238e3c896e3113ef581df26204131f72d59fc12d2deef7ef89e4c"
+                  },
+                  {
+                      "name":  "BELLB.TTF",
+                      "location":  "system",
+                      "sha256":  "dcc8d42eebbab6822f736a7b99e1c9d6ee6861b247a19049bb33e5955d991dde"
+                  },
+                  {
+                      "name":  "BELLI.TTF",
+                      "location":  "system",
+                      "sha256":  "17b6e7689e333fea42b19d817427cecf95b86a340bb0af5babba3ab25e6a1b40"
+                  },
+                  {
+                      "name":  "BERNHC.TTF",
+                      "location":  "system",
+                      "sha256":  "8715897a451aa9e37353b6cce5f5f3d853ecbe97de87756838704eff47c8ce86"
+                  },
+                  {
+                      "name":  "BKANT.TTF",
+                      "location":  "system",
+                      "sha256":  "c019f155a0004760f32079c22c29ef0ddd223d0c2c79e2487122e66d38a53b32"
+                  },
+                  {
+                      "name":  "BOD_B.TTF",
+                      "location":  "system",
+                      "sha256":  "051b0031db491fa893feddd485b917b24a9d12f15a1e99e782c2420da0a3ffb5"
+                  },
+                  {
+                      "name":  "BOD_BI.TTF",
+                      "location":  "system",
+                      "sha256":  "9729e2ae73b15871db606a18a48b8674ce2bae35d76a511d3510c4a9db2385ef"
+                  },
+                  {
+                      "name":  "BOD_BLAI.TTF",
+                      "location":  "system",
+                      "sha256":  "29854f6597ca7b46db601c7a2eb28c13e31ee0541c7a5a499581fdee8da1b1d5"
+                  },
+                  {
+                      "name":  "BOD_BLAR.TTF",
+                      "location":  "system",
+                      "sha256":  "63261985fc00d6db2dda4f22da039c70f3c4c90aa0f087fc1b7a8c9856f2b551"
+                  },
+                  {
+                      "name":  "BOD_CB.TTF",
+                      "location":  "system",
+                      "sha256":  "f307de012e77219a25ef59ada33820a3e33f6865c911acdd97440c15058713fd"
+                  },
+                  {
+                      "name":  "BOD_CBI.TTF",
+                      "location":  "system",
+                      "sha256":  "24fd78549262987502d83ea0bce5b47a3a0ac85c3941921b241a73fca08dd012"
+                  },
+                  {
+                      "name":  "BOD_CI.TTF",
+                      "location":  "system",
+                      "sha256":  "37194e3c2d5b000443d23dc324b1367cbe2be40f28c2a6c693e6051210432ca3"
+                  },
+                  {
+                      "name":  "BOD_CR.TTF",
+                      "location":  "system",
+                      "sha256":  "0f1f746f293e547f8189783c49aee22a8b839698f7493b5915cc5b432c65d843"
+                  },
+                  {
+                      "name":  "BOD_I.TTF",
+                      "location":  "system",
+                      "sha256":  "960458b4c0851b8b9f1d047fe50f7fa01ddfbecaec692521d262660882e9596a"
+                  },
+                  {
+                      "name":  "BOD_PSTC.TTF",
+                      "location":  "system",
+                      "sha256":  "d0efcbb58042808781f33898dc0fbe5342da22d813415a4dcb394872b1d19afa"
+                  },
+                  {
+                      "name":  "BOD_R.TTF",
+                      "location":  "system",
+                      "sha256":  "17b06990413ab318b9e9f2c05d3816059f56d7a678f4712849a3318a9e5e7c7a"
+                  },
+                  {
+                      "name":  "BOOKOS.TTF",
+                      "location":  "system",
+                      "sha256":  "8f2df7dbc1f2b790f6e6fdd24dbb6c2a96b6e554ba2031c3ab0fe34d322a1b3e"
+                  },
+                  {
+                      "name":  "BOOKOSB.TTF",
+                      "location":  "system",
+                      "sha256":  "ec95c7380ab7f92ebc75bba6c56a80646fcb450ef6cccc631852a8b97be75c55"
+                  },
+                  {
+                      "name":  "BOOKOSBI.TTF",
+                      "location":  "system",
+                      "sha256":  "2de5e34daf966be8e165bd5604ac0714a7946ea2a0a08f86ff04e687ed54d8d7"
+                  },
+                  {
+                      "name":  "BOOKOSI.TTF",
+                      "location":  "system",
+                      "sha256":  "ec990c65df2ba6ead654bcb69f7f88bb76910b029f2edf663710cae3fde5f7dd"
+                  },
+                  {
+                      "name":  "BRADHITC.TTF",
+                      "location":  "system",
+                      "sha256":  "1f7ad9e753a88da096121bd831a7df72868ac48b8edefc8c96c7a73303f1575d"
+                  },
+                  {
+                      "name":  "BRITANIC.TTF",
+                      "location":  "system",
+                      "sha256":  "1aa27a3e349a8c8daf466e0f89e94b0dc5b9cbe82e0d7a77e04d3dd6e1588e3d"
+                  },
+                  {
+                      "name":  "BRLNSB.TTF",
+                      "location":  "system",
+                      "sha256":  "ad7d00c413fe11ec423ff5e2b63da7d403049ab3babf13d0b2ab34a43f4d4a55"
+                  },
+                  {
+                      "name":  "BRLNSDB.TTF",
+                      "location":  "system",
+                      "sha256":  "4c50d832f4e1401e226566159735dae932dd224d795ac57772061096117e4147"
+                  },
+                  {
+                      "name":  "BRLNSR.TTF",
+                      "location":  "system",
+                      "sha256":  "0b6044c72e67aaae9c2ae3c8b4bb06d066fdbc02779c68e3883984acbbe24cb8"
+                  },
+                  {
+                      "name":  "BROADW.TTF",
+                      "location":  "system",
+                      "sha256":  "a252b1e5d460f1e0e4781146186393e5b217ab379db237c7bcb8d7c353943edc"
+                  },
+                  {
+                      "name":  "BRUSHSCI.TTF",
+                      "location":  "system",
+                      "sha256":  "b77d119749b51c7ae5242dd093360d5b1c94117469e578cfdd2de03fdc55eda5"
+                  },
+                  {
+                      "name":  "BSSYM7.TTF",
+                      "location":  "system",
+                      "sha256":  "3bd67d5982d259580a6d032f375c3b80e58c4496ffd8858b377dd69123809819"
+                  },
+                  {
+                      "name":  "c8514fix.fon",
+                      "location":  "system",
+                      "sha256":  "0bfde78c2019d75aed7b87cd82a2443fe9b1815ee6c9ad0ff984aa0e055e9a72"
+                  },
+                  {
+                      "name":  "c8514oem.fon",
+                      "location":  "system",
+                      "sha256":  "b09551153b2efb06aba4809fb6ff0d682b1e13379b1d04b23b368849bc008120"
+                  },
+                  {
+                      "name":  "c8514sys.fon",
+                      "location":  "system",
+                      "sha256":  "81538026940fedac874529cf77980f0813c8a3ab3264e06bed007a280e224ce7"
+                  },
+                  {
+                      "name":  "Caladea-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "74eda4fc5ffba0d8dc4aa76d41499f5ab76168d9ed6141c6417064c6244db9b6"
+                  },
+                  {
+                      "name":  "Caladea-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "f47a35ad6cd0efa9914d93f9d03c93e30c55da43674bccfabac73b3c0d522c01"
+                  },
+                  {
+                      "name":  "Caladea-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "9c968bf60ba1e851cdfea77c71e3540c57792f77482dd241acc29d1425569c4e"
+                  },
+                  {
+                      "name":  "Caladea-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "d2f6cad33f191e65b68bd74e6d4f7708080a41b32db635866109df3090265d91"
+                  },
+                  {
+                      "name":  "calibri.ttf",
+                      "location":  "system",
+                      "sha256":  "57e93ff143572bcc092c1f56202d43ddc07bb119aa104c6d7af163470fb551f6"
+                  },
+                  {
+                      "name":  "calibrib.ttf",
+                      "location":  "system",
+                      "sha256":  "0a8296747536ead27d5f48f67e911cc3b207742b3f704e66995251d12fd422e5"
+                  },
+                  {
+                      "name":  "calibrii.ttf",
+                      "location":  "system",
+                      "sha256":  "7f150e9eabe5db3e1b0f9469dca5c96176bc2fbb306dc9d48b7029dc69c52763"
+                  },
+                  {
+                      "name":  "calibril.ttf",
+                      "location":  "system",
+                      "sha256":  "2db491080305b349588b9851fb6fe960eee04cd7c1097784a987287d782f0a54"
+                  },
+                  {
+                      "name":  "calibrili.ttf",
+                      "location":  "system",
+                      "sha256":  "64ca9b15ca79927c3c4c69094bb41f78e5f0d79e9501d9d381a8794b220eead1"
+                  },
+                  {
+                      "name":  "calibriz.ttf",
+                      "location":  "system",
+                      "sha256":  "760539bfedbe24e7853ca8a621d9cb1f3de52036c116e81aae36b33c4ab60a7c"
+                  },
+                  {
+                      "name":  "CALIFB.TTF",
+                      "location":  "system",
+                      "sha256":  "9e23cba751cdd44dd7466e019b38d29360cee1aca62bd4b75dfc5cca93ea4b7a"
+                  },
+                  {
+                      "name":  "CALIFI.TTF",
+                      "location":  "system",
+                      "sha256":  "56b5168f5b847ce0f3280076d6c0ed026681ce3c5141629f5d8eba92dd1fcccc"
+                  },
+                  {
+                      "name":  "CALIFR.TTF",
+                      "location":  "system",
+                      "sha256":  "a779c135081030298594ea50fcdf59bcf5cd341008137931e2fd0e68d4ca65d6"
+                  },
+                  {
+                      "name":  "CALIST.TTF",
+                      "location":  "system",
+                      "sha256":  "f976b470e19fde1971824107182927472cf67a08acc42f8e2f23951312863a8c"
+                  },
+                  {
+                      "name":  "CALISTB.TTF",
+                      "location":  "system",
+                      "sha256":  "1b3949401e310a5967a4c108bb9be49e28e69f73095ad088f783035e8f22d28f"
+                  },
+                  {
+                      "name":  "CALISTBI.TTF",
+                      "location":  "system",
+                      "sha256":  "9b9e45f016b013d92c3caf1985db22f85e39c8b1f208636f9ac21f9c135239ce"
+                  },
+                  {
+                      "name":  "CALISTI.TTF",
+                      "location":  "system",
+                      "sha256":  "c7f699a3f94e57187ed36f1acebfe3e0460615ba368d14ed0aab45272844c1d5"
+                  },
+                  {
+                      "name":  "cambria.ttc",
+                      "location":  "system",
+                      "sha256":  "84e70ccc1664482f4a960442c7a166c91a1b2cf98ff88c33cb73f79403f66d7b"
+                  },
+                  {
+                      "name":  "cambriab.ttf",
+                      "location":  "system",
+                      "sha256":  "6685c657a7e292083e28f19bbf1a1e90509ce3e1130dbc4ed1c62ba3f9140543"
+                  },
+                  {
+                      "name":  "cambriai.ttf",
+                      "location":  "system",
+                      "sha256":  "6905f0ac846d1ec4326cd14a46cb7379204940aa293b098ee4c1a69723bbd165"
+                  },
+                  {
+                      "name":  "cambriaz.ttf",
+                      "location":  "system",
+                      "sha256":  "fa90f376ad37f308a819b341c8185f788d30a1012829278592eab45a41818d1a"
+                  },
+                  {
+                      "name":  "Candara.ttf",
+                      "location":  "system",
+                      "sha256":  "002c1e3378d02ed7dbdb3df1c94d433413a56f3f2f3aa8315a57720ee851dc45"
+                  },
+                  {
+                      "name":  "Candarab.ttf",
+                      "location":  "system",
+                      "sha256":  "ec0dce5170aaaf2cf485d4ba39d86fbba1dd1c76d9140cbf75a6b84b50fb20de"
+                  },
+                  {
+                      "name":  "Candarai.ttf",
+                      "location":  "system",
+                      "sha256":  "c165dbbc35bbf1fefae865c3e6b02404c8d182074fe04e78e221bab7d35ce3f8"
+                  },
+                  {
+                      "name":  "Candaral.ttf",
+                      "location":  "system",
+                      "sha256":  "c35742957794a81b6c73aa43d2f19e3d3d0c45a6dafbc2efcddd04ad6b3aeac8"
+                  },
+                  {
+                      "name":  "Candarali.ttf",
+                      "location":  "system",
+                      "sha256":  "ff22b2841bc0aa0664b50c9215e8440f1da4f74bedd27ab33865f63f433b2681"
+                  },
+                  {
+                      "name":  "Candaraz.ttf",
+                      "location":  "system",
+                      "sha256":  "a873581d9f0886441bd45c5e425a734e86e063ef583b9cf8081b1aa03b871f1c"
+                  },
+                  {
+                      "name":  "Carlito-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "0f62ab34ad5d079a0a28fac01bcf7c7a724a4db4d6cb99cab9cabff382fbb80f"
+                  },
+                  {
+                      "name":  "Carlito-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "380764b6898d7b73ceae6384b2958b196d2a0428962ef3adf138d27947228666"
+                  },
+                  {
+                      "name":  "Carlito-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "718a0663864d37a4868220a19b9668a5fe10a46197f6df367b4c2c30c04c026c"
+                  },
+                  {
+                      "name":  "Carlito-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "b4ff23ba370cc95a3c349336b73f9c28514a1371210f89832efc85c4b1ea7131"
+                  },
+                  {
+                      "name":  "CascadiaCode.ttf",
+                      "location":  "system",
+                      "sha256":  "cfb6a8d474018fe46d53a427e5fbee44b998822d0d3d8772914bd712cfc55ac4"
+                  },
+                  {
+                      "name":  "CascadiaMono.ttf",
+                      "location":  "system",
+                      "sha256":  "0e141cb99609f6f10ad05313fd1807d5cc9e28658dcbb35ab162e52ff67dc718"
+                  },
+                  {
+                      "name":  "CASTELAR.TTF",
+                      "location":  "system",
+                      "sha256":  "5d5db8ae79e77adca68e52454088f3a456f363acc9f577cc6dd08b18fa996bda"
+                  },
+                  {
+                      "name":  "CENSCBK.TTF",
+                      "location":  "system",
+                      "sha256":  "8209f9295b20a9c3d0f7e5163d7ef9946353e653c40f25e7ef9f905856ec246a"
+                  },
+                  {
+                      "name":  "CENTAUR.TTF",
+                      "location":  "system",
+                      "sha256":  "1d9fec6f9b2b72203ea56a4c7e3b40499984829ff99ae8ae53340fd8d5f07fcb"
+                  },
+                  {
+                      "name":  "CENTURY.TTF",
+                      "location":  "system",
+                      "sha256":  "21be61ff5289c2125dbb48e2a739fd4dd98c3e58b37abfc22cc0412dd8376d95"
+                  },
+                  {
+                      "name":  "cga40737.fon",
+                      "location":  "system",
+                      "sha256":  "a34cb51e4af2f79769ac870db861342ea3a61c4196d7326abbb94e7c2ef3e373"
+                  },
+                  {
+                      "name":  "cga40850.fon",
+                      "location":  "system",
+                      "sha256":  "c16fb6d47e6def7b345e966f552e86db94c520186da5780e501271d077bf1fce"
+                  },
+                  {
+                      "name":  "cga40852.fon",
+                      "location":  "system",
+                      "sha256":  "340d22e4af183ad6028178d60c0f3a2bc4f4b8c2e2129904f21c38b8406fefa6"
+                  },
+                  {
+                      "name":  "cga40857.fon",
+                      "location":  "system",
+                      "sha256":  "939ea97c0363f5118f48bc3bfc62972d2652e5aa03fc1970a00a7abf9a5fbe20"
+                  },
+                  {
+                      "name":  "cga40866.fon",
+                      "location":  "system",
+                      "sha256":  "0147824ad222bea351305b5a4411b31129dda08afc77043bf0fa7d99f368539d"
+                  },
+                  {
+                      "name":  "cga40869.fon",
+                      "location":  "system",
+                      "sha256":  "40dae660a9c8635ab137e5f3531d991807fb37ca1f50669a9b2a47b8c9b9e4bc"
+                  },
+                  {
+                      "name":  "cga40woa.fon",
+                      "location":  "system",
+                      "sha256":  "32482989159a4d10af71599300b99e7c618d768e97832bf7013b78e52fcea4e9"
+                  },
+                  {
+                      "name":  "cga80737.fon",
+                      "location":  "system",
+                      "sha256":  "dd31bbc61473a6b24138a97ae14c93a7d09defa6c01ae602a1bb74696804cadc"
+                  },
+                  {
+                      "name":  "cga80850.fon",
+                      "location":  "system",
+                      "sha256":  "e564fdf7a7b32f24b2aa14e46d37314e8afd4f4e0c6dc19345aaf0b91eeb3e58"
+                  },
+                  {
+                      "name":  "cga80852.fon",
+                      "location":  "system",
+                      "sha256":  "5488f8e0565a68e36ce087443bf218ece112c9c653a3189085ea246291715ace"
+                  },
+                  {
+                      "name":  "cga80857.fon",
+                      "location":  "system",
+                      "sha256":  "8b0b5000f2420f24297bf2e3492fa8c9137c05de4dae9b4011d6753bdcf683ee"
+                  },
+                  {
+                      "name":  "cga80866.fon",
+                      "location":  "system",
+                      "sha256":  "fb69ac0db6f667258e71107546346e21ea90465406f1cbe6c686635a07d88e59"
+                  },
+                  {
+                      "name":  "cga80869.fon",
+                      "location":  "system",
+                      "sha256":  "820f2142925b9a619a29ba99357c0fc56df88c0771ca0c17434d6241bfd67380"
+                  },
+                  {
+                      "name":  "cga80woa.fon",
+                      "location":  "system",
+                      "sha256":  "93e7c6c123d9b53a2d933f63093b4b85302023517f56abf057f9ef8a94d83b8b"
+                  },
+                  {
+                      "name":  "CHILLER.TTF",
+                      "location":  "system",
+                      "sha256":  "64327ea7bccc5583396d6796cbc535d27c0389906a36312e5811d9ec535c6a03"
+                  },
+                  {
+                      "name":  "COLONNA.TTF",
+                      "location":  "system",
+                      "sha256":  "7da22b3012c6071b7756f6d077ada0cbef49d66dccb7667ab74c97b3748675d5"
+                  },
+                  {
+                      "name":  "comic.ttf",
+                      "location":  "system",
+                      "sha256":  "fc7fbc3fb456a363f1f719b0ec62ae093c78124bb6da046006ae7e217a6b8575"
+                  },
+                  {
+                      "name":  "comicbd.ttf",
+                      "location":  "system",
+                      "sha256":  "128fdcfdfdd358e1624c15dd1f84a4d0689e59afcdefb81f8105efb2253b9c00"
+                  },
+                  {
+                      "name":  "comici.ttf",
+                      "location":  "system",
+                      "sha256":  "872cdefea79e25ff1a8a814109593c23ed66ba46f5bb843815d49e1ab4e0be3c"
+                  },
+                  {
+                      "name":  "comicz.ttf",
+                      "location":  "system",
+                      "sha256":  "36eb300a76582b7d39f3d34834ce1255f0b9b2830fb2e81485c4b85a5ff7f03b"
+                  },
+                  {
+                      "name":  "consola.ttf",
+                      "location":  "system",
+                      "sha256":  "cf00b507b3286870cc5064ebd0633c303f70b491a4af25eec2d32df413db0179"
+                  },
+                  {
+                      "name":  "consolab.ttf",
+                      "location":  "system",
+                      "sha256":  "7e8de70c92a891722bd3fbd623db005caab2bfe267e5dab5be46b95a44e0c7f1"
+                  },
+                  {
+                      "name":  "consolai.ttf",
+                      "location":  "system",
+                      "sha256":  "0b5b0484cf69ae973bd39380069f141271a4c9299b8885fa2d13f42aadbefef9"
+                  },
+                  {
+                      "name":  "consolaz.ttf",
+                      "location":  "system",
+                      "sha256":  "9bc225ec52aa8f4b88b98bb735b1908bd72c9e31a12139fafcc1bd6c86bed3b4"
+                  },
+                  {
+                      "name":  "constan.ttf",
+                      "location":  "system",
+                      "sha256":  "495577bf8ef74deab6ecc2e7acf63cd966184148f9bc2044a1068cd58501577e"
+                  },
+                  {
+                      "name":  "constanb.ttf",
+                      "location":  "system",
+                      "sha256":  "b6c66a1858370fe575629e19d53c05350738bf5105e18ceac07fe9efc9cd008d"
+                  },
+                  {
+                      "name":  "constani.ttf",
+                      "location":  "system",
+                      "sha256":  "2314a03c53506fa79525bc479ea4be9c036d1ebd86a1ffb5837ca5b43ff51f07"
+                  },
+                  {
+                      "name":  "constanz.ttf",
+                      "location":  "system",
+                      "sha256":  "9311aadcbd919746f50d222fa0215fb44266d6993221c14a196f0725fdae464f"
+                  },
+                  {
+                      "name":  "COOPBL.TTF",
+                      "location":  "system",
+                      "sha256":  "0518e37fd63c8b97d63a6ce678eaca254f0677ab94d420e99860772ecf348636"
+                  },
+                  {
+                      "name":  "COPRGTB.TTF",
+                      "location":  "system",
+                      "sha256":  "f354b9e48583dd9cb2a60dcd79eaa787722396d768aac0608d2ac0751d35bc3c"
+                  },
+                  {
+                      "name":  "COPRGTL.TTF",
+                      "location":  "system",
+                      "sha256":  "607520e814ebd77845cfb7824d0afd47ffff9ea4f335c8f2db356d3c6396a99d"
+                  },
+                  {
+                      "name":  "corbel.ttf",
+                      "location":  "system",
+                      "sha256":  "a183b77b655df66793639af7874828fb50f748dc4af57ae40f758156f7f34634"
+                  },
+                  {
+                      "name":  "corbelb.ttf",
+                      "location":  "system",
+                      "sha256":  "fa008372f8a94945d0daef9daf0bfb9e3fba3a25fd17f2607d47ac6861bd0303"
+                  },
+                  {
+                      "name":  "corbeli.ttf",
+                      "location":  "system",
+                      "sha256":  "9be778c9ed418770f6b5a02064d9c0b47a8fdea1137618f0bec9ac4072430a45"
+                  },
+                  {
+                      "name":  "corbell.ttf",
+                      "location":  "system",
+                      "sha256":  "0e36ddf90102e476c6739ca4c8cc18ba8309d880c12558981d2e4d42de78fc00"
+                  },
+                  {
+                      "name":  "corbelli.ttf",
+                      "location":  "system",
+                      "sha256":  "a031500bccd32b5d6e819699b774fc679c696ed4965b643d51a94eb398475550"
+                  },
+                  {
+                      "name":  "corbelz.ttf",
+                      "location":  "system",
+                      "sha256":  "588f090ae3a6d31370457312683d14ee3a5bfbdaaa0a070b7c80225b55b23e78"
+                  },
+                  {
+                      "name":  "coue1255.fon",
+                      "location":  "system",
+                      "sha256":  "c810174dd38591bfce5f7376cf46972f2cfe64ca15325e4eaeec4137fa6a3be6"
+                  },
+                  {
+                      "name":  "coue1256.fon",
+                      "location":  "system",
+                      "sha256":  "74af47cc8536acc196659f64875eb4614acf55912b7427fb50e9f4a14af4b77e"
+                  },
+                  {
+                      "name":  "coue1257.fon",
+                      "location":  "system",
+                      "sha256":  "dd21965157a30b34f3d9aca131ea793decbb27bea0b79650fc8621513cbb04e8"
+                  },
+                  {
+                      "name":  "couf1255.fon",
+                      "location":  "system",
+                      "sha256":  "874e466930f025183614f3cf51f68dff799fa64dfe8fcc84f5b7fec528ae29e4"
+                  },
+                  {
+                      "name":  "couf1256.fon",
+                      "location":  "system",
+                      "sha256":  "5cf941a9a01465df6e4eab7d1a8912e77260dabcf319b88907085e3c259fa251"
+                  },
+                  {
+                      "name":  "couf1257.fon",
+                      "location":  "system",
+                      "sha256":  "7ca5905d6b4af020874c626b7c5e5d7a6a146769bb41447eb0b28ccb7dbea5ae"
+                  },
+                  {
+                      "name":  "cour.ttf",
+                      "location":  "system",
+                      "sha256":  "e4a66a0259718d0c8f4b6e14319b4803ced45afbddf3abba8b8c3e2006856206"
+                  },
+                  {
+                      "name":  "courbd.ttf",
+                      "location":  "system",
+                      "sha256":  "11e629cef937cd08f942aa1bd994a71302dbe2819c72c6d4c183a623acbb421a"
+                  },
+                  {
+                      "name":  "courbi.ttf",
+                      "location":  "system",
+                      "sha256":  "2d61f452de49b57d9ef14ce8896bc1cd2ed8285c2e9fb2e73e78a4b23f91d308"
+                  },
+                  {
+                      "name":  "coure.fon",
+                      "location":  "system",
+                      "sha256":  "e81d15ef094f997d48cb144375866fb2f5d988b0b93b43c38cf58985e27acf45"
+                  },
+                  {
+                      "name":  "couree.fon",
+                      "location":  "system",
+                      "sha256":  "6c879f57850f0c0fce7160e15da2cef70216bfb2d862b3b99b0cda4d0d7e3ea6"
+                  },
+                  {
+                      "name":  "coureg.fon",
+                      "location":  "system",
+                      "sha256":  "d5aa318e2b50b9ebaf6aae017d37b578e1ffa5d97e488c613c4e7eaae351ba08"
+                  },
+                  {
+                      "name":  "courer.fon",
+                      "location":  "system",
+                      "sha256":  "4d3e35d298b85982cbe68daf7fd806a44e5bccaac3944c09e192abddc2e19b8a"
+                  },
+                  {
+                      "name":  "couret.fon",
+                      "location":  "system",
+                      "sha256":  "bbaede5c37c8eba46052155e719204ec96273eb0c0727413fa985ec3829abcb6"
+                  },
+                  {
+                      "name":  "courf.fon",
+                      "location":  "system",
+                      "sha256":  "cd5169425701d19edc3d0c73f6974d1f77a28777fc079a4c09fdeee07484777d"
+                  },
+                  {
+                      "name":  "courfe.fon",
+                      "location":  "system",
+                      "sha256":  "3dc6ee0e634a491910b3a1f00c9302f7eda116bdd2c53c86c3719475c76f4ac4"
+                  },
+                  {
+                      "name":  "courfg.fon",
+                      "location":  "system",
+                      "sha256":  "011d64c61b5f2ca359efcd2d1601d4a3e058b336db6134a869290b8fa8737b78"
+                  },
+                  {
+                      "name":  "courfr.fon",
+                      "location":  "system",
+                      "sha256":  "53d21f5be35c14aa6e85ab7f48d7171b3412da884a29bd9e2d9a50ff0114b0bd"
+                  },
+                  {
+                      "name":  "courft.fon",
+                      "location":  "system",
+                      "sha256":  "051aa1902f28a005a4f39bb0ca9c907518c426de90f4a26e0f9026e37d8a8e08"
+                  },
+                  {
+                      "name":  "couri.ttf",
+                      "location":  "system",
+                      "sha256":  "d82eeeb458f661d867f916d691fc6d3c53f8735fe4d5b04b54a5757321ee03e0"
+                  },
+                  {
+                      "name":  "CURLZ___.TTF",
+                      "location":  "system",
+                      "sha256":  "caf7d153d2860f395f846db58032173c3f76b57f9368ec08382f728742cf5a5d"
+                  },
+                  {
+                      "name":  "cvgafix.fon",
+                      "location":  "system",
+                      "sha256":  "70b6339cf8cd7f6fa5e16d2ce9f2adb98ce3f713b505deae020cd11918e461de"
+                  },
+                  {
+                      "name":  "cvgasys.fon",
+                      "location":  "system",
+                      "sha256":  "5ddc4fcbeeb13a81e3060ea62b1e168f447545012273bc2019940f47cff09c20"
+                  },
+                  {
+                      "name":  "DavidCLM-Bold.otf",
+                      "location":  "system",
+                      "sha256":  "9eab2bf76bbd24e44efc78cf372bb70b1310a92c4bd41eaac7f0ccdce1621703"
+                  },
+                  {
+                      "name":  "DavidCLM-BoldItalic.otf",
+                      "location":  "system",
+                      "sha256":  "b2c50c677491b11f39cb4149cb3c746856698a6460f32c3d928dc31d59fbb830"
+                  },
+                  {
+                      "name":  "DavidCLM-Medium.otf",
+                      "location":  "system",
+                      "sha256":  "5122bf1c6351da6c5ceddad533c473082a3bd2e48c3e875c952b235419097c5d"
+                  },
+                  {
+                      "name":  "DavidCLM-MediumItalic.otf",
+                      "location":  "system",
+                      "sha256":  "1f62726d3e6a2433212b126b97f1d56061be6f92449f6c4fb5aa72db83bdb857"
+                  },
+                  {
+                      "name":  "DavidLibre-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "f7e9f02f5fcf400b65d8c44137e8e1a0b85945e6c874b266943c4434167b1833"
+                  },
+                  {
+                      "name":  "DavidLibre-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "127235d6c9a01b004487506968a5bf3af70de22312da68b57ba62cc2d6a0287d"
+                  },
+                  {
+                      "name":  "DejaVuMathTeXGyre.ttf",
+                      "location":  "system",
+                      "sha256":  "40da67c0b6b03076504fbda4bf3e7b4f20b35999c98063019a3392fe9b1294fe"
+                  },
+                  {
+                      "name":  "DejaVuSans.ttf",
+                      "location":  "system",
+                      "sha256":  "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954"
+                  },
+                  {
+                      "name":  "DejaVuSans-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "e6476c1b80502924294eed40894c5b18e06c181444ca953e5334262df9c27724"
+                  },
+                  {
+                      "name":  "DejaVuSans-BoldOblique.ttf",
+                      "location":  "system",
+                      "sha256":  "eb436dca0c2594b73d8b603b892e374fdfd8d885d25ffb4f18df4c4c0b49e50f"
+                  },
+                  {
+                      "name":  "DejaVuSansCondensed.ttf",
+                      "location":  "system",
+                      "sha256":  "8550cd5ca1acb65a8fc7877c46939cd0b4d909f8e7bc1e24716873d918c5e549"
+                  },
+                  {
+                      "name":  "DejaVuSansCondensed-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "38098d0b8edd8430a0f53fb2831b5d36037563a998a620d3c87a4d7591766d20"
+                  },
+                  {
+                      "name":  "DejaVuSansCondensed-BoldOblique.ttf",
+                      "location":  "system",
+                      "sha256":  "43f9fd6b77edf174553cf94857c77c63de7ddb0c6751fd1390e73223518e128f"
+                  },
+                  {
+                      "name":  "DejaVuSansCondensed-Oblique.ttf",
+                      "location":  "system",
+                      "sha256":  "dc3526fa25fae4278c4e34b47d4c049b6923421c70921032a0db11bfe9c1b0cf"
+                  },
+                  {
+                      "name":  "DejaVuSans-ExtraLight.ttf",
+                      "location":  "system",
+                      "sha256":  "6cb0746a1f68d176bebe83752cee35ebdf726cb1a1e88a01fc038ddf76de9ea8"
+                  },
+                  {
+                      "name":  "DejaVuSansMono.ttf",
+                      "location":  "system",
+                      "sha256":  "b4a6c3e4faab8773f4ff761d56451646409f29abedd68f05d38c2df667d3c582"
+                  },
+                  {
+                      "name":  "DejaVuSansMono-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "bce60f1b4421acd9ea51ba6623d7024ecbe6817a953e3654df62a5e6bdf8f769"
+                  },
+                  {
+                      "name":  "DejaVuSansMono-BoldOblique.ttf",
+                      "location":  "system",
+                      "sha256":  "91713a71d550bba22c2a6b2bb2a9ad8f9a159e12e4e9f0a5b2677998ba21213e"
+                  },
+                  {
+                      "name":  "DejaVuSansMono-Oblique.ttf",
+                      "location":  "system",
+                      "sha256":  "742097840c541870e8d6dc5c9b37bb1ceeea6c0dedd1d475faf903ef9df734b0"
+                  },
+                  {
+                      "name":  "DejaVuSans-Oblique.ttf",
+                      "location":  "system",
+                      "sha256":  "4af75fa16ee6d3ad43e1ecec41862c24954af26a55c6bb1ebb27bd486a50f5f4"
+                  },
+                  {
+                      "name":  "DejaVuSerif.ttf",
+                      "location":  "system",
+                      "sha256":  "42d1edeb7952f31b1f96d767ed7030b08a39e0c372b0071641518864e2bffb51"
+                  },
+                  {
+                      "name":  "DejaVuSerif-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "c47b5527bcdc8dcf9ea8c77054454c5a884beaca2f44851a2a823ee639cbf07f"
+                  },
+                  {
+                      "name":  "DejaVuSerif-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "8d3dd3d31350309042ed226af82b34539bd773518e6107cb352712853ba80308"
+                  },
+                  {
+                      "name":  "DejaVuSerifCondensed.ttf",
+                      "location":  "system",
+                      "sha256":  "685dcdfb8daf32a453d3426a4eb8d881c72146ddd999229354fb757511357995"
+                  },
+                  {
+                      "name":  "DejaVuSerifCondensed-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "e09aa87c60c3e8de7f4e6c7bfeec8fd9489b6cd975e3033259bca3d6009aed18"
+                  },
+                  {
+                      "name":  "DejaVuSerifCondensed-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "4cfc5a3700c72413f51c4bb54f09617401a0a63eccb9ff577713e20afa047fa5"
+                  },
+                  {
+                      "name":  "DejaVuSerifCondensed-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "dfe5bf5336d62ca71de419cccf7fd18ab19a57245dc392891ee76347129807e1"
+                  },
+                  {
+                      "name":  "DejaVuSerif-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "2e39b1d50f90b933b00c7bb54a96afd3f86419b3d717c7cf202e36f2d4973e47"
+                  },
+                  {
+                      "name":  "dos737.fon",
+                      "location":  "system",
+                      "sha256":  "95f6427410dc4ff03fe0f34c55031767b856cd174024f3dc4c6c700c25fec3a9"
+                  },
+                  {
+                      "name":  "dos869.fon",
+                      "location":  "system",
+                      "sha256":  "781369dfb44befd1b0d6dd0849c12e94f8ba68bb99f19c581d651d2d660f1a84"
+                  },
+                  {
+                      "name":  "dosapp.fon",
+                      "location":  "system",
+                      "sha256":  "0da0d4ed89fd1e8810c7f2cdb5372abfb02cb3d031acacc1a5bbc853f879c2bd"
+                  },
+                  {
+                      "name":  "DUBAI-BOLD.TTF",
+                      "location":  "system",
+                      "sha256":  "b4ce691c229dd0ad05d945354dee37ec2f75e031a0c7ada786baec55b88ae230"
+                  },
+                  {
+                      "name":  "DUBAI-LIGHT.TTF",
+                      "location":  "system",
+                      "sha256":  "bd55d928275881a6ed2576c6b031d161c52f7e6f07ec396a75f00a00e6f6b51b"
+                  },
+                  {
+                      "name":  "DUBAI-MEDIUM.TTF",
+                      "location":  "system",
+                      "sha256":  "d460cc9f99a343531a93ae4d6dcac016dd3befe64eaef54fa9b7c4980da951bc"
+                  },
+                  {
+                      "name":  "DUBAI-REGULAR.TTF",
+                      "location":  "system",
+                      "sha256":  "7a0be62452c4a73b8f86f3b6c1b0915074c47fa40bb658255b3d0b1cdf6d2f2f"
+                  },
+                  {
+                      "name":  "ebrima.ttf",
+                      "location":  "system",
+                      "sha256":  "1dcd304f0ba642dbc3c3f3ccb70c24e9fad7ada2e2d5d0061c7cacab86e8df92"
+                  },
+                  {
+                      "name":  "ebrimabd.ttf",
+                      "location":  "system",
+                      "sha256":  "a7bc75937950d0f217f79313631d81f5b92459c414a4099d6ea3c0c0262a716b"
+                  },
+                  {
+                      "name":  "ega40737.fon",
+                      "location":  "system",
+                      "sha256":  "c95c0ab1d348a4c4a8b009b348e688fc9b97b967104f750afcff20a981fe4ca1"
+                  },
+                  {
+                      "name":  "ega40850.fon",
+                      "location":  "system",
+                      "sha256":  "3deef61582bea18f8073c862873a9c373df13143b7de302f66cdfa23cb535c3f"
+                  },
+                  {
+                      "name":  "ega40852.fon",
+                      "location":  "system",
+                      "sha256":  "3fce229f5ff861231aa2f890bcb7bdc18a86cfb9735ecbc837d3244210ea8ac1"
+                  },
+                  {
+                      "name":  "ega40857.fon",
+                      "location":  "system",
+                      "sha256":  "9beda2b5a9d4ad80cbb6b48867131a019f2bc669528c41700cac45806b970937"
+                  },
+                  {
+                      "name":  "ega40866.fon",
+                      "location":  "system",
+                      "sha256":  "8d0348a310324986c9b6615108f1d740508c33193546f8885e1fef15a23b7fdb"
+                  },
+                  {
+                      "name":  "ega40869.fon",
+                      "location":  "system",
+                      "sha256":  "c95c0ab1d348a4c4a8b009b348e688fc9b97b967104f750afcff20a981fe4ca1"
+                  },
+                  {
+                      "name":  "ega40woa.fon",
+                      "location":  "system",
+                      "sha256":  "a0e5dbe96d1cae29501b481cd98a1eac5f0f662aa367aa9712a419c3c32f4284"
+                  },
+                  {
+                      "name":  "ega80737.fon",
+                      "location":  "system",
+                      "sha256":  "15dd3a2497c20c85fb5af31bc240c0861b0d0243525239ce20236b4fa9c1f1de"
+                  },
+                  {
+                      "name":  "ega80850.fon",
+                      "location":  "system",
+                      "sha256":  "701650e81604585ce653413dfc3a802e882e68f4c2b373bedfd3fbf94dae8372"
+                  },
+                  {
+                      "name":  "ega80852.fon",
+                      "location":  "system",
+                      "sha256":  "6a9b2df2d6b8b2e157ae51e7b862b4257c3cd677aa829fd2123eb49dc4a4aad6"
+                  },
+                  {
+                      "name":  "ega80857.fon",
+                      "location":  "system",
+                      "sha256":  "b684255d2bcc5484a80db0b22090c3a697bd6204b6f50cdebcec05b3fa4c86f0"
+                  },
+                  {
+                      "name":  "ega80866.fon",
+                      "location":  "system",
+                      "sha256":  "335f7722e371a57fd169efdb554ef8080d8fb13dae8270ce2b0116079da27371"
+                  },
+                  {
+                      "name":  "ega80869.fon",
+                      "location":  "system",
+                      "sha256":  "6f6f807ae95f84316cb5ef863b809d5cf98f05561fef2959c3bf6bc5715c15a4"
+                  },
+                  {
+                      "name":  "ega80woa.fon",
+                      "location":  "system",
+                      "sha256":  "6e7a86167874f989433a264345e5ea6c0e000861cbca8153858b23d7d35d5ecc"
+                  },
+                  {
+                      "name":  "ELEPHNT.TTF",
+                      "location":  "system",
+                      "sha256":  "327ee1da1a144b1bd7970a8715daf00159ee1d0a9a81aeb33dcbf02631ed56e7"
+                  },
+                  {
+                      "name":  "ELEPHNTI.TTF",
+                      "location":  "system",
+                      "sha256":  "f9ff23ecb4dd03c511e5462d0b3563b733d4a924579d41c1df8fcb68d647d2d9"
+                  },
+                  {
+                      "name":  "ENGR.TTF",
+                      "location":  "system",
+                      "sha256":  "944dd47cc65586f54d83ed55d654c82b179111b2651e6e1d575c2f4bda55085c"
+                  },
+                  {
+                      "name":  "ERASBD.TTF",
+                      "location":  "system",
+                      "sha256":  "88d1a747cec854b6efd25a2721f250c5623f61a818a6ea5e219408485fc9a3bb"
+                  },
+                  {
+                      "name":  "ERASDEMI.TTF",
+                      "location":  "system",
+                      "sha256":  "9633185651dbec620c26f03e96e8d604a743c93d85e2b51e2f57c795a86cd642"
+                  },
+                  {
+                      "name":  "ERASLGHT.TTF",
+                      "location":  "system",
+                      "sha256":  "d432c14b62c70f4777f9db5901063b76d8db88b27aca46a5fb5b4a4c552c5c3a"
+                  },
+                  {
+                      "name":  "ERASMD.TTF",
+                      "location":  "system",
+                      "sha256":  "856137000a507908e4c289410917db83d19da88f6050af71675211ba68e9e0b3"
+                  },
+                  {
+                      "name":  "FELIXTI.TTF",
+                      "location":  "system",
+                      "sha256":  "662ac854d07237d7d6a2e1c0efba28c6166002ae8cbe0df0f58c43f65b21c54d"
+                  },
+                  {
+                      "name":  "FORTE.TTF",
+                      "location":  "system",
+                      "sha256":  "7407f0814d04a4cc45127933df1d6ffab5c90e5e888d33a7279cd82c36426b30"
+                  },
+                  {
+                      "name":  "FRABK.TTF",
+                      "location":  "system",
+                      "sha256":  "9ad3d0e5ef31c4a9a98cb0e169e4e625286aa34c712add3e001c0100138730d4"
+                  },
+                  {
+                      "name":  "FRABKIT.TTF",
+                      "location":  "system",
+                      "sha256":  "2fc6ff3c5253dca997c68d592e8cfa066b516a782d4b2747acf297c6523f9306"
+                  },
+                  {
+                      "name":  "FRADM.TTF",
+                      "location":  "system",
+                      "sha256":  "cfd1bb2c9b0e8b624952288acf9bdadaa64e52bc846e4720e2f0653359e5b8c5"
+                  },
+                  {
+                      "name":  "FRADMCN.TTF",
+                      "location":  "system",
+                      "sha256":  "4ab0f4d87991cbda91a625369e2804c4fb88969cdb1e4bd83b6bf37d07cf9cfd"
+                  },
+                  {
+                      "name":  "FRADMIT.TTF",
+                      "location":  "system",
+                      "sha256":  "478e980ecfb423400516403cf49587f5b2e6a6dfc2c41cffcc51c109adc24ee7"
+                  },
+                  {
+                      "name":  "FRAHV.TTF",
+                      "location":  "system",
+                      "sha256":  "d1a3a6e5937c5923d4138c1f622145f577ae2f97c7f2d0e899ecec4d0412b839"
+                  },
+                  {
+                      "name":  "FRAHVIT.TTF",
+                      "location":  "system",
+                      "sha256":  "ac70b60f163536b2c0e2e2752262a6f8d1db6af43da73d5caab855d369f1da13"
+                  },
+                  {
+                      "name":  "framd.ttf",
+                      "location":  "system",
+                      "sha256":  "bac844bd41f847cf138737026d41c983387a1065535c32e78aa22c48708b52ad"
+                  },
+                  {
+                      "name":  "FRAMDCN.TTF",
+                      "location":  "system",
+                      "sha256":  "1861e0824e53ca60a04ea1bc7bdb159131448fec711ed079ebccbf645dd345d1"
+                  },
+                  {
+                      "name":  "framdit.ttf",
+                      "location":  "system",
+                      "sha256":  "df59f9ea915957b22a389d68580bf40dc5bd05822cc65b5fdcc188c706a694e7"
+                  },
+                  {
+                      "name":  "FrankRuehlCLM-Bold.otf",
+                      "location":  "system",
+                      "sha256":  "0f836360f6861474ba1c156d9e145d73c7fbd6c4eadf7d6ca28603e4915f2f28"
+                  },
+                  {
+                      "name":  "FrankRuehlCLM-BoldOblique.otf",
+                      "location":  "system",
+                      "sha256":  "f2a3f47822f859f98420ebde4d1bdaa03d27023de4003fddffdfeed415a582b1"
+                  },
+                  {
+                      "name":  "FrankRuehlCLM-Medium.otf",
+                      "location":  "system",
+                      "sha256":  "6c0ab8bb2fb605160dbb348abad5de33e47719ab1af7b5df3324c9c338afad58"
+                  },
+                  {
+                      "name":  "FrankRuehlCLM-MediumOblique.otf",
+                      "location":  "system",
+                      "sha256":  "42d8c68b5c4e12e51a8a4f49380e941cd0c37a98546c68fc57e663023e2782f5"
+                  },
+                  {
+                      "name":  "FrankRuhlHofshi-Bold.otf",
+                      "location":  "system",
+                      "sha256":  "738df99ce285d69e83e2cd2809c340591d805f4af9b2609ca9ec50c14c3f9691"
+                  },
+                  {
+                      "name":  "FrankRuhlHofshi-Regular.otf",
+                      "location":  "system",
+                      "sha256":  "4c949aee5e93d7f816e9e76ef807d964ab2ba821c4533b77f4d451f89f581698"
+                  },
+                  {
+                      "name":  "FREESCPT.TTF",
+                      "location":  "system",
+                      "sha256":  "2e131823861483b966f87ca23063ba6f3c0cecf9ac5d785d71ed1710dab477d5"
+                  },
+                  {
+                      "name":  "FRSCRIPT.TTF",
+                      "location":  "system",
+                      "sha256":  "ddeda8f737249e8a2ac17f3e0757525e20631375cbb8b78d99b1462a146cef47"
+                  },
+                  {
+                      "name":  "FTLTLT.TTF",
+                      "location":  "system",
+                      "sha256":  "4feeeac17a284f6f45fc66bd28da141e6bd904f291290c1214d25d06e7c542bd"
+                  },
+                  {
+                      "name":  "Gabriola.ttf",
+                      "location":  "system",
+                      "sha256":  "ddd852f9e43a5e81af62a3f6654324ba7553d7d66101ab848abc1bd2d626ac4b"
+                  },
+                  {
+                      "name":  "gadugi.ttf",
+                      "location":  "system",
+                      "sha256":  "0ec2bdbfc2ba99d9fb05b6f7c511e7ab8b7c055e2d644570ad777455d6e9796d"
+                  },
+                  {
+                      "name":  "gadugib.ttf",
+                      "location":  "system",
+                      "sha256":  "c96226cba7f50e94b534a5f8ade6a54f48a03be7c73360524eda5cbce4de34b6"
+                  },
+                  {
+                      "name":  "GARA.TTF",
+                      "location":  "system",
+                      "sha256":  "6204f2ace1a6c196b95b079f10ded04af8f431ce8eb2cf3945acc89b594c3728"
+                  },
+                  {
+                      "name":  "GARABD.TTF",
+                      "location":  "system",
+                      "sha256":  "76487d4b739ffea6d64f86d0e6a19a8d0031dc67ba2fa2518bbc1818351543ff"
+                  },
+                  {
+                      "name":  "GARAIT.TTF",
+                      "location":  "system",
+                      "sha256":  "9cda64dabb9b2aef5a810fe7ed231ca34c4cf42ae5a108c368ab6a21af2c4ccf"
+                  },
+                  {
+                      "name":  "GenBasB.ttf",
+                      "location":  "system",
+                      "sha256":  "26d5d4044a4bf92f265bf3b597076aa52d0497cb102cbdbfb1131f658ce97c9c"
+                  },
+                  {
+                      "name":  "GenBasBI.ttf",
+                      "location":  "system",
+                      "sha256":  "5bfddd753de0a9ad83940e9b6130a8082510416d7450bb8e39d90e7655a75e35"
+                  },
+                  {
+                      "name":  "GenBasI.ttf",
+                      "location":  "system",
+                      "sha256":  "191de1e709a691f1134775539dee8b2167baef3ee411744b5cdf3b43ce18707a"
+                  },
+                  {
+                      "name":  "GenBasR.ttf",
+                      "location":  "system",
+                      "sha256":  "f0248c5a6d76dca62c639fdfdde97f9ae60c05c96bec03925d522531d7c0ca37"
+                  },
+                  {
+                      "name":  "GenBkBasB.ttf",
+                      "location":  "system",
+                      "sha256":  "37fc25b7916e4055ffff0b9bda2b9a9efe7d3404773339fa8cde00a15d5589a9"
+                  },
+                  {
+                      "name":  "GenBkBasBI.ttf",
+                      "location":  "system",
+                      "sha256":  "dccbca56a0d1bdbcc440e3b2070ee0ef63fd834454196baeaa8226ead9c82f07"
+                  },
+                  {
+                      "name":  "GenBkBasI.ttf",
+                      "location":  "system",
+                      "sha256":  "6879e401a0c44c6473fb796c284112f3139bd20c289cff92e6c4abb4dab7d369"
+                  },
+                  {
+                      "name":  "GenBkBasR.ttf",
+                      "location":  "system",
+                      "sha256":  "f0e5c2d48408804caf9779ee2e039687b3ac5cf56edff51577fc0aedc0908994"
+                  },
+                  {
+                      "name":  "georgia.ttf",
+                      "location":  "system",
+                      "sha256":  "38dffcaf1fac89492f7c56c600a14daf36ae42f7c21985cd4134ae113124a58f"
+                  },
+                  {
+                      "name":  "georgiab.ttf",
+                      "location":  "system",
+                      "sha256":  "72a6cd94fab6c179392075d3fb361e269cdddfad41bb7ab385fa22a37e49a900"
+                  },
+                  {
+                      "name":  "georgiai.ttf",
+                      "location":  "system",
+                      "sha256":  "d3e4bad27651d120ac8f2cea42cf4b4f077264fb243f66b3caffcfd35465f49b"
+                  },
+                  {
+                      "name":  "georgiaz.ttf",
+                      "location":  "system",
+                      "sha256":  "3f9e512f82eaf6f1b7869b82013fb79f6eaf1a41e75a0e7b96f31f35b1022ae4"
+                  },
+                  {
+                      "name":  "GIGI.TTF",
+                      "location":  "system",
+                      "sha256":  "cf70b1cf7b70913c7f2288f037fe376e159d9e35f0619a2b412e88d7f3f5ce3a"
+                  },
+                  {
+                      "name":  "GIL_____.TTF",
+                      "location":  "system",
+                      "sha256":  "f6664b244192ab4cf3a58bb6a653700d1f345d03bb8879888bcea1b6f8f3f97c"
+                  },
+                  {
+                      "name":  "GILB____.TTF",
+                      "location":  "system",
+                      "sha256":  "c95e47d509eada17f78d730010a5bbb69f60a940c17df6e4e7354c62262c1ab8"
+                  },
+                  {
+                      "name":  "GILBI___.TTF",
+                      "location":  "system",
+                      "sha256":  "e79f9c1768515a1844bd889092ecebf5c40f301e4415ad1238a8e2f09ce8543e"
+                  },
+                  {
+                      "name":  "GILC____.TTF",
+                      "location":  "system",
+                      "sha256":  "3216f7d3a15d3107a457b93b5537784108c3237b3fb2d16494d8ecee0a22cbd4"
+                  },
+                  {
+                      "name":  "GILI____.TTF",
+                      "location":  "system",
+                      "sha256":  "5b81f2b18d3b19baa4cf151cd6eb6c49f8e0e58194fd0a02995cccdec803448e"
+                  },
+                  {
+                      "name":  "GILLUBCD.TTF",
+                      "location":  "system",
+                      "sha256":  "9c96a89a866bcc0b36d1d80f61ebb6ba9251cf9708e0060ac94546be57dbd881"
+                  },
+                  {
+                      "name":  "GILSANUB.TTF",
+                      "location":  "system",
+                      "sha256":  "a74b5e4489bb98a96ff5f727bf33dd922703d0f3069f4ce95aa2c5d7f92d2253"
+                  },
+                  {
+                      "name":  "GLECB.TTF",
+                      "location":  "system",
+                      "sha256":  "962ebe317bfba70511c4f04ceb3a7160def7e3ce8cfcb035fddce7ef202ff9b4"
+                  },
+                  {
+                      "name":  "GLSNECB.TTF",
+                      "location":  "system",
+                      "sha256":  "f44727cfdef37b028ea00283fee7ffa09b821ce2bbbfa28d518ec48976468ea5"
+                  },
+                  {
+                      "name":  "GOTHIC.TTF",
+                      "location":  "system",
+                      "sha256":  "3a9cbb5d75b2a2b0d22dc94571608e4e9dc7b88e825374985880c5722c1c9e5f"
+                  },
+                  {
+                      "name":  "GOTHICB.TTF",
+                      "location":  "system",
+                      "sha256":  "90cb613b492874a560c0ff18a3402b1d24fb7e846dff11295d5c4644d6c75e83"
+                  },
+                  {
+                      "name":  "GOTHICBI.TTF",
+                      "location":  "system",
+                      "sha256":  "2dc5949d57d2e172601fb6f5093c1fbf15a463e29ed47c4c8ff2434baf1c2b19"
+                  },
+                  {
+                      "name":  "GOTHICI.TTF",
+                      "location":  "system",
+                      "sha256":  "6cf57be6f9d0bd60bd5dc6eee7c11e87e5b19df210156495a524b974185b9fb9"
+                  },
+                  {
+                      "name":  "GOUDOS.TTF",
+                      "location":  "system",
+                      "sha256":  "380e2cd97160e14042cea52ff785ca92d966e29f873cf2b93e1746f3a582ec74"
+                  },
+                  {
+                      "name":  "GOUDOSB.TTF",
+                      "location":  "system",
+                      "sha256":  "f3cd0e13e4a0ed77522b1ab29061da6658f449d1d89b56751cdcdeed86da47e2"
+                  },
+                  {
+                      "name":  "GOUDOSI.TTF",
+                      "location":  "system",
+                      "sha256":  "71d2d85781689de6326a229aeba2d143a5b3e8a4f0fc93b75af197fb63bf05bd"
+                  },
+                  {
+                      "name":  "GOUDYSTO.TTF",
+                      "location":  "system",
+                      "sha256":  "ab475061e2479350a315bf3f72d65ae9acc37bebef4cf8df979f8f6ced659216"
+                  },
+                  {
+                      "name":  "h8514fix.fon",
+                      "location":  "system",
+                      "sha256":  "cb01e1b85b291271eaf66f30bc7b71261c233d64b0ca47cb2669943200006c23"
+                  },
+                  {
+                      "name":  "h8514oem.fon",
+                      "location":  "system",
+                      "sha256":  "2df26c466ccb1b281e80cf6cdfcdd45725bed38368d27bef0211de99f83a013a"
+                  },
+                  {
+                      "name":  "h8514sys.fon",
+                      "location":  "system",
+                      "sha256":  "739f0b71bd23f0d242fdd42d63644a02df436425d147d7ad6aadd389874387fe"
+                  },
+                  {
+                      "name":  "HARLOWSI.TTF",
+                      "location":  "system",
+                      "sha256":  "a9488a827468a58c7ba78abc284a949a27f7ef4bcb921674b354d926d1c216c0"
+                  },
+                  {
+                      "name":  "HARNGTON.TTF",
+                      "location":  "system",
+                      "sha256":  "f482f5760773767d798c64f470c08c140588e7b07510094497e7a89c3f2f319d"
+                  },
+                  {
+                      "name":  "HATTEN.TTF",
+                      "location":  "system",
+                      "sha256":  "40e898e471fa4de3ca09a6dfed961d00d6395af20fe6cf1c6b83c795bea04543"
+                  },
+                  {
+                      "name":  "himalaya.ttf",
+                      "location":  "system",
+                      "sha256":  "fdec3a7efacd57913d3c14111837908ccbabea5b0b44ec62527eb73acf743afb"
+                  },
+                  {
+                      "name":  "HTOWERT.TTF",
+                      "location":  "system",
+                      "sha256":  "d5ed7dbd872ae77e6e30cada5287dbaa1ba755f962d0672c5ed14bea08f08422"
+                  },
+                  {
+                      "name":  "HTOWERTI.TTF",
+                      "location":  "system",
+                      "sha256":  "8f7699a0fd02de79d565fbd5205be070b777b790f028c1fd7e6090e34ed81bda"
+                  },
+                  {
+                      "name":  "hvgafix.fon",
+                      "location":  "system",
+                      "sha256":  "04443d1d5b0ce21932c5a8ddce31d85fb00e994f757a87ea7f1ab48fb77a94d2"
+                  },
+                  {
+                      "name":  "hvgasys.fon",
+                      "location":  "system",
+                      "sha256":  "b904000ce079d3a87698a1e16d82f944dd49fc77e9326e698c9c402f2287133a"
+                  },
+                  {
+                      "name":  "impact.ttf",
+                      "location":  "system",
+                      "sha256":  "d8bbdb72e3f930157824b2e59677d3a912d4512c14a948e6656a2e3fb0c935ad"
+                  },
+                  {
+                      "name":  "IMPRISHA.TTF",
+                      "location":  "system",
+                      "sha256":  "9db1f3315d5c18572381f3880bd2c171fa1f49a1cd6e5f5f8d97cc1317911f06"
+                  },
+                  {
+                      "name":  "INFROMAN.TTF",
+                      "location":  "system",
+                      "sha256":  "ee066d11d2933638a5d00c242a24f2c9b8bd68bd3ddb3b334123f8efcd539f03"
+                  },
+                  {
+                      "name":  "Inkfree.ttf",
+                      "location":  "system",
+                      "sha256":  "c8ab96bc49ec1dc36936b5973fc143ca222c1a33ab27b87071a3bbc44d34ca9a"
+                  },
+                  {
+                      "name":  "ITCBLKAD.TTF",
+                      "location":  "system",
+                      "sha256":  "2934319d3c6ba08a4477a3dc4f08695d4b926fc81a316f7a278e780ab5c9609d"
+                  },
+                  {
+                      "name":  "ITCEDSCR.TTF",
+                      "location":  "system",
+                      "sha256":  "60c4f425563b12a6c0223d5c65212fffb42f4b3d84789084aae44c42f3416865"
+                  },
+                  {
+                      "name":  "ITCKRIST.TTF",
+                      "location":  "system",
+                      "sha256":  "a298c30e23beb222a016afa24d4d8f389f30ac3b8be6763f9f94199c3b11ff0a"
+                  },
+                  {
+                      "name":  "j8514fix.fon",
+                      "location":  "system",
+                      "sha256":  "09faa053119fb71e2f8a5afc8b954a376122b6974d44594f37896c1a3f9e9fdf"
+                  },
+                  {
+                      "name":  "j8514oem.fon",
+                      "location":  "system",
+                      "sha256":  "03436d57a5224fa00409fab4ca1f24c3165dcc32a0cadc7d4dbf3e004a705381"
+                  },
+                  {
+                      "name":  "j8514sys.fon",
+                      "location":  "system",
+                      "sha256":  "26a78fc33f8e190d01666e9a1f7d056e84d442f7bb3a85f150556d07d99080e0"
+                  },
+                  {
+                      "name":  "javatext.ttf",
+                      "location":  "system",
+                      "sha256":  "df8d94382f73e6d2197b60653c3d55c28ab5cf127a82e65b8af4ed1b52fdc412"
+                  },
+                  {
+                      "name":  "JOKERMAN.TTF",
+                      "location":  "system",
+                      "sha256":  "d0d2d8efdbf07df506c87f9cadcd5052a6e446c99570177b1f98555661c6937c"
+                  },
+                  {
+                      "name":  "jsmalle.fon",
+                      "location":  "system",
+                      "sha256":  "d8d504d28165d572d31441d3dfcd0dfb774d3c9d17497bb0578a326231586e40"
+                  },
+                  {
+                      "name":  "jsmallf.fon",
+                      "location":  "system",
+                      "sha256":  "8f51432ddde758e386ac1c3f5c2a02278b1a0134ea30ffa879794087ff1d4d3f"
+                  },
+                  {
+                      "name":  "JUICE___.TTF",
+                      "location":  "system",
+                      "sha256":  "efef0fa6138c648f9b5694f11d3372cf2733ae6126c91dbc7b2327c00546a699"
+                  },
+                  {
+                      "name":  "jvgafix.fon",
+                      "location":  "system",
+                      "sha256":  "03dd51afa043a2124c6e7b88b2216d990adc5684ba0166b753db3979ad9a0a3b"
+                  },
+                  {
+                      "name":  "jvgasys.fon",
+                      "location":  "system",
+                      "sha256":  "c7b31d6d41b52ea093fc845bb51f5fc8bb772b278a0cd8d0dac980dc9e6b08eb"
+                  },
+                  {
+                      "name":  "KUNSTLER.TTF",
+                      "location":  "system",
+                      "sha256":  "8a9783e50f3bf892d958b7e61990d6ccaee65daaa0ffc246d3e1bd4fb0104b41"
+                  },
+                  {
+                      "name":  "l_10646.ttf",
+                      "location":  "system",
+                      "sha256":  "97226e81f19eff8c8fb191745748bab920472c005d3ec4e23d9a50a12c471d92"
+                  },
+                  {
+                      "name":  "LATINWD.TTF",
+                      "location":  "system",
+                      "sha256":  "d64b9e6668069915ae217548b010be1b52be99bc923e88e148a83619b0102868"
+                  },
+                  {
+                      "name":  "LBRITE.TTF",
+                      "location":  "system",
+                      "sha256":  "736eb3bdc990636d283384cf6428b03a6632ae16e81dc72cd28aecd0cdadb017"
+                  },
+                  {
+                      "name":  "LBRITED.TTF",
+                      "location":  "system",
+                      "sha256":  "8012eb0ec90ab1b7a40eec8987927d5764055e332bdb19ab5eeb3c1cf67987c8"
+                  },
+                  {
+                      "name":  "LBRITEDI.TTF",
+                      "location":  "system",
+                      "sha256":  "b2d15815ce8f722e22885e67562a66f512f6412399d9400ac01fecd718d54839"
+                  },
+                  {
+                      "name":  "LBRITEI.TTF",
+                      "location":  "system",
+                      "sha256":  "d347d9ae8a42c63ed7dc15bba992d00ee9e606e0ac499a8022757c275855f612"
+                  },
+                  {
+                      "name":  "LCALLIG.TTF",
+                      "location":  "system",
+                      "sha256":  "5c7e6c59e09c38c4e280504741bcfc051c95a9c931b3c92c03b7f2733f580622"
+                  },
+                  {
+                      "name":  "LeelaUIb.ttf",
+                      "location":  "system",
+                      "sha256":  "15f58cff987dce2ca1e7740ca6001b8e4e2589ea80898fdedca26d2726979f7e"
+                  },
+                  {
+                      "name":  "LEELAWAD.TTF",
+                      "location":  "system",
+                      "sha256":  "11e1960d6aca5d6de0fcbeda530dbb3dea8837d810596c54235b07a9fbe43f9e"
+                  },
+                  {
+                      "name":  "LEELAWDB.TTF",
+                      "location":  "system",
+                      "sha256":  "436bb96f8bbb151e7634fcea07794044a8565b013e505245322dafa13e6c3efd"
+                  },
+                  {
+                      "name":  "LeelawUI.ttf",
+                      "location":  "system",
+                      "sha256":  "ca9a670f12d0e47c20441012a22f78ab17c1b126818e0e887ef7db6ecf5e76b4"
+                  },
+                  {
+                      "name":  "LeelUIsl.ttf",
+                      "location":  "system",
+                      "sha256":  "f7a9d979c27baad75ebcd41ea45113919576c2e56af9ffd483dd9d0ef9272a25"
+                  },
+                  {
+                      "name":  "LFAX.TTF",
+                      "location":  "system",
+                      "sha256":  "25b23e0e8ba977da78fd0f6c13b76e561756010a73cb5a8187dd817496e25fec"
+                  },
+                  {
+                      "name":  "LFAXD.TTF",
+                      "location":  "system",
+                      "sha256":  "1a8dd16d0d1456923c5d3824943771e63eb67e6b8660e5c1c479674fbbba163d"
+                  },
+                  {
+                      "name":  "LFAXDI.TTF",
+                      "location":  "system",
+                      "sha256":  "fd16af41073406530c7633bbf6976c1aecac1f4bc9d1882135cf58ec9b31dd07"
+                  },
+                  {
+                      "name":  "LFAXI.TTF",
+                      "location":  "system",
+                      "sha256":  "27899b1624a2c13245cbfd28666090e3fe9ca17ecba4cd6e19a615892f6c6db5"
+                  },
+                  {
+                      "name":  "LHANDW.TTF",
+                      "location":  "system",
+                      "sha256":  "c5ab997a1c3e49cb0d34fa5a3f2c39934d39f2657dca224fcb3b480768676501"
+                  },
+                  {
+                      "name":  "LiberationMono-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "bd62a0672d0b9b6710b01df434c80ad54fa5f0835207eb7b17b7a761463067bb"
+                  },
+                  {
+                      "name":  "LiberationMono-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "79451f3c09fe25116098853b7a2ca6e2436220ccc11af022979adbcf195be130"
+                  },
+                  {
+                      "name":  "LiberationMono-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "605c01c711b44480a7508d349dfbf3264e81fa43d69e61cfa7d10b86e764c4d1"
+                  },
+                  {
+                      "name":  "LiberationMono-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "f2b83c763e8afd21709333370bed4774337fae82267937e2b5aea7e2fbd922c1"
+                  },
+                  {
+                      "name":  "LiberationSans-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "788abee4c806d660e8aee46689dd8540cd4bb98da03dcc9d171ce3efd99a9173"
+                  },
+                  {
+                      "name":  "LiberationSans-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "698da70fc191cc5f33ad4d6d3fe830fe4624b898ea2e3169955928b7c491f1ee"
+                  },
+                  {
+                      "name":  "LiberationSans-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "e5bae5c4cde31f22142753855f4f8fb86da6ff39955ed3c0a11248b0d16948b0"
+                  },
+                  {
+                      "name":  "LiberationSansNarrow-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "8e5eb5090ef4a3143794c230b82f174f7f2fbbfcd6cb789ccfa1f90bf8795d54"
+                  },
+                  {
+                      "name":  "LiberationSansNarrow-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "57fe1513fa84379d36e7da6fd9a45d053ded5e895042ab36692d8d05a8c4f4d8"
+                  },
+                  {
+                      "name":  "LiberationSansNarrow-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "c5de4127c273dbcfc173414d170448cbe800c3a7fb1f97beaeee1b076d6a5eea"
+                  },
+                  {
+                      "name":  "LiberationSansNarrow-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "546e8957e5dccece4ac07ea02f57a5cdb3dc3b0e902ea75a837a7784ba4b7eef"
+                  },
+                  {
+                      "name":  "LiberationSans-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8"
+                  },
+                  {
+                      "name":  "LiberationSerif-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "d754ba427cfe0bca54ae052384baa8f842da5bd6550ad4da024ac441e7a7d5ce"
+                  },
+                  {
+                      "name":  "LiberationSerif-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "f17db8af71e24d2066b587546021d4f0b296be389512b658dec3c09affeb11a7"
+                  },
+                  {
+                      "name":  "LiberationSerif-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e"
+                  },
+                  {
+                      "name":  "LiberationSerif-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74"
+                  },
+                  {
+                      "name":  "LinBiolinum_R_G.ttf",
+                      "location":  "system",
+                      "sha256":  "b4928a849043c5e5d82b258bf485861a7b2e3f11d7fc2fc38127a7479f942ef2"
+                  },
+                  {
+                      "name":  "LinBiolinum_RB_G.ttf",
+                      "location":  "system",
+                      "sha256":  "a6071ef33992942eeb6cd476fc7f94c5c886ea504b5f2329296ddb129416d649"
+                  },
+                  {
+                      "name":  "LinBiolinum_RI_G.ttf",
+                      "location":  "system",
+                      "sha256":  "c575bb983083bb6939a17d8d605b3a353a514b6bd9a576ac653b166ad7a22913"
+                  },
+                  {
+                      "name":  "LinLibertine_DR_G.ttf",
+                      "location":  "system",
+                      "sha256":  "ca753adfa44deeb4dd0508d385911d96df27ae107cf70899b1c4ade4e594f4b4"
+                  },
+                  {
+                      "name":  "LinLibertine_R_G.ttf",
+                      "location":  "system",
+                      "sha256":  "dbbdbc37105a59dbd64a4a552b5841002c0990c30fd225fdcac198058e60266a"
+                  },
+                  {
+                      "name":  "LinLibertine_RB_G.ttf",
+                      "location":  "system",
+                      "sha256":  "392338c6e2926d7b435ecea51807b597b0937ce718226bf8468f60cfdd109a14"
+                  },
+                  {
+                      "name":  "LinLibertine_RBI_G.ttf",
+                      "location":  "system",
+                      "sha256":  "ac81a23c8436e2c00dbb32b12bf346e7d091e18fb2e6ef986441faed818558fb"
+                  },
+                  {
+                      "name":  "LinLibertine_RI_G.ttf",
+                      "location":  "system",
+                      "sha256":  "96f10a95e199601143b0d511c8c2731f9fc8d1482abe48e9d832abd097e0ee04"
+                  },
+                  {
+                      "name":  "LinLibertine_RZ_G.ttf",
+                      "location":  "system",
+                      "sha256":  "8980dee9eb4c43b75392a1d2ab6a1fa3d00cd223b214c0fb74abcdab80f887ca"
+                  },
+                  {
+                      "name":  "LinLibertine_RZI_G.ttf",
+                      "location":  "system",
+                      "sha256":  "0673c58840e04974af40c7661883541e05f9012c0473d3402590625390fa5954"
+                  },
+                  {
+                      "name":  "LSANS.TTF",
+                      "location":  "system",
+                      "sha256":  "eb3f949ba0f1368698e69396259e667d9fb913ebfde3c742d493aae5dd57141e"
+                  },
+                  {
+                      "name":  "LSANSD.TTF",
+                      "location":  "system",
+                      "sha256":  "76160ce9cd774532131cf4902b810a2d02c94f225da238ff8c04e25875eb66c5"
+                  },
+                  {
+                      "name":  "LSANSDI.TTF",
+                      "location":  "system",
+                      "sha256":  "eb2d865bdadbdd19dacd2aa6f1a0d4e93263b3dac13de536106286e809abc238"
+                  },
+                  {
+                      "name":  "LSANSI.TTF",
+                      "location":  "system",
+                      "sha256":  "ca117345d190cda8ad6c7a41af1d6d43c475d0fdc99c97b8d325986309597f7a"
+                  },
+                  {
+                      "name":  "LTYPE.TTF",
+                      "location":  "system",
+                      "sha256":  "b700d1bc51a11c77ca7b119b0677a9cd4dc1e61fe43a7130bc2044cd7dc9b116"
+                  },
+                  {
+                      "name":  "LTYPEB.TTF",
+                      "location":  "system",
+                      "sha256":  "993b8ad78909d2b9d67ea0001112cac238fb65c6b31f6729fdb0b86c24e2b8ab"
+                  },
+                  {
+                      "name":  "LTYPEBO.TTF",
+                      "location":  "system",
+                      "sha256":  "187f363e9c2e328409938b4413027fe8f0c55423913ba66ea66d3f0d7fd5c74e"
+                  },
+                  {
+                      "name":  "LTYPEO.TTF",
+                      "location":  "system",
+                      "sha256":  "980e0ce5a0f4c407e90c72a16da2a259b7fc2a0ea48d1faf048028b2735fa941"
+                  },
+                  {
+                      "name":  "lucon.ttf",
+                      "location":  "system",
+                      "sha256":  "2ca2cfde263fa420e8d39420f075ee9ac80bc0794272c53ac4571a88f8a075a6"
+                  },
+                  {
+                      "name":  "MAGNETOB.TTF",
+                      "location":  "system",
+                      "sha256":  "455964b4a07af53205ed705e0f40778ff203f2c9e7c72a8bf2c4d7a3a834e895"
+                  },
+                  {
+                      "name":  "MAIAN.TTF",
+                      "location":  "system",
+                      "sha256":  "8cd40ac425585ee56a4a98f19a1f646828cec1e9565b4a0bfab1d4ce9d7a81c3"
+                  },
+                  {
+                      "name":  "malgun.ttf",
+                      "location":  "system",
+                      "sha256":  "7a183cf1c6c56b9609fcc16eda8b5229fbc11758a21e669ec00343239b02192f"
+                  },
+                  {
+                      "name":  "malgunbd.ttf",
+                      "location":  "system",
+                      "sha256":  "e8cbc0b2afcc14fb45dfb6086d5102c0b23a96e7b6e708f3122acde1b86c9082"
+                  },
+                  {
+                      "name":  "malgunsl.ttf",
+                      "location":  "system",
+                      "sha256":  "c0ca810a242c4482594182db40f0f9d35a3d51bb2eeac750e6e867b2110eb00e"
+                  },
+                  {
+                      "name":  "marlett.ttf",
+                      "location":  "system",
+                      "sha256":  "b7397adf2dcc24ca790348a3c26deb2122b45e5728fd25fc588de4cf5a75b469"
+                  },
+                  {
+                      "name":  "MATURASC.TTF",
+                      "location":  "system",
+                      "sha256":  "e334bf287bdf4211fe5958c4926c8ad4ddd3f44f5fdcb2d9dcfa1394186d8132"
+                  },
+                  {
+                      "name":  "micross.ttf",
+                      "location":  "system",
+                      "sha256":  "89b42a12ea0379133fb2f4a1d1bd53058fb61e2343c1d509452d5761acc85b7a"
+                  },
+                  {
+                      "name":  "mingliub.ttc",
+                      "location":  "system",
+                      "sha256":  "8f8afdb3ec7047118f6dc51b29d395e697ee6770d0afd0cd407457e2ad6e93cb"
+                  },
+                  {
+                      "name":  "MiriamCLM-Bold.otf",
+                      "location":  "system",
+                      "sha256":  "e119adeffcc47301d1cce9b6dc61e8c8f0b228af406401005fe32b6f6a4f0b56"
+                  },
+                  {
+                      "name":  "MiriamCLM-Book.otf",
+                      "location":  "system",
+                      "sha256":  "b6bf0af80cf77817ce47b687bad28e11ecc9f3f7a07ff0f0bfbbee2f44be9b5c"
+                  },
+                  {
+                      "name":  "MiriamLibre-Bold.otf",
+                      "location":  "system",
+                      "sha256":  "8c88ae118709ac4606f42356bed7a1ec68f6493a66424d030de5b270f6421c4b"
+                  },
+                  {
+                      "name":  "MiriamLibre-Regular.otf",
+                      "location":  "system",
+                      "sha256":  "6c366f3f075dedfd88824caba785ab5374c1c45eb5d97994137e5fdbe982a635"
+                  },
+                  {
+                      "name":  "MiriamMonoCLM-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "d7382ff624ee873791f55636378100fa27f316572317e1572e424498deab25ce"
+                  },
+                  {
+                      "name":  "MiriamMonoCLM-BoldOblique.ttf",
+                      "location":  "system",
+                      "sha256":  "42eb2b5f70044dc17cb2349e8f963d778f90c4a47fc449f4989d7abdf1f54866"
+                  },
+                  {
+                      "name":  "MiriamMonoCLM-Book.ttf",
+                      "location":  "system",
+                      "sha256":  "8fc659fa1a7ffd7ec78ed0b061267adc9e08ff57873f21d7487af7c07f5d37bd"
+                  },
+                  {
+                      "name":  "MiriamMonoCLM-BookOblique.ttf",
+                      "location":  "system",
+                      "sha256":  "19d2ca80a0244ef4a14c67c956a24a32f95a98d94d5985f819be7d4216d35b4c"
+                  },
+                  {
+                      "name":  "MISTRAL.TTF",
+                      "location":  "system",
+                      "sha256":  "a03a3a71113d44d7bfb98e9720264f72a05ba112e191fb78eb08d11a3f41e500"
+                  },
+                  {
+                      "name":  "mmrtext.ttf",
+                      "location":  "system",
+                      "sha256":  "f9b362b1e0e09880cdf71852e3cc6dd6f7babb3fb6c12019f39af2135c6233cc"
+                  },
+                  {
+                      "name":  "mmrtextb.ttf",
+                      "location":  "system",
+                      "sha256":  "a96d49aa45e2800f49734578e5f5c1eaeb142e60a1fe1a4cc4d885170be5dcfe"
+                  },
+                  {
+                      "name":  "MOD20.TTF",
+                      "location":  "system",
+                      "sha256":  "cd7c7867a456ceae560d825cbec1d95b3de8cb62b00ce513db6afc293f243218"
+                  },
+                  {
+                      "name":  "modern.fon",
+                      "location":  "system",
+                      "sha256":  "b532bc33388b2aa350f1a497485fb63385adfc9d25094725e4c00bb0bf77628c"
+                  },
+                  {
+                      "name":  "monbaiti.ttf",
+                      "location":  "system",
+                      "sha256":  "bf15e713f2ae14f85201ad31752054b0d88adb64634d9a1f5a7bc032f981ff89"
+                  },
+                  {
+                      "name":  "msgothic.ttc",
+                      "location":  "system",
+                      "sha256":  "4bde3e6392b96910fb59094c6c1a4dbfae18fee78d0bf13dc30616837c4f95db"
+                  },
+                  {
+                      "name":  "msjh.ttc",
+                      "location":  "system",
+                      "sha256":  "1fd5fc7046e0eea753988ee06d1a5a731df68475614e2174fbba9b4800f392ac"
+                  },
+                  {
+                      "name":  "msjhbd.ttc",
+                      "location":  "system",
+                      "sha256":  "7d55cd4801102131d991630cea74534dcf73a9fabf4a33e54fe05dfb4f5aa790"
+                  },
+                  {
+                      "name":  "msjhl.ttc",
+                      "location":  "system",
+                      "sha256":  "15f1162a68b5859f246d89ea62aed711b1994817c72e78e3df5d205c89c5c6e8"
+                  },
+                  {
+                      "name":  "MSUIGHUB.TTF",
+                      "location":  "system",
+                      "sha256":  "8ab5de475b91361575858e67ce5a55f22a60fc9dc54d4025dfe3504d805cbd22"
+                  },
+                  {
+                      "name":  "MSUIGHUR.TTF",
+                      "location":  "system",
+                      "sha256":  "1da9b5ace583a0a52e85280264d84917630ff6d600caea9a1b99cbd7e8b7c07f"
+                  },
+                  {
+                      "name":  "msyh.ttc",
+                      "location":  "system",
+                      "sha256":  "d79c55e68b1131eea0cc1c47be4f572d964f28c682e143db2ad09c1e4cb07a3f"
+                  },
+                  {
+                      "name":  "msyhbd.ttc",
+                      "location":  "system",
+                      "sha256":  "4508821b3dffe01f0ef5e5326a3e60df705a44633858811f67b6982dce3f6ee6"
+                  },
+                  {
+                      "name":  "msyhl.ttc",
+                      "location":  "system",
+                      "sha256":  "7e9bdf90bb5d3fe1b5975fc8ae31944b8fa674122261f92c28d4ec0b9c482fa1"
+                  },
+                  {
+                      "name":  "msyi.ttf",
+                      "location":  "system",
+                      "sha256":  "80aef1c25135b945e9de7d09e6445c386405eb2e0ea7032d4cd00a2fe3eef0ae"
+                  },
+                  {
+                      "name":  "MTCORSVA.TTF",
+                      "location":  "system",
+                      "sha256":  "a6f6dacb871be365ad93fe1aab09332f768cd2aa35fdfca8e0053a38f5a2662b"
+                  },
+                  {
+                      "name":  "MTEXTRA.TTF",
+                      "location":  "system",
+                      "sha256":  "4b20e24f9fcab717b90ce67ec59539b2b866adf072b1dcab71af6ef34ea8cd78"
+                  },
+                  {
+                      "name":  "mvboli.ttf",
+                      "location":  "system",
+                      "sha256":  "5dfd7a4c708caeefae42cdb9540946de042beeb8c069dfde0dbc14c2fa0705ae"
+                  },
+                  {
+                      "name":  "NachlieliCLM-Bold.otf",
+                      "location":  "system",
+                      "sha256":  "4b43572203b7fb64ef50ec93a48b104ef5536d2c1179b4d08dd5fad96a95b509"
+                  },
+                  {
+                      "name":  "NachlieliCLM-BoldOblique.otf",
+                      "location":  "system",
+                      "sha256":  "08b6d6783e351a9b016bd7f31bbd47b71d9af745afc7250c742389f32870ba1f"
+                  },
+                  {
+                      "name":  "NachlieliCLM-Light.otf",
+                      "location":  "system",
+                      "sha256":  "41a9ea4e896702036c2cae75368fcde2ac3042611eefb38d22f92463098a64a7"
+                  },
+                  {
+                      "name":  "NachlieliCLM-LightOblique.otf",
+                      "location":  "system",
+                      "sha256":  "ac622e7c34566584568631af14693f218f56ea8979f7bcae2362e38f0fada0c0"
+                  },
+                  {
+                      "name":  "NIAGENG.TTF",
+                      "location":  "system",
+                      "sha256":  "ece195c4b0d53ce4ebaed656341708180abfebdddadf219fb014a31e70410bde"
+                  },
+                  {
+                      "name":  "NIAGSOL.TTF",
+                      "location":  "system",
+                      "sha256":  "ee5f2638432efa7ea6273625ae2fe5dfa3d393ad0b51f8f5fb0f3d3c5ae65f6f"
+                  },
+                  {
+                      "name":  "Nirmala.ttc",
+                      "location":  "system",
+                      "sha256":  "ad02cdfc06e144ac45f318e8e5a64cbe04c7479d4beb91d25f5a319a466b1767"
+                  },
+                  {
+                      "name":  "NotoKufiArabic-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "4489bfae8552f3edfc66120f092c775453963c4ca376f5fe2d13d85b517a112d"
+                  },
+                  {
+                      "name":  "NotoKufiArabic-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "03ea6bc2758f2a8b01e73a9a5fc60fdcf2ae03709cc6c43cc43ff2a13a5c5ad8"
+                  },
+                  {
+                      "name":  "NotoNaskhArabic-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "f4593fe6c70d2b29a5ecf5716d669f040114861204272199b62a24d49c1a275b"
+                  },
+                  {
+                      "name":  "NotoNaskhArabic-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "eb5cde7fecba8c6a481039257fe02d5fd69b7b0e36f8afc56ee22f4b1d7e8c21"
+                  },
+                  {
+                      "name":  "NotoSansArabic-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "457926cb001ac787dc7415c89e6f5b1c4ce3a0f2c91d0cabc1bc19a05638e7de"
+                  },
+                  {
+                      "name":  "NotoSansArabic-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "d6efa4c9fac8ecefd2de19676acc3a396ba7aee99ba7a2d513950246841b6725"
+                  },
+                  {
+                      "name":  "NotoSansArmenian-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "1607ef2d90b3c7c7796a9dcee7c8f5e323c7196c5753e4219bcc80b0cb7ec542"
+                  },
+                  {
+                      "name":  "NotoSansArmenian-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "ae242d055bb82f7c00ae02f10e8880197725805b0e4586d1b33b384a099f362a"
+                  },
+                  {
+                      "name":  "NotoSans-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "3a08a47daa00cade516425c15c57615aef2fd418ec9811a7b9f465088f92cc05"
+                  },
+                  {
+                      "name":  "NotoSans-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "2e34b41a4b9c234b1be7dff6d06cba18811ecb694b41350873edf0ec16a0f0fa"
+                  },
+                  {
+                      "name":  "NotoSansGeorgian-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "0c9a27690575bc2753b7a24d0a823bb0d33936ce8828dd8ad4c294b778abf053"
+                  },
+                  {
+                      "name":  "NotoSansGeorgian-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "89207521ae620f9988e85f0afc26070af34fffd454c3f0cb0655e494f3f3364d"
+                  },
+                  {
+                      "name":  "NotoSansHebrew-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "96f88305d31a8432f0fe6648c853cb9ef77db8e52ada8948ed0c577037d45423"
+                  },
+                  {
+                      "name":  "NotoSansHebrew-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "671951828bd5c95db818e5bb12dcea2d0c0dda00311888522be061ee6835125e"
+                  },
+                  {
+                      "name":  "NotoSans-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "126522ae1bb9cd92120287fc47dfc74ef981e73931d93e52c565fb7e09b2d74a"
+                  },
+                  {
+                      "name":  "NotoSansLao-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "9f7d30ce049ceac2a24e9d3b8799249e734bc2b42be9f240dbed5dc451a1796e"
+                  },
+                  {
+                      "name":  "NotoSansLao-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "123d912762592efc26466671be8443958bd117aeac2e4beee0310b5b834e63f9"
+                  },
+                  {
+                      "name":  "NotoSansLisu-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "2940c8397a096f2bb295a869a318a5d91fbbf3b70e09995308febe9c483eb9e2"
+                  },
+                  {
+                      "name":  "NotoSansLisu-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "7aa2279848cc8647198185807616555759bd68b8a3edb21ecc467d071aa7a6a4"
+                  },
+                  {
+                      "name":  "NotoSans-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "f5f552c8c5edb61fe6efb824baf4d4de47b1a8689ab4925ff43f7bd6a4ebece5"
+                  },
+                  {
+                      "name":  "NotoSerifArmenian-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "5b972a930590304f9e853ea6a4dfd956980365d726536f8514025188d463ecce"
+                  },
+                  {
+                      "name":  "NotoSerifArmenian-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "240b3884bb5002e049bb1ea945e904777fada7bb86214e01da5c8774881937b2"
+                  },
+                  {
+                      "name":  "NotoSerif-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "96656aa5cec8f1d6fd0e804c1fad397e1a1cfa082e6642124e0bda68cd8363ce"
+                  },
+                  {
+                      "name":  "NotoSerif-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "c710c5b9cf354ae46e7a10472a08019b28220fafeb5887a482a76856f8f6fc0b"
+                  },
+                  {
+                      "name":  "NotoSerifGeorgian-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "f7fc391a93f8d50a5e19649c2e6706a00c9c8412cd820c860fc2e3c28c2c5084"
+                  },
+                  {
+                      "name":  "NotoSerifGeorgian-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "eea3e8415a37dd496dbb6fad16e95b1513d3fc14863c6cc8886456f273eb1cdf"
+                  },
+                  {
+                      "name":  "NotoSerifHebrew-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "8b450085462e6692df13688585ffe2bc1537a38fd2cccbdffec19b807b5e7071"
+                  },
+                  {
+                      "name":  "NotoSerifHebrew-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "1aa72c35d0510d1ce8a61389db01ed5b765026bee0f26b7f4b52492e90276193"
+                  },
+                  {
+                      "name":  "NotoSerif-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "749e80e313ef711f9373c6cce17c72297ef05490b3dcda7967d1d5d90bf1183f"
+                  },
+                  {
+                      "name":  "NotoSerifLao-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "bdf8a669685277125be9a0071ede42baf80147180bbd4bbb541301c7266250a4"
+                  },
+                  {
+                      "name":  "NotoSerifLao-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "ff5ab4f3270c448b99b113a8ac6275bc6e4a4ca922ed2271df9a95132b5c2db6"
+                  },
+                  {
+                      "name":  "NotoSerif-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "19e72cd8d595fae5bd74a5206f5d938512e1183d4fed7abb1ec1be1d7efa5f88"
+                  },
+                  {
+                      "name":  "ntailu.ttf",
+                      "location":  "system",
+                      "sha256":  "de0b632015447f28c2db41c8e07c745cedb05ead5dbc2e73f19da14d2e5f2151"
+                  },
+                  {
+                      "name":  "ntailub.ttf",
+                      "location":  "system",
+                      "sha256":  "cfc2acbf9ae0205a0a258e564bdbf5466a4e49a95281a1d2e72690f149ec837b"
+                  },
+                  {
+                      "name":  "OCRAEXT.TTF",
+                      "location":  "system",
+                      "sha256":  "2b058a75ff9336c703e48b618ef759906dc9e37712e27698f74aa3ec0b949346"
+                  },
+                  {
+                      "name":  "OLDENGL.TTF",
+                      "location":  "system",
+                      "sha256":  "1d9d8d06aec3de7b9abbcdac2381f457d9d606b54f05e9b0e0187bf8565a1104"
+                  },
+                  {
+                      "name":  "ONYX.TTF",
+                      "location":  "system",
+                      "sha256":  "baba81b90b5102d1e1807aed3a4f38ed8f3d0e45c2b12b27152d8101c4de21fb"
+                  },
+                  {
+                      "name":  "opens___.ttf",
+                      "location":  "system",
+                      "sha256":  "f543e6e2d7275557a839a164941c0a86e5f2c3f2a0042bfc434c88c6dde9e140"
+                  },
+                  {
+                      "name":  "OUTLOOK.TTF",
+                      "location":  "system",
+                      "sha256":  "1cc072157711f80296f3d013cec95093fc1be4e35a97406c46e76b14a97f41e1"
+                  },
+                  {
+                      "name":  "pala.ttf",
+                      "location":  "system",
+                      "sha256":  "e47d594e2e2bc31b28f87b6f66483d32f925843ceb002f919c7a403aca48813d"
+                  },
+                  {
+                      "name":  "palab.ttf",
+                      "location":  "system",
+                      "sha256":  "8e14668bbae03f78ed668dbe3261218881960dcd9fb80ad6c1d1dfb4226a57c3"
+                  },
+                  {
+                      "name":  "palabi.ttf",
+                      "location":  "system",
+                      "sha256":  "d0e722b91ffd5391cc2e7d6e976f274d5aee9fe0b8d0fedfffe093763e695cde"
+                  },
+                  {
+                      "name":  "palai.ttf",
+                      "location":  "system",
+                      "sha256":  "99f0af2d1941707fecda23da38bafbed5144a73a3720d773c05b9d4c445920ed"
+                  },
+                  {
+                      "name":  "PALSCRI.TTF",
+                      "location":  "system",
+                      "sha256":  "13093d9642d540cb5efad5cad52ad703e11c0e1f5308bc23ff2cfd7737e7516c"
+                  },
+                  {
+                      "name":  "PAPYRUS.TTF",
+                      "location":  "system",
+                      "sha256":  "895fdea742cdccd53e8ce847a7d2d9c3ddbd7ebdbe0444e88246f0f9e4e2526d"
+                  },
+                  {
+                      "name":  "PARCHM.TTF",
+                      "location":  "system",
+                      "sha256":  "5b4a73788f013c252eb5877a7974e5836eeffc1189dd7319a219080fcc908f80"
+                  },
+                  {
+                      "name":  "PER_____.TTF",
+                      "location":  "system",
+                      "sha256":  "f8202c3426b5c54b192969351f15ea35288de44e811e9514d923898214b94184"
+                  },
+                  {
+                      "name":  "PERB____.TTF",
+                      "location":  "system",
+                      "sha256":  "8eb139cdeff99c8297c95bf857d94def798116d02fdcf72cefb88d43fe7a33d4"
+                  },
+                  {
+                      "name":  "PERBI___.TTF",
+                      "location":  "system",
+                      "sha256":  "f8346184d59314a919926dcfb60da96421781ab19c2e04c2f76f0f82ace8cee4"
+                  },
+                  {
+                      "name":  "PERI____.TTF",
+                      "location":  "system",
+                      "sha256":  "2f52ec437a22912ec82c06afdde46c6b1c7593b44025c4627901d353a965b161"
+                  },
+                  {
+                      "name":  "PERTIBD.TTF",
+                      "location":  "system",
+                      "sha256":  "1024c55e896123dad43b1a15f0c86640556b01e9348eb797e6d7c5a889178d6b"
+                  },
+                  {
+                      "name":  "PERTILI.TTF",
+                      "location":  "system",
+                      "sha256":  "5b90d215f586c91cbaceee9e96d8840431e6b4713909dd47ab70084a067d0b10"
+                  },
+                  {
+                      "name":  "phagspa.ttf",
+                      "location":  "system",
+                      "sha256":  "538949482d964e9f353a3a8d860bb3eda93b46b830f3b677e4f53eb2ff3a6e7d"
+                  },
+                  {
+                      "name":  "phagspab.ttf",
+                      "location":  "system",
+                      "sha256":  "03e4e45bb8ebb6d055a5584166cc26712bf7e746ea29cb6e548341361d31dc85"
+                  },
+                  {
+                      "name":  "PLAYBILL.TTF",
+                      "location":  "system",
+                      "sha256":  "673e9f49ace279c73711dd778037b5d435790be236c9e5892609794b0bb4377f"
+                  },
+                  {
+                      "name":  "POORICH.TTF",
+                      "location":  "system",
+                      "sha256":  "1a98bbb22c3097e418a263ca80b63ac1264e8cbd03d5f0a7143bc598297a387b"
+                  },
+                  {
+                      "name":  "PRISTINA.TTF",
+                      "location":  "system",
+                      "sha256":  "4bd22f9cfa8255c17ef5734964bdcea39f0614c1975f9d495576a0110f5bf177"
+                  },
+                  {
+                      "name":  "RAGE.TTF",
+                      "location":  "system",
+                      "sha256":  "4e06cfa893f7e1e656709ac2cc240cf17cc82da9fb8df1afbf689940e47c0cfd"
+                  },
+                  {
+                      "name":  "RAVIE.TTF",
+                      "location":  "system",
+                      "sha256":  "7019d811b304287be2223f1667e0989f862951cbba660bde13a86bb103d97b80"
+                  },
+                  {
+                      "name":  "ReemKufi-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "9fcd22f895f9b81906bc5cc7b607ec901de07a4d4fda84df5a8c0ed8071f5d01"
+                  },
+                  {
+                      "name":  "ReemKufi-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "75d55c00b2c9e4286741bf034ee5b20da056e7befe201af89fa7ae7f17e6b0e1"
+                  },
+                  {
+                      "name":  "REFSAN.TTF",
+                      "location":  "system",
+                      "sha256":  "26d345f357d8213475eff6459ccf2dbc9d707e2f8c0445540f3bb183f717c0f0"
+                  },
+                  {
+                      "name":  "REFSPCL.TTF",
+                      "location":  "system",
+                      "sha256":  "0f9cd250887e38b99ff7111769d249daee8634c2c875f49c3599017bd2586aab"
+                  },
+                  {
+                      "name":  "ROCC____.TTF",
+                      "location":  "system",
+                      "sha256":  "967465e783b62ce5fdfb10183753ddfa0ba6396036340fd3cc67f85187d57689"
+                  },
+                  {
+                      "name":  "ROCCB___.TTF",
+                      "location":  "system",
+                      "sha256":  "bda7c484b491bb10914d668300c6560621de1b091784010f2d4d239020b6e5be"
+                  },
+                  {
+                      "name":  "ROCK.TTF",
+                      "location":  "system",
+                      "sha256":  "0c61e5ce8296a55761cdb9d350d4c990be4cda8890cc70f2abdedfc357f96d00"
+                  },
+                  {
+                      "name":  "ROCKB.TTF",
+                      "location":  "system",
+                      "sha256":  "fc9fd442d2dcd719c88d42121d69f5dd9dda02cc1c8afa025d261ec28795468f"
+                  },
+                  {
+                      "name":  "ROCKBI.TTF",
+                      "location":  "system",
+                      "sha256":  "c8a0f6976209cc198bc47ee287fd872fd86690f4d2893057e7ee92dd1235fb5f"
+                  },
+                  {
+                      "name":  "ROCKEB.TTF",
+                      "location":  "system",
+                      "sha256":  "6c52077681d5d1831b9e8f6621deb82de960418d24fe39d8cdc88778fbb19e30"
+                  },
+                  {
+                      "name":  "ROCKI.TTF",
+                      "location":  "system",
+                      "sha256":  "70af64a5bc061505e7a1cb1cd691811768a7cc84e53d48fcb526deb53f8c7a57"
+                  },
+                  {
+                      "name":  "roman.fon",
+                      "location":  "system",
+                      "sha256":  "25733f3e5dddebea00c32382d6e40438282ea740f23955010cb38c4b1e312297"
+                  },
+                  {
+                      "name":  "Rubik-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "b1c36dfcbc5fe5011c552c76725c84d989a71d56440e8bfbfa0cb68b593dbad6"
+                  },
+                  {
+                      "name":  "Rubik-BoldItalic.ttf",
+                      "location":  "system",
+                      "sha256":  "38638b7aef713b932ad19976f614d5ae14658269c4c9d879b409022675525fbf"
+                  },
+                  {
+                      "name":  "Rubik-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "be159c7ef033367c65fb31d4a8461edfbdb23665e37a0bc75d6adccc0b7444dc"
+                  },
+                  {
+                      "name":  "Rubik-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "bd1490f4314d27ca1ac5d8869fdda068852edd623318c9bee13e812b793b301b"
+                  },
+                  {
+                      "name":  "s8514fix.fon",
+                      "location":  "system",
+                      "sha256":  "c09fbe621f7e50bc25b83c990568408fd6a2753d6869a3b5ae758125e23d9aa1"
+                  },
+                  {
+                      "name":  "s8514oem.fon",
+                      "location":  "system",
+                      "sha256":  "cb4745a7d0a3a0d552367d086182bfefbdcc974249af5cdf1750afac9fad7eb3"
+                  },
+                  {
+                      "name":  "s8514sys.fon",
+                      "location":  "system",
+                      "sha256":  "80d81e98bea979a33c2e0e72de623bf2d373e235b0f2f3d2d1883035143fd993"
+                  },
+                  {
+                      "name":  "SansSerifCollection.ttf",
+                      "location":  "system",
+                      "sha256":  "eb78c210d380fce7d3822b3a5ccfa808f1eb0390de6237f5460970679f393ce0"
+                  },
+                  {
+                      "name":  "Scheherazade-Bold.ttf",
+                      "location":  "system",
+                      "sha256":  "62dde529b296df074efbf75b40a986e8ff82e997b98cec9ad7ab6795bb17a622"
+                  },
+                  {
+                      "name":  "Scheherazade-Regular.ttf",
+                      "location":  "system",
+                      "sha256":  "034c3ed203ccf91e20a75181350759cc5878e0e369bb0e2e83acee15a829184f"
+                  },
+                  {
+                      "name":  "SCHLBKB.TTF",
+                      "location":  "system",
+                      "sha256":  "a13c13a72c0aafc2be6baf52fd28b1745af6f0fd5fbd365499c7298f4ee416a1"
+                  },
+                  {
+                      "name":  "SCHLBKBI.TTF",
+                      "location":  "system",
+                      "sha256":  "8decca6df27be6bb2bd15801dd9cde62502bf4fb20efd835038861455ffe763b"
+                  },
+                  {
+                      "name":  "SCHLBKI.TTF",
+                      "location":  "system",
+                      "sha256":  "73ff30499a0c673440e6df6e134e0731e586112ab99a0553f7c4dbb28f84366a"
+                  },
+                  {
+                      "name":  "script.fon",
+                      "location":  "system",
+                      "sha256":  "eacbfca9a5ef05a108ef5337c773d82a43398bb8ea177e5ebeef62934dd75811"
+                  },
+                  {
+                      "name":  "SCRIPTBL.TTF",
+                      "location":  "system",
+                      "sha256":  "ebd9ca7dc28fee37c942b4084f377711ba571da5fd7154125abf8f81c9628ce6"
+                  },
+                  {
+                      "name":  "segmdl2.ttf",
+                      "location":  "system",
+                      "sha256":  "a2efc8b8e51fbd031a7142a1ade8866fa904c0c349511abc579ee53f8a926f31"
+                  },
+                  {
+                      "name":  "SegoeIcons.ttf",
+                      "location":  "system",
+                      "sha256":  "af496bd8ed18e8b45ea9c914bb3319204ab4fac450e0f4d3aab62bac6c02e5e9"
+                  },
+                  {
+                      "name":  "segoepr.ttf",
+                      "location":  "system",
+                      "sha256":  "91046862e08fbade0bdd648e81c4efbe6a963947f8b6e32b64a28fe39073c468"
+                  },
+                  {
+                      "name":  "segoeprb.ttf",
+                      "location":  "system",
+                      "sha256":  "3cced0162ddb9e5f1e63ee1b36fd6e581c090318dce1a0af01b77f5ea9952c80"
+                  },
+                  {
+                      "name":  "segoesc.ttf",
+                      "location":  "system",
+                      "sha256":  "b24aa49a4bcb99a0ffc60cad77f00941e4b121153d8b0a519c03719d9be6004e"
+                  },
+                  {
+                      "name":  "segoescb.ttf",
+                      "location":  "system",
+                      "sha256":  "6cd482205e1390b32a2b6327e1e5039424e346172c187074eac12006bc51935e"
+                  },
+                  {
+                      "name":  "segoeui.ttf",
+                      "location":  "system",
+                      "sha256":  "8134dbcd09e7b123c9a7f229d49cffbcb01352cc72ea5e1076b65d0dca9f73cd"
+                  },
+                  {
+                      "name":  "segoeuib.ttf",
+                      "location":  "system",
+                      "sha256":  "aeb9e4a6ec5cc59f4d72df8189032d7dbb28f45161cf1552174818b5465dac4e"
+                  },
+                  {
+                      "name":  "segoeuii.ttf",
+                      "location":  "system",
+                      "sha256":  "be525b9a6d307d73c23908cd269be9be754210a9d93c0c1eaaa126d2a174290a"
+                  },
+                  {
+                      "name":  "segoeuil.ttf",
+                      "location":  "system",
+                      "sha256":  "866557576dfc772395301b581eccef4c0daf1dbb75f9667f26784b260bce7da1"
+                  },
+                  {
+                      "name":  "segoeuisl.ttf",
+                      "location":  "system",
+                      "sha256":  "3432de66f335c7e3058154f7cbb13ef051195653a544b49b1992267e558b33ef"
+                  },
+                  {
+                      "name":  "segoeuiz.ttf",
+                      "location":  "system",
+                      "sha256":  "c886161fa6d102090ff992519b6fdc73057a0e838e9d40b27e187e9e61300a92"
+                  },
+                  {
+                      "name":  "seguibl.ttf",
+                      "location":  "system",
+                      "sha256":  "be191c94a0c7172870c3c87a136bd5aa67cdca7bc091de89242fb64ecb0f8fae"
+                  },
+                  {
+                      "name":  "seguibli.ttf",
+                      "location":  "system",
+                      "sha256":  "51d300301197dfb0621a8d8b275274d408dd15a7edda4cc4a8f7666504d582cd"
+                  },
+                  {
+                      "name":  "seguiemj.ttf",
+                      "location":  "system",
+                      "sha256":  "451df9bb5546055af625ff86aa72695df43e8e170b4c6c1316fe44e9c7a22f7c"
+                  },
+                  {
+                      "name":  "seguihis.ttf",
+                      "location":  "system",
+                      "sha256":  "a162ceeaf701b55d11c542daf1c39c52bfaf686496505bff2eb75ca24814c136"
+                  },
+                  {
+                      "name":  "seguili.ttf",
+                      "location":  "system",
+                      "sha256":  "3cb01ed58922781a62af14e738cd96023957f60d8d6733920a8808614f477dd8"
+                  },
+                  {
+                      "name":  "seguisb.ttf",
+                      "location":  "system",
+                      "sha256":  "2d9b22d71f72de2823fee5d9c8bc1b0fc32b2577c4c27b9ec6abdbb8df0e1731"
+                  },
+                  {
+                      "name":  "seguisbi.ttf",
+                      "location":  "system",
+                      "sha256":  "454295546b78810c95ffd7fc9d57890ed15a03b7cfd0d7e3485786400152b740"
+                  },
+                  {
+                      "name":  "seguisli.ttf",
+                      "location":  "system",
+                      "sha256":  "4dc2db1870047663878da07fa5f8217e518ef875c8ad33287fcbad6aba5a7e73"
+                  },
+                  {
+                      "name":  "seguisym.ttf",
+                      "location":  "system",
+                      "sha256":  "a4a35dcc62cd30e1a6c97b695ecef83e59d2b149e3af834f6a49f11851d56b37"
+                  },
+                  {
+                      "name":  "SegUIVar.ttf",
+                      "location":  "system",
+                      "sha256":  "27ca1ab4bd5ad3b0404ee6a9a03b143408dbd7e5a4c9e4b2054639c03fc0f682"
+                  },
+                  {
+                      "name":  "sere1255.fon",
+                      "location":  "system",
+                      "sha256":  "d71c345a39618c4b65e80fffff436b25117cc3714015669b8fc203c1075d5656"
+                  },
+                  {
+                      "name":  "sere1256.fon",
+                      "location":  "system",
+                      "sha256":  "9bf2e455a0ded1f56fdbf0468c35eb78717d378190e7a96a093d6f878ccc5f59"
+                  },
+                  {
+                      "name":  "sere1257.fon",
+                      "location":  "system",
+                      "sha256":  "fedd3963b48bf26e95beea23c378111e865f0f774b83cc4b0927c539de4951c9"
+                  },
+                  {
+                      "name":  "serf1255.fon",
+                      "location":  "system",
+                      "sha256":  "1e605cdde340353cf0f9ee05abaf0f90d8cf6d34b2080915e45adc91d6fe86b1"
+                  },
+                  {
+                      "name":  "serf1256.fon",
+                      "location":  "system",
+                      "sha256":  "d28f5f91888f1d1e34e2e3b859f318106d2ed7720a59c13c5e9a21d338c4c8ae"
+                  },
+                  {
+                      "name":  "serf1257.fon",
+                      "location":  "system",
+                      "sha256":  "9b517f0f2a9684062b08d1f0cf26fb394e20f780117c1bc4cd73d7c0304cefef"
+                  },
+                  {
+                      "name":  "serife.fon",
+                      "location":  "system",
+                      "sha256":  "19bfe5865332ca1f1392bf77950f79dbb7d9e5600f79bc546397567310364fe2"
+                  },
+                  {
+                      "name":  "serifee.fon",
+                      "location":  "system",
+                      "sha256":  "3aed0f6ec1e924e669df63b57619656c45814ae8f7bfa481066ccb291c3f8f5c"
+                  },
+                  {
+                      "name":  "serifeg.fon",
+                      "location":  "system",
+                      "sha256":  "2879c43e213bc99e95d1a21a5c4d63b30fd12e2b3cd87218173bf16a9b262365"
+                  },
+                  {
+                      "name":  "serifer.fon",
+                      "location":  "system",
+                      "sha256":  "ac683ecde85df79711dc5efa4367c94c1c6e7c6af7cbd983ab2b7de7d08bfaf2"
+                  },
+                  {
+                      "name":  "serifet.fon",
+                      "location":  "system",
+                      "sha256":  "ecd0b10493797ca6269c6fe2f6f56d3984e8e65c28f718643d61c133f8ba536a"
+                  },
+                  {
+                      "name":  "seriff.fon",
+                      "location":  "system",
+                      "sha256":  "03a22afa8a2eb02d21c601fa575ddcc9e0496a2658c1dc73b8029566dc432e00"
+                  },
+                  {
+                      "name":  "seriffe.fon",
+                      "location":  "system",
+                      "sha256":  "fcfa955ccd3b5c2b21d2222e3044f3db1a530547ec4386b3751ad9ba0516e3fb"
+                  },
+                  {
+                      "name":  "seriffg.fon",
+                      "location":  "system",
+                      "sha256":  "d28cea1b91dc6eb4c27f6a4e3a56fcab5a0a1666dbc2302a2acd7f5fdce2d96b"
+                  },
+                  {
+                      "name":  "seriffr.fon",
+                      "location":  "system",
+                      "sha256":  "47e4563bb47fe56480b6511888145734f84c89869d0ad1fea3bef12550bc3593"
+                  },
+                  {
+                      "name":  "serifft.fon",
+                      "location":  "system",
+                      "sha256":  "9677467feb714a89de457e262ff6647708b7de66127671b77f7e1e92aa0c2f41"
+                  },
+                  {
+                      "name":  "SHOWG.TTF",
+                      "location":  "system",
+                      "sha256":  "80cd2486979c2c18f9dd59277c0fd800959afa1ce23820dcf7bce31f208647af"
+                  },
+                  {
+                      "name":  "simsun.ttc",
+                      "location":  "system",
+                      "sha256":  "1526ac24375f51f6eb73bc2d3f8072dbe4a80a3a65217677c9d9a84f67dab2ab"
+                  },
+                  {
+                      "name":  "simsunb.ttf",
+                      "location":  "system",
+                      "sha256":  "2a476ca00b5fbbbc12a4c5335634722b11a495ed87429284325701f1e36b596a"
+                  },
+                  {
+                      "name":  "SimsunExtG.ttf",
+                      "location":  "system",
+                      "sha256":  "9cadcd0ab3d549446b51001d9896773d87ad012d93d842532f321eca514bffd8"
+                  },
+                  {
+                      "name":  "SitkaVF.ttf",
+                      "location":  "system",
+                      "sha256":  "9f71aabf76ccc757d25e18801d6a37e45cacc8b74c8b42a19e9f36ca99eef594"
+                  },
+                  {
+                      "name":  "SitkaVF-Italic.ttf",
+                      "location":  "system",
+                      "sha256":  "74d4b98aabe85e16cb2fa6583c93f9f17642234d030a38462c36d1bcdde65928"
+                  },
+                  {
+                      "name":  "smae1255.fon",
+                      "location":  "system",
+                      "sha256":  "409b927d6ce8940a7fc42e899518ae8a82ba2df165f9409d99b09a544415ab6c"
+                  },
+                  {
+                      "name":  "smae1256.fon",
+                      "location":  "system",
+                      "sha256":  "053eed809b2f3bbb473c3f34d5577b2b716f7fee43ac1b4a6cd2e1b91425074b"
+                  },
+                  {
+                      "name":  "smae1257.fon",
+                      "location":  "system",
+                      "sha256":  "a1aa44a0012e283913977349e1c632f3306291eba91063438fdafbc6e3dd0a18"
+                  },
+                  {
+                      "name":  "smaf1255.fon",
+                      "location":  "system",
+                      "sha256":  "c687fea5d8a8a28567323210e5cc868f7f54d72b2b4ab6b5cc8ac1f6a359acaa"
+                  },
+                  {
+                      "name":  "smaf1256.fon",
+                      "location":  "system",
+                      "sha256":  "0e183f677d1e8aabf78259d571c270a305353ef855ce3846b46bb0db484c8091"
+                  },
+                  {
+                      "name":  "smaf1257.fon",
+                      "location":  "system",
+                      "sha256":  "0d445e4012dffe708f817b9b2f5d347591c5c3e2343257dea358f9a09efb9b2b"
+                  },
+                  {
+                      "name":  "smalle.fon",
+                      "location":  "system",
+                      "sha256":  "de416395301da32c96bf34625483ea6ecdcdaaeb9ff72cdca00b5af4d7092da9"
+                  },
+                  {
+                      "name":  "smallee.fon",
+                      "location":  "system",
+                      "sha256":  "8d8ccfcce003de503f930ff9b564c75b8f044b04f61758390a5d7a48df583470"
+                  },
+                  {
+                      "name":  "smalleg.fon",
+                      "location":  "system",
+                      "sha256":  "000ce547b8d2ae7eefb656f3ee12de2bb55ea14b5e038ca7d85609d7aceaf06e"
+                  },
+                  {
+                      "name":  "smaller.fon",
+                      "location":  "system",
+                      "sha256":  "eef58552bd1965bdeaebc5c2b351267ced97932c6176cf2995027cf063ab5175"
+                  },
+                  {
+                      "name":  "smallet.fon",
+                      "location":  "system",
+                      "sha256":  "f58d2503d687451ff63c0e14f8bac21a3392e99ad2f1b28ee687ded017602a73"
+                  },
+                  {
+                      "name":  "smallf.fon",
+                      "location":  "system",
+                      "sha256":  "371c8f75993177f8ffbba9e6ba0b910ec5c88ee2f8edba23b3e08a20f861dcb3"
+                  },
+                  {
+                      "name":  "smallfe.fon",
+                      "location":  "system",
+                      "sha256":  "05a44b4aa110356e3a01d86934810ed17b5fe3f78fe7ee587b48e4f12c4d04ea"
+                  },
+                  {
+                      "name":  "smallfg.fon",
+                      "location":  "system",
+                      "sha256":  "0426a1c4864fa355f269659dcf43fecbec844feb4bce1689ac05077b69953652"
+                  },
+                  {
+                      "name":  "smallfr.fon",
+                      "location":  "system",
+                      "sha256":  "4f24ab635890d31f6ccad984754b7ae153e1634d11df7625615ad40c2b547a47"
+                  },
+                  {
+                      "name":  "smallft.fon",
+                      "location":  "system",
+                      "sha256":  "ee2276481d638f38af68cd4ba2c6a573b803692e96aa57057d0960de59d64000"
+                  },
+                  {
+                      "name":  "SNAP____.TTF",
+                      "location":  "system",
+                      "sha256":  "b9e8a921cc54334132052f880fc1b8b236cb6f41b1cfa4618ea399014e6cea4d"
+                  },
+                  {
+                      "name":  "ssee1255.fon",
+                      "location":  "system",
+                      "sha256":  "a4fb1ca3b12da7856222f4225cd97cfbb4560d35f4ba4552b016c6105359f1db"
+                  },
+                  {
+                      "name":  "ssee1256.fon",
+                      "location":  "system",
+                      "sha256":  "ac5cd31797c5a43e0af855bcabbe140e77dce6517e0bb25434e6644feff02495"
+                  },
+                  {
+                      "name":  "ssee1257.fon",
+                      "location":  "system",
+                      "sha256":  "293ff761817f2c94585de089eb5d35ac8f83a2edfb086e2bc233fcc9a1b9d360"
+                  },
+                  {
+                      "name":  "ssee874.fon",
+                      "location":  "system",
+                      "sha256":  "501e4bd0483d4547652c00fddebf5d083c628208d93b9a2334acfb361a2f9859"
+                  },
+                  {
+                      "name":  "ssef1255.fon",
+                      "location":  "system",
+                      "sha256":  "3f769abf418cd7552ef4af292499797ea55d32e04ab52442a74c614655c03bf4"
+                  },
+                  {
+                      "name":  "ssef1256.fon",
+                      "location":  "system",
+                      "sha256":  "ea700c6429ff4fc8740c58a06f468f4dcd675c076159236c2edc3fbf0b6b0af3"
+                  },
+                  {
+                      "name":  "ssef1257.fon",
+                      "location":  "system",
+                      "sha256":  "6ad05b5dafe23e41a2e914089e32b73ef1dad3cd0afce01a7e47fcf1097589ec"
+                  },
+                  {
+                      "name":  "ssef874.fon",
+                      "location":  "system",
+                      "sha256":  "2368fd123e0e7d379677728b36fb4b5c18b1b4aaef09dc928ee1a8ee1b285ef1"
+                  },
+                  {
+                      "name":  "sserife.fon",
+                      "location":  "system",
+                      "sha256":  "28877eee4ccda2a33e0fac39da7f3effdea061e4fd9cc019f00d82405b9f9682"
+                  },
+                  {
+                      "name":  "sserifee.fon",
+                      "location":  "system",
+                      "sha256":  "b99ad27d296e74fd6dc795c524f3312f41d0b2ec5ce88554511fd7b3dba2d4c7"
+                  },
+                  {
+                      "name":  "sserifeg.fon",
+                      "location":  "system",
+                      "sha256":  "cba1d43181b319d7556fa4c096cf5d9a938e9efa212ee77b56db980c7c50b5d4"
+                  },
+                  {
+                      "name":  "sserifer.fon",
+                      "location":  "system",
+                      "sha256":  "0f94a8f3b69ad0dedaee83700aad8f46b30388a4acf7f4374a1db861eb5f2efd"
+                  },
+                  {
+                      "name":  "sserifet.fon",
+                      "location":  "system",
+                      "sha256":  "85e70eacb8c73a048b09ef2712eddbc0ad2ea19a9d7b73649c7e5ef175674a68"
+                  },
+                  {
+                      "name":  "sseriff.fon",
+                      "location":  "system",
+                      "sha256":  "3c71cc8c20932ff14d89b4489bc83f2fb015d134db0e537e859a80af34d7b242"
+                  },
+                  {
+                      "name":  "sseriffe.fon",
+                      "location":  "system",
+                      "sha256":  "c6d83ab1031fa3fdaaa4bf0949f99037fb1047942e59d18e4250c71a73260805"
+                  },
+                  {
+                      "name":  "sseriffg.fon",
+                      "location":  "system",
+                      "sha256":  "681dc459995971c67bb56c2072caa5fa4ca3cff83dab55f2f06cd49591318ac0"
+                  },
+                  {
+                      "name":  "sseriffr.fon",
+                      "location":  "system",
+                      "sha256":  "770ee7e6b277155fbe0ad0c6f5c8365b16cbf7f7cd86c89ad1f04e0d81695558"
+                  },
+                  {
+                      "name":  "sserifft.fon",
+                      "location":  "system",
+                      "sha256":  "a19e0d490ae390c8b9d788ffc1221887bdc5a9be5343e3cb0be1ccd5cef0ad00"
+                  },
+                  {
+                      "name":  "STENCIL.TTF",
+                      "location":  "system",
+                      "sha256":  "5d53b38fa8ff33d15676cdcd78b261681bfda861c449b4f7ddfd7574a5c11e18"
+                  },
+                  {
+                      "name":  "svgafix.fon",
+                      "location":  "system",
+                      "sha256":  "3a25851cb69c03c7b48e5d23e92d4e85a99e91cd0f5151593163767d1bc9a34d"
+                  },
+                  {
+                      "name":  "svgasys.fon",
+                      "location":  "system",
+                      "sha256":  "6b16818c057024f588f4f423cb1f50d24e092fca3c9b5c8c1943cf5b3ea70759"
+                  },
+                  {
+                      "name":  "sylfaen.ttf",
+                      "location":  "system",
+                      "sha256":  "ac278d932d59558a76817e98051b1dae53867aa81ad83e5198b1b4c4b8066a08"
+                  },
+                  {
+                      "name":  "symbol.ttf",
+                      "location":  "system",
+                      "sha256":  "bbf1192965e5266fbf23370416337d2861fc1e8bd349def93f2994ba67382fc3"
+                  },
+                  {
+                      "name":  "tahoma.ttf",
+                      "location":  "system",
+                      "sha256":  "9af03d4ad44a3b413d92f7de48b94aa7cc8a1471a75d498406eae837f62ee1d1"
+                  },
+                  {
+                      "name":  "tahomabd.ttf",
+                      "location":  "system",
+                      "sha256":  "b16ed1a15e0cabea8d41d9f8899c253cd61ac466af5e3980d02bd0cf311c2267"
+                  },
+                  {
+                      "name":  "taile.ttf",
+                      "location":  "system",
+                      "sha256":  "f5151d081f6afea4c26464e0cd5e695f57a99209cfeea2f483c3108684660eb6"
+                  },
+                  {
+                      "name":  "taileb.ttf",
+                      "location":  "system",
+                      "sha256":  "1878842d8dbdf8489794af0bace95a956db270dfa506ddcaabf94fa827b769ac"
+                  },
+                  {
+                      "name":  "TCB_____.TTF",
+                      "location":  "system",
+                      "sha256":  "64df8ce11b656bdda3e35275b83dec7c40fc8a0a73d8a921918fb99b538f62d0"
+                  },
+                  {
+                      "name":  "TCBI____.TTF",
+                      "location":  "system",
+                      "sha256":  "4fee7243ffb931f65713de0537a145f6aa1e7302c8398fea68c4864d41e7fd98"
+                  },
+                  {
+                      "name":  "TCCB____.TTF",
+                      "location":  "system",
+                      "sha256":  "b068cd471c07907a772b6f39a415d33d6328d32d1ea0032be9a717cb4b80b254"
+                  },
+                  {
+                      "name":  "TCCEB.TTF",
+                      "location":  "system",
+                      "sha256":  "9e8a6af516706030b8536b2ea6535664cd9bea916fb15304556d8139a6945ff9"
+                  },
+                  {
+                      "name":  "TCCM____.TTF",
+                      "location":  "system",
+                      "sha256":  "73655bc3a86553ea1d76df8c8eed0e8d0daebc797aba885cde99833ffe9545dd"
+                  },
+                  {
+                      "name":  "TCM_____.TTF",
+                      "location":  "system",
+                      "sha256":  "10df71cef84ae0d7031d7ffa072b185343365be0e59bec4ac231e7c77811584b"
+                  },
+                  {
+                      "name":  "TCMI____.TTF",
+                      "location":  "system",
+                      "sha256":  "3ffa539609563836dc5546f473f6e7a3b7e4c9f7ba5876522925a980ab87fd7f"
+                  },
+                  {
+                      "name":  "TEMPSITC.TTF",
+                      "location":  "system",
+                      "sha256":  "1b20b818be881cf16e711daf7e3c44be66a93b581bcd7b580a4423f18595fb35"
+                  },
+                  {
+                      "name":  "times.ttf",
+                      "location":  "system",
+                      "sha256":  "931c5de5c70401d9324d5014c123802b4fb753000360ceb2f56c589403cd58c5"
+                  },
+                  {
+                      "name":  "timesbd.ttf",
+                      "location":  "system",
+                      "sha256":  "54fbe2c70af7c85a97bed0573227e3ccc4b2486012e3ca2a40c6bc77065846f5"
+                  },
+                  {
+                      "name":  "timesbi.ttf",
+                      "location":  "system",
+                      "sha256":  "3a29d114cb5229e8dbda5bef6c69be4a210a13b7277de4d66e9fc86963226f6c"
+                  },
+                  {
+                      "name":  "timesi.ttf",
+                      "location":  "system",
+                      "sha256":  "e7f7a88b65188328aea58670f955022e23c712f55679524729da1e4e03c49d88"
+                  },
+                  {
+                      "name":  "trebuc.ttf",
+                      "location":  "system",
+                      "sha256":  "fe3e8bdd64c1c9f3b9cf5189d06510c80d72cec28e03d04bffc560f77eec58d1"
+                  },
+                  {
+                      "name":  "trebucbd.ttf",
+                      "location":  "system",
+                      "sha256":  "dfcc306777a594d2815368547dd897e2ac82aff8073e55d9e682569939e49b81"
+                  },
+                  {
+                      "name":  "trebucbi.ttf",
+                      "location":  "system",
+                      "sha256":  "87942234ab0cc4400088648bef8d1f7afc4c44e676c7ed6b32ca31462c18307d"
+                  },
+                  {
+                      "name":  "trebucit.ttf",
+                      "location":  "system",
+                      "sha256":  "9c9dc0cd0fd6b1a06e8f406d04bb15a88aaf20328d3e166c12d6bc7994b781d2"
+                  },
+                  {
+                      "name":  "verdana.ttf",
+                      "location":  "system",
+                      "sha256":  "6a8481fe107ee547893c018b13dba291c2020bec3de5da6525d9ac09f6bc2105"
+                  },
+                  {
+                      "name":  "verdanab.ttf",
+                      "location":  "system",
+                      "sha256":  "f3245f5f38f61bd1ceefb0f1338a5b88a21e6220832c2f43a38bbc7e1547c36f"
+                  },
+                  {
+                      "name":  "verdanai.ttf",
+                      "location":  "system",
+                      "sha256":  "14f2ebcdaa1b77e5993a8533662e4bd3ebfe2c5771b6daafd8ccb39b2ad588b9"
+                  },
+                  {
+                      "name":  "verdanaz.ttf",
+                      "location":  "system",
+                      "sha256":  "d71f81c83ec63eaa32d36d5df7be1d9e71d3ea9150f47cebda2924923cbbf18a"
+                  },
+                  {
+                      "name":  "vga737.fon",
+                      "location":  "system",
+                      "sha256":  "03814e56747dccc2e4cfdcdae396e20a38a78eaf87f0ed0cd0d88e5fc3db0bbf"
+                  },
+                  {
+                      "name":  "vga775.fon",
+                      "location":  "system",
+                      "sha256":  "ba97bc035bfceb4c046ebe2c344fdd4e49154d1dd540dc019fb0d49cbbd1943f"
+                  },
+                  {
+                      "name":  "vga850.fon",
+                      "location":  "system",
+                      "sha256":  "59458279c5338248379476102a61ced0afa566f3ce1d0eaa0f75e25667cd60cb"
+                  },
+                  {
+                      "name":  "vga852.fon",
+                      "location":  "system",
+                      "sha256":  "fc00005ff7b93f5260cdd56fee9f8a06be02391c44aaa4ea4a23c27501375304"
+                  },
+                  {
+                      "name":  "vga855.fon",
+                      "location":  "system",
+                      "sha256":  "4ca5d19a01d4564b698d0ae41f4577b1e1834b1558801f9a3172e4a02c6b8c1a"
+                  },
+                  {
+                      "name":  "vga857.fon",
+                      "location":  "system",
+                      "sha256":  "12cd95b177f807e9a1c42a0dff4224350d4dd16ba117205d3e410ce346d308a8"
+                  },
+                  {
+                      "name":  "vga860.fon",
+                      "location":  "system",
+                      "sha256":  "598e54796e4301ce4565f3a5629aa96a2d97b0de601e1dff3018c31646199b00"
+                  },
+                  {
+                      "name":  "vga861.fon",
+                      "location":  "system",
+                      "sha256":  "d993d125fb4b79a116690efcf80c80a986e5d9103521d8ca10d6da00a0eb47e9"
+                  },
+                  {
+                      "name":  "vga863.fon",
+                      "location":  "system",
+                      "sha256":  "91e1f5975ad37bbf431306f8743d6fdfa173594b5f110cff0fe360f1656facdf"
+                  },
+                  {
+                      "name":  "vga865.fon",
+                      "location":  "system",
+                      "sha256":  "33e756a24027a878090fff68702d84b9615490e1e3e5e719417bc85c2a824a59"
+                  },
+                  {
+                      "name":  "vga866.fon",
+                      "location":  "system",
+                      "sha256":  "1d714e4fe2aefb9faaef0cd27d79aa1077983f46fcf202f9e8686c6e7f3b68fe"
+                  },
+                  {
+                      "name":  "vga869.fon",
+                      "location":  "system",
+                      "sha256":  "e398552e1514119ef20cac3e6be3baa27411b086d61fe34a7fc20494dd5f39fe"
+                  },
+                  {
+                      "name":  "vga932.fon",
+                      "location":  "system",
+                      "sha256":  "477213515baaa22b0ffee373e885cc5def232164f14d734212a4c409b2805701"
+                  },
+                  {
+                      "name":  "vga936.fon",
+                      "location":  "system",
+                      "sha256":  "ff823b1114dd9b1a53a84f6741054397587d52c657cdacdb6c63e93bdd45482e"
+                  },
+                  {
+                      "name":  "vga949.fon",
+                      "location":  "system",
+                      "sha256":  "de4f6aef61a4798fcc2c13a093e0709dcb14c4fef43b7f27fbc9ca50ea82fbfb"
+                  },
+                  {
+                      "name":  "vga950.fon",
+                      "location":  "system",
+                      "sha256":  "e0e62f368c03e50e38e74c706bcb3a287e844fab4ed11e7c2c425bff7afbb5e3"
+                  },
+                  {
+                      "name":  "vgaf1255.fon",
+                      "location":  "system",
+                      "sha256":  "23855e29f60dc2cc50279a3dd2a5e3aa376b1f4504a1c48132d82e4f33960888"
+                  },
+                  {
+                      "name":  "vgaf1256.fon",
+                      "location":  "system",
+                      "sha256":  "766b20cd7a4c905b91eea6d0782e71b852caa1531a6a1fc43921943d95f6aa8e"
+                  },
+                  {
+                      "name":  "vgaf1257.fon",
+                      "location":  "system",
+                      "sha256":  "dfe8ae7a64bb0a97d726806d654348671cae5a2c38060ac8891e31bf5ce1c80a"
+                  },
+                  {
+                      "name":  "vgaf874.fon",
+                      "location":  "system",
+                      "sha256":  "9ae1c525224824cbb209b46c64d19cfac121f1bee266a9924ec5319f7ea45295"
+                  },
+                  {
+                      "name":  "vgafix.fon",
+                      "location":  "system",
+                      "sha256":  "57402d1e89dc0d8368cde612d720ab4a6a813bfe5e243e9da2775013e06f2b0f"
+                  },
+                  {
+                      "name":  "vgafixe.fon",
+                      "location":  "system",
+                      "sha256":  "496b3a671d898d7f451831168af63160c7bdeea47d6ef023fa7da0943744d355"
+                  },
+                  {
+                      "name":  "vgafixg.fon",
+                      "location":  "system",
+                      "sha256":  "f6d59963f752047509b8821da16f2dcf5e484a45a03961ded29a4147ef634e79"
+                  },
+                  {
+                      "name":  "vgafixr.fon",
+                      "location":  "system",
+                      "sha256":  "e06a71bfce25ffa6a93bcfa6f380484c88a992fc1282fb4f1f5a23fe6cc781d0"
+                  },
+                  {
+                      "name":  "vgafixt.fon",
+                      "location":  "system",
+                      "sha256":  "bbeb8b92164fce63cb835f59ba1ff554a0e30edf813d30477a44721030fba3f4"
+                  },
+                  {
+                      "name":  "vgaoem.fon",
+                      "location":  "system",
+                      "sha256":  "011326f65e151d83c157ef6fdd23a2d851e8d0f2662d8409ea0b4a142e343a13"
+                  },
+                  {
+                      "name":  "vgas1255.fon",
+                      "location":  "system",
+                      "sha256":  "99f5c10e733a41a701f34969c5062932afcad780b8d1728c706ce2882b2b6cf5"
+                  },
+                  {
+                      "name":  "vgas1256.fon",
+                      "location":  "system",
+                      "sha256":  "9d9ad93cf4c0047f55e1e53183f65ba7b033988de119a92dcd21b9fc375d2f33"
+                  },
+                  {
+                      "name":  "vgas1257.fon",
+                      "location":  "system",
+                      "sha256":  "1daf098793b273f29ebe5b358ab0bdb158f560ccde26a5dd1db7b7f9c8dbbc76"
+                  },
+                  {
+                      "name":  "vgas874.fon",
+                      "location":  "system",
+                      "sha256":  "5f65c9a7bcf68c5eaa5fcd11a48ce27be79360efb5a7c6ab7def24c9138fef94"
+                  },
+                  {
+                      "name":  "vgasys.fon",
+                      "location":  "system",
+                      "sha256":  "7baefa14ef8ef2355374d0b5061043dd5f4f8c33ff57680366e4a725f91646f8"
+                  },
+                  {
+                      "name":  "vgasyse.fon",
+                      "location":  "system",
+                      "sha256":  "ff5bc967c1a565f42bb0a02f43aeb7e5c2333cafa5b75e7a3339cf1aaa5883bd"
+                  },
+                  {
+                      "name":  "vgasysg.fon",
+                      "location":  "system",
+                      "sha256":  "868bb859fa5a5ddb4027b1c8e7b6071fbccb62ad9608ee7b56583ba3b705d823"
+                  },
+                  {
+                      "name":  "vgasysr.fon",
+                      "location":  "system",
+                      "sha256":  "f90c3a12a0a1adacf59aefa20e7020478b3b38fef15bd4e1495a98750b3f57a3"
+                  },
+                  {
+                      "name":  "vgasyst.fon",
+                      "location":  "system",
+                      "sha256":  "824ea3f5eabd9c3b8e0041e78935feb65545f58760ce0c47a0d938ad75f8e241"
+                  },
+                  {
+                      "name":  "VINERITC.TTF",
+                      "location":  "system",
+                      "sha256":  "2bbb4cafa0c5767155971e7bc578483478351a36e55d035450e50b468422a962"
+                  },
+                  {
+                      "name":  "VIVALDII.TTF",
+                      "location":  "system",
+                      "sha256":  "13cc1cc1ed4b8192f1840291863551afa3d950f01110a8fc3127dca744740a1b"
+                  },
+                  {
+                      "name":  "VLADIMIR.TTF",
+                      "location":  "system",
+                      "sha256":  "ede635464683ba465c949d7dd6894f9dff49a76229618cb0b73e0c85b93e4169"
+                  },
+                  {
+                      "name":  "webdings.ttf",
+                      "location":  "system",
+                      "sha256":  "67461fabd8329d0d8ad62689cac642b34fac81c754ff9077ad211160ec62282d"
+                  },
+                  {
+                      "name":  "wingding.ttf",
+                      "location":  "system",
+                      "sha256":  "9bcd6064e3b52fa30a347edd6e82506e2ec8b1602930b423c629a82c10468a5b"
+                  },
+                  {
+                      "name":  "WINGDNG2.TTF",
+                      "location":  "system",
+                      "sha256":  "fa671b6fddedd57f158ab90b6aa6a7c33db6f41ab620db72b7ad1e57c38bda5f"
+                  },
+                  {
+                      "name":  "WINGDNG3.TTF",
+                      "location":  "system",
+                      "sha256":  "ac9ee085920a3d8b076d5e0c61dc9df42c4bac28d1fc968344f9ceddb3972f69"
+                  },
+                  {
+                      "name":  "YuGothB.ttc",
+                      "location":  "system",
+                      "sha256":  "d923a57f781f06198167da4f58287be7ac64a954a47aff4295e078a42b4b68b2"
+                  },
+                  {
+                      "name":  "YuGothL.ttc",
+                      "location":  "system",
+                      "sha256":  "0acf409fc61e1560ea0384f8c72bf87c6fa7282077420657979680ee21dad2a4"
+                  },
+                  {
+                      "name":  "YuGothM.ttc",
+                      "location":  "system",
+                      "sha256":  "cb2021bbfe40b21ec564848b8d702125661594e1b4f1eb2e77fd8a98b485cf19"
+                  },
+                  {
+                      "name":  "YuGothR.ttc",
+                      "location":  "system",
+                      "sha256":  "cd24b5617c1e26572b0a7fe7e558f7121ca42c36f7b50e8d9216ac222a1c0a93"
+                  },
+                  {
+                      "name":  "ZWAdobeF.TTF",
+                      "location":  "system",
+                      "sha256":  "702c26b7b053d0c8bf79adcdaece1f3483281710a0d2ed97c4a725787c850df8"
+                  },
+                  {
+                      "name":  "Arimo-Bold.ttf",
+                      "location":  "user",
+                      "sha256":  "0bb1b6cc212f8ea483ba088c8cd77585982a7d8b9258265476328c7f25ada6d5"
+                  }
+              ],
+    "references":  [
+                       {
+                           "name":  "halftone-mixed-engine.json.gz",
+                           "sha256":  "62a0b4a5053ef9733a94d6a6c7ab12cd26331b4f4095061f3de0502a0a78030f"
+                       }
+                   ]
+}

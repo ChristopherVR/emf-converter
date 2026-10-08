@@ -79,20 +79,14 @@ describe('native HALFTONE filtered enlargements', () => {
 		for (const c of group) expect(run(c).pixels, c.id).toBe(0);
 	});
 
-	it('reproduces an enlargement of one axis (the other keeps its size) by the 1-D sharpen and the kernel table', () => {
+	it('reproduces an enlargement of one axis (the other keeps its size) by the 1-D sharpen and the kernel formula', () => {
+		// All nine, including 64 x 41 (a 1.025x axis), which missed three values by one level with the old kernel table.
 		let exact = 0;
 		for (const c of cases.filter(x => x.group === 'oneaxis')) {
-			const { values, maximum } = run(c);
-			// 64 x 41 (a 1.025x axis) misses three values by one level: the kernel table is a share off there.
-			if (c.id === 'oneaxis-64x41') {
-				expect(values, c.id).toBeLessThanOrEqual(3);
-				expect(maximum, c.id).toBeLessThanOrEqual(1);
-			} else {
-				expect(values, c.id).toBe(0);
-				exact++;
-			}
+			expect(run(c).values, c.id).toBe(0);
+			exact++;
 		}
-		expect(exact).toBe(8);
+		expect(exact).toBe(9);
 	});
 
 	it('reproduces mirrored blits as the mirror image of the unmirrored one', () => {
