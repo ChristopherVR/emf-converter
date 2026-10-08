@@ -7,42 +7,13 @@ import { halftoneBranch } from './emf-gdi-halftone-branch';
 
 interface Capture { sw: number; sh: number; pattern: number; scale: number; mode: number; dib: boolean; input: string; output: string }
 const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/halftone-selection.json.gz', import.meta.url))).toString());
-// Strict RGB residual ceilings [pixels, largest channel error, total channel error]
-// in generator order: one row per source pattern, both scales/three adjustments/two APIs.
-// Every zero triplet pins an exact control. The nonzero triplets are the 3x controls of the
-// sources that take the filtered branch (halftoneBranch): the filtered branch is only
-// reproduced for an exact 2x enlargement, so the 3x stretch still replicates them.
-const ceilings: number[][] = [
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [23359,96,564210], [23359,96,564210], [22149,158,795876], [22149,158,795876], [21805,129,451398], [21805,129,451398],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [24254,96,568314], [24254,96,568314], [22602,158,800928], [22602,158,800928], [22656,129,455562], [22656,129,455562],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [19035,96,557820], [19035,96,557820], [18407,158,790692], [18407,158,790692], [18151,129,444426], [18151,129,444426],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [16929,55,229242], [16929,55,229242], [16869,105,449562], [16869,105,449562], [14428,46,119172], [14428,46,119172],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [36862,74,2693639], [36862,74,2693639], [36862,136,3396006], [36862,136,3396006], [36860,71,2269254], [36860,71,2269254],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [36863,131,3004486], [36863,131,3004486], [36863,187,3713177], [36863,187,3713177], [36863,134,2548669], [36863,134,2548669],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [36863,127,3121480], [36863,127,3121480], [36862,184,3735219], [36862,184,3735219], [36863,134,2702829], [36863,134,2702829],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [36863,127,3516409], [36863,127,3516409], [36862,184,4253495], [36862,184,4253495], [36863,128,3018577], [36863,128,3018577],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-	[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0],
-];
-
 describe('native HALFTONE enlargement selection controls', () => {
 	it('retains 240 captures with identical geometry across source-content variations', () => {
 		expect(captures).toHaveLength(240);
-		expect(ceilings).toHaveLength(240);
 		for (const c of captures) expect([c.sw, c.sh]).toEqual([256, 16]);
 	});
 
-	it('reproduces all 192 controls of the 2x stretches exactly and keeps individual ceilings for the 48 filtered 3x controls', () => {
+	it('reproduces all 240 controls exactly: the 2x and 3x stretches, replicated or filtered, with and without a colour adjustment', () => {
 		let exact = 0;
 		for (let caseIndex = 0; caseIndex < captures.length; caseIndex++) {
 			const c = captures[caseIndex];
@@ -65,12 +36,12 @@ describe('native HALFTONE enlargement selection controls', () => {
 				maximum = Math.max(maximum, difference);
 			}
 			const label = `pattern ${c.pattern}, scale ${c.scale}, adjustment ${c.mode}, DIB ${c.dib}`;
-			expect(pixels, label).toBeLessThanOrEqual(ceilings[caseIndex][0]);
-			expect(maximum, label).toBeLessThanOrEqual(ceilings[caseIndex][1]);
-			expect(sum, label).toBeLessThanOrEqual(ceilings[caseIndex][2]);
-			if (!ceilings[caseIndex][0]) exact++;
+			expect(pixels, label).toBe(0);
+			expect(maximum, label).toBe(0);
+			expect(sum, label).toBe(0);
+			exact++;
 		}
-		expect(exact).toBe(192);
+		expect(exact).toBe(240);
 	});
 
 	it('selects the branch of every control from the source alone', () => {

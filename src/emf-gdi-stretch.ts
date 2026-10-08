@@ -586,60 +586,209 @@ function halftoneReduceBoth(rect: Int32Array, sw: number, sh: number, dw: number
 }
 
 /**
- * The filtered branch of an exact 2x HALFTONE enlargement of both axes (what
- * {@link halftoneBranch} selects for sources with enough colours): the source
- * is sharpened ({@link halftoneSharpen}'s kernel) and every destination pixel
- * interpolates the sharpened samples 3/4 : 1/4 along each axis, vertical
- * first with the intermediate rounded half up. Vertically the source is
- * extended by a replicated row above and below *before* sharpening, so the
- * outer destination rows interpolate between the sharpened edge row and that
- * extension row sharpened against replicated neighbours; horizontally the
- * edge column is simply replicated after sharpening. Pixel-exact for every one
- * of the 80 native 2x captures that took this branch (`halftone-boundary`,
- * `halftone-selection`, `halftone-arrangement`, all colour adjustments and
- * both APIs).
+ * Interpolation weights of the filtered enlargement by a whole factor of 2 to 5
+ * (one row per destination phase: the weights of the source samples before,
+ * at and after the destination pixel's source pixel, then their sum). Recovered
+ * from native impulse and random-profile responses (every phase of every factor
+ * reproduces thousands of samples exactly with a single rounding half up of
+ * `sum(w * s) / sum`); factors above 5 use {@link halftoneEnlargeTaps}.
+ */
+const FILTER_WEIGHTS: Record<number, number[][]> = {
+	2: [[4, 12, 0, 16], [0, 12, 4, 16]],
+	3: [[6, 10, 0, 16], [1, 14, 1, 16], [0, 10, 6, 16]],
+	4: [[6, 10, 0, 16], [3, 12, 1, 16], [1, 12, 3, 16], [0, 10, 6, 16]],
+	5: [[13, 19, 0, 32], [6, 25, 1, 32], [3, 26, 3, 32], [1, 25, 6, 32], [0, 19, 13, 32]],
+};
+
+/**
+ * Exact weights (shares of 8192, rows for the source samples before, at and after) of the
+ * larger whole factors where {@link halftoneEnlargeTaps} misses a share or two. Each row is
+ * the unique integer solution of thousands of native random-profile samples per phase
+ * (the cumulative round-up shares the kernel table is integerised with); factors 6 to 8, 12 and 14
+ * agree with the table exactly.
+ */
+const FILTER_TABLE_FACTORS: Record<number, number[][]> = {
+	9: [[3627, 4565, 0], [2763, 5387, 42], [1976, 6063, 153], [1271, 6569, 352], [651, 6891, 650], [353, 6569, 1270], [154, 6063, 1975], [43, 5387, 2762], [0, 4566, 3626]],
+	10: [[3675, 4517, 0], [2891, 5269, 32], [2170, 5903, 119], [1515, 6405, 272], [926, 6763, 503], [504, 6763, 925], [273, 6405, 1514], [120, 5903, 2169], [33, 5269, 2890], [0, 4518, 3674]],
+	11: [[3712, 4480, 0], [2994, 5173, 25], [2327, 5771, 94], [1713, 6262, 217], [1154, 6637, 401], [654, 6885, 653], [402, 6637, 1153], [218, 6262, 1712], [95, 5771, 2326], [26, 5173, 2993], [0, 4481, 3711]],
+	13: [[3771, 4421, 0], [3156, 5019, 17], [2578, 5551, 63], [2038, 6009, 145], [1536, 6388, 268], [1075, 6681, 436], [655, 6883, 654], [437, 6681, 1074], [269, 6388, 1535], [146, 6009, 2037], [64, 5551, 2577], [18, 5019, 3155], [0, 4422, 3770]],
+	15: [[3815, 4377, 0], [3278, 4902, 12], [2768, 5380, 44], [2286, 5804, 102], [1834, 6169, 189], [1410, 6474, 308], [1017, 6712, 463], [655, 6881, 656], [464, 6712, 1016], [309, 6474, 1409], [190, 6169, 1833], [103, 5804, 2285], [45, 5380, 2767], [13, 4902, 3277], [0, 4378, 3814]],
+	16: [[3832, 4360, 0], [3328, 4854, 10], [2847, 5307, 38], [2391, 5714, 87], [1960, 6070, 162], [1555, 6373, 264], [1176, 6620, 396], [825, 6807, 560], [561, 6807, 824], [397, 6620, 1175], [265, 6373, 1554], [163, 6070, 1959], [88, 5714, 2390], [39, 5307, 2846], [11, 4854, 3327], [0, 4361, 3831]],
+};
+
+/** Whether {@link halftoneFilterEnlarge} reproduces an enlargement from `w` x `h` to `W` x `H`. */
+export function halftoneFilterSupported(w: number, h: number, W: number, H: number): boolean {
+	if (w <= 0 || h <= 0 || W <= w || H <= h) return false;
+	const whole = (src: number, dst: number): boolean => dst % src === 0 && dst / src <= 5;
+	if (whole(w, W) && whole(h, H)) return true;
+	return W > 5 * w || H > 5 * h;
+}
+
+/**
+ * Quantises the source of a filtered enlargement with the ordered dither of a
+ * combined colour adjustment (see {@link ditherPixels}). The engine of the
+ * whole-factor enlargements up to 5x, which extends the source by a replicated
+ * row above, runs its pattern two rows further down than the engine of the
+ * larger ratios and of the replicated branch (measured on native captures).
+ */
+function ditherFilteredSource(rect: Int32Array, SW: number, SH: number, W: number, H: number, dither: HalftoneDither, flipY: boolean): Int32Array {
+	if (W > 5 * SW || H > 5 * SH) {
+		// One further row below the source is dithered as well: the last row is sharpened against it.
+		const further = new Int32Array((SH + 1) * SW * 3);
+		further.set(rect);
+		further.set(rect.subarray((SH - 1) * SW * 3), SH * SW * 3);
+		ditherPixels(further, SW, SH + 1, dither, false, false, undefined,
+			Int32Array.from({ length: SH + 1 }, (_, j) => (flipY ? H - 1 - j : j)));
+		return further;
+	}
+	// The extension rows are the first and last row replicated, dithered like any other row.
+	const extended = new Int32Array((SH + 2) * SW * 3);
+	extended.set(rect.subarray(0, SW * 3), 0);
+	extended.set(rect, SW * 3);
+	extended.set(rect.subarray((SH - 1) * SW * 3), (SH + 1) * SW * 3);
+	ditherPixels(extended, SW, SH + 2, { startX: dither.startX, startY: (dither.startY + (flipY ? 63 : 2)) % 65 }, false, false, undefined,
+		Int32Array.from({ length: SH + 2 }, (_, e) => (flipY ? H - e : e - 1)));
+	return extended;
+}
+
+/**
+ * The filtered branch of a HALFTONE enlargement of both axes (what
+ * {@link halftoneBranch} selects for sources with enough colours). The source
+ * is sharpened ({@link halftoneSharpen}'s kernel), then each axis interpolates
+ * the sharpened samples. Two engines were separated by native captures:
+ *
+ * - Both axes enlarged by whole factors of 2 to 5: vertical first, a rounded
+ *   (half up) 8-bit intermediate, then horizontal; the weights are
+ *   {@link FILTER_WEIGHTS}. Vertically the source is extended by a replicated
+ *   row above and below *before* sharpening, so the outer destination rows
+ *   interpolate between the sharpened edge row and that extension row
+ *   sharpened against replicated neighbours; horizontally the edge column is
+ *   simply replicated after sharpening.
+ * - Either axis enlarged by more than 5x (also by a fraction): horizontal
+ *   first, the sharpened source clamped at its edges with no extension row, the
+ *   weights {@link halftoneEnlargeTaps} (13-bit shares of the older kernel
+ *   table, except an exact 2x axis, which stays the 3:1 linear weights),
+ *   the intermediate rounded half up. Exact for 6x to 8x and 12x; the table
+ *   misses a few weights by a share for factors such as 9x and 10x and for
+ *   ratios just above 5.
+ *
+ * Callers check {@link halftoneFilterSupported} first. Pixel-exact for every
+ * native capture that took the filtered branch (`halftone-boundary`,
+ * `halftone-selection`, `halftone-arrangement`, `halftone-filtered`).
  *
  * @param rgb RGB triples, `w` x `h`; unchanged.
- * @returns RGB triples, `2w` x `2h`.
+ * @param extended For the whole-factor engine only: the source with its extension rows already
+ *   present (`h + 2` rows, the first and last being the rows above and below), used instead of
+ *   replicating the edge rows (they are dithered on their own under a combined adjustment).
+ * @returns RGB triples, `W` x `H`.
  */
-export function halftoneFilterDouble(rgb: Int32Array, w: number, h: number): Int32Array {
+export function halftoneFilterEnlarge(rgb: Int32Array, w: number, h: number, W: number, H: number, extended?: Int32Array): Int32Array {
+	const clamp = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
+	const general = W > 5 * w || H > 5 * h;
+	const out = new Int32Array(W * H * 3);
+	if (general) {
+		const sharp = rgb.slice();
+		if (extended) {
+			// One further row below (the last source row replicated and dithered at the next pattern row).
+			const at = (x: number, y: number, c: number): number =>
+				extended[(Math.max(0, Math.min(h, y)) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					for (let c = 0; c < 3; c++) {
+						const v = at(x, y, c);
+						const sum = at(x - 1, y, c) + at(x + 1, y, c) + at(x, y - 1, c) + at(x, y + 1, c);
+						sharp[(y * w + x) * 3 + c] = clamp(v + Math.floor((4 * v - sum) / 8));
+					}
+				}
+			}
+		} else {
+			halftoneSharpen(sharp, w, h);
+		}
+		// Taps as integer shares of 8192; an exact 2x axis keeps the 3:1 linear weights.
+		const axis = (src: number, dst: number): Array<Array<[number, number]>> => {
+			const factor = dst / src;
+			const rows = factor === 2 ? FILTER_WEIGHTS[2].map(([a, b, c]) => [a * 512, b * 512, c * 512]) : FILTER_TABLE_FACTORS[factor];
+			if (!rows) return halftoneEnlargeTaps(src, dst).map(row => row.map(([j, v]): [number, number] => [j, Math.round(v * 8192)]));
+			return Array.from({ length: dst }, (_, i): Array<[number, number]> => {
+				const k = Math.floor(i / factor);
+				const [a, b, c] = rows[i % factor];
+				return [[Math.max(0, k - 1), a], [k, b], [Math.min(src - 1, k + 1), c]];
+			});
+		};
+		const xt = axis(w, W);
+		const yt = axis(h, H);
+		const middle = new Int32Array(W * h * 3);
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < W; x++) {
+				for (let c = 0; c < 3; c++) {
+					let sum = 0;
+					for (const [j, weight] of xt[x]) sum += weight * sharp[(y * w + j) * 3 + c];
+					middle[(y * W + x) * 3 + c] = Math.floor((sum + 4096) / 8192);
+				}
+			}
+		}
+		for (let y = 0; y < H; y++) {
+			for (let x = 0; x < W; x++) {
+				for (let c = 0; c < 3; c++) {
+					let sum = 0;
+					for (const [j, weight] of yt[y]) sum += weight * middle[(j * W + x) * 3 + c];
+					out[(y * W + x) * 3 + c] = clamp(Math.floor((sum + 4096) / 8192));
+				}
+			}
+		}
+		return out;
+	}
 	const rows = h + 2;
 	const sharp = new Int32Array(w * rows * 3);
-	const at = (x: number, y: number, c: number): number => {
-		const yy = Math.max(1, Math.min(h, y)) - 1;
-		return rgb[(yy * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
-	};
+	let padded = extended;
+	if (!padded) {
+		padded = new Int32Array(w * rows * 3);
+		padded.set(rgb.subarray(0, w * 3), 0);
+		padded.set(rgb, w * 3);
+		padded.set(rgb.subarray((h - 1) * w * 3), (h + 1) * w * 3);
+	}
+	const source = padded;
+	// Past the extension rows the neighbour is the row on the other side (a mirrored edge; identical
+	// to repeating the extension row unless the extension rows were dithered separately).
+	const at = (x: number, y: number, c: number): number =>
+		source[((y < 0 ? 1 : y > rows - 1 ? rows - 2 : y) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
 	for (let y = 0; y < rows; y++) {
 		for (let x = 0; x < w; x++) {
 			for (let c = 0; c < 3; c++) {
 				const v = at(x, y, c);
 				const sum = at(x - 1, y, c) + at(x + 1, y, c) + at(x, y - 1, c) + at(x, y + 1, c);
-				const out = v + Math.floor((4 * v - sum) / 8);
-				sharp[(y * w + x) * 3 + c] = out < 0 ? 0 : out > 255 ? 255 : out;
+				sharp[(y * w + x) * 3 + c] = clamp(v + Math.floor((4 * v - sum) / 8));
 			}
 		}
 	}
-	const W = w * 2;
-	const H = h * 2;
-	const out = new Int32Array(W * H * 3);
+	const sx = W / w;
+	const sy = H / h;
 	const middle = new Int32Array(w * 3);
 	for (let y = 0; y < H; y++) {
-		// Destination row y sits 1/4 pixel before (even) or after (odd) source row y >> 1.
-		const near = (y >> 1) + 1;
-		const far = (y & 1) === 0 ? near - 1 : near + 1;
+		const near = Math.floor(y / sy) + 1;
+		const [a, b, c, total] = FILTER_WEIGHTS[sy][y % sy];
+		const before = (near - 1) * w * 3;
+		const here = near * w * 3;
+		const after = (near + 1) * w * 3;
 		for (let i = 0; i < w * 3; i++) {
-			middle[i] = Math.floor((3 * sharp[near * w * 3 + i] + sharp[far * w * 3 + i] + 2) / 4);
+			middle[i] = Math.floor((a * sharp[before + i] + b * sharp[here + i] + c * sharp[after + i] + total / 2) / total);
 		}
 		for (let x = 0; x < W; x++) {
-			const k = x >> 1;
-			const other = (x & 1) === 0 ? k - 1 : k + 1;
-			const second = other < 0 ? 0 : other >= w ? w - 1 : other;
-			for (let c = 0; c < 3; c++) {
-				out[(y * W + x) * 3 + c] = Math.floor((3 * middle[k * 3 + c] + middle[second * 3 + c] + 2) / 4);
+			const k = Math.floor(x / sx);
+			const [a2, b2, c2, total2] = FILTER_WEIGHTS[sx][x % sx];
+			const left = Math.max(0, k - 1);
+			const right = Math.min(w - 1, k + 1);
+			for (let c3 = 0; c3 < 3; c3++) {
+				out[(y * W + x) * 3 + c3] = Math.floor((a2 * middle[left * 3 + c3] + b2 * middle[k * 3 + c3] + c2 * middle[right * 3 + c3] + total2 / 2) / total2);
 			}
 		}
 	}
 	return out;
+}
+
+/** The exact 2x case of {@link halftoneFilterEnlarge}. */
+export function halftoneFilterDouble(rgb: Int32Array, w: number, h: number): Int32Array {
+	return halftoneFilterEnlarge(rgb, w, h, w * 2, h * 2);
 }
 
 /**
@@ -739,13 +888,29 @@ export function stretchHalftone(
 	// sampling path.
 	const nativeMixed = mixed && (!adjust || adjustAfterSampling || dithered)
 		&& ((W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW));
-	// An exact 2x enlargement of both axes whose source takes the filtered branch (see
-	// halftoneBranch) is sharpened and interpolated instead of replicated. Mirrored
-	// blits and combined colour adjustments are not covered by the native evidence.
-	if (enlarging && W === 2 * SW && H === 2 * SH && !flipX && !flipY && (!adjust || adjustAfterSampling)
+	// An enlargement of both axes by whole factors up to 5, or by more than 5x on either axis, whose
+	// source takes the filtered branch (see halftoneBranch) is sharpened and interpolated instead of
+	// replicated (see halftoneFilterEnlarge). A mirrored blit is the mirror image of the unmirrored
+	// one; a combined colour adjustment dithers and maps the source first (see emf-gdi-halftone-dither).
+	if (enlarging && halftoneFilterSupported(SW, SH, W, H) && (!adjust || adjustAfterSampling || dithered)
 		&& halftoneBranch(rect, SW, SH) === 'filter') {
-		const filtered = halftoneFilterDouble(rect, SW, SH);
-		if (adjust) adjust(filtered);
+		let extended: Int32Array | undefined;
+		if (dithered) {
+			extended = ditherFilteredSource(rect, SW, SH, W, H, dither!, flipY);
+			adjust!(extended);
+		}
+		const filtered = halftoneFilterEnlarge(rect, SW, SH, W, H, extended);
+		if (flipX || flipY) {
+			const mirror = filtered.slice();
+			for (let y = 0; y < H; y++) {
+				for (let x = 0; x < W; x++) {
+					const from = ((flipY ? H - 1 - y : y) * W + (flipX ? W - 1 - x : x)) * 3;
+					filtered.set(mirror.subarray(from, from + 3), (y * W + x) * 3);
+				}
+			}
+		}
+		if (adjust && adjustAfterSampling) adjust(filtered);
+		if (curves && dithered) curves(filtered);
 		for (let i = 0, o = 0; i < W * H; i++, o += 3) {
 			data[i * 4] = filtered[o];
 			data[i * 4 + 1] = filtered[o + 1];

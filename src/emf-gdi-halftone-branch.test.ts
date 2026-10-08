@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { halftoneBranch, halftoneColorKey } from './emf-gdi-halftone-branch';
-import { halftoneFilterDouble, stretchHalftone } from './emf-gdi-stretch';
+import { halftoneFilterDouble, halftoneFilterEnlarge, halftoneFilterSupported, stretchHalftone } from './emf-gdi-stretch';
 
 /** RGB triples of a w x h image whose pixel (x, y) is `colour(x, y)`. */
 function image(w: number, h: number, colour: (x: number, y: number) => [number, number, number]): Int32Array {
@@ -75,16 +75,26 @@ describe('the filtered 2x branch of stretchHalftone', () => {
 		const filtered = stretchHalftone(src, 0, 0, 64, 40, 128, 80);
 		const mirrored = stretchHalftone(src, 0, 0, 64, 40, -128, 80);
 		expect(mirrored.data).not.toEqual(filtered.data);
-		const threeX = stretchHalftone(src, 0, 0, 64, 40, 192, 120);
-		// Replicated: every 3 x 3 block is one colour, unlike the filtered 2x output.
-		let uniform = true;
-		for (let y = 0; y < 40 && uniform; y++) for (let x = 0; x < 64 && uniform; x++) {
-			const first = (y * 3 * 192 + x * 3) * 4;
-			for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 3; dx++) {
-				const at = ((y * 3 + dy) * 192 + x * 3 + dx) * 4;
-				if (threeX.data[at] !== threeX.data[first]) uniform = false;
-			}
+		// A 2.5x enlargement (a fractional ratio up to 5x) is still replicated: no destination
+		// pixel is a colour the source does not hold.
+		const fractional = stretchHalftone(src, 0, 0, 64, 40, 160, 100);
+		const colours = new Set<number>();
+		for (let i = 0; i < 64 * 40; i++) colours.add((src.data[i * 4] << 16) | (src.data[i * 4 + 1] << 8) | src.data[i * 4 + 2]);
+		for (let i = 0; i < 160 * 100; i++) {
+			expect(colours.has((fractional.data[i * 4] << 16) | (fractional.data[i * 4 + 1] << 8) | fractional.data[i * 4 + 2])).toBe(true);
 		}
-		expect(uniform).toBe(true);
+	});
+	it('interpolates a 3x enlargement with the sharpened 1/16 weights', () => {
+		const src = ramp(64, 40);
+		const out = stretchHalftone(src, 0, 0, 64, 40, 192, 120);
+		const rgb = new Int32Array(64 * 40 * 3);
+		for (let i = 0; i < 64 * 40; i++) rgb.set([src.data[i * 4], src.data[i * 4 + 1], src.data[i * 4 + 2]], i * 3);
+		const expected = halftoneFilterEnlarge(rgb, 64, 40, 192, 120);
+		for (let i = 0; i < 192 * 120; i++) {
+			expect([out.data[i * 4], out.data[i * 4 + 1], out.data[i * 4 + 2]]).toEqual([expected[i * 3], expected[i * 3 + 1], expected[i * 3 + 2]]);
+		}
+		expect(halftoneFilterSupported(64, 40, 192, 120)).toBe(true);
+		expect(halftoneFilterSupported(64, 40, 160, 100)).toBe(false);
+		expect(halftoneFilterSupported(64, 40, 352, 220)).toBe(true);
 	});
 });

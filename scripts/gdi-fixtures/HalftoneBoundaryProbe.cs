@@ -5,7 +5,8 @@
 // followed by sw*sh BGRA bytes; the whole bitmap is stretched by an integer scale with StretchBlt.
 // Input file, version 2: int32 -count, int32 keepOutput, then per image int32 bw, bh (bitmap size),
 // sx, sy, sw, sh (source rectangle), dw, dh (destination size), flags (bit 0: StretchDIBits instead of
-// StretchBlt; bit 1: SetStretchBltMode HALFTONE is skipped, i.e. COLORONCOLOR), followed by bw*bh*4 BGRA bytes.
+// StretchBlt; bit 1: SetStretchBltMode HALFTONE is skipped, i.e. COLORONCOLOR; bit 2 / bit 3: the destination is mirrored
+// horizontally / vertically; bits 4-6: a colour adjustment, see Adjustment), followed by bw*bh*4 BGRA bytes.
 //
 // Output file: int32 count, then per image int32 sw, sh, scale (dw / sw, or 0 when not an integer),
 // int32 badBlocks (-1 when the scale is not an integer), sh int32 non-uniform block counts per block
@@ -29,7 +30,20 @@ public static class HalftoneBoundaryProbe
     [DllImport("gdi32.dll")] static extern bool StretchBlt(IntPtr dc, int x, int y, int w, int h, IntPtr src, int sx, int sy, int sw, int sh, uint rop);
     [DllImport("gdi32.dll")] static extern bool GdiFlush();
 
+    [DllImport("gdi32.dll")] static extern bool SetColorAdjustment(IntPtr dc, byte[] ca);
+
     static BIH Header(int w, int h) { return new BIH { size = 40, width = w, height = -h, planes = 1, depth = 32 }; }
+    // COLORADJUSTMENT: 1 = CA_LOG_FILTER, 2 = red/green/blue gamma 1.5, 3 = colorfulness +40 (a dithered combined adjustment),
+    // 4 = colorfulness +40 with gamma 1.5.
+    static byte[] Adjustment(int mode) {
+        var ca = new byte[24];
+        BitConverter.GetBytes((ushort)24).CopyTo(ca, 0);
+        BitConverter.GetBytes((ushort)(mode == 1 ? 2 : 0)).CopyTo(ca, 2);
+        for (int i = 6; i <= 10; i += 2) BitConverter.GetBytes((ushort)(mode == 2 || mode == 4 ? 15000 : 10000)).CopyTo(ca, i);
+        BitConverter.GetBytes((ushort)10000).CopyTo(ca, 14);
+        if (mode >= 3) BitConverter.GetBytes((short)40).CopyTo(ca, 20);
+        return ca;
+    }
 
     public static void Run(string inPath, string outPath) {
         using (var r = new BinaryReader(File.OpenRead(inPath)))
@@ -56,10 +70,14 @@ public static class HalftoneBoundaryProbe
                     so = SelectObject(src, sb); dOld = SelectObject(dst, db);
                     Marshal.Copy(input, 0, sBits, input.Length);
                     SetStretchBltMode(dst, (flags & 2) != 0 ? 3 : 4);
+                    int caMode = (flags >> 4) & 7;
+                    if (caMode != 0 && !SetColorAdjustment(dst, Adjustment(caMode))) throw new Exception("SetColorAdjustment failed");
+                    // Bits 2 and 3 mirror the destination horizontally / vertically: a negative extent that starts at the far edge.
+                    int ox = (flags & 4) != 0 ? dw - 1 : 0, oy = (flags & 8) != 0 ? dh - 1 : 0, ew = (flags & 4) != 0 ? -dw : dw, eh = (flags & 8) != 0 ? -dh : dh;
                     if ((flags & 1) != 0) {
                         // StretchDIBits reads the source rectangle from a top-down DIB: y is counted from the top row.
-                        if (StretchDIBits(dst, 0, 0, dw, dh, sx, sy, sw, sh, input, ref sourceHeader, 0, 0x00CC0020) == -1) throw new Exception("StretchDIBits failed");
-                    } else if (!StretchBlt(dst, 0, 0, dw, dh, src, sx, sy, sw, sh, 0x00CC0020)) throw new Exception("StretchBlt failed");
+                        if (StretchDIBits(dst, ox, oy, ew, eh, sx, sy, sw, sh, input, ref sourceHeader, 0, 0x00CC0020) == -1) throw new Exception("StretchDIBits failed");
+                    } else if (!StretchBlt(dst, ox, oy, ew, eh, src, sx, sy, sw, sh, 0x00CC0020)) throw new Exception("StretchBlt failed");
                     GdiFlush();
                     var output = new byte[dw * dh * 4]; Marshal.Copy(dBits, output, 0, output.Length);
                     var rows = new int[sh]; var cols = new int[sw]; int bad = integer ? 0 : -1;
