@@ -344,7 +344,9 @@ describe('rotated high-quality draws and edge taps (native GDI+ output)', () => 
 			const block = resampleImage(image, 12, 12, { srcX: 2, srcY: 2, srcW: 4, srcH: 4, toDevice: [3, 0, 0, 3, -2, -2], kernel, halfPixelOffset: false }, { w: 40, h: 40 })!;
 			const alpha = (x: number, y: number): number => block.rgba[((y - block.y) * block.w + (x - block.x)) * 4 + 3];
 			expect(alpha(4, 4)).toBe(255);
-			expect(alpha(15, 15)).toBe(255);
+			// A scaled HighQualityBilinear draw reads the rectangle's rows plus one texel and drops the tap past it, so
+			// its last row keeps 251 of 255 (native `hq-crop-impulse`, 16 rows of a 32x32 bitmap at 3x: 251).
+			expect(alpha(15, 15)).toBe(kernel === 'hq-bilinear' ? 251 : 255);
 		}
 	});
 });
