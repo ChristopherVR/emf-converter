@@ -26,7 +26,7 @@
 #   path-gradient-vertices, path-gradient-rotated, path-gradient-focus-shapes,
 #   path-gradient-ties, path-gradient-colors, path-gradient-focus,
 #   focus-contours, redeye-independent, redeye-state, redeye-fresh,
-#   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, vertical-focus-line, playback-extents,
+#   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, vertical-focus-line, playback-extents, playback-extent-survey,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
 #   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-step-grid, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
@@ -288,6 +288,33 @@ if ($Which -eq 'playback-extents') {
         Join-Path $outDir ($_.name + '.wide.png')
     })
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
+    return
+}
+if ($Which -eq 'playback-extent-survey') {
+    # Native playback of every fixture whose converter extent is larger than its reference PNG (and not an expanded capture
+    # already) into a surface of the converter's own extent: ink count, ink bounds and how far the original PNG is from the
+    # playback over their overlap. The inputs (name, w, h, ox, oy, plus) come from the committed survey file; native fields
+    # are rewritten. One fresh process per case, as in `playback-extents`.
+    $surveyPath = Join-Path $outDir 'playback-extent-survey.json'
+    if ($PlaybackCase) {
+        Add-Type -Path (Join-Path $here 'PlaybackExtentProbe.cs') -ReferencedAssemblies System.Drawing
+        $case = @((Get-Content -LiteralPath $surveyPath -Raw | ConvertFrom-Json) | ForEach-Object { $_ } | Where-Object { $_.name -eq $PlaybackCase })
+        if ($case.Count -ne 1) { throw "Unknown survey case: $PlaybackCase" }
+        $case = $case[0]
+        Write-Output ('SURVEY ' + [PlaybackExtentProbe]::Survey($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, [bool]$case.plus))
+        return
+    }
+    $cases = @((Get-Content -LiteralPath $surveyPath -Raw | ConvertFrom-Json) | ForEach-Object { $_ })
+    $rows = @()
+    foreach ($case in $cases) {
+        $line = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extent-survey -PlaybackCase $case.name -OutDir $outDir | Where-Object { $_ -like 'SURVEY *' })
+        if ($LASTEXITCODE -ne 0 -or $line.Count -ne 1) { throw "Survey capture failed: $($case.name)" }
+        $v = $line[0].Substring(7).Split(',') | ForEach-Object { [int]$_ }
+        $rows += [ordered]@{ name = $case.name; w = $case.w; h = $case.h; ox = $case.ox; oy = $case.oy; plus = [bool]$case.plus; nativeInk = $v[0]; nativeBounds = @($v[1], $v[2], $v[3], $v[4]); overlapMismatch = $v[5] }
+    }
+    [IO.File]::WriteAllText($surveyPath, ((ConvertTo-Json -InputObject $rows -Depth 4) + "`n"), (New-Object Text.UTF8Encoding($false)))
+    $files = @($surveyPath) + @($cases | ForEach-Object { Join-Path $outDir ($_.name + '.emf'); Join-Path $outDir ($_.name + '.png') })
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extent-survey.json') -Groups $Which -Files $files
     return
 }
 if ($Which -eq 'path-gradient-colors') {

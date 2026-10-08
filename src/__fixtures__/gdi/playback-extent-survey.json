@@ -1,0 +1,2658 @@
+[
+    {
+        "name":  "compat-ellipses-r12o-dot",
+        "w":  421,
+        "h":  301,
+        "ox":  -1,
+        "oy":  -1,
+        "plus":  false,
+        "nativeInk":  14385,
+        "nativeBounds":  [
+                             2,
+                             3,
+                             413,
+                             293
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-id-geo5",
+        "w":  421,
+        "h":  302,
+        "ox":  -1,
+        "oy":  -2,
+        "plus":  false,
+        "nativeInk":  25778,
+        "nativeBounds":  [
+                             1,
+                             0,
+                             404,
+                             283
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-id-wide3",
+        "w":  421,
+        "h":  336,
+        "ox":  -1,
+        "oy":  -19,
+        "plus":  false,
+        "nativeInk":  20302,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             403,
+                             292
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r107-geo5",
+        "w":  421,
+        "h":  301,
+        "ox":  -1,
+        "oy":  -1,
+        "plus":  false,
+        "nativeInk":  24578,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             399,
+                             289
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r107-geosq9",
+        "w":  424,
+        "h":  304,
+        "ox":  -4,
+        "oy":  -4,
+        "plus":  false,
+        "nativeInk":  27625,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             411,
+                             293
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r107-wide3",
+        "w":  421,
+        "h":  323,
+        "ox":  -1,
+        "oy":  -18,
+        "plus":  false,
+        "nativeInk":  17966,
+        "nativeBounds":  [
+                             2,
+                             2,
+                             402,
+                             293
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r107-wide7",
+        "w":  421,
+        "h":  343,
+        "ox":  -1,
+        "oy":  -31,
+        "plus":  false,
+        "nativeInk":  25677,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             408,
+                             292
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r21-geo5",
+        "w":  421,
+        "h":  300,
+        "ox":  -1,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  22654,
+        "nativeBounds":  [
+                             1,
+                             2,
+                             410,
+                             291
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r21-geosq9",
+        "w":  423,
+        "h":  303,
+        "ox":  -3,
+        "oy":  -3,
+        "plus":  false,
+        "nativeInk":  24146,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             397,
+                             290
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r21-wide3",
+        "w":  420,
+        "h":  316,
+        "ox":  0,
+        "oy":  -14,
+        "plus":  false,
+        "nativeInk":  18714,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             404,
+                             287
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r21-wide7",
+        "w":  420,
+        "h":  323,
+        "ox":  0,
+        "oy":  -23,
+        "plus":  false,
+        "nativeInk":  25077,
+        "nativeBounds":  [
+                             1,
+                             2,
+                             407,
+                             286
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r32x11-geo5",
+        "w":  421,
+        "h":  302,
+        "ox":  -1,
+        "oy":  -2,
+        "plus":  false,
+        "nativeInk":  20158,
+        "nativeBounds":  [
+                             1,
+                             0,
+                             401,
+                             286
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r32x11-wide3",
+        "w":  420,
+        "h":  340,
+        "ox":  0,
+        "oy":  -22,
+        "plus":  false,
+        "nativeInk":  22101,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             406,
+                             293
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r34-geo5",
+        "w":  422,
+        "h":  302,
+        "ox":  -2,
+        "oy":  -2,
+        "plus":  false,
+        "nativeInk":  34360,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             408,
+                             288
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r34-wide3",
+        "w":  420,
+        "h":  336,
+        "ox":  0,
+        "oy":  -26,
+        "plus":  false,
+        "nativeInk":  23354,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             402,
+                             293
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r43-geo5",
+        "w":  421,
+        "h":  301,
+        "ox":  -1,
+        "oy":  -1,
+        "plus":  false,
+        "nativeInk":  25028,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             409,
+                             293
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r43-wide3",
+        "w":  421,
+        "h":  318,
+        "ox":  -1,
+        "oy":  -18,
+        "plus":  false,
+        "nativeInk":  22424,
+        "nativeBounds":  [
+                             2,
+                             3,
+                             406,
+                             284
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-playback-r43-wide7",
+        "w":  422,
+        "h":  354,
+        "ox":  -2,
+        "oy":  -31,
+        "plus":  false,
+        "nativeInk":  27005,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             405,
+                             295
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-rects-r12-dot",
+        "w":  452,
+        "h":  332,
+        "ox":  -18,
+        "oy":  -18,
+        "plus":  false,
+        "nativeInk":  25200,
+        "nativeBounds":  [
+                             1,
+                             1,
+                             414,
+                             294
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "compat-rects-r12o-dot",
+        "w":  452,
+        "h":  332,
+        "ox":  -19,
+        "oy":  -19,
+        "plus":  false,
+        "nativeInk":  20160,
+        "nativeBounds":  [
+                             2,
+                             2,
+                             413,
+                             293
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "emf-insideframe-polygon",
+        "w":  442,
+        "h":  181,
+        "ox":  -2,
+        "oy":  -1,
+        "plus":  false,
+        "nativeInk":  35613,
+        "nativeBounds":  [
+                             0,
+                             1,
+                             433,
+                             175
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "emf-insideframe-scaled",
+        "w":  480,
+        "h":  475,
+        "ox":  -60,
+        "oy":  -15,
+        "plus":  false,
+        "nativeInk":  68316,
+        "nativeBounds":  [
+                             6,
+                             8,
+                             405,
+                             398
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "emfrec-ca-dither-5-5-0-0",
+        "w":  141,
+        "h":  140,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  8346,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             91,
+                             92
+                         ],
+        "overlapMismatch":  18521
+    },
+    {
+        "name":  "emfrec-ca-dither-5-5-3-2",
+        "w":  141,
+        "h":  140,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  8368,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             91,
+                             92
+                         ],
+        "overlapMismatch":  18494
+    },
+    {
+        "name":  "emfrec-ca-dither-6-7-0-0",
+        "w":  141,
+        "h":  140,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  8347,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             91,
+                             92
+                         ],
+        "overlapMismatch":  18461
+    },
+    {
+        "name":  "emfrec-fillrgn",
+        "w":  261,
+        "h":  170,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  40661,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             257,
+                             169
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "emfrec-framergn",
+        "w":  261,
+        "h":  170,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  39715,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             257,
+                             169
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "emfrec-paintrgn",
+        "w":  261,
+        "h":  90,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  21669,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             257,
+                             89
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-lin-blend-ellipse",
+        "w":  161,
+        "h":  131,
+        "ox":  0,
+        "oy":  -15,
+        "plus":  true,
+        "nativeInk":  8782,
+        "nativeBounds":  [
+                             15,
+                             4,
+                             145,
+                             96
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-center-miter-aa",
+        "w":  537,
+        "h":  532,
+        "ox":  -5,
+        "oy":  -2,
+        "plus":  true,
+        "nativeInk":  55235,
+        "nativeBounds":  [
+                             6,
+                             5,
+                             480,
+                             467
+                         ],
+        "overlapMismatch":  7
+    },
+    {
+        "name":  "gpx-pen-center-miter-aliased",
+        "w":  537,
+        "h":  532,
+        "ox":  -5,
+        "oy":  -2,
+        "plus":  true,
+        "nativeInk":  49806,
+        "nativeBounds":  [
+                             7,
+                             5,
+                             479,
+                             466
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-compound-center-aa",
+        "w":  567,
+        "h":  550,
+        "ox":  -20,
+        "oy":  -5,
+        "plus":  true,
+        "nativeInk":  58504,
+        "nativeBounds":  [
+                             2,
+                             4,
+                             485,
+                             468
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-compound-center-aliased",
+        "w":  567,
+        "h":  550,
+        "ox":  -20,
+        "oy":  -5,
+        "plus":  true,
+        "nativeInk":  42554,
+        "nativeBounds":  [
+                             3,
+                             4,
+                             484,
+                             468
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-inset-bevel-aa",
+        "w":  500,
+        "h":  482,
+        "ox":  0,
+        "oy":  -2,
+        "plus":  true,
+        "nativeInk":  45494,
+        "nativeBounds":  [
+                             10,
+                             12,
+                             462,
+                             460
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-inset-bevel-aliased",
+        "w":  500,
+        "h":  482,
+        "ox":  0,
+        "oy":  -2,
+        "plus":  true,
+        "nativeInk":  40506,
+        "nativeBounds":  [
+                             10,
+                             12,
+                             461,
+                             459
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-inset-miter-aa",
+        "w":  622,
+        "h":  650,
+        "ox":  -20,
+        "oy":  -50,
+        "plus":  true,
+        "nativeInk":  45709,
+        "nativeBounds":  [
+                             10,
+                             12,
+                             462,
+                             460
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-inset-miter-aliased",
+        "w":  622,
+        "h":  650,
+        "ox":  -20,
+        "oy":  -50,
+        "plus":  true,
+        "nativeInk":  40725,
+        "nativeBounds":  [
+                             10,
+                             12,
+                             461,
+                             459
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-inset-round-aa",
+        "w":  500,
+        "h":  482,
+        "ox":  0,
+        "oy":  -2,
+        "plus":  true,
+        "nativeInk":  45244,
+        "nativeBounds":  [
+                             10,
+                             12,
+                             462,
+                             460
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-inset-round-aliased",
+        "w":  500,
+        "h":  482,
+        "ox":  0,
+        "oy":  -2,
+        "plus":  true,
+        "nativeInk":  40225,
+        "nativeBounds":  [
+                             10,
+                             12,
+                             461,
+                             459
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-lingrad",
+        "w":  178,
+        "h":  123,
+        "ox":  0,
+        "oy":  -18,
+        "plus":  true,
+        "nativeInk":  4258,
+        "nativeBounds":  [
+                             10,
+                             5,
+                             154,
+                             94
+                         ],
+        "overlapMismatch":  13
+    },
+    {
+        "name":  "gpx-pen-pathgrad",
+        "w":  178,
+        "h":  123,
+        "ox":  0,
+        "oy":  -18,
+        "plus":  true,
+        "nativeInk":  3060,
+        "nativeBounds":  [
+                             10,
+                             10,
+                             148,
+                             94
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-styles",
+        "w":  162,
+        "h":  100,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  1763,
+        "nativeBounds":  [
+                             20,
+                             16,
+                             153,
+                             65
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-pen-texture",
+        "w":  178,
+        "h":  123,
+        "ox":  0,
+        "oy":  -18,
+        "plus":  true,
+        "nativeInk":  4258,
+        "nativeBounds":  [
+                             10,
+                             5,
+                             154,
+                             94
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-beziers-aa",
+        "w":  165,
+        "h":  112,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  1053,
+        "nativeBounds":  [
+                             5,
+                             8,
+                             152,
+                             95
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-beziers",
+        "w":  165,
+        "h":  112,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  701,
+        "nativeBounds":  [
+                             5,
+                             8,
+                             151,
+                             95
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-closedcurve-aa",
+        "w":  166,
+        "h":  113,
+        "ox":  -6,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  5203,
+        "nativeBounds":  [
+                             5,
+                             5,
+                             156,
+                             99
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-closedcurve",
+        "w":  166,
+        "h":  113,
+        "ox":  -6,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  4759,
+        "nativeBounds":  [
+                             6,
+                             6,
+                             156,
+                             99
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-compressed-aa",
+        "w":  170,
+        "h":  103,
+        "ox":  -10,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  2507,
+        "nativeBounds":  [
+                             4,
+                             5,
+                             154,
+                             99
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-compressed",
+        "w":  170,
+        "h":  103,
+        "ox":  -10,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  1894,
+        "nativeBounds":  [
+                             4,
+                             5,
+                             153,
+                             98
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-container",
+        "w":  210,
+        "h":  400,
+        "ox":  0,
+        "oy":  -55,
+        "plus":  true,
+        "nativeInk":  3991,
+        "nativeBounds":  [
+                             4,
+                             5,
+                             153,
+                             91
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-curve-aa",
+        "w":  196,
+        "h":  135,
+        "ox":  -36,
+        "oy":  -11,
+        "plus":  true,
+        "nativeInk":  1982,
+        "nativeBounds":  [
+                             7,
+                             6,
+                             155,
+                             98
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-curve",
+        "w":  196,
+        "h":  135,
+        "ox":  -36,
+        "oy":  -11,
+        "plus":  true,
+        "nativeInk":  1479,
+        "nativeBounds":  [
+                             8,
+                             6,
+                             155,
+                             98
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-textcontrast-cleartype",
+        "w":  360,
+        "h":  191,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  36754,
+        "nativeBounds":  [
+                             10,
+                             0,
+                             359,
+                             189
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-rec-textcontrast",
+        "w":  360,
+        "h":  191,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  36134,
+        "nativeBounds":  [
+                             11,
+                             0,
+                             359,
+                             189
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-smooth-antialias",
+        "w":  175,
+        "h":  111,
+        "ox":  -5,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  4022,
+        "nativeBounds":  [
+                             6,
+                             5,
+                             156,
+                             96
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-smooth-highquality",
+        "w":  175,
+        "h":  111,
+        "ox":  -5,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  4022,
+        "nativeBounds":  [
+                             6,
+                             5,
+                             156,
+                             96
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-smooth-highspeed",
+        "w":  175,
+        "h":  111,
+        "ox":  -5,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  3526,
+        "nativeBounds":  [
+                             7,
+                             6,
+                             156,
+                             95
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-smooth-none",
+        "w":  175,
+        "h":  111,
+        "ox":  -5,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  3526,
+        "nativeBounds":  [
+                             7,
+                             6,
+                             156,
+                             95
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-text-lingrad",
+        "w":  184,
+        "h":  100,
+        "ox":  -12,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  3180,
+        "nativeBounds":  [
+                             0,
+                             16,
+                             159,
+                             85
+                         ],
+        "overlapMismatch":  3
+    },
+    {
+        "name":  "gpx-text-pathgrad",
+        "w":  184,
+        "h":  100,
+        "ox":  -12,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  2136,
+        "nativeBounds":  [
+                             0,
+                             16,
+                             159,
+                             85
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-text-texture-cleartype",
+        "w":  184,
+        "h":  100,
+        "ox":  -12,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  3301,
+        "nativeBounds":  [
+                             0,
+                             16,
+                             159,
+                             85
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-text-texture-mono",
+        "w":  184,
+        "h":  100,
+        "ox":  -12,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  3020,
+        "nativeBounds":  [
+                             0,
+                             16,
+                             159,
+                             85
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "gpx-text-texture",
+        "w":  184,
+        "h":  100,
+        "ox":  -12,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  3180,
+        "nativeBounds":  [
+                             0,
+                             16,
+                             159,
+                             85
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-1x4-w4",
+        "w":  864,
+        "h":  917,
+        "ox":  0,
+        "oy":  -10,
+        "plus":  false,
+        "nativeInk":  18276,
+        "nativeBounds":  [
+                             18,
+                             72,
+                             638,
+                             822
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-1x4-w8",
+        "w":  864,
+        "h":  1077,
+        "ox":  0,
+        "oy":  -90,
+        "plus":  false,
+        "nativeInk":  37061,
+        "nativeBounds":  [
+                             15,
+                             64,
+                             641,
+                             827
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-2x3-w4",
+        "w":  864,
+        "h":  874,
+        "ox":  0,
+        "oy":  -10,
+        "plus":  false,
+        "nativeInk":  27838,
+        "nativeBounds":  [
+                             35,
+                             54,
+                             701,
+                             760
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-2x3-w8",
+        "w":  864,
+        "h":  957,
+        "ox":  0,
+        "oy":  -70,
+        "plus":  false,
+        "nativeInk":  55691,
+        "nativeBounds":  [
+                             30,
+                             48,
+                             707,
+                             765
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-3x2-w4",
+        "w":  864,
+        "h":  874,
+        "ox":  0,
+        "oy":  -10,
+        "plus":  false,
+        "nativeInk":  26993,
+        "nativeBounds":  [
+                             53,
+                             36,
+                             763,
+                             698
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-3x2-w8",
+        "w":  952,
+        "h":  914,
+        "ox":  0,
+        "oy":  -50,
+        "plus":  false,
+        "nativeInk":  55634,
+        "nativeBounds":  [
+                             45,
+                             32,
+                             771,
+                             702
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-4x1-w4",
+        "w":  952,
+        "h":  874,
+        "ox":  0,
+        "oy":  -10,
+        "plus":  false,
+        "nativeInk":  19037,
+        "nativeBounds":  [
+                             69,
+                             18,
+                             827,
+                             637
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-axis-scale-4x1-w8",
+        "w":  1072,
+        "h":  894,
+        "ox":  0,
+        "oy":  -30,
+        "plus":  false,
+        "nativeInk":  37098,
+        "nativeBounds":  [
+                             60,
+                             16,
+                             836,
+                             638
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-scale3-dash",
+        "w":  112,
+        "h":  100,
+        "ox":  -6,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  456,
+        "nativeBounds":  [
+                             0,
+                             47,
+                             99,
+                             52
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-scale4x1-dash",
+        "w":  116,
+        "h":  100,
+        "ox":  -8,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  152,
+        "nativeBounds":  [
+                             0,
+                             49,
+                             99,
+                             50
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "pen-skew-horizontal",
+        "w":  102,
+        "h":  100,
+        "ox":  -2,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  400,
+        "nativeBounds":  [
+                             6,
+                             16,
+                             62,
+                             23
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r1",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  62219,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r10-expand",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63166,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r10",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  62941,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r2p5",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  62481,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r3-dual",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  62481,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r3-expand",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  62550,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r3-rotate30",
+        "w":  161,
+        "h":  129,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  19914,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             159,
+                             127
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r3-scale2",
+        "w":  177,
+        "h":  129,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  19808,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             175,
+                             127
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-blur-r3",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  62481,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-brightnesscontrast-b0-c100",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  58680,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-brightnesscontrast-b0-c50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60192,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-brightnesscontrast-b0-cn100",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-brightnesscontrast-b0-cn50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-brightnesscontrast-b30-c40",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  59928,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-brightnesscontrast-b50-c0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60528,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-brightnesscontrast-bn80-c0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorbalance-cr0-mg0-yb80",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorbalance-cr0-mgn40-yb0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorbalance-cr100-mg100-yb100",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  58680,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorbalance-cr60-mg0-yb0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorbalance-crn100-mg50-ybn20",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-blacksat-60",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-contrast-50-blue",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-contrast-50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61704,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-contrast-n50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-density-64",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60288,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-density-n64",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-exposure-64-red",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-exposure-64",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60312,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-exposure-n64",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-highlight-50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61704,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-highlight-n50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-midtone-50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-midtone-n50-green",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-midtone-n50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-shadow-50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-shadow-n50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorcurve-whitesat-200",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60504,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorlut-alpha",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorlut-mixed",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63224,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colorlut-posterize",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60216,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colormatrix-alpha-half",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colormatrix-grayscale",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colormatrix-invert",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  62415,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colormatrix-sepia",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-colormatrix-swap-translate",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-h0-s0-l50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  51504,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-h0-s0-ln50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-h0-s60-l0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-h0-sn100-l0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-h180-s0-l0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-h30-sn30-l20",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60504,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-h90-s0-l0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-hsl-hn120-s0-l0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-levels-h100-m0-s20",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-levels-h100-m50-s0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-levels-h100-mn50-s0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-levels-h80-m0-s0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  60504,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-levels-h90-mn30-s10",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61128,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-none-identity",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-redeye-both",
+        "w":  305,
+        "h":  161,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  48632,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             159
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-redeye-left",
+        "w":  305,
+        "h":  161,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  48632,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             159
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-redeye-whole",
+        "w":  305,
+        "h":  161,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  48632,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             159
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-sharpen-r0p5-a100",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-sharpen-r1-a50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-sharpen-r2-a0",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-sharpen-r3-a100",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-sharpen-r6-a30",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  61728,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-tint-h0-a50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-tint-h120-a100",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-tint-h180-a100",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-tint-h60-an50",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "plus-effect-tint-hn90-a30",
+        "w":  305,
+        "h":  209,
+        "ox":  0,
+        "oy":  0,
+        "plus":  true,
+        "nativeInk":  63232,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             303,
+                             207
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "raster-paths",
+        "w":  241,
+        "h":  120,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  26543,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             239,
+                             119
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "raster-wide-extra",
+        "w":  252,
+        "h":  292,
+        "ox":  -1,
+        "oy":  -52,
+        "plus":  false,
+        "nativeInk":  51931,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             239,
+                             239
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "raster-wide-pens",
+        "w":  240,
+        "h":  292,
+        "ox":  0,
+        "oy":  -14,
+        "plus":  false,
+        "nativeInk":  52368,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             239,
+                             239
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "rotate-text-25deg",
+        "w":  201,
+        "h":  140,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  24830,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             200,
+                             139
+                         ],
+        "overlapMismatch":  23
+    },
+    {
+        "name":  "textx-arial-cleartype",
+        "w":  1209,
+        "h":  602,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  73506,
+        "nativeBounds":  [
+                             4,
+                             6,
+                             1205,
+                             581
+                         ],
+        "overlapMismatch":  503
+    },
+    {
+        "name":  "textx-arial-ctnatural",
+        "w":  1209,
+        "h":  602,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  73535,
+        "nativeBounds":  [
+                             4,
+                             6,
+                             1205,
+                             581
+                         ],
+        "overlapMismatch":  39661
+    },
+    {
+        "name":  "textx-arial-q0-default",
+        "w":  1209,
+        "h":  602,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  73506,
+        "nativeBounds":  [
+                             4,
+                             6,
+                             1205,
+                             581
+                         ],
+        "overlapMismatch":  503
+    },
+    {
+        "name":  "textx-arial-q1-draft",
+        "w":  1209,
+        "h":  602,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  73506,
+        "nativeBounds":  [
+                             4,
+                             6,
+                             1205,
+                             581
+                         ],
+        "overlapMismatch":  503
+    },
+    {
+        "name":  "textx-arial-q2-proof",
+        "w":  1209,
+        "h":  602,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  73506,
+        "nativeBounds":  [
+                             4,
+                             6,
+                             1205,
+                             581
+                         ],
+        "overlapMismatch":  503
+    },
+    {
+        "name":  "textx-fon-fixedsys",
+        "w":  964,
+        "h":  628,
+        "ox":  0,
+        "oy":  -2,
+        "plus":  false,
+        "nativeInk":  54056,
+        "nativeBounds":  [
+                             5,
+                             -1,
+                             959,
+                             609
+                         ],
+        "overlapMismatch":  21624
+    },
+    {
+        "name":  "textx-fon-fixedsys.regen",
+        "w":  964,
+        "h":  628,
+        "ox":  0,
+        "oy":  -2,
+        "plus":  false,
+        "nativeInk":  54060,
+        "nativeBounds":  [
+                             5,
+                             -1,
+                             959,
+                             609
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "textx-fon-system",
+        "w":  948,
+        "h":  629,
+        "ox":  0,
+        "oy":  -3,
+        "plus":  false,
+        "nativeInk":  62440,
+        "nativeBounds":  [
+                             5,
+                             -1,
+                             943,
+                             609
+                         ],
+        "overlapMismatch":  12850
+    },
+    {
+        "name":  "textx-fon-system.regen",
+        "w":  948,
+        "h":  629,
+        "ox":  0,
+        "oy":  -3,
+        "plus":  false,
+        "nativeInk":  62504,
+        "nativeBounds":  [
+                             5,
+                             -1,
+                             943,
+                             609
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "textx-opaque-aa",
+        "w":  381,
+        "h":  180,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  61384,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             377,
+                             179
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "textx-opaque-mono",
+        "w":  381,
+        "h":  180,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  61384,
+        "nativeBounds":  [
+                             0,
+                             0,
+                             377,
+                             179
+                         ],
+        "overlapMismatch":  0
+    },
+    {
+        "name":  "textx-rotalign-esc",
+        "w":  606,
+        "h":  520,
+        "ox":  -6,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  6483,
+        "nativeBounds":  [
+                             1,
+                             27,
+                             565,
+                             502
+                         ],
+        "overlapMismatch":  1454
+    },
+    {
+        "name":  "textx-rotalign-world",
+        "w":  606,
+        "h":  520,
+        "ox":  -6,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  6483,
+        "nativeBounds":  [
+                             1,
+                             27,
+                             565,
+                             502
+                         ],
+        "overlapMismatch":  1354
+    },
+    {
+        "name":  "textx-segoeui-cell-mono",
+        "w":  678,
+        "h":  464,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  17402,
+        "nativeBounds":  [
+                             5,
+                             8,
+                             675,
+                             444
+                         ],
+        "overlapMismatch":  989
+    },
+    {
+        "name":  "textx-segoeui-styles-mono",
+        "w":  420,
+        "h":  577,
+        "ox":  0,
+        "oy":  0,
+        "plus":  false,
+        "nativeInk":  20089,
+        "nativeBounds":  [
+                             4,
+                             14,
+                             412,
+                             575
+                         ],
+        "overlapMismatch":  0
+    }
+]

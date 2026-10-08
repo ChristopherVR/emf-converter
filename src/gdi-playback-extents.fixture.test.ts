@@ -6,7 +6,7 @@ interface ExtentCase { name: string; w: number; h: number; ox: number; oy: numbe
 const cases: ExtentCase[] = JSON.parse(readFileSync(fixturePath('playback-extents.json'), 'utf8'));
 
 it('expanded native captures reproduce every pixel of their original references', async () => {
-	expect(cases).toHaveLength(94);
+	expect(cases).toHaveLength(101);
 	for (const c of cases) {
 		const expanded = await loadReference(c.name, true);
 		expect([expanded.width, expanded.height, expanded.originX, expanded.originY], c.name).toEqual([c.w, c.h, c.ox, c.oy]);
@@ -28,7 +28,7 @@ describe.skipIf(!windowsFonts())('playback across the complete recorded device e
 		expect(inkOutside(rendered!, expanded)).toBe(0);
 		expect(diffImages(rendered!, expanded, 0, 0).mismatched).toBe(0);
 	});
-	it('keeps the 68 exact controls exact and pins every remaining full-area residual', async () => {
+	it('keeps the 71 exact controls exact and pins every remaining full-area residual', async () => {
 		let exact = 0;
 		for (const c of cases) {
 			const rendered = await renderFixture(`${c.name}.emf`, { fonts: windowsFonts()! });
@@ -40,7 +40,7 @@ describe.skipIf(!windowsFonts())('playback across the complete recorded device e
 			expect(d.maxDiff, c.name).toBeLessThanOrEqual(c.maxDiff);
 			if (c.maxMismatched === 0) exact++;
 		}
-		expect(exact).toBe(68);
+		expect(exact).toBe(71);
 	}, 60_000);
 });
 
