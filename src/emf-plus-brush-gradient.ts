@@ -38,6 +38,7 @@ import {
 	createImageDataCompat,
 	createTempCanvas,
 } from './emf-canvas-helpers';
+import { down32 } from './float32-down';
 import { emfLog } from './emf-logging';
 import { buildLinearRampTable, linearRampOf, linearRampStops } from './emf-plus-linear-ramp';
 import type {
@@ -178,10 +179,9 @@ export function pathGradientRatio(
  * GDI+ paints a path gradient as `quantum` nested copies of the boundary,
  * each a step smaller and a step closer to the centre colour, so a pixel
  * takes the colour of the innermost copy that holds it and the ratio rounds
- * to a whole step. A pixel in the outer half counts steps from the boundary and
- * one in the inner half from the centre, each interpolating from its own end (the
- * two halves round differently); the premultiplied channels and alpha are
- * interpolated together and rounded half up.
+ * to a whole step. The ramp is accumulated from the centre colour in float32
+ * (see {@link centreWeight}); the premultiplied channels and alpha are
+ * interpolated together and rounded to nearest, a tie toward the centre colour.
  *
  * A ratio exactly half way between two steps lies on a copy's edge, and which
  * side native paints it depends on that edge's float arithmetic (the same
@@ -202,8 +202,50 @@ function roundTowards(v: number, target: number): number {
 	return fraction > 0.5 ? floor + 1 : floor;
 }
 
+const centreWeightTables = new Map<number, Float64Array>();
+
+/**
+ * The position of ring j counted from the centre colour (0 at the centre, just under 1 at the boundary) of
+ * `quantum` rings. Native builds the ramp by accumulation: the step 1 / quantum and the running sum are
+ * float32 rounded toward minus infinity, so the position falls a little short of j / quantum (about
+ * 6e-6 levels per ring, 0.007 levels at the boundary of a 1,000-ring gradient). That shortfall is why a
+ * value exactly half way between two levels rounds toward the centre colour, and why 24 steps of the large
+ * captures, 0.0005 to 0.009 of a level under a half, round up.
+ */
+function centreWeight(quantum: number, j: number): number {
+	let table = centreWeightTables.get(quantum);
+	if (!table) {
+		table = new Float64Array(quantum + 1);
+		const step = down32(1 / quantum);
+		let w = 0;
+		for (let i = 1; i <= quantum; i++) {
+			w = down32(w + step);
+			table[i] = w;
+		}
+		if (centreWeightTables.size > 64) centreWeightTables.clear();
+		centreWeightTables.set(quantum, table);
+	}
+	return table[j];
+}
+
+/** The colour of whole step k of quantum rings, interpolated from the centre colour by {@link centreWeight}. */
+function centreWeightArgb(surround: number, centre: number, k: number, quantum: number): number {
+	const w = centreWeight(quantum, quantum - k);
+	const aS = (surround >>> 24) & 0xff;
+	const aC = (centre >>> 24) & 0xff;
+	const level = (s: number, c: number): number => roundTowards(c + (s - c) * w, c);
+	const alpha = level(aS, aC);
+	if (alpha <= 0) return 0;
+	const ch = (shift: number): number => {
+		const p = level(((surround >>> shift) & 0xff) * aS / 255, ((centre >>> shift) & 0xff) * aC / 255);
+		return Math.min(255, Math.max(0, Math.round(p * 255 / alpha)));
+	};
+	return ((alpha << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
+}
+
 /** The colour of step `k` of `quantum` (0 the boundary colour, `quantum` the centre colour); see {@link quantisedPathArgb}. */
 function quantisedStepArgb(surround: number, centre: number, k: number, quantum: number, fromBoundary: boolean): number {
+	if (Number.isInteger(k)) return centreWeightArgb(surround, centre, k, quantum);
 	const w = (fromBoundary ? k : quantum - k) / quantum;
 	const aS = (surround >>> 24) & 0xff;
 	const aC = (centre >>> 24) & 0xff;

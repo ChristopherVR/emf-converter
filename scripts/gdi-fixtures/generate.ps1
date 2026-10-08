@@ -345,6 +345,36 @@ if ($Which -eq 'path-gradient-corners') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-focus-corners') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusCornerProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusCornerProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus-edges') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusEdgeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusEdgeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus-thresholds') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusThresholdProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusThresholdProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus-slants') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusSlantProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusSlantProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-tile-rotations') {
+    Add-Type -Path (Join-Path $here 'PathGradientTileRotateProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientTileRotateProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-focus-ties') {
     Add-Type -Path (Join-Path $here 'PathGradientFocusTieProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientFocusTieProbe]::Run($outDir)
