@@ -127,18 +127,18 @@ describe('rotated high-quality DrawImage (native captures)', () => {
 			'k6 pom4 1.25x-3x alpha noise': { n: 20, px: 164, max: 1, over8: 0, exact: 0 },
 			'k6 pom4 1.25x-3x impulse': { n: 60, px: 79, max: 1, over8: 0, exact: 22 },
 			'k6 pom4 1.25x-3x noise': { n: 20, px: 180, max: 1, over8: 0, exact: 0 },
-			'k7 pom3 1.1x alpha noise': { n: 4, px: 23, max: 3, over8: 0, exact: 0 },
+			'k7 pom3 1.1x alpha noise': { n: 4, px: 16, max: 3, over8: 0, exact: 3 },
 			'k7 pom3 1.1x impulse': { n: 12, px: 0, max: 0, over8: 0, exact: 12 },
-			'k7 pom3 1.1x noise': { n: 4, px: 19, max: 2, over8: 0, exact: 0 },
-			'k7 pom3 1.25x-3x alpha noise': { n: 20, px: 61, max: 2, over8: 0, exact: 6 },
-			'k7 pom3 1.25x-3x impulse': { n: 60, px: 7, max: 1, over8: 0, exact: 53 },
-			'k7 pom3 1.25x-3x noise': { n: 20, px: 35, max: 1, over8: 0, exact: 8 },
-			'k7 pom4 1.1x alpha noise': { n: 4, px: 21, max: 3, over8: 0, exact: 1 },
+			'k7 pom3 1.1x noise': { n: 4, px: 16, max: 2, over8: 0, exact: 3 },
+			'k7 pom3 1.25x-3x alpha noise': { n: 20, px: 3, max: 1, over8: 0, exact: 18 },
+			'k7 pom3 1.25x-3x impulse': { n: 60, px: 1, max: 1, over8: 0, exact: 59 },
+			'k7 pom3 1.25x-3x noise': { n: 20, px: 5, max: 1, over8: 0, exact: 17 },
+			'k7 pom4 1.1x alpha noise': { n: 4, px: 16, max: 3, over8: 0, exact: 3 },
 			'k7 pom4 1.1x impulse': { n: 12, px: 45, max: 3, over8: 0, exact: 9 },
-			'k7 pom4 1.1x noise': { n: 4, px: 24, max: 3, over8: 0, exact: 0 },
-			'k7 pom4 1.25x-3x alpha noise': { n: 20, px: 26, max: 4, over8: 0, exact: 6 },
+			'k7 pom4 1.1x noise': { n: 4, px: 19, max: 3, over8: 0, exact: 3 },
+			'k7 pom4 1.25x-3x alpha noise': { n: 20, px: 11, max: 4, over8: 0, exact: 16 },
 			'k7 pom4 1.25x-3x impulse': { n: 60, px: 6, max: 5, over8: 0, exact: 54 },
-			'k7 pom4 1.25x-3x noise': { n: 20, px: 88, max: 5, over8: 0, exact: 0 },
+			'k7 pom4 1.25x-3x noise': { n: 20, px: 8, max: 5, over8: 0, exact: 17 },
 		});
 	});
 });
@@ -202,10 +202,10 @@ describe('rotated high-quality DrawImage scale sweep (native captures)', () => {
 			'pom4 k6 upscale': { n: 20, px: 278, max: 1, over8: 0, exact: 0 },
 			'pom3 k7 reduction': { n: 4, px: 285, max: 2, over8: 0, exact: 0 },
 			'pom3 k7 near': { n: 18, px: 21, max: 4, over8: 0, exact: 12 },
-			'pom3 k7 upscale': { n: 20, px: 54, max: 1, over8: 0, exact: 2 },
+			'pom3 k7 upscale': { n: 20, px: 12, max: 1, over8: 0, exact: 15 },
 			'pom4 k7 reduction': { n: 4, px: 304, max: 31, over8: 40, exact: 0 },
 			'pom4 k7 near': { n: 18, px: 18, max: 5, over8: 0, exact: 12 },
-			'pom4 k7 upscale': { n: 20, px: 121, max: 1, over8: 0, exact: 1 },
+			'pom4 k7 upscale': { n: 20, px: 21, max: 1, over8: 0, exact: 12 },
 		});
 	});
 });
@@ -251,7 +251,7 @@ describe('axis-aligned high-quality phase arithmetic (native noise captures)', (
 		// The reductions keep the float model (open): 1,161 and 987 values off, by up to two levels.
 		expect(stats).toEqual({
 			'k6 upscale': { n: 17, px: 46569, bad: 0, max: 0 },
-			'k7 upscale': { n: 17, px: 46569, bad: 35, max: 1 },
+			'k7 upscale': { n: 17, px: 46569, bad: 0, max: 0 },
 			'k6 reduction': { n: 8, px: 4544, bad: 1161, max: 2 },
 			'k7 reduction': { n: 8, px: 4544, bad: 987, max: 2 },
 		});

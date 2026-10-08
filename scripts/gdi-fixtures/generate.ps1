@@ -227,6 +227,26 @@ if ($Which -eq 'hq-axis') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'hq-phases') {
+    Add-Type -Path (Join-Path $here 'HighQualityPhaseProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityPhaseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-reductions') {
+    Add-Type -Path (Join-Path $here 'HighQualityReductionProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityReductionProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-cubic-weights') {
+    Add-Type -Path (Join-Path $here 'HighQualityCubicWeightProbe.cs') -ReferencedAssemblies System.Drawing
+    # The designed source rows come from `bun scripts/gdi-fixtures/generate-hq-cubic-source.ts <TablesDir>/hq-cubic-weights-source.bin`.
+    if (!$TablesDir) { throw 'Pass -TablesDir, the directory holding hq-cubic-weights-source.bin' }
+    [HighQualityCubicWeightProbe]::Run($outDir, (Resolve-Path -LiteralPath $TablesDir).Path)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'halftone-fractional-kernel') {
     Add-Type -Path (Join-Path $here 'HalftoneFractionalKernelProbe.cs')
     [HalftoneFractionalKernelProbe]::Run($outDir)

@@ -69,6 +69,7 @@
  * @module emf-plus-image-resample
  */
 
+import { hqCubicBinWeights } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
 import type { DeferredImageResample, ImageResampleKernel, TransformMatrix } from './emf-types';
 
@@ -728,8 +729,11 @@ const HQ_PHASES = 128;
  *   edge to the first covered pixel (`1 - d` of the fraction `d` along y) and
  *   mirrored along x (`d`, the long-known x mirror), zero for an integral edge.
  * - The weights depend only on the phase `floor((P - 1) / 512)`, 1/128 of a
- *   texel: the kernel's integral over each texel box at the phase's centre
- *   `(phase + 1/2) / 128` for the cubic, at `(phase + 1) / 128` for the tent.
+ *   texel: for the cubic, the measured integer table of
+ *   {@link hqCubicBinWeights} (the kernel's integral over each texel box at
+ *   the phase's centre `(phase + 1/2) / 128`, give or take one unit of 1/65536
+ *   between two taps in 40 of the 128 bins); for the tent, the kernel's
+ *   integral at `(phase + 1) / 128`.
  * - The horizontal pass runs first and is rounded to 8 bits (colours
  *   premultiplied, alpha limited to 255 and colours to alpha) before the
  *   vertical pass, which is rounded the same way.
@@ -795,8 +799,20 @@ function resampleHqAxisAligned(
 	}
 	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number): Taps[] => {
 		const taps: Taps[] = [];
+		// The measured integer table applies when the source origin is a whole number of phase bins.
+		const originBins = origin * HQ_PHASES;
+		const tabulated = cubic && Math.abs(originBins - Math.round(originBins)) < 1e-6;
 		for (let k = from; k <= to; k++) {
 			const phase = Math.floor((k * step + offset - 1) / (65536 / HQ_PHASES));
+			if (tabulated) {
+				const total = Math.round(originBins) + phase;
+				const bins = hqCubicBinWeights(((total % HQ_PHASES) + HQ_PHASES) % HQ_PHASES);
+				taps.push({
+					first: Math.floor(total / HQ_PHASES) + bins.first,
+					weights: bins.weights.map((w) => w / 65536),
+				});
+				continue;
+			}
 			const c = origin + (phase + bin) / HQ_PHASES;
 			const first = Math.ceil(c - filter.radius);
 			const last = Math.floor(c + filter.radius);
