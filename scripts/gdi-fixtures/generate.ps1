@@ -12,7 +12,7 @@
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
 # playback of the recorded metafile.
-param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '', [switch]$PlaybackOpen)
+param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '', [switch]$PlaybackOpen, [string]$OutDir = '')
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # GetDeviceCaps and enhanced-metafile headers must use the same physical
@@ -20,7 +20,7 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # and PlayEnhMetaFile silently scales its reference bitmap on scaled displays.
 Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class GdiFixtureDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
 [GdiFixtureDpi]::SetProcessDPIAware() | Out-Null
-$out = Join-Path $here '..\..\src\__fixtures__\gdi'
+$out = if ($OutDir) { $OutDir } else { Join-Path $here '..\..\src\__fixtures__\gdi' }
 $outDir = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $out)).Path
 $generationStarted = [DateTime]::UtcNow
 function Complete-Fixtures {
@@ -100,6 +100,14 @@ if ($Which -eq 'text-coverage' -or $Which -eq 'text-cleartype-coverage') {
     if ($Which -eq 'text-coverage') { [TextCoverageProbe]::Run($outDir) }
     else { [TextCoverageProbe]::ClearType($outDir) }
     Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-recorded-advance') {
+    Add-Type -Path (Join-Path $here 'RecordedAdvanceProbe.cs') -ReferencedAssemblies System.Drawing
+    [RecordedAdvanceProbe]::Run($outDir)
+    $names = 'textx-arial-q0-default', 'textx-arial-q1-draft', 'textx-arial-q2-proof', 'textx-arial-cleartype', 'textx-arial-ctnatural', 'textx-segoeui-cell-mono'
+    $files = @(Join-Path $outDir 'text-recorded-advance.json') + @($names | ForEach-Object { Join-Path $outDir ($_ + '.emf'); Join-Path $outDir ($_ + '.png') })
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-text-recorded-advance.json') -Groups $Which -Files $files
     return
 }
 if ($Which -eq 'playback-extents') {
