@@ -96,6 +96,10 @@ public static class RotatedPenVectorProbe
         1f, 0f, 0f, 1f,
         .8660254f, .5f, -.5f, .8660254f,
         .7071068f, .7071068f, -.7071068f, .7071068f,
+        // Mirrors (a negative determinant): a flip in y, a flip in x, a rotation composed with a flip.
+        1f, 0f, 0f, -1f,
+        -1f, 0f, 0f, 1f,
+        .8660254f, .5f, .5f, -.8660254f,
     };
 
     public static void RunSweep(string dir)
@@ -209,7 +213,8 @@ public static class RotatedPenVectorProbe
         IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
         if (dc == IntPtr.Zero || SetGraphicsMode(dc, 2) == 0) throw new Exception("CreateCompatibleDC/SetGraphicsMode failed");
         var json = new StringBuilder("[");
-        float[] mats = { .8660254f, .5f, -.5f, .8660254f, .7071068f, .7071068f, -.7071068f, .7071068f, .9659258f, -.258819f, .258819f, .9659258f, 1.7320508f, 1f, -.5f, .8660254f };
+        float[] mats = { .8660254f, .5f, -.5f, .8660254f, .7071068f, .7071068f, -.7071068f, .7071068f, .9659258f, -.258819f, .258819f, .9659258f, 1.7320508f, 1f, -.5f, .8660254f,
+            1f, 0f, 0f, -1f, -1f, 0f, 0f, 1f, .8660254f, .5f, .5f, -.8660254f };
         try {
             for (int m = 0; m < mats.Length / 4; m++)
             foreach (int width in new[] { 6, 10, 16 })

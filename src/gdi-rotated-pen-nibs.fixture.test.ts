@@ -59,8 +59,8 @@ it('reproduces all 864 native nibs read from long round-capped segments, vertex 
 	expect({ exact, total: nibs.size }).toEqual({ exact: 864, total: 864 });
 });
 
-it('matches every flat, round and square capped segment of the one-degree sweeps under the identity and two rotations (6,480 of 6,480)', () => {
-	const matrices: Matrix[] = ([[1, 0, 0, 1], [0.8660254, 0.5, -0.5, 0.8660254], [0.7071068, 0.7071068, -0.7071068, 0.7071068]] as const).map((r) => r.map(Math.fround) as Matrix);
+it('matches every flat, round and square capped segment of the one-degree sweeps under the identity, two rotations and three mirrors (12,960 of 12,960)', () => {
+	const matrices: Matrix[] = ([[1, 0, 0, 1], [0.8660254, 0.5, -0.5, 0.8660254], [0.7071068, 0.7071068, -0.7071068, 0.7071068], [1, 0, 0, -1], [-1, 0, 0, 1], [0.8660254, 0.5, 0.5, -0.8660254]] as const).map((r) => r.map(Math.fround) as Matrix);
 	const caps: Record<number, 'flat' | 'round' | 'square'> = { 0x200: 'flat', 0: 'round', 0x100: 'square' };
 	const exact: Record<string, number> = {};
 	let total = 0;
@@ -83,7 +83,7 @@ it('matches every flat, round and square capped segment of the one-degree sweeps
 		}
 	}
 	const all = Object.values(exact).reduce((s, v) => s + v, 0);
-	expect({ all, total, keys: Object.keys(exact).length }).toEqual({ all: 6480, total: 6480, keys: 9 });
+	expect({ all, total, keys: Object.keys(exact).length }).toEqual({ all: 12960, total: 12960, keys: 18 });
 });
 
 function pixels(spans: SpanList): Set<number> {
@@ -92,8 +92,8 @@ function pixels(spans: SpanList): Set<number> {
 	return set;
 }
 
-it('decides the miter limit of 1,920 native corners under rotations (and one with unequal scales) in logical units: all 1,920 pixel-identical, 1,865 vertex for vertex (137 and 7,112 pixels wrong with the device-pixel test)', () => {
-	const matrices: Matrix[] = ([[0.8660254, 0.5, -0.5, 0.8660254], [0.7071068, 0.7071068, -0.7071068, 0.7071068], [0.9659258, -0.258819, 0.258819, 0.9659258], [1.7320508, 1, -0.5, 0.8660254]] as const).map((r) => r.map(Math.fround) as Matrix);
+it('decides the miter limit of 3,360 native corners under rotations, a rotation with unequal scales and mirrors in logical units: all 3,360 pixel-identical, 3,220 vertex for vertex (137 corners and 7,112 pixels wrong of the first 1,920 with the device-pixel test)', () => {
+	const matrices: Matrix[] = ([[0.8660254, 0.5, -0.5, 0.8660254], [0.7071068, 0.7071068, -0.7071068, 0.7071068], [0.9659258, -0.258819, 0.258819, 0.9659258], [1.7320508, 1, -0.5, 0.8660254], [1, 0, 0, -1], [-1, 0, 0, 1], [0.8660254, 0.5, 0.5, -0.8660254]] as const).map((r) => r.map(Math.fround) as Matrix);
 	const cases = read('rotated-pen-miters.json.gz');
 	let exactVertices = 0;
 	let pixelDiff = 0;
@@ -116,13 +116,13 @@ it('decides the miter limit of 1,920 native corners under rotations (and one wit
 			native[native.length - 1].push(c.points[i], c.points[i + 1]);
 		}
 		if (JSON.stringify(got) === JSON.stringify(native)) exactVertices++;
-		// The other 55 (corners of 160 to 175 degrees under three matrices) repeat the inner vertex once in native, a zero-area spike.
+		// The other 140 (corners of 160 to 175 degrees) repeat the inner vertex once in native, a zero-area spike.
 		const a = pixels(fillPolygonSpans(got, true));
 		const b = pixels(fillPolygonSpans(native, true));
 		for (const v of a) if (!b.has(v)) pixelDiff++;
 		for (const v of b) if (!a.has(v)) pixelDiff++;
 		if (native[0].length === 12) mitred++;
 	}
-	expect({ total: cases.length, exactVertices, pixelDiff }).toEqual({ total: 1920, exactVertices: 1865, pixelDiff: 0 });
+	expect({ total: cases.length, exactVertices, pixelDiff }).toEqual({ total: 3360, exactVertices: 3220, pixelDiff: 0 });
 	expect(mitred).toBeGreaterThan(0);
 });

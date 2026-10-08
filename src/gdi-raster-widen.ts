@@ -1144,7 +1144,7 @@ function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number
 	const pixel = side === 'L' ? Math.ceil : Math.floor;
 	if (matrix) {
 		// Under a general matrix the tip's offset is converted back to logical units and rounded to the nearest whole unit on both
-		// sides, and the logical width is the reference (1,920 native corners under rotations and a rotation with unequal scales
+		// sides, and the logical width is the reference (3,360 native corners under rotations, a rotation with unequal scales and mirrors
 		// and all 288 of the join sheet are decided exactly; the device-pixel test above, ceil on the left and floor on the right,
 		// decided 137 and 18 wrongly).
 		const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
