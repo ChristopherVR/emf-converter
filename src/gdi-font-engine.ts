@@ -37,7 +37,9 @@
  *   grid-fitted outline; at non-axis angles the glyph is grid-fitted with
  *   GETINFO's "rotated" bit set and advances are the rounded linear
  *   widths, as GDI does. GDI additionally rounds its rotated scaling
- *   matrix, which is not reproduced (rotated text is close, not exact).
+ *   matrix (the larger of ppem * cos and ppem * sin to whole pixels, the
+ *   rotation scaled by the ratio: `roundedRotationMatrix`); the remaining
+ *   rotated-text differences are single edge pixels.
  *
  * @module gdi-font-engine
  */
@@ -582,8 +584,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// glyph at 25 degrees is drawn about 16.5 px tall (measured with
 			// GetGlyphOutline; it cuts the escapement fixtures' residual by
 			// a fifth).
-			const p = this.ppem;
-			m = [Math.round(m[0] * p) / p, Math.round(m[1] * p) / p, Math.round(m[2] * p) / p, Math.round(m[3] * p) / p];
+			m = roundedRotationMatrix(m, this.ppem);
 		}
 		let o: Outline = this.mode === 'cleartype' && !m && !this.syntheticItalic ? this.ctOutline(index) : src;
 		if (this.syntheticItalic || m || subX || subY) {
@@ -625,6 +626,28 @@ export class RealizedFont implements GdiRealizedFont {
 		this.glyphs.set(key, g);
 		return g;
 	}
+}
+
+/**
+ * The matrix GDI scales a rotated glyph by (native `GetGlyphOutline` of Arial at 12 to 48 px and 10 to 80 degrees under a
+ * world rotation, least-squares fitted against the font-unit outlines; `rotated-glyph-matrix.json.gz`): for a pure
+ * rotation the larger of `ppem * |cos|` and `ppem * |sin|` is rounded to whole pixels and the whole rotation is scaled by
+ * the rounded over the exact value, so the smaller component keeps the true angle (20 px at 25 degrees: 18 / 18.126 =
+ * 0.993, giving 0.900 and 0.420, where rounding both components gave 0.900 and 0.400; the native fit is 0.9000 and
+ * 0.4189). Other matrices keep the component-wise rounding of the earlier fit.
+ */
+export function roundedRotationMatrix(m: readonly [number, number, number, number], ppem: number): [number, number, number, number] {
+	const isRotation = Math.abs(m[0] - m[3]) < 1e-6 && Math.abs(m[1] + m[2]) < 1e-6;
+	if (isRotation && ppem > 0) {
+		const major = ppem * Math.max(Math.abs(m[0]), Math.abs(m[1]));
+		const target = Math.round(major);
+		if (target >= 1) {
+			const k = target / major;
+			return [m[0] * k, m[1] * k, m[2] * k, m[3] * k];
+		}
+	}
+	const p = ppem;
+	return [Math.round(m[0] * p) / p, Math.round(m[1] * p) / p, Math.round(m[2] * p) / p, Math.round(m[3] * p) / p];
 }
 
 /** GDI's bitmap emboldening: each row OR-ed (max-ed) with itself shifted one pixel right. */
