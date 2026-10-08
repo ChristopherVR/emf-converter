@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T05:04:21.2254823Z",
+    "capturedAt":  "2026-10-08T05:07:37.7863540Z",
     "groups":  "redeye-stages",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -3388,7 +3388,7 @@
     "references":  [
                        {
                            "name":  "redeye-stages.json.gz",
-                           "sha256":  "36cc413f82c2249c9e6d66821217ec377d65a279398bde98464cb304f629ee14"
+                           "sha256":  "e681340c1f7f85f9b6becfe7bef73872695586c8c1fccae7de83bc27ea294d3b"
                        }
                    ]
 }

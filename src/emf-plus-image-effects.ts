@@ -526,11 +526,12 @@ const TINT_FULL = 254;
  * - **Centre.** The centroid of the pixels' weights, over pixel centres:
  *   `x / L` for red pixels (1 flat when `L = 0`), nothing for the rest,
  *   uncapped. An area processed after another (one that held red) is nudged:
- *   the previous area's centroid, in image coordinates (before any fallback),
- *   is added once to the weighted coordinate sums (the denominator is
- *   unchanged), which is why the second of two areas differs from the same
- *   area processed alone, and by how much depends on where the first one
- *   was. A centroid farther from the area's middle than `(w + h) / 6` is
+ *   the previous area's centroid, in image pixel-index coordinates (its
+ *   origin plus the centroid minus 0.5, before any fallback), is added once to
+ *   the weighted coordinate sums (the denominator is unchanged), which is why
+ *   the second of two areas differs from the same area processed alone, and
+ *   by how much depends on where the first one was. An area without red
+ *   passes the carry on unchanged. A centroid farther from the area's middle than `(w + h) / 6` is
  *   discarded for the middle itself.
  * - **Radius.** `radius = min(e, f)` where, with `ax`, `ay` the centre in image
  *   coordinates, `e` is the distance to the left or right edge (`cx - 0.5`,
@@ -664,8 +665,9 @@ function correctRedEyeArea(
 	// sector a pixel exactly on a sector edge (or the centre pixel itself) falls in.
 	let cx = Math.round(((sx + RED_EYE_CARRY * carry.x) / sw) * 1e9) / 1e9;
 	let cy = Math.round(((sy + RED_EYE_CARRY * carry.y) / sw) * 1e9) / 1e9;
-	carry.x = x0 + cx;
-	carry.y = y0 + cy;
+	// The next area is nudged by this centroid in pixel-index coordinates (a pixel centre is x + 0.5).
+	carry.x = x0 + cx - 0.5;
+	carry.y = y0 + cy - 0.5;
 	if (Math.hypot(cx - w / 2, cy - h / 2) >= (w + h) / 6) {
 		cx = w / 2;
 		cy = h / 2;

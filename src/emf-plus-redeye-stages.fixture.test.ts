@@ -12,8 +12,8 @@ import { applyRedEyeCorrection } from './emf-plus-image-effects';
  *   is the middle (the exact native centre there is not reproduced: one level on 138 of 709 captures).
  * - luma: a left and a right class in one area. The centroid weight of a red pixel is its redness over
  *   the integer luma round((9 G + 2 B) / 11), 1 for luma 0.
- * - carry: two areas in one call. The first area's centroid (image coordinates) is added once to the
- *   second area's weighted sums.
+ * - carry: two or three areas in one call. The previous area's centroid (image pixel-index coordinates, before
+ *   any fallback) is added once to the next area's weighted sums; an area without red passes it on unchanged.
  * - strength: a two-valued field. The radial strength steps when the luma spread (30th to 70th
  *   percentile) exceeds 25, 40 and 80.
  * - highlight: a pixel whose luma is the area's one largest and 40 above the 70th percentile is
@@ -79,8 +79,8 @@ describe('native red-eye stage controls', () => {
 	it('weights the centroid by redness over the integer luma (118 of 120 exact)', () => {
 		expect(summary((c) => c.group === 'luma')).toEqual({ n: 120, exact: 118, maxPixels: 4, totalPixels: 6, maxLevel: 1 });
 	});
-	it('carries the first area\'s centroid once into the second (7 of 11 exact)', () => {
-		expect(summary((c) => c.group === 'carry')).toEqual({ n: 11, exact: 7, maxPixels: 2, totalPixels: 6, maxLevel: 1 });
+	it('carries the previous area\'s centroid (pixel-index coordinates) once into the next, over areas without red (13 of 14 exact)', () => {
+		expect(summary((c) => c.group === 'carry')).toEqual({ n: 14, exact: 13, maxPixels: 1, totalPixels: 1, maxLevel: 1 });
 	});
 	it('steps the strength at luma spreads above 25, 40 and 80 (the centre pixel is exact in 28 of 30 fields)', () => {
 		const strength = cases.filter((c) => c.group === 'strength');

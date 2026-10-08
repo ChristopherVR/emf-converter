@@ -59,6 +59,15 @@ public static class RedEyeStageProbe {
   foreach(var t in new[]{new[]{10,8,3,3,70,12,150,100},new[]{10,8,18,3,70,12,150,100},new[]{10,8,3,18,70,12,150,100},new[]{10,8,18,18,70,12,150,100},new[]{10,8,10,10,70,12,150,100},new[]{10,8,3,3,70,12,100,60},new[]{10,8,18,3,70,12,100,60},new[]{0,0,10,10,100,12,150,100},new[]{30,20,10,10,100,12,150,100},new[]{90,10,10,10,20,12,150,100},new[]{12,12,6,6,60,12,150,100}}){
    var c=new Case{Group="carry",Name=string.Format("first area at {0},{1}, block at {2},{3}, second area at {4},{5}, field luma {6} redness {7}",t[0],t[1],t[2],t[3],t[4],t[5],t[6],t[7])};var p=Grey(140,50,0,0,0);for(int y=0;y<50;y++)for(int x=0;x<140;x++)Put(p,140,x,y,t[6]+t[7],t[6],t[6]);
    for(int j=0;j<3;j++)for(int i=0;i<3;i++)Put(p,140,t[0]+t[2]+i,t[1]+t[3]+j,255,20,20);c.Steps.Add(Mk(140,50,p,new[]{t[0],t[1],t[0]+24,t[1]+24},new[]{t[4],t[5],t[4]+24,t[5]+24}));all.Add(c);}
+  // carry through a middle area: it holds no red (the carry passes over it), uniform red, or faint red (the carry is chained)
+  foreach(string a2 in new[]{"no red","uniform red","faint red"}){
+   var c=new Case{Group="carry",Name="three areas, the middle one holds "+a2};var p=Grey(200,50,150,150,150);
+   for(int y=12;y<36;y++)for(int x=110;x<134;x++)Put(p,200,x,y,250,150,150);
+   for(int y=8;y<32;y++)for(int x=10;x<34;x++)Put(p,200,x,y,160,150,150);
+   for(int j=0;j<3;j++)for(int i=0;i<3;i++)Put(p,200,15+i,13+j,255,20,20);
+   if(a2=="uniform red")for(int y=8;y<32;y++)for(int x=60;x<84;x++)Put(p,200,x,y,250,150,150);
+   if(a2=="faint red")for(int y=8;y<32;y++)for(int x=60;x<84;x++)Put(p,200,x,y,153,150,150);
+   c.Steps.Add(Mk(200,50,p,new[]{10,8,34,32},new[]{60,8,84,32},new[]{110,12,134,36}));all.Add(c);}
   // strength: two-valued fields, spreads around each step
   foreach(int lo in new[]{50,70})foreach(int s in new[]{23,24,25,26,27,39,40,41,42,43,79,80,81,82,83}){var c=new Case{Group="strength",Name=string.Format("51x51 two-valued luma {0} and {1}, spread {2}",lo,lo+s,s)};c.Steps.Add(Mk(51,51,TwoValued(51,lo,lo+s,lo+s/2),new[]{0,0,51,51}));all.Add(c);}
   // highlight: one pixel against a field
