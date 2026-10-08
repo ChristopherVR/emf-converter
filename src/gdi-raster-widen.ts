@@ -237,6 +237,14 @@ export function penPolygonMatrix(width: number, m: Matrix): Pt[] {
 	if (cached) {
 		return cached;
 	}
+	// A rotation with a uniform scale maps the logical circle to a device circle, and a device circle under 6.5 pixels across is
+	// one of the digital pens (Hobby), not rotated: the nibs of 6 widths each under the 30 and 45 degree matrices.
+	const scale = Math.hypot(m[0], m[1]);
+	if (Math.abs(Math.hypot(m[2], m[3]) - scale) < 1e-4 * scale && Math.abs(m[0] * m[2] + m[1] * m[3]) < 1e-4 * scale * scale && width * scale < HOBBY_LIMIT) {
+		const digital = penPolygon(Math.round(width * scale));
+		matrixPenCache.set(key, digital);
+		return digital;
+	}
 	const r = Math.ceil(width / 2);
 	const mirror = m[0] * m[3] - m[1] * m[2] < 0 ? -1 : 1;
 	const bez = ellipseBeziers(-r, -r, r, r);
