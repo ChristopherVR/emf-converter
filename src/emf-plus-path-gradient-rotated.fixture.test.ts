@@ -79,14 +79,14 @@ describe('step count under rotated, scaled and sheared transforms', () => {
 
 	// Exact pixels among the native pixels, per category; a wrong step count leaves a capture near 45%
 	// (over the 48 rotation, scale and shear captures the device-bounding-box count scored 61% and the untransformed bounds 74%).
-	// What is not exact is the half-step ties and near-ties the earlier rounds documented.
+	// 15 of the 156,236 native pixels are left unpainted by the sampler (boundary pixels at a vertex row); every pixel it paints is exact.
 	// [exact pixels, native pixels, lowest per-capture share in thousandths]
 	const pinned: Record<string, [number, number, number]> = {
-		rotation: [54084, 59360, 821],
-		scale: [6992, 7798, 870],
-		shear: [13344, 14848, 844],
-		'rotation and scale': [13684, 14848, 890],
-		matrices: [52835, 59382, 709],
+		rotation: [59356, 59360, 999],
+		scale: [7798, 7798, 1000],
+		shear: [14848, 14848, 1000],
+		'rotation and scale': [14846, 14848, 999],
+		matrices: [59373, 59382, 995],
 	};
 
 	it('reproduces every capture to the step', () => {

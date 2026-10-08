@@ -146,16 +146,16 @@ const LINEAR_RAMP_CASES: ParityCase[] = [
  * the other way), down from 0.4% to 6.5% with the pattern.
  */
 const PATH_TILE_CASES: ParityCase[] = [
-	close('grad-path-ellipse-clamp', 0.001),
-	close('grad-path-ellipse-tile', 0.003),
-	close('grad-path-ellipse-flipx', 0.003),
-	close('grad-path-ellipse-flipy', 0.003),
-	close('grad-path-ellipse-flipxy', 0.003),
-	close('grad-path-rect-blend-clamp', 0.001),
-	close('grad-path-rect-blend-tile', 0.001),
-	close('grad-path-rect-blend-flipx', 0.001),
-	close('grad-path-rect-blend-flipy', 0.001),
-	close('grad-path-rect-blend-flipxy', 0.001),
+	exact('grad-path-ellipse-clamp'),
+	close('grad-path-ellipse-tile', 0.0008),
+	close('grad-path-ellipse-flipx', 0.0008),
+	close('grad-path-ellipse-flipy', 0.0011),
+	close('grad-path-ellipse-flipxy', 0.0011),
+	exact('grad-path-rect-blend-clamp'),
+	exact('grad-path-rect-blend-tile'),
+	exact('grad-path-rect-blend-flipx'),
+	exact('grad-path-rect-blend-flipy'),
+	exact('grad-path-rect-blend-flipxy'),
 	levelExact('grad-path-triangle-clamp'),
 	close('grad-path-triangle-tile', 0.0012),
 	close('grad-path-triangle-flipx', 0.0012),
@@ -653,11 +653,11 @@ const TEXTURE_SAMPLING_CASES: ParityCase[] = [
 const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 	close('gpx-pen-texture', 0.001), // measured 0.019%
 	close('gpx-pen-lingrad', 0.001), // measured 0.019%
-	close('gpx-pen-pathgrad', 0.002), // measured 0.070%
+	close('gpx-pen-pathgrad', 0.00013), // measured 0.013%, 0.070% before the nested copies
 	exact('gpx-pen-styles'),
 	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
 	close('gpx-text-lingrad', 0.14), // measured 10.98% (glyph shapes)
-	close('gpx-text-pathgrad', 0.09), // measured 6.53% (glyph shapes)
+	close('gpx-text-pathgrad', 0.0628), // measured 6.270% (glyph shapes), 6.53% before the nested copies
 ];
 
 /**
@@ -669,7 +669,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-texture', 0.025), // measured 1.977%
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.021), // measured 1.649%
+	close('gpx-text-pathgrad', 0.0099), // measured 0.978%, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0.04), // measured 3.093%
 ];

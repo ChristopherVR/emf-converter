@@ -157,6 +157,12 @@ if ($Which -eq 'path-gradient-rotated') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-focus-shapes') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusShapeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusShapeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'bicubic-copy') {
     Add-Type -Path (Join-Path $here 'BicubicCopyProbe.cs') -ReferencedAssemblies System.Drawing
     [BicubicCopyProbe]::Run($outDir)
