@@ -1,10 +1,12 @@
 /**
  * Native `WidenPath` of solid and dashed geometric pens under rotated or sheared world transforms
  * (`general-matrix-pen-probe`, 576 outlines: eight matrices, widths 4 and 8, every cap, solid, dashed and user styles, four
- * line shapes). Native's pen is a circle in logical space, and a dashed pattern is laid out in logical length. The pen
- * polygon (`penPolygonMatrix`) is GDI's logical circle mapped through the matrix, rounded and flattened (`nib-matrix-pen`
- * captures the native nibs). Pure shears and shear-with-scale (matrices 3, 4 and 6) are exact on all 72 outlines each; the
- * matrices with a rotation keep a few pixels of residual, pinned below (the half-pixel rounding of a diagonal's perpendicular).
+ * line shapes). Native's pen is a circle in logical space, and a dashed pattern is laid out in logical length. Round 6: the pen
+ * polygon (`penPolygonMatrix`) is the ellipse of the images of the half width, with its own rounding (see
+ * `gdi-rotated-pen-nibs.fixture.test.ts`), and the perpendicular's two matrix rules (the sign of the interpolated coordinate, the
+ * half of the nib the support vertex lies in) are in `perpendicularVectors`: all 504 outlines of the seven matrices tested here
+ * (the uniform scale 1.5, matrix 2, is the identity pen and not tested) are pixel-identical to native. Before round 6 pure shears
+ * and shear-with-scale (matrices 3, 4 and 6) were exact and the rest kept 620, 292, 554 and 416 differing pixels (matrices 0, 1, 5, 7).
  *
  * Round 4: a rotation with a uniform scale maps the logical circle to a device circle, and a device circle narrower than 6.5 pixels
  * is one of the digital (Hobby) pens, not a rotated polygon. The 12 nibs of widths 1 to 6 under the 30 and 45 degree matrices
@@ -48,7 +50,7 @@ const SOURCES = [
 	[[10, 10], [40, 55], [70, 20]],
 ];
 /** Pixel-difference bound per matrix (the sum over its 72 outlines), as measured; the exact ones are 0. */
-const MATRIX_BOUND: Record<number, number> = { 0: 620, 1: 292, 3: 0, 4: 0, 5: 554, 6: 0, 7: 416 };
+const MATRIX_BOUND: Record<number, number> = { 0: 0, 1: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
 
 function pixels(spans: SpanList): Set<number> {
 	const set = new Set<number>();
@@ -87,7 +89,7 @@ function oursPolygons(c: NativeCase): number[][] {
 	});
 }
 
-it('matches native sheared pens exactly and rotated pens within the measured bounds', () => {
+it('matches native rotated, sheared and mixed pens exactly (504 outlines; matrices 0, 1, 5 and 7 differed by 620, 292, 554 and 416 pixels before round 6)', () => {
 	expect(cases).toHaveLength(576);
 	const total: Record<number, number> = {};
 	for (const c of cases) {

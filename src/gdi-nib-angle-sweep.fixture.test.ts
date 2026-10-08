@@ -13,9 +13,16 @@
  *  - the nib at multiples of 90 degrees is a different construction (x extent one FIX shorter than y at the identity: 191 against 192 for width 24), the
  *    cap of a zero-length segment rather than the pen polygon.
  *
- * Pinned below: the converter's nib (`penPolygonMatrix`) is exact at 3 of 360 angles for width 12, 1 for width 24, none for width 40, and
- * the per-vertex counts of the constructions tried (rotated plain pen vertices rounded: 2,124 of 5,696 at width 24; the converter's: 1,958; a
- * matrix quantised to 6 to 20 bits never improves on it).
+ * Pinned below: the converter's nib (`penPolygonMatrix`) is exact at 15 of 360 angles for width 12, 22 for width 24 and 13 for width 40
+ * (round 5: 3, 1, 0), and the per-vertex counts of the constructions tried (rotated plain pen vertices rounded: 2,124 of 5,696 at
+ * width 24; the converter's: 4,916, was 1,958; a matrix quantised to 6 to 20 bits never improves on the first).
+ *
+ * Round 6 (`gdi-rotated-pen-nibs.fixture.test.ts`): the nib of a long segment is the ellipse of the images of the half width, with
+ * a quarter-FIX rounding bias, and is exact for 864 of 864 captured nibs. This zero-length capture is not that nib: the outline
+ * of a one-point path differs from the polygon a long segment shows (at 1 degree and width 12 its side vertices are (0, -96) and
+ * (0, 96) where the polygon has (2, -96) and (-2, 96); a box with rounded corners, the Ellipse construction, matches 3 of the
+ * 1,080 outlines). It is not modelled, so the counts above stay low; they are pinned as measured, not as a target. The "different
+ * construction at multiples of 90 degrees" noted in round 5 is the same effect.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -51,17 +58,17 @@ it('is centrally symmetric about the rounded image of the pen point at all 1,080
 	}
 });
 
-it('keeps the converter exact at 3, 1 and 0 of 360 angles for widths 12, 24 and 40', () => {
+it('matches the dot of a zero-length path at 15, 22 and 13 of 360 angles for widths 12, 24 and 40 (3, 1 and 0 before round 6)', () => {
 	const exact: Record<number, number> = { 12: 0, 24: 0, 40: 0 };
 	for (const c of nibs) {
 		const native = relative(c);
 		const ours = new Set(penPolygonMatrix(c.w * 16, [c.a, c.b, -c.b, c.a]).map((p) => p.join(',')));
 		if (native.size === ours.size && [...native].every((v) => ours.has(v))) exact[c.w]++;
 	}
-	expect(exact).toEqual({ 12: 3, 24: 1, 40: 0 });
+	expect(exact).toEqual({ 12: 15, 24: 22, 40: 13 });
 });
 
-it('fits no construction of a fixed logical vertex: 2,124 and 1,958 of 5,696 width 24 vertices (rotated plain pen vertices rounded; converter)', () => {
+it('fits no fixed logical vertex rotated and rounded (2,124 of 5,696 width 24 vertices), while the converter nib is at 4,916 (1,958 before round 6)', () => {
 	const plain = penPolygon(24 * 16);
 	let rotated = 0;
 	let mine = 0;
@@ -76,5 +83,5 @@ it('fits no construction of a fixed logical vertex: 2,124 and 1,958 of 5,696 wid
 		}
 		for (const p of ours) if (native.has(p.join(','))) mine++;
 	}
-	expect({ rotated, mine, total }).toEqual({ rotated: 2124, mine: 1958, total: 5696 });
+	expect({ rotated, mine, total }).toEqual({ rotated: 2124, mine: 4916, total: 5696 });
 });

@@ -6,9 +6,9 @@
  *
  * Round 4 and earlier widened every non-round join in logical space and mapped the outline forward (the device-space rounding rules
  * of the nib did not apply): 42 of 288 outlines exact, 14,351 differing pixels. The device-space widening with the matrix's nib
- * (`deviceNib`) that round joins already used takes the joins too: 221 of 288 exact, 2,055 differing pixels. A pure shear (matrix 4) is
- * exact on all 36, the other shears on 33 and 33 of 36; the rest is the rotated nib's construction (docs/outstanding-work.md) and the
- * miter limit of the uniform scale 1.5 (matrices 2 and 7 at limit 1.5).
+ * (`deviceNib`) that round joins already used takes the joins too: 221 of 288 exact, 2,055 differing pixels. Round 6 (the nib is the
+ * ellipse of the half-width images, the perpendicular's matrix rules: `gdi-rotated-pen-nibs.fixture.test.ts`) took it to 270 of 288 and
+ * 324 pixels; the three shears and the shear-with-scale (matrices 3, 4, 6) are exact on all 36 each.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -44,16 +44,7 @@ const SOURCES = [
 	[[10, 10], [60, 20], [20, 50]],
 ];
 /** Exact outlines and differing pixels per matrix, summed over its 36 outlines. */
-const EXPECTED: Record<number, { exact: number; pixels: number }> = {
-	0: { exact: 26, pixels: 251 },
-	1: { exact: 26, pixels: 510 },
-	2: { exact: 24, pixels: 381 },
-	3: { exact: 33, pixels: 35 },
-	4: { exact: 36, pixels: 0 },
-	5: { exact: 21, pixels: 427 },
-	6: { exact: 33, pixels: 113 },
-	7: { exact: 22, pixels: 338 },
-};
+const EXPECTED: Record<number, { exact: number; pixels: number }> = Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((m) => [m, { exact: 36, pixels: 0 }]));
 
 function pixels(spans: SpanList): Set<number> {
 	const set = new Set<number>();
@@ -69,7 +60,7 @@ function nativePolygons(points: number[]): number[][] {
 	return out;
 }
 
-it('widens bevel and miter joins under a general matrix in device space: 221 of 288 native outlines exact, 2,055 differing pixels', () => {
+it('widens bevel and miter joins under a general matrix in device space: all 288 native outlines exact (270 and 324 differing pixels with the nib alone, 221 and 2,055 before round 6)', () => {
 	expect(cases).toHaveLength(288);
 	const got: Record<number, { exact: number; pixels: number }> = {};
 	for (const c of cases) {

@@ -120,6 +120,22 @@ describe('native WidenPath of square-capped segments under world scales', () => 
 		expect(lineCounts('rot30', (c) => ({ ...options(c), cutToLogicalUnits: false })).caps).toBe(259);
 	});
 
+	it('draws the swept arcs and the segments under a 30 degree rotation vertex for vertex (358 of 358 and 323 of 323; 94 arcs with the exact vector, and two ties of the cut extension missed before round 6)', () => {
+		const options = (width: number): WidenOptions => ({
+			width: width * 16,
+			matrix: [c30, s30, -s30, c30],
+			deviceNib: true,
+			cap: 'square',
+			join: 'round',
+			miterLimit: 10,
+			cutToLogicalUnits: true,
+		});
+		const same = (got: number[][], expected: number[]): boolean => JSON.stringify(got) === JSON.stringify(polygons(expected));
+		expect(lines.filter((c) => c.scale === 'rot30').filter((c) => same(widenPath(linePath(c.source), options(c.width)), c.expected))).toHaveLength(323);
+		// Two arcs end their start tangent's extension on a tie (-81.5 and -82.5 FIX): native rounds it away from zero.
+		expect(arcs.filter((c) => c.scale === 'rot30').filter((c) => same(widenPath(arcPath(c.source), options(12)), c.expected))).toHaveLength(358);
+	});
+
 	it('draws arcs under a world scale with the same cap rule', () => {
 		// Counts of the 358 swept arcs that are vertex for vertex identical; with the exact vector: 2, 170, 135 and 53, and before the
 		// cut rounded ties away from zero (a logical vector of 3.5 units normalises by 4, not 3): 344, 315, 324 and 329.
