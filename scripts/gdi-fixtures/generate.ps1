@@ -159,6 +159,28 @@ if ($Which -eq 'hq-arithmetic') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'hq-rotated') {
+    Add-Type -Path (Join-Path $here 'HighQualityRotatedProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityRotatedProbe]::Run($outDir)
+    Add-Type -Path (Join-Path $here 'HighQualityRotatedFineProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityRotatedFineProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-half-shift') {
+    Add-Type -Path (Join-Path $here 'HighQualityHalfShiftProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityHalfShiftProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-axis') {
+    Add-Type -Path (Join-Path $here 'HighQualityAxisProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityAxisProbe]::Run($outDir)
+    Add-Type -Path (Join-Path $here 'HighQualityAxisNoiseProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityAxisNoiseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'halftone-fractional-kernel') {
     Add-Type -Path (Join-Path $here 'HalftoneFractionalKernelProbe.cs')
     [HalftoneFractionalKernelProbe]::Run($outDir)
