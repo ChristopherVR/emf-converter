@@ -17,7 +17,8 @@
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
-#   text-cleartype-coverage, text-origin-phases, text-origin-vertical-phases,
+#   text-cleartype-coverage, text-raster-polygons, text-raster-bars, text-raster-mono,
+#   text-real-glyphs, text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
 #   text-opcode-hinting, text-opcode-coverage, text-vector-stage-hinting,
 #   text-vector-stage-coverage, text-signed-diagonal, path-gradient-steps,
@@ -122,6 +123,30 @@ if ($Which -eq 'text-origin-phases' -or $Which -eq 'text-origin-vertical-phases'
 if ($Which -eq 'text-drawstring-placement') {
     Add-Type -Path (Join-Path $here 'DrawStringPlacementProbe.cs') -ReferencedAssemblies System.Drawing
     [DrawStringPlacementProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-polygons') {
+    Add-Type -Path (Join-Path $here 'RasterPolygonProbe.cs') -ReferencedAssemblies System.Drawing
+    [RasterPolygonProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-mono') {
+    Add-Type -Path (Join-Path $here 'RasterMonoProbe.cs')
+    [RasterMonoProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-bars') {
+    Add-Type -Path (Join-Path $here 'RasterPolygonProbe.cs') -ReferencedAssemblies System.Drawing
+    [RasterPolygonProbe]::Bars($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-real-glyphs') {
+    Add-Type -Path (Join-Path $here 'RealGlyphCoverageProbe.cs') -ReferencedAssemblies System.Drawing
+    [RealGlyphCoverageProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
