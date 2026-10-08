@@ -27,7 +27,7 @@ export type SourceKind = 'check' | 'k3' | 'k27' | 'k100' | 'noise' | 'smooth';
 
 export interface MixedCase {
 	id: string;
-	group: 'grid' | 'cap' | 'area' | 'band' | 'random' | 'reduce' | 'oneaxis';
+	group: 'grid' | 'cap' | 'area' | 'band' | 'random' | 'reduce' | 'oneaxis' | 'dithered';
 	kind: SourceKind;
 	seed: number;
 	w: number;
@@ -179,5 +179,19 @@ export function mixedEngineCases(): MixedCase[] {
 	for (let i = 0; i < 150; i++) oneAxis(['s', 'm', 'l'][i % 3], allKinds, mirrors[Math.floor(axisRnd() * 4)], false);
 	for (let i = 0; i < 24; i++) oneAxis(['s', 'm', 'l'][i % 3], ['noise', 'smooth', 'k100'], mirrors[i % 4] | (2 << 4), i % 2 === 0);
 	for (let i = 0; i < 48; i++) oneAxis(['s', 'm', 'l'][i % 3], ['noise', 'smooth', 'k100'], mirrors[Math.floor(axisRnd() * 4)] | ((3 + (i >> 1) % 2) << 4), i % 2 === 0);
+	// Both axes under a dithered colorfulness adjustment (with and without the gamma): mixed enlarge-and-reduce stretches on
+	// both sides of the equal-area line where the dither moves from the source to the destination, enlargements and reductions.
+	const ditherRnd = lcg(5150);
+	for (let i = 0; i < 96; i++) {
+		const w = 14 + Math.floor(ditherRnd() * 80), h = 14 + Math.floor(ditherRnd() * 80);
+		const flags = mirrors[Math.floor(ditherRnd() * 4)] | ((3 + (i & 1)) << 4);
+		const kind = (['noise', 'smooth', 'k100'] as SourceKind[])[Math.floor(ditherRnd() * 3)];
+		const growth = (): number => 1.15 + ditherRnd() * ditherRnd() * 3.5, shrink = (): number => 0.3 + ditherRnd() * 0.65;
+		const type = i % 3; // 0 mixed, 1 both enlarged, 2 both reduced
+		const horizontal = ditherRnd() < 0.5;
+		const dw = type === 0 ? Math.round(w * (horizontal ? growth() : shrink())) : Math.round(w * (type === 1 ? growth() : shrink()));
+		const dh = type === 0 ? Math.round(h * (horizontal ? shrink() : growth())) : Math.round(h * (type === 1 ? growth() : shrink()));
+		add('dithered', kind, w, h, Math.max(1, dw), Math.max(1, dh), flags);
+	}
 	return cases;
 }

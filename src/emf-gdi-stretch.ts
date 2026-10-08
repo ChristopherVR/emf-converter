@@ -1105,11 +1105,11 @@ export function stretchHalftone(
 	// A combined adjustment quantises the source to 32 levels with an ordered
 	// dither first, then maps the quantised colour: at source resolution when
 	// enlarging, at output resolution otherwise (see emf-gdi-halftone-dither).
-	// A mixed-axis stretch dithers the source when the reduced axis has an even
-	// number of source pixels and the enlarged axis grows by a whole factor;
-	// otherwise Windows dithers the finished output.
-	const reducedEven = W < SW ? SW % 2 === 0 && H % SH === 0 : SH % 2 === 0 && W % SW === 0;
-	const ditherAtSource = dithered && ((W >= SW && H >= SH) || (nativeMixed && reducedEven));
+	// A mixed-axis stretch dithers the source when the destination has at least as many pixels as the
+	// source (equal areas included: a 2x reduction of one axis with a 2x enlargement of the other);
+	// otherwise Windows dithers the finished output (native sweeps of 63 x 45 and 64 x 64 sources over
+	// enlargements 1.25x to 4x against reductions 0.3x to 0.95x).
+	const ditherAtSource = dithered && ((W >= SW && H >= SH) || (nativeMixed && W * H >= SW * SH));
 	// Enlarging rows while reducing columns, Windows sharpens the last row against a
 	// further row that is the last source row replicated and dithered like any other
 	// (pattern row SH), not against the last row itself.

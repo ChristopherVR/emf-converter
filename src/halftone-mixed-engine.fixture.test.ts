@@ -6,7 +6,7 @@ import { halftoneMixedEngine } from './emf-gdi-stretch';
 import { mixedEngineCases, mixedSource, renderMixedCase } from './halftone-mixed-engine.fixture-helper';
 
 /**
- * 1,005 native HALFTONE stretches (`generate-halftone-mixed-engine.ts`) behind `halftoneMixedEngine` (which engine a mixed
+ * 1,101 native HALFTONE stretches (`generate-halftone-mixed-engine.ts`) behind `halftoneMixedEngine` (which engine a mixed
  * enlarge-and-reduce stretch runs: the 1.5x reduction, the shrinking destination area, the filtered source) and the
  * despeckle size bands (sources of up to 2,304 and of more than 16,384 pixels are despeckled, those between are not).
  */
@@ -24,7 +24,7 @@ function run(): Record<string, Result & { count: number }> {
 		for (let k = 0; k < c.dw * c.dh; k++) flat.set([out[k * 4], out[k * 4 + 1], out[k * 4 + 2]], k * 3);
 		const entry = capture.cases[i];
 		expect(entry.id).toBe(c.id);
-		const key = c.group === 'oneaxis' ? `oneaxis-mode${(c.flags >> 4) & 7}` : c.group;
+		const key = c.group === 'oneaxis' || c.group === 'dithered' ? `${c.group}-mode${(c.flags >> 4) & 7}` : c.group;
 		const g = (groups[key] ??= { count: 0, exact: 0, values: 0, maximum: 0 });
 		g.count++;
 		if (createHash('sha256').update(flat).digest('hex') === entry.hash) { g.exact++; return; }
@@ -61,6 +61,13 @@ describe('native mixed enlarge-and-reduce engine and despeckle bands', () => {
 		// 0.19% of the channel values, two or three levels at most.
 		expect(groups['oneaxis-mode3']).toEqual({ count: 24, exact: 2, values: 2314, maximum: 2 });
 		expect(groups['oneaxis-mode4']).toEqual({ count: 24, exact: 2, values: 2649, maximum: 3 });
+	});
+
+	it('pins both axes under a dithered colorfulness adjustment (mixed stretches dither the source from the equal-area line up)', () => {
+		// 96 mixed, enlarged and reduced stretches with every mirroring: 0.25% of the channel values, four levels at most.
+		// Before the area rule picked the dither stage, the mixed ones were 32% to 45% of their values wrong by up to 200 levels.
+		expect(groups['dithered-mode3']).toEqual({ count: 48, exact: 1, values: 1939, maximum: 3 });
+		expect(groups['dithered-mode4']).toEqual({ count: 48, exact: 4, values: 1542, maximum: 4 });
 	});
 });
 
