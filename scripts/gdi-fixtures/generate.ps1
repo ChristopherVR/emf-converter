@@ -171,6 +171,18 @@ if ($Which -eq 'halftone-run-2d') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'halftone-boundary') {
+    # Batch HALFTONE StretchBlt/StretchDIBits probe: runs every <name>.hbin in -TablesDir (see
+    # HalftoneBoundaryProbe.cs for the format) and writes <name>.hout next to it.
+    # generate-halftone-boundary.ts writes the inputs, calls this mode and builds the capture.
+    if (!$TablesDir) { throw 'Pass the directory holding <name>.hbin files (written by generate-halftone-boundary.ts)' }
+    Add-Type -Path (Join-Path $here 'HalftoneBoundaryProbe.cs')
+    $dir = (Resolve-Path -LiteralPath $TablesDir).Path
+    foreach ($input in Get-ChildItem -LiteralPath $dir -Filter *.hbin) {
+        [HalftoneBoundaryProbe]::Run($input.FullName, (Join-Path $dir ($input.BaseName + '.hout')))
+    }
+    return
+}
 if ($Which -eq 'halftone-run-phase') {
     Add-Type -Path (Join-Path $here 'HalftoneRunPhaseProbe.cs')
     [HalftoneRunPhaseProbe]::Run($outDir)
