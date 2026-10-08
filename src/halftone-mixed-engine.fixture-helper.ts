@@ -15,7 +15,7 @@ export function renderMixedCase(c: MixedCase, rgb: Uint8Array): Uint8ClampedArra
 	for (let p = 0; p < c.w * c.h; p++) data.set([rgb[p * 3], rgb[p * 3 + 1], rgb[p * 3 + 2], 255], p * 4);
 	const mode = (c.flags >> 4) & 7;
 	const gamma = mode === 2 || mode === 4 ? 15000 : 10000;
-	const split = mode ? splitColorAdjustment({ ...DEFAULT_COLOR_ADJUSTMENT, colorfulness: mode >= 3 ? 40 : 0, redGamma: gamma, greenGamma: gamma, blueGamma: gamma }) : undefined;
+	const split = mode ? splitColorAdjustment({ ...DEFAULT_COLOR_ADJUSTMENT, colorfulness: mode >= 3 ? 40 : 0, redGamma: gamma, greenGamma: gamma, blueGamma: gamma, flags: mode === 1 ? 2 : 0 }) : undefined;
 	const palette = split?.palette, curves = split?.curves;
 	return stretchHalftone({ width: c.w, height: c.h, data }, 0, 0, c.w, c.h, c.flags & 4 ? -c.dw : c.dw, c.flags & 8 ? -c.dh : c.dh,
 		palette ? v => colorAdjustRgb(v, palette) : curves ? v => colorAdjustRgb(v, curves) : undefined, !palette && !!curves, false,
