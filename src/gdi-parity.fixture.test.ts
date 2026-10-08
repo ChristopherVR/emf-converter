@@ -334,6 +334,10 @@ const RASTER_CASES: ParityCase[] = [
 	raster('emf-insideframe-chord'),
 	raster('emf-insideframe-pie'),
 	raster('emf-insideframe-polygon'),
+	// RoundRects recorded in GM_COMPATIBLE and GM_ADVANCED (the record holds no mode; only its right/bottom edge differs) and played
+	// back natively: unscaled corner under cosmetic and wide pens, a null pen's grown box with the corner scaled onto it. Exact in both
+	// (before: 49 pixels under a null pen and about 210 under a wide pen).
+	...['compat', 'adv'].flatMap((mode) => ['null', 'cosmetic', 'wide'].map((pen) => raster(`emf-roundrect-mode-${mode}-${pen}`))),
 	// The same shapes under a 1.37 world scale: an odd pen width (in 1/16 pixel) puts the vertical edges on half a
 	// 1/16 pixel and shears the curved paths; arc radials are measured on the unrounded device points.
 	raster('emf-insideframe-scaled'), // 0%, before 0.047% (80 pixels)
@@ -894,7 +898,7 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-path-abort'),
 	emfrec('emfrec-anglearc'), // exact (before 2 pixels, 0.0046%; earlier 0.062%)
 	emfrec('emfrec-path-flatten'), // exact (before 4 pixels, 0.011%)
-	emfrec('emfrec-path-widen'), // exact (before 16 pixels, 0.034%; earlier 0.157%): the RoundRect corner is scaled onto the drawn box
+	emfrec('emfrec-path-widen'), // exact (before 16 pixels, 0.034%; earlier 0.157%): the RoundRect corner stays unscaled (the reference is the native playback; the directly drawn PNG is emfrec-path-widen.direct.png, 16 pixels apart)
 	emfrec('emfrec-path-widen-outline'), // ellipse curve sides and duplicated inner triangles
 ];
 

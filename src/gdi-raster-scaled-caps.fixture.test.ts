@@ -53,7 +53,8 @@ function arcPath(source: number[]): GdiRasterPath {
 /** The options `penWidenOptions` builds for a square-capped, round-joined geometric pen under a uniform world scale `s`. */
 function uniformOptions(c: Record, s: number, logical: boolean): WidenOptions {
 	return {
-		width: Math.max(1, Math.floor(c.width * s + 0.5)) * 16,
+		// The nib is the width in FIX; only the cut-less rule of the old extension (`logical` false) kept the whole-pixel pen.
+		width: logical ? Math.round(c.width * s * 16) : Math.max(1, Math.floor(c.width * s + 0.5)) * 16,
 		cap: 'square',
 		join: 'round',
 		miterLimit: 10,
@@ -87,19 +88,13 @@ describe('native WidenPath of square-capped segments under world scales', () => 
 	});
 
 	it('extends a segment by the device vector over its logical vector cut to the nearest whole unit, at every scale', () => {
-		// Half the width is the unrounded one: the pen rounds to whole pixels (a 0.7 scale of a 17 unit pen draws 12 pixels across but
-		// extends 95.2 FIX), so only the cap midpoints are compared at the scales where the pen is not a whole number of pixels.
+		// Half the width is the unrounded one and the nib is the width in FIX (a 0.7 scale of a 17 unit pen is 190 FIX across and
+		// extends 95.2 FIX): every vertex of every segment is native, including the scales where the pen is not a whole number of pixels
+		// (the perpendicular rounded a whole-pixel pen at 260, 224, 158 and 268 of 323 vectors under 0.7, 1.3, 2.5 and 10:7).
 		for (const name of Object.keys(scales)) {
-			const { total, caps } = lineCounts(name, (c) => uniformOptions(c, scales[name], true));
-			expect({ name, caps, total }).toEqual({ name, caps: 323, total: 323 });
+			const { total, caps, vertices } = lineCounts(name, (c) => uniformOptions(c, scales[name], true));
+			expect({ name, caps, vertices, total }).toEqual({ name, caps: 323, vertices: 323, total: 323 });
 		}
-		// Every vertex where the pen is a whole number of pixels.
-		for (const name of ['s1', 's2', 's0.5', 's0.75', 's1.5', 's0.6']) {
-			const { vertices } = lineCounts(name, (c) => uniformOptions(c, scales[name], true));
-			expect({ name, vertices }).toEqual({ name, vertices: 323 });
-		}
-		// c4:3 is a GM_COMPATIBLE map mode (device points on whole pixels): the same rule fits its 0.75 scale.
-		expect(lineCounts('c4:3', (c) => uniformOptions(c, 0.75, true)).vertices).toBe(323);
 	});
 
 	it('is far from the old exact-vector extension where a device vector is not a whole number of logical units', () => {
@@ -126,7 +121,8 @@ describe('native WidenPath of square-capped segments under world scales', () => 
 	});
 
 	it('draws arcs under a world scale with the same cap rule', () => {
-		// Counts of the 358 swept arcs that are vertex for vertex identical; with the exact vector: 2, 170, 135 and 53.
+		// Counts of the 358 swept arcs that are vertex for vertex identical; with the exact vector: 2, 170, 135 and 53, and before the
+		// cut rounded ties away from zero (a logical vector of 3.5 units normalises by 4, not 3): 344, 315, 324 and 329.
 		const exact: Record<string, number> = {};
 		for (const name of ['s2', 's0.5', 's0.75', 's1.5']) {
 			exact[name] = arcs
@@ -136,18 +132,37 @@ describe('native WidenPath of square-capped segments under world scales', () => 
 					return JSON.stringify(o) === JSON.stringify(polygons(c.expected));
 				}).length;
 		}
-		expect(exact['s2']).toBeGreaterThanOrEqual(344);
-		expect(exact['s0.5']).toBeGreaterThanOrEqual(315);
-		expect(exact['s0.75']).toBeGreaterThanOrEqual(324);
-		expect(exact['s1.5']).toBeGreaterThanOrEqual(329);
+		expect(exact).toEqual({ s2: 358, 's0.5': 358, 's0.75': 358, 's1.5': 358 });
 	});
 
 	it('draws arcs under unequal axis scales with the same cap rule', () => {
 		const run = (name: string, options: WidenOptions) =>
 			arcs.filter((c) => c.scale === name).filter((c) => JSON.stringify(widenPath(arcPath(c.source), options)) === JSON.stringify(polygons(c.expected))).length;
 		// Before the cut: 125 of 358 (2:1) and 164 (1:16).
-		expect(run('aniso2', { width: 6 * 16, height: 12 * 16, cap: 'square', join: 'round', miterLimit: 10, cutToLogicalUnits: true, logicalScale: [0.5, 1] })).toBeGreaterThanOrEqual(321);
-		expect(run('aniso16', { width: 3 * 16, height: 48 * 16, cap: 'square', join: 'round', miterLimit: 10, cutToLogicalUnits: true, logicalScale: [1 / 16, 1] })).toBeGreaterThanOrEqual(353);
+		expect(run('aniso2', { width: 6 * 16, height: 12 * 16, cap: 'square', join: 'round', miterLimit: 10, cutToLogicalUnits: true, logicalScale: [0.5, 1] })).toBeGreaterThanOrEqual(356);
+		expect(run('aniso16', { width: 3 * 16, height: 48 * 16, cap: 'square', join: 'round', miterLimit: 10, cutToLogicalUnits: true, logicalScale: [1 / 16, 1] })).toBe(358);
+	});
+
+	it('widens a pen at its width in FIX: 400 horizontal and 400 vertical flat-capped pens under ten scales are native vertex for vertex', () => {
+		// Whole-pixel widths matched only 367 of the vertical outlines; the pen's whole-pixel extent is the perpendicular's rounding.
+		const pens = penWidths.filter((r) => typeof r.scale === 'number');
+		let horizontal = 0;
+		let vertical = 0;
+		for (const r of pens) {
+			const s = r.scale as number;
+			const options: WidenOptions = { width: Math.max(1, Math.round(r.width * s * 16)), cap: 'flat', join: 'round', miterLimit: 10 };
+			const x0 = Math.round(100 * s * 16);
+			const x1 = Math.round(140 * s * 16);
+			const h = new GdiRasterPath();
+			h.moveTo(x0, x0);
+			h.lineTo(x1, x0);
+			if (JSON.stringify(widenPath(h, options)) === JSON.stringify(polygons(r.expected))) horizontal++;
+			const v = new GdiRasterPath();
+			v.moveTo(x0, x0);
+			v.lineTo(x0, x1);
+			if (JSON.stringify(widenPath(v, options)) === JSON.stringify(polygons(r.expectedVertical))) vertical++;
+		}
+		expect({ horizontal, vertical, total: pens.length }).toEqual({ horizontal: 400, vertical: 400, total: 400 });
 	});
 
 	it('rounds a geometric pen to whole device pixels (half up) under a scale or map mode', () => {

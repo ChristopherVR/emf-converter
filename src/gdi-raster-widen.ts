@@ -378,8 +378,9 @@ function norm(x: number, y: number): number {
  *
  * `wholePixelNorm` normalises the vector cut down to whole logical units instead of its exact length (a vector under one unit in
  * both components extends nothing). At the identity scale that is an arithmetic shift of the FIX components (floor). Under a world
- * transform GDI converts the device vector back to logical units first, and the conversion rounds to the nearest unit: the vector
- * over the scale (`logicalScale`, device pixels per logical unit per axis; or `matrix`) plus half a unit, then floor. The result
+ * transform GDI converts the device vector back to logical units first, and the conversion rounds each component to the nearest unit,
+ * a tie away from zero (|vector over the scale (`logicalScale`, device pixels per logical unit per axis; or `matrix`)| plus half a
+ * unit, floored, with the sign kept: a component of -3.5 units cuts to -4, which a plain floor of the biased value gave -3). The result
  * is the logical vector over its cut length times the half width: its device rounding is what makes an extension 94 FIX under a
  * 0.7 scale where the exact vector gives 96.
  */
@@ -403,7 +404,7 @@ export function squareExtension(
 		const ly = (-matrix[1] * dx + matrix[0] * dy) / det;
 		let l = Math.hypot(lx, ly);
 		if (wholePixelNorm) {
-			l = norm(Math.floor((lx + slack) / 16) * 16, Math.floor((ly + slack) / 16) * 16);
+			l = norm(Math.sign(lx) * Math.floor((Math.abs(lx) + slack) / 16) * 16, Math.sign(ly) * Math.floor((Math.abs(ly) + slack) / 16) * 16);
 			if (l === 0) return [0, 0];
 		}
 		const q = ((width / 2) * scale) / l;
@@ -416,8 +417,10 @@ export function squareExtension(
 	if (wholePixelNorm && (width === height || ax !== ay)) {
 		const lx = dx / ax;
 		const ly = dy / ay;
+		// Rounds to the nearest whole unit, ties away from zero (a half unit of a negative component rounds to the larger magnitude).
 		const cut = ax === 1 && ay === 1 ? 0 : slack;
-		const whole = norm(Math.floor((lx + cut) / 16) * 16, Math.floor((ly + cut) / 16) * 16);
+		const unit = (v: number): number => (cut ? Math.sign(v) * Math.floor((Math.abs(v) + cut) / 16) * 16 : Math.floor(v / 16) * 16);
+		const whole = norm(unit(lx), unit(ly));
 		// A vector of less than a unit (both components in 0..15) normalises to nothing: no extension.
 		if (whole === 0) return [0, 0];
 		// Along the ellipse nib the x half width is `r` and the y one `r * ay / ax`, as for the exact vector below.
@@ -693,6 +696,14 @@ class Outliner {
 				// Native WidenPath repeats this inner triangle. Filling hides
 				// the repetition; stroking the widened outline exposes it.
 				this.push(p, sb);
+				if (cap === 'flat' && Da !== Db && !(a.curveEnd && b.curveEnd)) {
+					// A flat cap also loops round the pen between the two sides, within a flattened cubic or at its end, when that wedge
+					// holds two pen vertices or more (native WidenPath of 2,484 dashed arcs and Beziers: a wedge of one vertex, and any
+					// wedge at the boundary of two cubics, is absent).
+					const before = this.pts.length;
+					this.wedge(p, rayB, rayA, false, false, this.extremeTail(side === 'L', Da, a));
+					if (this.pts.length - before < 2) this.pts.length = before;
+				}
 				this.push(p, sa);
 				this.pts.push([p[0], p[1]]);
 			}

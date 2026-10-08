@@ -4,6 +4,44 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.15.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.2) - 2026-10-08
+
+### Bug Fixes
+
+- **emf:** Play RoundRect records the same in every graphics mode ([456e91b](https://github.com/ChristopherVR/emf-converter/commit/456e91bf9834d53f2b9a8d106faab8da90655392))
+- **gdi:** Round the scaled cap cut away from zero and widen at the pen's FIX width ([05c11bd](https://github.com/ChristopherVR/emf-converter/commit/05c11bd9467080909c238a343300c1c8f4ecab86))
+- **gdi:** Loop flat caps round the pen between a curve's inner sides; isolate samples 206 and 117 ([5c35d85](https://github.com/ChristopherVR/emf-converter/commit/5c35d85fae1a026813fd8ac9a8af0c7ce81b22f9))
+
+### Other
+
+- Merge origin/main into worktree-agent-a2631764e45a78b7a ([a4b1428](https://github.com/ChristopherVR/emf-converter/commit/a4b1428e1a2a61372c67c17c9b8b9f56b79a535d))
+
+### Documentation
+
+- Update the measured test count after the pen and RoundRect playback round ([038819d](https://github.com/ChristopherVR/emf-converter/commit/038819d8d97abe467a0a3999a19333b89be0bf53))
+
+## [4.15.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.1) - 2026-10-08
+
+### Documentation
+
+- Update the measured test count after the text regeneration round ([9d399ea](https://github.com/ChristopherVR/emf-converter/commit/9d399eab2e57e4f2fc1d5b9250324a4086ae6759))
+
+### Testing
+
+- Regenerate the nine clipped text references and pin why seven stay unchanged ([7f59ba5](https://github.com/ChristopherVR/emf-converter/commit/7f59ba51141dbb896625acb435e9c21448391da4))
+
+## [4.15.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.0) - 2026-10-08
+
+### Features
+
+- Quantise path-gradient colour into GDI+'s nested contour steps ([bd7d703](https://github.com/ChristopherVR/emf-converter/commit/bd7d7034d93ad6174b861f4638266b6872a15f94))
+
+### Documentation
+
+- Record the path-gradient step rule and what stays open ([a007563](https://github.com/ChristopherVR/emf-converter/commit/a00756369d48d131791ed09eec1d0ca19b8124bf))
+- Update the measured test count after the path-gradient round ([e0c550b](https://github.com/ChristopherVR/emf-converter/commit/e0c550b1ea831231985e5d60cfa8647b3439d9d3))
+- Record the ellipse-clamp two-level pixels left by the path-gradient step rule ([bc8ba07](https://github.com/ChristopherVR/emf-converter/commit/bc8ba075babc7f4a2935accaf90692dd47b82c4f))
+
 ## [4.14.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.14.0) - 2026-10-07
 
 ### Features
