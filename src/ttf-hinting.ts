@@ -1022,6 +1022,10 @@ export class HintedSize {
 		}
 		const calls: Frame[] = [];
 		this.callFrames = calls;
+		// The instruction budget guards one program (FreeType resets it per execution). It used to accumulate over
+		// the size's lifetime, so once a size had run about a million instructions every later glyph aborted at
+		// its first instruction and kept its unhinted outline.
+		this.count = 0;
 		let ip = 0;
 		let cur = code;
 		while (true) {
