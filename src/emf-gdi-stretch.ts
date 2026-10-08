@@ -616,9 +616,64 @@ const FILTER_TABLE_FACTORS: Record<number, number[][]> = {
 	16: [[3832, 4360, 0], [3328, 4854, 10], [2847, 5307, 38], [2391, 5714, 87], [1960, 6070, 162], [1555, 6373, 264], [1176, 6620, 396], [825, 6807, 560], [561, 6807, 824], [397, 6620, 1175], [265, 6373, 1554], [163, 6070, 1959], [88, 5714, 2390], [39, 5307, 2846], [11, 4854, 3327], [0, 4361, 3831]],
 };
 
+/**
+ * Taps (source index, integer share of 8192) of an enlarged axis in the larger-ratio engine:
+ * an exact 2x keeps the 3:1 linear weights, the whole factors of {@link FILTER_TABLE_FACTORS} their
+ * measured shares, anything else {@link halftoneEnlargeTaps}.
+ */
+function filterAxisTaps(src: number, dst: number): Array<Array<[number, number]>> {
+	const factor = dst / src;
+	const rows = factor === 2 ? FILTER_WEIGHTS[2].map(([a, b, c]) => [a * 512, b * 512, c * 512]) : FILTER_TABLE_FACTORS[factor];
+	if (!rows) return halftoneEnlargeTaps(src, dst).map(row => row.map(([j, v]): [number, number] => [j, Math.round(v * 8192)]));
+	return Array.from({ length: dst }, (_, i): Array<[number, number]> => {
+		const k = Math.floor(i / factor);
+		const [a, b, c] = rows[i % factor];
+		return [[Math.max(0, k - 1), a], [k, b], [Math.min(src - 1, k + 1), c]];
+	});
+}
+
+/**
+ * Enlarging one axis while the other keeps its size: only the enlarged axis is sharpened (with
+ * `v + floor((2v - l - r) / 4)`, clamped, its edge pixels standing in for missing neighbours) and
+ * interpolated with {@link filterAxisTaps}, one rounding half up. Exact on native captures for
+ * 2x, 3x, 5x, 7x, 10x and fractional ratios such as 1.5x and 2.5x; the table misses a share for
+ * ratios just above 1 and 2.
+ */
+function halftoneFilterOneAxis(rgb: Int32Array, w: number, h: number, W: number, H: number): Int32Array {
+	const horizontal = W > w;
+	const n = horizontal ? w : h;
+	const sharp = new Int32Array(rgb.length);
+	const at = (x: number, y: number, c: number): number =>
+		rgb[(Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			for (let c = 0; c < 3; c++) {
+				const v = at(x, y, c);
+				const sum = horizontal ? at(x - 1, y, c) + at(x + 1, y, c) : at(x, y - 1, c) + at(x, y + 1, c);
+				const out = v + Math.floor((2 * v - sum) / 4);
+				sharp[(y * w + x) * 3 + c] = out < 0 ? 0 : out > 255 ? 255 : out;
+			}
+		}
+	}
+	const taps = filterAxisTaps(n, horizontal ? W : H);
+	const out = new Int32Array(W * H * 3);
+	for (let y = 0; y < H; y++) {
+		for (let x = 0; x < W; x++) {
+			for (let c = 0; c < 3; c++) {
+				let sum = 0;
+				if (horizontal) for (const [j, weight] of taps[x]) sum += weight * sharp[(y * w + j) * 3 + c];
+				else for (const [j, weight] of taps[y]) sum += weight * sharp[(j * w + x) * 3 + c];
+				out[(y * W + x) * 3 + c] = Math.floor((sum + 4096) / 8192);
+			}
+		}
+	}
+	return out;
+}
+
 /** Whether {@link halftoneFilterEnlarge} reproduces an enlargement from `w` x `h` to `W` x `H`. */
 export function halftoneFilterSupported(w: number, h: number, W: number, H: number): boolean {
-	if (w <= 0 || h <= 0 || W <= w || H <= h) return false;
+	if (w <= 0 || h <= 0 || W < w || H < h || (W === w && H === h)) return false;
+	if (W === w || H === h) return true;
 	const whole = (src: number, dst: number): boolean => dst % src === 0 && dst / src <= 5;
 	if (whole(w, W) && whole(h, H)) return true;
 	return W > 5 * w || H > 5 * h;
@@ -672,6 +727,12 @@ function ditherFilteredSource(rect: Int32Array, SW: number, SH: number, W: numbe
  *   misses a few weights by a share for factors such as 9x and 10x and for
  *   ratios just above 5.
  *
+ * - One axis enlarged while the other keeps its size: {@link halftoneFilterOneAxis}.
+ *
+ * Fractional ratios up to 5x on both axes (and the mixed enlarge/reduce stretches) are not
+ * reproduced: their weights are dyadic like the whole factors' but follow a position rule not yet
+ * found, so {@link halftoneFilterSupported} is false for them.
+ *
  * Callers check {@link halftoneFilterSupported} first. Pixel-exact for every
  * native capture that took the filtered branch (`halftone-boundary`,
  * `halftone-selection`, `halftone-arrangement`, `halftone-filtered`).
@@ -683,6 +744,7 @@ function ditherFilteredSource(rect: Int32Array, SW: number, SH: number, W: numbe
  * @returns RGB triples, `W` x `H`.
  */
 export function halftoneFilterEnlarge(rgb: Int32Array, w: number, h: number, W: number, H: number, extended?: Int32Array): Int32Array {
+	if (W === w || H === h) return halftoneFilterOneAxis(rgb, w, h, W, H);
 	const clamp = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
 	const general = W > 5 * w || H > 5 * h;
 	const out = new Int32Array(W * H * 3);
@@ -704,19 +766,8 @@ export function halftoneFilterEnlarge(rgb: Int32Array, w: number, h: number, W: 
 		} else {
 			halftoneSharpen(sharp, w, h);
 		}
-		// Taps as integer shares of 8192; an exact 2x axis keeps the 3:1 linear weights.
-		const axis = (src: number, dst: number): Array<Array<[number, number]>> => {
-			const factor = dst / src;
-			const rows = factor === 2 ? FILTER_WEIGHTS[2].map(([a, b, c]) => [a * 512, b * 512, c * 512]) : FILTER_TABLE_FACTORS[factor];
-			if (!rows) return halftoneEnlargeTaps(src, dst).map(row => row.map(([j, v]): [number, number] => [j, Math.round(v * 8192)]));
-			return Array.from({ length: dst }, (_, i): Array<[number, number]> => {
-				const k = Math.floor(i / factor);
-				const [a, b, c] = rows[i % factor];
-				return [[Math.max(0, k - 1), a], [k, b], [Math.min(src - 1, k + 1), c]];
-			});
-		};
-		const xt = axis(w, W);
-		const yt = axis(h, H);
+		const xt = filterAxisTaps(w, W);
+		const yt = filterAxisTaps(h, H);
 		const middle = new Int32Array(W * h * 3);
 		for (let y = 0; y < h; y++) {
 			for (let x = 0; x < W; x++) {
@@ -892,7 +943,7 @@ export function stretchHalftone(
 	// source takes the filtered branch (see halftoneBranch) is sharpened and interpolated instead of
 	// replicated (see halftoneFilterEnlarge). A mirrored blit is the mirror image of the unmirrored
 	// one; a combined colour adjustment dithers and maps the source first (see emf-gdi-halftone-dither).
-	if (enlarging && halftoneFilterSupported(SW, SH, W, H) && (!adjust || adjustAfterSampling || dithered)
+	if (enlarging && halftoneFilterSupported(SW, SH, W, H) && (!adjust || adjustAfterSampling || (dithered && W !== SW && H !== SH))
 		&& halftoneBranch(rect, SW, SH) === 'filter') {
 		let extended: Int32Array | undefined;
 		if (dithered) {

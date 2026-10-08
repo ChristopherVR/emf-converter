@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T03:54:14.7550743Z",
+    "capturedAt":  "2026-10-08T04:10:29.5533525Z",
     "groups":  "halftone-filtered",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -3388,7 +3388,7 @@
     "references":  [
                        {
                            "name":  "halftone-filtered.json.gz",
-                           "sha256":  "47c8183b5e42b17d0086f0354654ce4cfb9a4c5e408781f9ab33defdd255903e"
+                           "sha256":  "b4604c9a605e3ad5efab5cd981f7682ccf2fa7d0fcdb8bcb9599d2878ac3443d"
                        }
                    ]
 }

@@ -10,7 +10,7 @@
 
 export interface FilteredCase {
 	id: string;
-	group: 'whole' | 'large' | 'mirrored' | 'dithered';
+	group: 'whole' | 'large' | 'mirrored' | 'dithered' | 'oneaxis';
 	kind: number;
 	w: number;
 	h: number;
@@ -62,6 +62,7 @@ export function filteredCases(): FilteredCase[] {
 		cases.push(pair(`dithered-${s}x-m${mode}-f${mirror}`, 'dithered', 0, W * s, H * s, mirror | (mode << 4)));
 	}
 	cases.push(pair('dithered-7x-m3-f0', 'dithered', 0, W * 7, H * 7, 3 << 4));
+	for (const [dw, dh] of [[128, 40], [320, 40], [96, 40], [160, 40], [448, 40], [64, 80], [64, 120], [64, 400], [64, 41]]) cases.push(pair(`oneaxis-${dw}x${dh}`, 'oneaxis', 1, dw, dh));
 	return cases;
 }
 

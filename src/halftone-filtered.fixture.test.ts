@@ -56,7 +56,7 @@ function run(c: (typeof cases)[number]): { pixels: number; values: number; maxim
 describe('native HALFTONE filtered enlargements', () => {
 	it('retains the captured cases and their one-axis profiles', () => {
 		expect(capture.cases).toHaveLength(cases.length);
-		expect(cases).toHaveLength(27);
+		expect(cases).toHaveLength(36);
 		expect(capture.profiles).toHaveLength(30);
 		for (const c of cases) expect(halftoneBranch(Int32Array.from(filteredSource(c.kind, c.w, c.h)), c.w, c.h), c.id).toBe('filter');
 	});
@@ -69,6 +69,22 @@ describe('native HALFTONE filtered enlargements', () => {
 			exact++;
 		}
 		expect(exact).toBe(16);
+	});
+
+	it('reproduces an enlargement of one axis (the other keeps its size) by the 1-D sharpen and the kernel table', () => {
+		let exact = 0;
+		for (const c of cases.filter(x => x.group === 'oneaxis')) {
+			const { values, maximum } = run(c);
+			// 64 x 41 (a 1.025x axis) misses three values by one level: the kernel table is a share off there.
+			if (c.id === 'oneaxis-64x41') {
+				expect(values, c.id).toBeLessThanOrEqual(3);
+				expect(maximum, c.id).toBeLessThanOrEqual(1);
+			} else {
+				expect(values, c.id).toBe(0);
+				exact++;
+			}
+		}
+		expect(exact).toBe(8);
 	});
 
 	it('reproduces mirrored blits as the mirror image of the unmirrored one', () => {
