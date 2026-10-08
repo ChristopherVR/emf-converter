@@ -459,7 +459,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
 	fontCase('textx-arial-aa', 'emf', 0.0016), // measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-arial-cleartype', 'emf', 0.0646), // measured 5.163%
+	fontCase('textx-arial-cleartype', 'emf', 0.0471), // measured 4.706%, 5.163% before the size-specific SHPIX tweaks
 	fontCase('textx-arial-ctnatural', 'emf', 0.1856), // measured 14.847%
 	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
 	fontCase('textx-arial-q0-default', 'emf', 0.0646), // measured 5.163%
@@ -505,7 +505,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
 	fontCase('textx-plus-antialias', 'emf', 0.0321), // nearest-quarter grayscale origins; remaining glyph hinting
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0255), // measured 2.547%; GDI+ hinting and shades
-	fontCase('textx-plus-cleartype', 'emf', 0.1021), // measured 10.216%; decorations retained
+	fontCase('textx-plus-cleartype', 'emf', 0.0972), // measured 9.714%, 10.216% before the size-specific SHPIX tweaks; decorations retained
 	fontCase('textx-plus-singlebit', 'emf', 0.0245), // measured 1.960%
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
@@ -514,7 +514,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-rotalign-world', 'emf', 0.0068), // measured 0.537%
 	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
 	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
-	fontCase('textx-segoeui-cleartype', 'emf', 0.0506), // measured 4.041%
+	fontCase('textx-segoeui-cleartype', 'emf', 0.0404), // measured 4.035%
 	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
 	fontCase('textx-tahoma-aa', 'emf', 0.0013), // measured 0.092%
@@ -684,7 +684,7 @@ const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
 	close('gpx-text-pathgrad', 0.0099), // measured 0.978%, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
-	close('gpx-text-texture-cleartype', 0.04), // measured 3.093%
+	close('gpx-text-texture-cleartype', 0.0281), // measured 2.802%, 3.093% before the size-specific SHPIX tweaks
 ];
 
 /**
@@ -866,7 +866,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
  */
 const TEXT_CONTRAST_CASES: ParityCase[] = [
 	close('gpx-rec-textcontrast', 0.0287), // measured 2.865%; GDI+ hinting and shades
-	close('gpx-rec-textcontrast-cleartype', 0.05), // measured 4.008%
+	close('gpx-rec-textcontrast-cleartype', 0.0334), // measured 3.331%, 4.008% before the size-specific SHPIX tweaks
 ];
 
 /**

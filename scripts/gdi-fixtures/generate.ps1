@@ -17,7 +17,7 @@
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
-#   text-cleartype-coverage, text-origin-phases, text-origin-vertical-phases,
+#   text-cleartype-coverage, text-cleartype-sizes, text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
 #   text-opcode-hinting, text-opcode-coverage, text-vector-stage-hinting,
 #   text-vector-stage-coverage, text-signed-diagonal, path-gradient-steps,
@@ -129,6 +129,12 @@ if ($Which -eq 'text-coverage' -or $Which -eq 'text-cleartype-coverage') {
     Add-Type -Path (Join-Path $here 'TextCoverageProbe.cs') -ReferencedAssemblies System.Drawing
     if ($Which -eq 'text-coverage') { [TextCoverageProbe]::Run($outDir) }
     else { [TextCoverageProbe]::ClearType($outDir) }
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-cleartype-sizes') {
+    Add-Type -Path (Join-Path $here 'TextClearTypeSizeProbe.cs') -ReferencedAssemblies System.Drawing
+    [TextClearTypeSizeProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

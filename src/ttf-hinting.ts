@@ -243,6 +243,8 @@ interface FuncDef {
 	code: Uint8Array;
 	start: number;
 	end: number;
+	/** Lazily computed by `isSizeTweak`. */
+	sizeTweak?: boolean;
 }
 
 class HintError extends Error {}
@@ -996,6 +998,35 @@ export class HintedSize {
 	}
 
 	/** Returns the length of the instruction at `ip` (for skipping). */
+	/**
+	 * True for the generic per-size tweak helpers of Monotype-hinted fonts
+	 * (Arial, Times New Roman, Tahoma): a function that shifts points with
+	 * SHPIX under an MPPEM test and never reads a storage location, so it is
+	 * not selected by the rendering mode that the font's prep program stores.
+	 * The mode-selected variants (which read storage 2 before the same MPPEM
+	 * test) are the ClearType tweaks.
+	 */
+	private static isSizeTweak(def: FuncDef): boolean {
+		if (def.sizeTweak === undefined) {
+			let shpix = false;
+			let mppem = false;
+			let rs = false;
+			for (let ip = def.start; ip < def.end; ip += HintedSize.insLength(def.code, ip)) {
+				const op = def.code[ip];
+				shpix ||= op === 0x38;
+				mppem ||= op === 0x4b;
+				rs ||= op === 0x43;
+			}
+			def.sizeTweak = shpix && mppem && !rs;
+		}
+		return def.sizeTweak;
+	}
+
+	private inSizeTweak(): boolean {
+		const frame = this.callFrames[this.callFrames.length - 1];
+		return !!frame && HintedSize.isSizeTweak(frame.def);
+	}
+
 	private static insLength(code: Uint8Array, ip: number): number {
 		const op = code[ip];
 		if (op === 0x40) {
@@ -1492,12 +1523,17 @@ export class HintedSize {
 				while (gs.loop > 0) {
 					const p = this.pop();
 					if (p >= 0 && p < this.zp2.n) {
-						// Backward-compatible ClearType keeps SHPIX only on touched
-						// points in the non-ClearType direction (and in composites).
+						// Backward-compatible ClearType keeps SHPIX on touched points in
+						// the non-ClearType direction (and in composites). Along x it
+						// still honours the font's mode-selected tweaks and inline
+						// shifts, but not the generic per-size helper functions
+						// (`isSizeTweak`): measured against native captures of Arial,
+						// Tahoma and Times New Roman, only those are ignored.
 						const keep =
 							!this.ctCompat() ||
 							this.inComposite ||
-							(gs.fvx === 0 && (this.zp2.tags[p] & TOUCH_Y) !== 0);
+							(gs.fvx === 0 && (this.zp2.tags[p] & TOUCH_Y) !== 0) ||
+							(gs.fvx !== 0 && !this.env.grayscale && !this.inSizeTweak());
 						if (keep) {
 							this.moveZp2(p, dx, dy, true);
 						}
