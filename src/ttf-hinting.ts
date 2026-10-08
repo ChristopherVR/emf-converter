@@ -307,6 +307,14 @@ export interface HintedGlyph {
 
 const MAX_INSTRUCTIONS = 1_000_000;
 
+/** Bodies (up to ENDF) of the per-size SHPIX helper functions that ClearType ignores along x. */
+const SIZE_TWEAK_BODIES: readonly number[][] = [
+	// MPPEM GTEQ SWAP MPPEM LTEQ AND IF SHPIX ELSE POP POP EIF
+	[0x4b, 0x53, 0x23, 0x4b, 0x51, 0x5a, 0x58, 0x38, 0x1b, 0x21, 0x21, 0x59],
+	// MPPEM EQ IF SHPIX ELSE POP POP EIF
+	[0x4b, 0x54, 0x58, 0x38, 0x1b, 0x21, 0x21, 0x59],
+];
+
 /**
  * A font realised at one ppem: runs `fpgm` and `prep` once, then hints
  * glyphs on demand. `ppemX`/`ppemY` differ only for a horizontally
@@ -999,25 +1007,19 @@ export class HintedSize {
 
 	/** Returns the length of the instruction at `ip` (for skipping). */
 	/**
-	 * True for the generic per-size tweak helpers of Monotype-hinted fonts
-	 * (Arial, Times New Roman, Tahoma): a function that shifts points with
-	 * SHPIX under an MPPEM test and never reads a storage location, so it is
-	 * not selected by the rendering mode that the font's prep program stores.
-	 * The mode-selected variants (which read storage 2 before the same MPPEM
-	 * test) are the ClearType tweaks.
+	 * True for the two generic per-size tweak helpers of Monotype-hinted fonts
+	 * (Arial, Times New Roman, Tahoma), whose whole body is `MPPEM >= lo and
+	 * MPPEM <= hi: SHPIX` or `MPPEM == ppem: SHPIX`. Native ClearType ignores
+	 * the x shifts they issue; the mode-selected variants (the same body behind
+	 * `RS 2` / `EQ`), inline shifts and every other function are applied. Measured on
+	 * private fonts (`shpix-*.ttf`): any other body, such as extra bytes before
+	 * or after the helper, strict comparisons or a missing ELSE branch, is
+	 * applied, and the function number does not matter.
 	 */
 	private static isSizeTweak(def: FuncDef): boolean {
 		if (def.sizeTweak === undefined) {
-			let shpix = false;
-			let mppem = false;
-			let rs = false;
-			for (let ip = def.start; ip < def.end; ip += HintedSize.insLength(def.code, ip)) {
-				const op = def.code[ip];
-				shpix ||= op === 0x38;
-				mppem ||= op === 0x4b;
-				rs ||= op === 0x43;
-			}
-			def.sizeTweak = shpix && mppem && !rs;
+			const n = def.end - def.start;
+			def.sizeTweak = SIZE_TWEAK_BODIES.some((body) => body.length === n && body.every((b, i) => def.code[def.start + i] === b));
 		}
 		return def.sizeTweak;
 	}
