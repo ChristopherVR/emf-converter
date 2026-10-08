@@ -173,9 +173,17 @@ function boxFrame(box: FixBox): { l: number; t: number; r: number; b: number } {
  * (degenerate) Beziers (Windows' `GetPath`, Wine `gdi32/tests/path.c`,
  * `test_roundrect`).
  */
-export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, clockwise = false, compatible = false): number[] {
+export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, recordedClockwise = false, compatible = false): number[] {
 	const f = boxFrame(box);
-	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch, compatible, clockwise);
+	// A map that mirrors an axis (a box with a negative extent) builds the logical shape and maps it point by point, so the path
+	// is the mirror image of the unmirrored one, but its roundings are not: native playback paths (`compat-playback-shapes.json.gz`,
+	// 3,456 RoundRects of 6 maps x 4 mirrorings) show the horizontal controls round down instead of up when x is mirrored, and
+	// the vertical ones follow the direction recorded in the opposite sense when y is mirrored (the recorded direction is the call's
+	// flipped once by the recorder). The shape is built unmirrored with those two roundings and mirrored in x afterwards.
+	const mirrorX = isAxisBox(box) && box.exx < 0;
+	const mirrorY = isAxisBox(box) && box.eyy < 0;
+	const clockwise = recordedClockwise !== mirrorY;
+	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch, compatible, clockwise, mirrorX);
 	const map = frameMapper(box, f.l, f.t, f.r - f.l, f.b - f.t);
 	const pts: number[] = [];
 	for (let i = 0; i < q.length; i += 2) {
@@ -235,6 +243,11 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, cloc
 			set(15, null, f.b - hy);
 		}
 	}
+	if (mirrorX) {
+		for (let i = 0; i < pts.length; i += 2) {
+			pts[i] = f.l + f.r - pts[i];
+		}
+	}
 	return pts;
 }
 
@@ -259,6 +272,12 @@ export type ArcKind = 'arc' | 'arcto' | 'chord' | 'pie';
  * (the current position); `Pie` closes through the centre, `Chord` closes
  * straight. Returns the path and the arc's end point (the new current
  * position for `ArcTo`).
+ *
+ * `mirror` says which axes the map of an axis-aligned `box` mirrors (negative scale), with `clockwise` the direction recorded in
+ * the metafile: native playback paths (`compat-playback-shapes.json.gz`, Arc, Chord and Pie under four mirrorings of six maps)
+ * show the shape is built in logical space and mapped point by point. A mirrored y runs it the other way on screen (the vertical
+ * roundings follow that direction); a mirrored x mirrors the finished points about the box's centre, with the horizontal controls
+ * of the whole quadrants rounded down instead of up. Without `mirror` the box's own orientation decides, as for a rotated box.
  */
 export function arcRasterPath(
 	box: FixBox,
@@ -268,6 +287,7 @@ export function arcRasterPath(
 	kind: ArcKind,
 	from?: [number, number],
 	path: GdiRasterPath = new GdiRasterPath(),
+	mirror?: { x: boolean; y: boolean },
 ): { path: GdiRasterPath; end: [number, number] } {
 	const f = boxFrame(box);
 	const map = frameMapper(box, f.l, f.t, f.r - f.l, f.b - f.t);
@@ -291,13 +311,20 @@ export function arcRasterPath(
 		if (det < 0) {
 			cw = !cw;
 		}
+	} else if (mirror) {
+		cw = clockwise !== mirror.y;
+		if (mirror.x) {
+			sx = f.l + f.r - sx;
+			ex = f.l + f.r - ex;
+		}
 	} else {
 		// A mirrored axis box reverses the on-screen direction.
 		if ((box.exx < 0) !== (box.eyy < 0)) {
 			cw = !cw;
 		}
 	}
-	const bz = arcBeziers(f.l, f.t, f.r, f.b, sx, sy, ex, ey, cw, !!box.halfX, !!box.framed);
+	const mirrorX = !!mirror?.x && isAxisBox(box);
+	const bz = arcBeziers(f.l, f.t, f.r, f.b, sx, sy, ex, ey, cw, !!box.halfX, !!box.framed, mirrorX);
 	const pts: number[] = [];
 	for (let i = 0; i < bz.length; i += 2) {
 		pts.push(...map(bz[i], bz[i + 1]));
@@ -311,7 +338,7 @@ export function arcRasterPath(
 	if (kind === 'pie') {
 		const w = f.r - f.l;
 		const h = f.b - f.t;
-		const [cx, cy] = map(f.l + Math.ceil(w / 2) + (box.halfX ? 1 : 0), f.t + Math.ceil(h / 2));
+		const [cx, cy] = map(f.l + Math.ceil(w / 2) + (box.halfX && !mirrorX ? 1 : 0), f.t + Math.ceil(h / 2));
 		path.lineTo(cx, cy);
 	}
 	if (kind === 'pie' || kind === 'chord') {

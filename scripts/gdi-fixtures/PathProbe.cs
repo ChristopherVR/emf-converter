@@ -252,6 +252,26 @@ public static class PathProbe
 			using(var file=File.Create(Path.Combine(dir,"arc-small.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
 		}finally{DeleteDC(dc);}
 	}
+	/** Native GetPath of Arcs on boxes of 2^20 to 2^24 pixels, where one FIX is 1e-7 to 1e-9 of the radius, so the control points expose the single precision unit vectors of the arc (`arc-huge.json.gz`, the `arc-small.json.gz` layout with `size` in pixels). Sweeps 0.05 to 3 degrees, both directions, a fifth of the starts on the 0 axis. */
+	public static void ArcHuge(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var rnd=new Random(77031);var js=new StringBuilder("[");
+		try {
+			Func<int,double,int[]> far=delegate(int size,double deg){double a=deg*Math.PI/180;return new[]{(int)Math.Round(size/2.0+Math.Cos(a)*8e6),(int)Math.Round(size/2.0-Math.Sin(a)*8e6)};};
+			double[] sweeps={0.05,0.2,0.5,1,2,3};
+			int[] sizes={1<<20,1<<22,1<<24};
+			int n=0;
+			foreach(int size in sizes)foreach(double sweep in sweeps)for(int rep=0;rep<40;rep++){
+				double start=rep%5==0?0:rnd.NextDouble()*360;
+				int way=(rep%2==1)?2:1;
+				int[] q1=far(size,start),q2=far(size,way==1?start+sweep:start-sweep);
+				if(n>0)js.Append(',');
+				js.Append("{\"kind\":0,\"clockwise\":").Append(way==2?"true":"false").Append(",\"radius\":").Append((long)size*8).Append(",\"size\":").Append(size).Append(",\"sweep\":").Append(sweep.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"box\":[0,0,").Append(size).Append(',').Append(size).Append("],\"radials\":[").Append(q1[0]).Append(',').Append(q1[1]).Append(',').Append(q2[0]).Append(',').Append(q2[1]).Append("],\"expected\":").Append(ArcPath(dc,0,0,0,size,size,q1[0],q1[1],q2[0],q2[1],way)).Append('}');
+				n++;
+			}
+			var bytes=Encoding.UTF8.GetBytes(js.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"arc-huge.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
 	public static void ArcPaths(string dir) {
 		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(6047);var json=new StringBuilder("[");var jsonCw=new StringBuilder("[");
 		try {
