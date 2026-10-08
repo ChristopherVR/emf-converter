@@ -12,7 +12,7 @@
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
 # playback of the recorded metafile.
-param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '', [switch]$PlaybackOpen)
+param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '', [switch]$PlaybackOpen, [string]$OutDir = '')
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # GetDeviceCaps and enhanced-metafile headers must use the same physical
@@ -20,7 +20,7 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # and PlayEnhMetaFile silently scales its reference bitmap on scaled displays.
 Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class GdiFixtureDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
 [GdiFixtureDpi]::SetProcessDPIAware() | Out-Null
-$out = Join-Path $here '..\..\src\__fixtures__\gdi'
+$out = if ($OutDir) { $OutDir } else { Join-Path $here '..\..\src\__fixtures__\gdi' }
 $outDir = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $out)).Path
 $generationStarted = [DateTime]::UtcNow
 function Complete-Fixtures {
@@ -42,6 +42,20 @@ if ($Which -eq 'illuminant-cubes') {
     Add-Type -Path (Join-Path $here 'HalftoneColorProbe.cs')
     $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $TablesDir)).Path
     [HalftoneColorProbe]::IlluminantCubes($destination)
+    return
+}
+if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe') {
+    Add-Type -Path (Join-Path $here 'PathProbe.cs')
+    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'emf-roundrect-mode-probe') {
+    Add-Type -Path (Join-Path $here 'RoundRectModeProbe.cs') -ReferencedAssemblies System.Drawing
+    [RoundRectModeProbe]::Run($outDir)
+    [RoundRectModeProbe]::Paths($outDir)
+    [RoundRectModeProbe]::PlayExisting($outDir, 'emfrec-path-widen')
+    Complete-Fixtures
     return
 }
 if ($Which -eq 'miter-limit-probe') {
@@ -86,6 +100,14 @@ if ($Which -eq 'text-coverage' -or $Which -eq 'text-cleartype-coverage') {
     if ($Which -eq 'text-coverage') { [TextCoverageProbe]::Run($outDir) }
     else { [TextCoverageProbe]::ClearType($outDir) }
     Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-recorded-advance') {
+    Add-Type -Path (Join-Path $here 'RecordedAdvanceProbe.cs') -ReferencedAssemblies System.Drawing
+    [RecordedAdvanceProbe]::Run($outDir)
+    $names = 'textx-arial-q0-default', 'textx-arial-q1-draft', 'textx-arial-q2-proof', 'textx-arial-cleartype', 'textx-arial-ctnatural', 'textx-segoeui-cell-mono'
+    $files = @(Join-Path $outDir 'text-recorded-advance.json') + @($names | ForEach-Object { Join-Path $outDir ($_ + '.emf'); Join-Path $outDir ($_ + '.png') })
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-text-recorded-advance.json') -Groups $Which -Files $files
     return
 }
 if ($Which -eq 'playback-extents') {
@@ -145,6 +167,30 @@ if ($Which -eq 'path-gradient-steps') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-vertices') {
+    Add-Type -Path (Join-Path $here 'PathGradientVertexProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientVertexProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-rotated') {
+    Add-Type -Path (Join-Path $here 'PathGradientRotateProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientRotateProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus-shapes') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusShapeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusShapeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-ties') {
+    Add-Type -Path (Join-Path $here 'PathGradientTieProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientTieProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'bicubic-copy') {
     Add-Type -Path (Join-Path $here 'BicubicCopyProbe.cs') -ReferencedAssemblies System.Drawing
     [BicubicCopyProbe]::Run($outDir)
@@ -156,6 +202,28 @@ if ($Which -eq 'hq-arithmetic') {
     [HighQualityArithmeticProbe]::Run($outDir)
     Add-Type -Path (Join-Path $here 'HighQualityIndependentProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityIndependentProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-rotated') {
+    Add-Type -Path (Join-Path $here 'HighQualityRotatedProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityRotatedProbe]::Run($outDir)
+    Add-Type -Path (Join-Path $here 'HighQualityRotatedFineProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityRotatedFineProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-half-shift') {
+    Add-Type -Path (Join-Path $here 'HighQualityHalfShiftProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityHalfShiftProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-axis') {
+    Add-Type -Path (Join-Path $here 'HighQualityAxisProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityAxisProbe]::Run($outDir)
+    Add-Type -Path (Join-Path $here 'HighQualityAxisNoiseProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityAxisNoiseProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
@@ -374,6 +442,17 @@ if ($Which -eq 'icm-cmyk-srgb16') {
     foreach ($ink in Get-ChildItem -LiteralPath $dir -Filter *.ink) {
         [IcmProbe]::RunSrgb16($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb16')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm', 0, 3)
         [IcmProbe]::RunSrgb8($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb8')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm')
+    }
+    return
+}
+if ($Which -eq 'icm-cmyk-translate16') {
+    # 16-bit CMYK input through TranslateColors: every <name>.cmyk16 file (little-endian 16-bit C, M, Y, K words per sample)
+    # becomes <name>.rgb16t (16-bit R, G, B words per sample). Needs a 64-bit PowerShell for the 16-byte COLOR records.
+    if (!$TablesDir) { throw 'Pass the directory holding <name>.cmyk16 files' }
+    Add-Type -Path (Join-Path $here 'IcmProbe.cs')
+    $dir = (Resolve-Path -LiteralPath $TablesDir).Path
+    foreach ($ink in Get-ChildItem -LiteralPath $dir -Filter *.cmyk16) {
+        [IcmProbe]::RunTranslate16($ink.FullName, (Join-Path $dir ($ink.BaseName + '.rgb16t')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm', 3)
     }
     return
 }

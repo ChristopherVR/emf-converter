@@ -111,7 +111,7 @@ describe('path-gradient step quantisation', () => {
 	// hundredth of a level of a rounding boundary; the over-one rows are the same
 	// half-way ties in rectangles so small that one step is several levels.
 	const pinned: Record<string, [number, number, number]> = {
-		rows: [25390, 25568, 24],
+		rows: [25394, 25568, 20],
 		'image 0 plain': [31770, 32000, 0],
 		'image 0 world2': [31770, 32000, 0],
 		'image 0 world0.5': [15885, 16000, 0],
@@ -133,11 +133,11 @@ describe('path-gradient step quantisation', () => {
 		'image 2 focus': [16000, 16000, 0],
 		'image 2 blend': [7998, 8000, 0],
 		'image 2 preset': [7998, 8000, 0],
-		'image 3 plain': [31930, 32000, 0],
-		'image 3 world2': [31930, 32000, 0],
-		'image 3 world0.5': [15972, 16000, 0],
-		'image 3 brush2': [15972, 16000, 0],
-		'image 3 focus': [15979, 16000, 0],
+		'image 3 plain': [32000, 32000, 0],
+		'image 3 world2': [32000, 32000, 0],
+		'image 3 world0.5': [16000, 16000, 0],
+		'image 3 brush2': [16000, 16000, 0],
+		'image 3 focus': [16000, 16000, 0],
 		'image 3 blend': [7962, 8000, 0],
 		'image 3 preset': [8000, 8000, 0],
 	};
@@ -233,8 +233,8 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			const exact = exactPixels(c, c.a, [], 'premultiplied');
 			if (c.color! <= 1) opaque += exact; else translucent += exact;
 		}
-		expect(opaque).toBeGreaterThanOrEqual(595655); // 497349 of 640000 before
-		expect(translucent).toBeGreaterThanOrEqual(217832); // 197700 of 320000 before
+		expect(opaque).toBeGreaterThanOrEqual(596053); // 595655 with the smooth tie, 497349 of 640000 before the steps
+		expect(translucent).toBeGreaterThanOrEqual(218385); // 217832, then 197700 of 320000 before
 	});
 
 	it('keeps the alpha captures exact to the step', () => {
@@ -245,13 +245,13 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			const key = `${c.varying ? 'varying' : 'uniform'} ${anisotropic ? 'anisotropic' : c.focus && c.focus[0] > 0 ? 'isotropic' : 'no'} focus`;
 			totals[key] = (totals[key] ?? 0) + exactPixels(c, c.a, c.boundaryArgb!, 'premultiplied');
 		}
-		expect(totals['uniform no focus']).toBeGreaterThanOrEqual(318577); // 282949 before
-		expect(totals['uniform isotropic focus']).toBeGreaterThanOrEqual(318583); // 292048 before
-		// Anisotropic focus and varying surrounds keep the smooth ratio.
-		expect(totals['uniform anisotropic focus']).toBeGreaterThanOrEqual(289797);
-		expect(totals['varying no focus']).toBeGreaterThanOrEqual(246132);
-		expect(totals['varying isotropic focus']).toBeGreaterThanOrEqual(246030);
-		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(245704);
+		expect(totals['uniform no focus']).toBeGreaterThanOrEqual(319858); // 318577, then 282949 before
+		expect(totals['uniform isotropic focus']).toBeGreaterThanOrEqual(319785); // 318583, then 292048 before
+		// Varying surrounds are Gouraud fan triangles (246132, 246030 and 245704 before).
+		expect(totals['uniform anisotropic focus']).toBeGreaterThanOrEqual(319529); // 289797 before the copies
+		expect(totals['varying no focus']).toBeGreaterThanOrEqual(319926);
+		expect(totals['varying isotropic focus']).toBeGreaterThanOrEqual(319913);
+		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(319600);
 	});
 
 	it('keeps the focus contours exact to the step when the focus is isotropic', () => {
@@ -263,10 +263,10 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			if (c.focus![0] === c.focus![1]) isotropic += exact; else anisotropic += exact;
 		}
 		expect(isotropic).toBeGreaterThanOrEqual(287982); // 269712 of 288000 before
-		expect(anisotropic).toBeGreaterThanOrEqual(1594271);
+		expect(anisotropic).toBeGreaterThanOrEqual(1725250); // 1594271 before the copies
 		const lines = readSet('path-gradient-vertical-focus-line.json.gz');
 		let line = 0;
 		for (const c of lines) line += exactPixels(c, 0xffc06020, [0xff2080c0, 0xff2080c0, 0xff2080c0], 'rgb');
-		expect(line).toBeGreaterThanOrEqual(811118);
+		expect(line).toBeGreaterThanOrEqual(863072); // 811118 before the copies
 	});
 });

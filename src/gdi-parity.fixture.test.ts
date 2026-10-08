@@ -146,21 +146,21 @@ const LINEAR_RAMP_CASES: ParityCase[] = [
  * the other way), down from 0.4% to 6.5% with the pattern.
  */
 const PATH_TILE_CASES: ParityCase[] = [
-	close('grad-path-ellipse-clamp', 0.001),
-	close('grad-path-ellipse-tile', 0.003),
-	close('grad-path-ellipse-flipx', 0.003),
-	close('grad-path-ellipse-flipy', 0.003),
-	close('grad-path-ellipse-flipxy', 0.003),
-	close('grad-path-rect-blend-clamp', 0.001),
-	close('grad-path-rect-blend-tile', 0.001),
-	close('grad-path-rect-blend-flipx', 0.001),
-	close('grad-path-rect-blend-flipy', 0.001),
-	close('grad-path-rect-blend-flipxy', 0.001),
-	close('grad-path-triangle-clamp', 0.001),
-	close('grad-path-triangle-tile', 0.003),
-	close('grad-path-triangle-flipx', 0.003),
-	close('grad-path-triangle-flipy', 0.003),
-	close('grad-path-triangle-flipxy', 0.003),
+	exact('grad-path-ellipse-clamp'),
+	close('grad-path-ellipse-tile', 0.0008),
+	close('grad-path-ellipse-flipx', 0.0008),
+	close('grad-path-ellipse-flipy', 0.0011),
+	close('grad-path-ellipse-flipxy', 0.0011),
+	exact('grad-path-rect-blend-clamp'),
+	exact('grad-path-rect-blend-tile'),
+	exact('grad-path-rect-blend-flipx'),
+	exact('grad-path-rect-blend-flipy'),
+	exact('grad-path-rect-blend-flipxy'),
+	levelExact('grad-path-triangle-clamp'),
+	close('grad-path-triangle-tile', 0.0012),
+	close('grad-path-triangle-flipx', 0.0012),
+	close('grad-path-triangle-flipy', 0.0012),
+	close('grad-path-triangle-flipxy', 0.0012),
 ];
 
 /**
@@ -334,6 +334,10 @@ const RASTER_CASES: ParityCase[] = [
 	raster('emf-insideframe-chord'),
 	raster('emf-insideframe-pie'),
 	raster('emf-insideframe-polygon'),
+	// RoundRects recorded in GM_COMPATIBLE and GM_ADVANCED (the record holds no mode; only its right/bottom edge differs) and played
+	// back natively: unscaled corner under cosmetic and wide pens, a null pen's grown box with the corner scaled onto it. Exact in both
+	// (before: 49 pixels under a null pen and about 210 under a wide pen).
+	...['compat', 'adv'].flatMap((mode) => ['null', 'cosmetic', 'wide'].map((pen) => raster(`emf-roundrect-mode-${mode}-${pen}`))),
 	// The same shapes under a 1.37 world scale: an odd pen width (in 1/16 pixel) puts the vertical edges on half a
 	// 1/16 pixel and shears the curved paths; arc radials are measured on the unrounded device points.
 	raster('emf-insideframe-scaled'), // 0%, before 0.047% (80 pixels)
@@ -571,9 +575,11 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 		'rotated-bilinear',
 	].map((m) => close(`gpx-image-${m}`, 0)),
 	exact('gpx-image-bicubic'),
-	// A rotated HighQualityBicubic draw: the far edges fade to zero at the
-	// edge (see `fadeAt`); two edge pixels remain over 8 levels.
-	close('gpx-image-rotated-highqualitybicubic', 0.00015), // measured 0.013% (0.142% before)
+	// A rotated HighQualityBicubic draw: a pre-scale to the device length, then
+	// a plain integer Bicubic pass (`resampleRotatedTwoStage`). Every channel is
+	// within one level; 10 pixels (0.064%) are one level off at zero tolerance
+	// (before: 2,911 pixels, 18.5%, up to 10 levels off).
+	levelExact('gpx-image-rotated-highqualitybicubic'),
 ];
 
 /**
@@ -653,11 +659,11 @@ const TEXTURE_SAMPLING_CASES: ParityCase[] = [
 const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 	close('gpx-pen-texture', 0.001), // measured 0.019%
 	close('gpx-pen-lingrad', 0.001), // measured 0.019%
-	close('gpx-pen-pathgrad', 0.002), // measured 0.070%
+	close('gpx-pen-pathgrad', 0.00013), // measured 0.013%, 0.070% before the nested copies
 	exact('gpx-pen-styles'),
 	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
 	close('gpx-text-lingrad', 0.14), // measured 10.98% (glyph shapes)
-	close('gpx-text-pathgrad', 0.09), // measured 6.53% (glyph shapes)
+	close('gpx-text-pathgrad', 0.0628), // measured 6.270% (glyph shapes), 6.53% before the nested copies
 ];
 
 /**
@@ -669,7 +675,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-texture', 0.025), // measured 1.977%
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.021), // measured 1.649%
+	close('gpx-text-pathgrad', 0.0099), // measured 0.978%, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0.04), // measured 3.093%
 ];
@@ -892,7 +898,7 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-path-abort'),
 	emfrec('emfrec-anglearc'), // exact (before 2 pixels, 0.0046%; earlier 0.062%)
 	emfrec('emfrec-path-flatten'), // exact (before 4 pixels, 0.011%)
-	emfrec('emfrec-path-widen'), // exact (before 16 pixels, 0.034%; earlier 0.157%): the RoundRect corner is scaled onto the drawn box
+	emfrec('emfrec-path-widen'), // exact (before 16 pixels, 0.034%; earlier 0.157%): the RoundRect corner stays unscaled (the reference is the native playback; the directly drawn PNG is emfrec-path-widen.direct.png, 16 pixels apart)
 	emfrec('emfrec-path-widen-outline'), // ellipse curve sides and duplicated inner triangles
 ];
 

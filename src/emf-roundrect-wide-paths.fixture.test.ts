@@ -3,10 +3,9 @@
  * pen and a wide geometric pen (`emf-roundrect-wide-probe`, 1,800 shapes of 450 per pen, a quarter of them `AD_CLOCKWISE`). The
  * EMF record holds the call's right and bottom edge less one pixel, which is where the path ends. GDI builds the corner ellipse on
  * the call's box (the record's with that pixel back), then scales it onto the drawn box, truncating to whole FIX under a wide pen.
- * Before, the corner was used unscaled, 3 FIX too large at 20 x 20 in a 65 x 47 box (the 16 pixels of `emfrec-path-widen`). A cosmetic
- * pen keeps the fraction (the path end points then round; 449 of 450 shapes with it) and a null pen's box has its own
- * quarter-pixel adjustment, but both of those are only right in compatible mode, and the rasteriser fixtures that draw them in
- * advanced mode need the unscaled corner, so they keep it (11 and 0 of 450 here).
+ * This is the geometry of the call drawn straight onto a device, not of the metafile it records: `PlayEnhMetaFile` draws the record
+ * unscaled whatever mode it was recorded in (`emf-roundrect-mode.fixture.test.ts`), so the converter no longer applies this
+ * scaling and this capture now pins how far playback is from it.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -80,9 +79,10 @@ describe('EMF RoundRect under cosmetic and wide pens against native GetPath', ()
 		for (const v of Object.values(counts)) expect(v.total).toBe(450);
 	});
 
-	it('matches every wide plain and wide geometric pen point for point', () => {
-		expect(counts.wide.exact).toBe(450);
-		expect(counts.geometric.exact).toBe(450);
+	it('differs from playback under every pen that scales its corner', () => {
+		// What a GM_COMPATIBLE application sees drawing straight onto a device is not what PlayEnhMetaFile draws from the record it
+		// leaves (emf-roundrect-mode.fixture.test.ts): our playback path equals the direct one in only these few shapes.
+		expect(counts).toEqual({ null: { exact: 0, total: 450 }, cosmetic: { exact: 11, total: 450 }, wide: { exact: 13, total: 450 }, geometric: { exact: 19, total: 450 } });
 	});
 
 });

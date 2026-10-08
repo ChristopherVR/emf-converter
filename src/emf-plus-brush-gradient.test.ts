@@ -251,7 +251,12 @@ describe('path-gradient step quantisation against native playback', () => {
 	// Blend curve, or with an isotropic focus, is then identical to native.
 	it.each([
 		'grad-path-focus-50-50',
+		'grad-path-focus-75-25',
+		'grad-path-focus-25-75',
+		'grad-path-focus-50-0',
+		'grad-path-focus-0-50',
 		'grad-path-focus-ellipse-50-50',
+		'grad-path-ellipse-clamp',
 		'grad-path-focus-triangle-50-50',
 		'grad-path-rect-blend-clamp',
 		'grad-path-rect-blend-tile',
@@ -264,15 +269,15 @@ describe('path-gradient step quantisation against native playback', () => {
 		await expectSvgPayload(name, 0, 0, 0);
 	});
 
-	// Remaining pixels: the flattened ellipse edge rounding the other way (a
-	// single step) and, in the tiled modes, the seams where antialiased tiles meet.
+	// Remaining pixels: in the tiled modes, the seams where antialiased tiles meet (144, 136, 143 and 136
+	// pixels before the nested copies were rasterised from the 1/16-rounded boundary; the clamped ellipse
+	// had 14 and the pen 48).
 	it.each([
-		['grad-path-ellipse-clamp', 14],
-		['grad-path-ellipse-tile', 144],
-		['grad-path-ellipse-flipx', 136],
-		['grad-path-ellipse-flipy', 143],
-		['grad-path-ellipse-flipxy', 136],
-		['gpx-pen-pathgrad', 48],
+		['grad-path-ellipse-tile', 12],
+		['grad-path-ellipse-flipx', 12],
+		['grad-path-ellipse-flipy', 16],
+		['grad-path-ellipse-flipxy', 16],
+		['gpx-pen-pathgrad', 2],
 	] as const)('%s keeps at most %i pixels off', async (name, count) => {
 		const diff = await compareFixture(name, 'emf', 0);
 		expect(diff!.mismatched, JSON.stringify(diff)).toBeLessThanOrEqual(count);
