@@ -267,6 +267,42 @@ if ($Which -eq 'path-gradient-ties') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-slopes') {
+    Add-Type -Path (Join-Path $here 'PathGradientSlopeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientSlopeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-fills') {
+    Add-Type -Path (Join-Path $here 'PathGradientFillProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFillProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-tips') {
+    Add-Type -Path (Join-Path $here 'PathGradientTipProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientTipProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-corners') {
+    Add-Type -Path (Join-Path $here 'PathGradientCornerProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientCornerProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus-ties') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusTieProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusTieProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-large') {
+    Add-Type -Path (Join-Path $here 'PathGradientLargeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientLargeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-edges') {
     Add-Type -Path (Join-Path $here 'PathGradientEdgeProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientEdgeProbe]::Run($outDir)

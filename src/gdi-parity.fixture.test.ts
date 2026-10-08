@@ -147,20 +147,20 @@ const LINEAR_RAMP_CASES: ParityCase[] = [
  */
 const PATH_TILE_CASES: ParityCase[] = [
 	exact('grad-path-ellipse-clamp'),
-	close('grad-path-ellipse-tile', 0.0008),
-	close('grad-path-ellipse-flipx', 0.0008),
-	close('grad-path-ellipse-flipy', 0.0011),
-	close('grad-path-ellipse-flipxy', 0.0011),
+	exact('grad-path-ellipse-tile'),
+	exact('grad-path-ellipse-flipx'),
+	exact('grad-path-ellipse-flipy'),
+	exact('grad-path-ellipse-flipxy'),
 	exact('grad-path-rect-blend-clamp'),
 	exact('grad-path-rect-blend-tile'),
 	exact('grad-path-rect-blend-flipx'),
 	exact('grad-path-rect-blend-flipy'),
 	exact('grad-path-rect-blend-flipxy'),
 	levelExact('grad-path-triangle-clamp'),
-	close('grad-path-triangle-tile', 0.0012),
-	close('grad-path-triangle-flipx', 0.0012),
-	close('grad-path-triangle-flipy', 0.0012),
-	close('grad-path-triangle-flipxy', 0.0012),
+	levelExact('grad-path-triangle-tile'),
+	levelExact('grad-path-triangle-flipx'),
+	levelExact('grad-path-triangle-flipy'),
+	levelExact('grad-path-triangle-flipxy'),
 ];
 
 /**
@@ -666,7 +666,7 @@ const TEXTURE_SAMPLING_CASES: ParityCase[] = [
 const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 	close('gpx-pen-texture', 0.001), // measured 0.019%
 	close('gpx-pen-lingrad', 0.001), // measured 0.019%
-	close('gpx-pen-pathgrad', 0.00013), // measured 0.013%, 0.070% before the nested copies
+	exact('gpx-pen-pathgrad'), // 0.070% before the nested copies, 0.013% before the unpainted outside pixels
 	exact('gpx-pen-styles'),
 	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
 	close('gpx-text-lingrad', 0.14), // measured 10.98% (glyph shapes)
@@ -682,7 +682,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-texture', 0.025), // measured 1.977%
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.0099), // measured 0.978%, 1.649% before the nested copies
+	close('gpx-text-pathgrad', 0.0070), // measured 0.692%, 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0.04), // measured 3.093%
 ];

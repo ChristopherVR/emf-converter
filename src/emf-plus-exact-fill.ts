@@ -230,7 +230,7 @@ function fractionalTileSampler(
 		boundary: shape.boundary.map(toTile),
 		center: toTile(shape.center),
 		transform: null,
-	}, 'clamp', IDENTITY);
+	}, 'clamp', IDENTITY, false);
 	if (!inner) return null;
 	const mirrorX = wrap === 'tile-flip-x' || wrap === 'tile-flip-xy';
 	const mirrorY = wrap === 'tile-flip-y' || wrap === 'tile-flip-xy';
@@ -295,6 +295,8 @@ export function pathGradientSampler(
 	shape: EmfPlusPathGradientShape,
 	wrap: EmfPlusGradientWrapMode,
 	device: TransformMatrix,
+	/** Leave a whole-pixel sample the copies put outside the boundary unpainted (the tile bitmap of a fractional tile keeps the smooth ratio there). */
+	strictOutside = true,
 ): DeviceBrushSampler | null {
 	const box = boundaryBox(shape.boundary);
 	const full = mulMatrix(device, shape.transform ?? IDENTITY);
@@ -349,6 +351,8 @@ export function pathGradientSampler(
 				const focusPoint = bias
 					? { x: bx - inv[0] * bias, y: by - inv[1] * bias } : undefined;
 				let c: number | null = null;
+				// A whole-pixel sample the nested copies leave outside the boundary is unpainted: the smooth ratio must not paint it.
+				let decided = false;
 				if (vertexGradient || copies) {
 					// The scan converter works on whole pixels: the (folded) sample is a device pixel.
 					const fx = wrap === 'clamp' ? x0 + i : full[0] * bx + full[2] * by + full[4];
@@ -356,14 +360,17 @@ export function pathGradientSampler(
 					const rx = Math.round(fx);
 					const ry = Math.round(fy);
 					if (Math.abs(fx - rx) < 1e-6 && Math.abs(fy - ry) < 1e-6) {
-						if (vertexGradient) c = vertexGradientColorAt(vertexGradient, rx, ry);
-						else if (copies) {
+						if (vertexGradient) {
+							c = vertexGradientColorAt(vertexGradient, rx, ry);
+							if (c === null && strictOutside) decided = true;
+						} else if (copies) {
 							const step = copiesStepAt(copies, rx, ry, bias);
 							if (step !== null) c = pathGradientStepColor(shape, step, quantum);
+							else if (strictOutside && !copies.anisotropic) decided = true;
 						}
 					}
 				}
-				if (c === null) c = pathGradientColorAt(shape, bx, by, focusPoint, quantum);
+				if (c === null && !decided) c = pathGradientColorAt(shape, bx, by, focusPoint, quantum);
 				if (c === null) {
 					continue;
 				}

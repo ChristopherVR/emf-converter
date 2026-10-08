@@ -89,16 +89,16 @@ for (const c of captures) {
 
 /**
  * [images, native pixels, exact pixels (floor), pixels of the exact-coordinate rule, of those wrong (ceiling),
- * pixels of the along-the-edge rule, of those wrong (ceiling)]. Exact before the rule: ri 164,684, rh 158,192, c 164,684,
- * o 18,832, t 49,126 (the half-way colour of a tie is within a level of either answer; the rest of each capture is
- * unaffected).
+ * pixels of the along-the-edge rule, of those wrong (ceiling)]. Exact before the binary-fraction rule: ri 164,684, rh 158,192,
+ * c 164,684, o 18,832, t 49,126 (the half-way colour of a tie is within a level of either answer); with that rule ri 176,222,
+ * rh 176,008, c 176,222, o 24,944, t 58,472; every pixel of every capture is exact with the float32 rule of `floatCopyIndex`.
  */
 const EXPECTED: Record<string, [number, number, number, number, number, number, number]> = {
-	ri: [400, 176400, 176222, 8352, 0, 3080, 178],
-	rh: [400, 176400, 176008, 12712, 0, 5168, 392],
-	c: [400, 176400, 176222, 8352, 0, 3080, 178],
-	o: [64, 25152, 24944, 4144, 0, 2144, 208],
-	t: [180, 58980, 58472, 5312, 0, 4426, 508],
+	ri: [400, 176400, 176400, 8352, 0, 3080, 0],
+	rh: [400, 176400, 176400, 12712, 0, 5168, 0],
+	c: [400, 176400, 176400, 8352, 0, 3080, 0],
+	o: [64, 25152, 25152, 4144, 0, 2144, 0],
+	t: [180, 58980, 58980, 5312, 0, 4426, 0],
 };
 
 describe('pixels exactly on the edge of one nested copy', () => {

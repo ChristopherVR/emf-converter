@@ -269,15 +269,16 @@ describe('path-gradient step quantisation against native playback', () => {
 		await expectSvgPayload(name, 0, 0, 0);
 	});
 
-	// Remaining pixels: in the tiled modes, the seams where antialiased tiles meet (144, 136, 143 and 136
-	// pixels before the nested copies were rasterised from the 1/16-rounded boundary; the clamped ellipse
-	// had 14 and the pen 48).
+	// The tiled ellipses and the path-gradient pen are exact: the pixels a copy's rasteriser leaves outside the boundary
+	// (the flat edges next to an ellipse's extremes) are left unpainted instead of taking the smooth ratio (144, 136, 143
+	// and 136 pixels before the nested copies were rasterised from the 1/16-rounded boundary, then 12, 12, 16, 16; the
+	// clamped ellipse had 14 and the pen 48, then 2).
 	it.each([
-		['grad-path-ellipse-tile', 12],
-		['grad-path-ellipse-flipx', 12],
-		['grad-path-ellipse-flipy', 16],
-		['grad-path-ellipse-flipxy', 16],
-		['gpx-pen-pathgrad', 2],
+		['grad-path-ellipse-tile', 0],
+		['grad-path-ellipse-flipx', 0],
+		['grad-path-ellipse-flipy', 0],
+		['grad-path-ellipse-flipxy', 0],
+		['gpx-pen-pathgrad', 0],
 	] as const)('%s keeps at most %i pixels off', async (name, count) => {
 		const diff = await compareFixture(name, 'emf', 0);
 		expect(diff!.mismatched, JSON.stringify(diff)).toBeLessThanOrEqual(count);
