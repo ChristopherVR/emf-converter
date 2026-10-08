@@ -15,7 +15,7 @@
 #   curve-widen-probe, curve-dash-probe, arc-cap-sweep-probe,
 #   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
-#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
+#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
 #   text-cleartype-coverage, text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
@@ -85,6 +85,13 @@ if ($Which -eq 'emf-roundrect-mode-probe') {
     [RoundRectModeProbe]::Run($outDir)
     [RoundRectModeProbe]::Paths($outDir)
     [RoundRectModeProbe]::PlayExisting($outDir, 'emfrec-path-widen')
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'compat-playback-probe') {
+    Add-Type -Path (Join-Path $here 'CompatPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
+    [CompatPlaybackProbe]::Run($outDir)
+    [CompatPlaybackProbe]::RectSweep($outDir)
     Complete-Fixtures
     return
 }
