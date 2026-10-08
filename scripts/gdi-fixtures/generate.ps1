@@ -363,6 +363,12 @@ if ($Which -eq 'path-gradient-focus-slants') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-tile-rotations') {
+    Add-Type -Path (Join-Path $here 'PathGradientTileRotateProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientTileRotateProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-focus-ties') {
     Add-Type -Path (Join-Path $here 'PathGradientFocusTieProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientFocusTieProbe]::Run($outDir)
