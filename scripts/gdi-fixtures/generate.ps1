@@ -365,6 +365,17 @@ if ($Which -eq 'icm-cmyk-srgb16') {
     }
     return
 }
+if ($Which -eq 'icm-cmyk-translate16') {
+    # 16-bit CMYK input through TranslateColors: every <name>.cmyk16 file (little-endian 16-bit C, M, Y, K words per sample)
+    # becomes <name>.rgb16t (16-bit R, G, B words per sample). Needs a 64-bit PowerShell for the 16-byte COLOR records.
+    if (!$TablesDir) { throw 'Pass the directory holding <name>.cmyk16 files' }
+    Add-Type -Path (Join-Path $here 'IcmProbe.cs')
+    $dir = (Resolve-Path -LiteralPath $TablesDir).Path
+    foreach ($ink in Get-ChildItem -LiteralPath $dir -Filter *.cmyk16) {
+        [IcmProbe]::RunTranslate16($ink.FullName, (Join-Path $dir ($ink.BaseName + '.rgb16t')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm', 3)
+    }
+    return
+}
 if ($Which -eq 'image-codecs-cmyk-lut') {
     if (!$TablesDir) { throw 'Pass the directory written by cmyk-lut-inputs.py' }
     Add-Type -Path (Join-Path $here 'CodecProbe.cs') -ReferencedAssemblies System.Drawing

@@ -23,6 +23,8 @@ public static class IcmProbe
 	static extern bool TranslateBitmapBits(IntPtr t, byte[] src, uint srcFmt, uint w, uint h, uint srcStride, byte[] dst, uint dstFmt, uint dstStride, IntPtr cb, IntPtr lp);
 	[DllImport("mscms.dll", CharSet = CharSet.Unicode, SetLastError = true)]
 	static extern bool GetStandardColorSpaceProfileW(string machine, uint id, System.Text.StringBuilder name, ref uint size);
+	[DllImport("mscms.dll", SetLastError = true)]
+	static extern bool TranslateColors(IntPtr t, byte[] input, uint n, uint ctIn, byte[] output, uint ctOut);
 
 	const uint BM_BGRTRIPLETS = 4, BM_KYMCQUADS = 5, BM_CMYKQUADS = 0x20, BM_xRGBQUADS = 8;
 
@@ -112,6 +114,36 @@ public static class IcmProbe
 		byte[] dst = new byte[n * 6];
 		if (!TranslateBitmapBits(t, input2, BM_CMYKQUADS, n, 1, n * 4, dst, 0xA, n * 6, IntPtr.Zero, IntPtr.Zero)) throw new Exception("translate " + Marshal.GetLastWin32Error());
 		File.WriteAllBytes(output, dst);
+		DeleteColorTransform(t);
+	}
+
+	/// <summary>16-bit CMYK input through <c>TranslateColors</c> (best mode, RSWOP to sRGB, perceptual): the colour-management
+	/// module does accept it. The input file holds little-endian 16-bit words C, M, Y, K per sample; the output holds 16-bit R, G, B
+	/// words per sample. Each <c>COLOR</c> is a union whose largest member is <c>{ DWORD; void* }</c>, so it is 8 bytes in a 32-bit
+	/// process and 16 in a 64-bit one (a packed array of 8-byte records reads past the buffer and crashes in <c>mscms.dll</c>).</summary>
+	public static void RunTranslate16(string input, string output, string cmykProfile, uint flags)
+	{
+		const uint COLOR_RGB = 2, COLOR_CMYK = 7;
+		byte[] raw = File.ReadAllBytes(input);
+		int n = raw.Length / 8;
+		int stride = IntPtr.Size == 8 ? 16 : 8;
+		var sb = new System.Text.StringBuilder(260);
+		uint size = 260;
+		if (!GetStandardColorSpaceProfileW(null, 0x73524742, sb, ref size)) throw new Exception("GetStandardColorSpaceProfile " + Marshal.GetLastWin32Error());
+		IntPtr hc = Open(cmykProfile), hs = Open(sb.ToString());
+		IntPtr t = CreateMultiProfileTransform(new[] { hc, hs }, 2, new uint[] { 0, 0 }, 2, flags, 0);
+		if (t == IntPtr.Zero) throw new Exception("transform " + Marshal.GetLastWin32Error());
+		byte[] result = new byte[n * 6];
+		const int chunk = 4096;
+		for (int start = 0; start < n; start += chunk)
+		{
+			int count = Math.Min(chunk, n - start);
+			byte[] ci = new byte[count * stride], co = new byte[count * stride];
+			for (int i = 0; i < count; i++) Buffer.BlockCopy(raw, (start + i) * 8, ci, i * stride, 8);
+			if (!TranslateColors(t, ci, (uint)count, COLOR_CMYK, co, COLOR_RGB)) throw new Exception("TranslateColors " + Marshal.GetLastWin32Error());
+			for (int i = 0; i < count; i++) Buffer.BlockCopy(co, i * stride, result, (start + i) * 6, 6);
+		}
+		File.WriteAllBytes(output, result);
 		DeleteColorTransform(t);
 	}
 
