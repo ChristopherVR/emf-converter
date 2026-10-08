@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { diffImages, fixturePath, loadReference, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
 
@@ -71,5 +72,96 @@ describe.skipIf(!windowsFonts())('the converter draws the direct shapes', () => 
 			expect(diffImages(rendered!, await loadReference(`${name}.direct`), 0, 0).mismatched, name).toBe(direct);
 			expect(diffImages(rendered!, await loadReference(name), 0, 0).mismatched, name).toBe(played);
 		}
+	});
+});
+
+/**
+ * Rotated text (`rotate-text-25deg`: 23 pixels between the direct drawing and playback). The dx array that
+ * Windows records for a rotated font is not the hinted widths a direct drawing advances by but the running
+ * position of the linearly scaled advances, each advance rounded to 1/16 pixel, rounded to whole pixels.
+ */
+interface RotatedRecord { face: string; ppem: number; degrees: number; units: number[]; recorded: number[] }
+const rotated: RotatedRecord[] = JSON.parse(gunzipSync(readFileSync(fixturePath('rotated-text-advances.json.gz'))).toString());
+function modelled(r: RotatedRecord): number[] {
+	const out: number[] = [];
+	let cum = 0;
+	let previous = 0;
+	for (let i = 0; i < r.units.length; i++) {
+		cum += Math.round(((r.units[i] * r.ppem) / 2048) * 16) / 16;
+		const position = Math.floor(cum + 0.5);
+		out.push(position - previous);
+		previous = position;
+	}
+	return out;
+}
+
+describe('dx recorded for rotated text', () => {
+	it('is the running 1/16-pixel advance, rounded half up, except where the angle decides a tie', () => {
+		expect(rotated).toHaveLength(630);
+		const wrong: Record<number, number> = {};
+		let advances = 0;
+		for (const r of rotated) {
+			const m = modelled(r);
+			advances += m.length;
+			wrong[r.degrees] = (wrong[r.degrees] ?? 0) + m.filter((v, i) => v !== r.recorded[i]).length;
+		}
+		expect(advances).toBe(46620);
+		// Exact at 5 and 25 degrees for 90 faces x sizes each; the rest are ties at x.5.
+		expect(wrong).toEqual({ 5: 0, 10: 222, 25: 0, 30: 86, 45: 337, 60: 86, 75: 228 });
+	});
+	it('resolves a position that is exactly half a pixel up at 5 and 25 degrees and down at some other angles', () => {
+		const ties: Record<number, [number, number]> = {};
+		for (const r of rotated) {
+			let cum = 0;
+			let recorded = 0;
+			for (let i = 0; i < r.units.length; i++) {
+				cum += Math.round(((r.units[i] * r.ppem) / 2048) * 16) / 16;
+				recorded += r.recorded[i];
+				if (cum - Math.floor(cum) === 0.5) {
+					const t = (ties[r.degrees] ??= [0, 0]);
+					if (recorded === Math.floor(cum) + 1) {
+						t[0]++;
+					} else if (recorded === Math.floor(cum)) {
+						t[1]++;
+					}
+				}
+			}
+		}
+		expect(ties).toEqual({ 5: [408, 0], 10: [369, 35], 25: [408, 0], 30: [395, 13], 45: [350, 53], 60: [395, 13], 75: [372, 32] });
+	});
+	it('the playback of "Rotated" equals a direct drawing with the recorded advances, not with the hinted ones', () => {
+		const rows = (capture as unknown as { rotation: Array<{ quality: number; degrees: number; directVsPlayback: number; recordedAdvancesVsPlayback: number; recorded: number[]; direct: number[] }> }).rotation;
+		expect(rows).toHaveLength(16);
+		for (const row of rows) {
+			expect(row.recordedAdvancesVsPlayback, `${row.quality}/${row.degrees}`).toBe(0);
+			expect(row.directVsPlayback > 0, `${row.quality}/${row.degrees}`).toBe(row.degrees !== 0);
+			expect(row.direct).toEqual([14, 11, 6, 11, 6, 11, 11]);
+			expect(row.recorded).toEqual(row.degrees === 0 ? [14, 11, 6, 11, 6, 11, 11] : [14, 12, 5, 11, 6, 11, 11]);
+		}
+		expect(rows.find((r) => r.quality === 3 && r.degrees === 25)!.directVsPlayback).toBe(36);
+	});
+	it('the committed recording stores the same advances, so the converter, which replays them, places every glyph as playback does', () => {
+		const bytes = readFileSync(fixturePath('rotate-text-25deg.emf'));
+		let seen = 0;
+		for (let o = 0; o < bytes.length; ) {
+			const type = bytes.readInt32LE(o);
+			if (type === 84) {
+				const n = bytes.readInt32LE(o + 44);
+				const offDx = bytes.readInt32LE(o + 72);
+				expect(Array.from({ length: n }, (_, i) => bytes.readInt32LE(o + offDx + 4 * i))).toEqual([14, 12, 5, 11, 6, 11, 11]);
+				seen++;
+			}
+			if (type === 14) {
+				break;
+			}
+			o += bytes.readInt32LE(o + 4);
+		}
+		expect(seen).toBe(1);
+	});
+	it.skipIf(!windowsFonts())('leaves 31 pixels of rotated glyph shape against the playback (the original differs by 54)', async () => {
+		const rendered = await renderFixture('rotate-text-25deg.emf', { fonts: windowsFonts()! });
+		expect(rendered).not.toBeNull();
+		expect(diffImages(rendered!, await loadReference('rotate-text-25deg'), 0, 0).mismatched).toBe(54);
+		expect(diffImages(rendered!, await loadReference('rotate-text-25deg.wide'), 0, 0).mismatched).toBe(31);
 	});
 });

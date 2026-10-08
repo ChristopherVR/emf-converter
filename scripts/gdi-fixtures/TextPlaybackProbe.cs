@@ -13,6 +13,9 @@
 // the horizontal factor from 1 + 5e-6 upward and records, per height, the first factor that changes the
 // drawing: Segoe UI hints a cell height differently once that factor passes a height-specific threshold, which
 // is why only some heights differ. The committed `textx-segoeui-cell-mono` pair is re-drawn the same way.
+// Rotated text (`rotate-text-25deg`): the dx array recorded for a rotated font is not the hinted widths a direct
+// drawing advances by; `Rotation` compares direct, recorded-dx and played drawings and `RotatedAdvances` writes
+// `rotated-text-advances.json.gz` (recorded dx per face, size and angle with each glyph's font-unit advance).
 // Output files are committed captures; see the README.
 using System;
 using System.Collections.Generic;
@@ -54,6 +57,8 @@ public static class TextPlaybackProbe
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetEnhMetaFileW(string file);
     [DllImport("gdi32.dll")] static extern bool PlayEnhMetaFile(IntPtr dc, IntPtr metafile, ref Rect rect);
     [DllImport("gdi32.dll")] static extern bool DeleteEnhMetaFile(IntPtr metafile);
+    [DllImport("gdi32.dll")] static extern uint GetEnhMetaFileBits(IntPtr metafile, uint size, byte[] bits);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern bool GetCharWidth32W(IntPtr dc, uint first, uint last, [Out] int[] widths);
 
     const string Sample = "Hamburgefonstiv AVWX";
     const int Width = 720;
@@ -258,10 +263,155 @@ public static class TextPlaybackProbe
             }
             json.Append("],\"original\":");
             json.Append(Original(dir, screen));
+            json.Append(",\"rotation\":").Append(Rotation(screen));
             json.Append('}');
+            RotatedAdvances(dir, screen);
         }
         finally { ReleaseDC(IntPtr.Zero, screen); }
         File.WriteAllText(Path.Combine(dir, "text-playback-hinting.json"), json.ToString(), new UTF8Encoding(false));
+    }
+
+    static void DrawRotated(IntPtr dc, int[] dx, int quality, double degrees)
+    {
+        SetGraphicsMode(dc, 2);
+        double rad = degrees * Math.PI / 180.0;
+        var xf = new XForm { m11 = (float)Math.Cos(rad), m12 = (float)Math.Sin(rad), m21 = -(float)Math.Sin(rad), m22 = (float)Math.Cos(rad), dx = 40, dy = 60 };
+        SetWorldTransform(dc, ref xf);
+        var lf = new LogFont { h = -20, weight = 400, cs = 1, face = "Arial", q = (byte)quality };
+        IntPtr font = CreateFontIndirectW(ref lf);
+        IntPtr old = SelectObject(dc, font);
+        SetBkMode(dc, 1); SetTextColor(dc, 0);
+        if (dx == null) TextOutW(dc, 0, 0, "Rotated", 7); else ExtTextOutW(dc, 0, 0, 0, IntPtr.Zero, "Rotated", 7, dx);
+        SelectObject(dc, old); DeleteObject(font);
+    }
+
+    /**
+     * `rotate-text-25deg` (23 pixels between direct drawing and playback): "Rotated" in Arial -20 under a world
+     * rotation, per quality and angle drawn with TextOutW, with the dx array the recording stored, and played
+     * back (white background, text only). The recorded advances of a rotated font are the linearly scaled
+     * widths, not the hinted ones, and drawing with them equals playback exactly.
+     */
+    static string Rotation(IntPtr screen)
+    {
+        const int w = 200, h = 140;
+        double mx = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), my = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+        var json = new StringBuilder("[");
+        foreach (int q in new[] { 3, 4, 0, 5 })
+        foreach (double degrees in new[] { 0.0, 10.0, 25.0, 45.0 })
+        {
+            var frame = new Rect { right = (int)Math.Round(w * mx), bottom = (int)Math.Round(h * my) };
+            IntPtr mdc = CreateEnhMetaFileW(screen, null, ref frame, null);
+            DrawRotated(mdc, null, q, degrees);
+            IntPtr meta = CloseEnhMetaFile(mdc);
+            var bytes = new byte[GetEnhMetaFileBits(meta, 0, null)];
+            GetEnhMetaFileBits(meta, (uint)bytes.Length, bytes);
+            int[] dx = null;
+            for (int o = 0; o < bytes.Length;)
+            {
+                int type = BitConverter.ToInt32(bytes, o), size = BitConverter.ToInt32(bytes, o + 4);
+                if (type == 84)
+                {
+                    int n = BitConverter.ToInt32(bytes, o + 44), offDx = BitConverter.ToInt32(bytes, o + 72);
+                    dx = new int[n];
+                    for (int i = 0; i < n; i++) dx[i] = BitConverter.ToInt32(bytes, o + offDx + 4 * i);
+                }
+                if (type == 14) break;
+                o += size;
+            }
+            byte[] direct, withDx, played;
+            var widths = new int[7];
+            using (var s = new Surface(screen, w, h)) { DrawRotated(s.Dc, null, q, degrees); direct = s.Pixels(); }
+            using (var s = new Surface(screen, w, h)) { DrawRotated(s.Dc, dx, q, degrees); withDx = s.Pixels(); }
+            using (var s = new Surface(screen, w, h)) { var rect = new Rect { right = w, bottom = h }; PlayEnhMetaFile(s.Dc, meta, ref rect); played = s.Pixels(); }
+            DeleteEnhMetaFile(meta);
+            using (var s = new Surface(screen, w, h))
+            {
+                var lf = new LogFont { h = -20, weight = 400, cs = 1, face = "Arial", q = (byte)q };
+                IntPtr font = CreateFontIndirectW(ref lf);
+                IntPtr old = SelectObject(s.Dc, font);
+                for (int i = 0; i < 7; i++) { var one = new int[1]; GetCharWidth32W(s.Dc, "Rotated"[i], "Rotated"[i], one); widths[i] = one[0]; }
+                SelectObject(s.Dc, old); DeleteObject(font);
+            }
+            if (json.Length > 1) json.Append(',');
+            json.Append("{\"quality\":").Append(q).Append(",\"degrees\":").Append(degrees.ToString(CultureInfo.InvariantCulture))
+                .Append(",\"directVsPlayback\":").Append(Count(direct, played, w, 0, h - 1)).Append(",\"recordedAdvancesVsPlayback\":").Append(Count(withDx, played, w, 0, h - 1))
+                .Append(",\"recorded\":[").Append(string.Join(",", dx)).Append("],\"direct\":[").Append(string.Join(",", widths)).Append("]}");
+        }
+        return json.Append(']').ToString();
+    }
+
+    /** dx array of the single EMR_EXTTEXTOUTW that `TextOutW` records under a world rotation. */
+    static int[] RecordedRotated(IntPtr screen, string face, int height, double degrees, string text)
+    {
+        const int w = 1000, h = 600;
+        double mx = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), my = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+        var frame = new Rect { right = (int)Math.Round(w * mx), bottom = (int)Math.Round(h * my) };
+        IntPtr mdc = CreateEnhMetaFileW(screen, null, ref frame, null);
+        SetGraphicsMode(mdc, 2);
+        double rad = degrees * Math.PI / 180.0;
+        var xf = new XForm { m11 = (float)Math.Cos(rad), m12 = (float)Math.Sin(rad), m21 = -(float)Math.Sin(rad), m22 = (float)Math.Cos(rad), dx = w / 2, dy = h / 2 };
+        SetWorldTransform(mdc, ref xf);
+        var lf = new LogFont { h = height, weight = 400, cs = 1, face = face, q = 3 };
+        IntPtr font = CreateFontIndirectW(ref lf);
+        IntPtr old = SelectObject(mdc, font);
+        SetBkMode(mdc, 1);
+        TextOutW(mdc, 0, 0, text, text.Length);
+        SelectObject(mdc, old); DeleteObject(font);
+        IntPtr meta = CloseEnhMetaFile(mdc);
+        var bytes = new byte[GetEnhMetaFileBits(meta, 0, null)];
+        GetEnhMetaFileBits(meta, (uint)bytes.Length, bytes);
+        DeleteEnhMetaFile(meta);
+        for (int o = 0; o < bytes.Length;)
+        {
+            int type = BitConverter.ToInt32(bytes, o), size = BitConverter.ToInt32(bytes, o + 4);
+            if (type == 84)
+            {
+                int n = BitConverter.ToInt32(bytes, o + 44), offDx = BitConverter.ToInt32(bytes, o + 72);
+                var dx = new int[n];
+                for (int i = 0; i < n; i++) dx[i] = BitConverter.ToInt32(bytes, o + offDx + 4 * i);
+                return dx;
+            }
+            if (type == 14) break;
+            o += size;
+        }
+        return null;
+    }
+
+    /**
+     * The dx arrays Windows records for rotated text: five faces x 18 em heights x 7 angles of a 72-character
+     * line, with each glyph's advance in font units (GetCharWidth32 at 2048 ppem) -> `rotated-text-advances.json.gz`.
+     */
+    static void RotatedAdvances(string dir, IntPtr screen)
+    {
+        const string text = "Hamburgefonstiv 0123 AVWX &@%$ The quick brown fox jumps over the lazy dog";
+        var json = new StringBuilder("[");
+        foreach (string face in new[] { "Arial", "Times New Roman", "Courier New", "Tahoma", "Segoe UI" })
+        {
+            var units = new int[text.Length];
+            using (var s = new Surface(screen, 10, 10))
+            {
+                var lf = new LogFont { h = -2048, weight = 400, cs = 1, face = face, q = 3 };
+                IntPtr font = CreateFontIndirectW(ref lf);
+                IntPtr old = SelectObject(s.Dc, font);
+                for (int i = 0; i < text.Length; i++) { var one = new int[1]; GetCharWidth32W(s.Dc, text[i], text[i], one); units[i] = one[0]; }
+                SelectObject(s.Dc, old); DeleteObject(font);
+            }
+            foreach (int ppem in new[] { 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 37, 48, 72 })
+            foreach (double degrees in new[] { 5.0, 10.0, 25.0, 30.0, 45.0, 60.0, 75.0 })
+            {
+                var rec = RecordedRotated(screen, face, -ppem, degrees, text);
+                if (json.Length > 1) json.Append(',');
+                json.Append("{\"face\":\"").Append(face).Append("\",\"ppem\":").Append(ppem).Append(",\"degrees\":").Append(degrees.ToString(CultureInfo.InvariantCulture))
+                    .Append(",\"units\":[").Append(string.Join(",", units)).Append("],\"recorded\":[").Append(string.Join(",", rec)).Append("]}");
+            }
+        }
+        json.Append(']');
+        using (var file = File.Create(Path.Combine(dir, "rotated-text-advances.json.gz")))
+        using (var gz = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionLevel.Optimal))
+        {
+            var bytes = new UTF8Encoding(false).GetBytes(json.ToString());
+            gz.Write(bytes, 0, bytes.Length);
+        }
     }
 
     /** The committed `textx-segoeui-cell-mono` recording (read from `dir`), drawn directly, stretched and played back. */

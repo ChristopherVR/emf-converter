@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T03:53:45.2043622Z",
+    "capturedAt":  "2026-10-08T04:04:50.2267060Z",
     "groups":  "text-playback-hinting",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -3387,6 +3387,10 @@
               ],
     "references":  [
                        {
+                           "name":  "rotated-text-advances.json.gz",
+                           "sha256":  "26d6ddbe4ecd599b31433370ded2a01d9f430e17644420068309e4a206396b7d"
+                       },
+                       {
                            "name":  "textpb-segoeui-cell-q3.direct.png",
                            "sha256":  "e38e9a3e558f1cd5e7326453a421aed45a63850c3e1e6fb947c57c434c523afa"
                        },
@@ -3412,7 +3416,7 @@
                        },
                        {
                            "name":  "text-playback-hinting.json",
-                           "sha256":  "5b8c50b31e018c5964a4b72940a76bfa8139cf040354cf4fc0cba7491e5508e8"
+                           "sha256":  "244cb9b0da15997da6e29ec22442a3fa0e883cb5d7ffad6ca8e94c8c28a762e8"
                        }
                    ]
 }
