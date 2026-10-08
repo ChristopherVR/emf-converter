@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.16.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.16.0) - 2026-10-08
+
+### Features
+
+- **emf-plus:** Model rotated high-quality DrawImage as a pre-scale plus a plain Bicubic or Bilinear pass ([b772949](https://github.com/ChristopherVR/emf-converter/commit/b7729492e671439a3fd2088efa6d6faf02ca59bf))
+- **emf-plus:** Pixel-centre fill rule and premultiplied intermediate for the rotated high-quality second pass ([fca5166](https://github.com/ChristopherVR/emf-converter/commit/fca516608ecabd705fe874f76bfd5fb00690515d))
+- **emf-plus:** Phased high-quality axis arithmetic, near-axis-aligned quads and alpha, with native rotated captures ([9ce58c5](https://github.com/ChristopherVR/emf-converter/commit/9ce58c5a2a5d133de6f885128ec7828312b730bf))
+
+### Other
+
+- Merge origin/main into the high-quality DrawImage worktree ([deb1ee9](https://github.com/ChristopherVR/emf-converter/commit/deb1ee988b4afa6e31a3b6ee15cb56003a3ad70d))
+
+### Documentation
+
+- Record the two-pass rotated high-quality DrawImage model and what stays open ([5b4f05f](https://github.com/ChristopherVR/emf-converter/commit/5b4f05ff29d7956c56471de259e6315232803168))
+
 ## [4.15.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.2) - 2026-10-08
 
 ### Bug Fixes
