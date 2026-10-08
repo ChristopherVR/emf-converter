@@ -560,21 +560,25 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 		'bilinear',
 		'default',
 		'low',
-		'highqualitybilinear',
-		'highqualitybicubic',
-		'high',
 		'pom-half-bilinear',
-		'pom-half-highqualitybicubic',
 		'pom-half-nearestneighbor',
 		'pom-highquality-bilinear',
-		'pom-highquality-highqualitybicubic',
 		'pom-highquality-nearestneighbor',
 		'pom-highspeed-bilinear',
-		'pom-highspeed-highqualitybicubic',
 		'pom-highspeed-nearestneighbor',
 		'rotated-bilinear',
 	].map((m) => close(`gpx-image-${m}`, 0)),
 	exact('gpx-image-bicubic'),
+	// The axis-aligned HighQuality draws (measured integer cubic weights, destination-space reductions, 16.16 phases):
+	// every channel within one level and none beyond it (before the cubic table and the unsnapped phase offsets:
+	// 41 pixels beyond one level on HighQualityBilinear, 10 on HighQualityBicubic and High, 5 under Half, 6 under
+	// HighSpeed; at zero tolerance 1,145 and 1,084 pixels off on the HighQualityBilinear and HighQualityBicubic fixtures, now 34 and 121).
+	levelExact('gpx-image-highqualitybilinear'),
+	levelExact('gpx-image-highqualitybicubic'),
+	levelExact('gpx-image-high'),
+	levelExact('gpx-image-pom-half-highqualitybicubic'),
+	levelExact('gpx-image-pom-highquality-highqualitybicubic'),
+	levelExact('gpx-image-pom-highspeed-highqualitybicubic'),
 	// A rotated HighQualityBicubic draw: a pre-scale to the device length, then
 	// a plain integer Bicubic pass (`resampleRotatedTwoStage`). Every channel is
 	// within one level; 10 pixels (0.064%) are one level off at zero tolerance
@@ -602,7 +606,10 @@ const IMAGE_ORDER_CASES: ParityCase[] = [close('gpx-image-clip-zorder', 0)];
  */
 const IMAGE_ATTRIBUTE_CASES: ParityCase[] = ['flipxy', 'tile', 'clamp'].flatMap((w) => [
 	close(`gpx-image-attr-${w}-bilinear`, 0),
-	close(`gpx-image-attr-${w}-highqualitybicubic`, 0),
+	// The wrapped overhang goes through the axis-aligned high-quality weights: within one level except for 4, 15 and 2
+	// pixels (of 15,741) under TileFlipXY, Tile and Clamp (before: 39, 75 and 45; 3,400 to 3,600 off at zero tolerance,
+	// now 77 to 120).
+	{ name: `gpx-image-attr-${w}-highqualitybicubic`, ext: 'emf', tolerance: 1, maxMismatch: 0.001 },
 ]);
 
 /**
