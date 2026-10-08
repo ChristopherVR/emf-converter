@@ -131,11 +131,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 
-===== Independent JPEG Group software (src/jpeg-arith.ts) =====
+===== Independent JPEG Group software (src/jpeg-arith.ts, src/jpeg-turbo.ts) =====
 
 src/jpeg-arith.ts decodes arithmetic-coded JPEG and is a port of the entropy
 decoder in libjpeg's jdarith.c and the probability table in jaricom.c. This
 software is based in part on the work of the Independent JPEG Group.
+
+src/jpeg-turbo.ts, the decoder that runs around it, reproduces libjpeg's output
+bit for bit and follows its algorithms: the accurate integer inverse DCT of
+jidctint.c (its fixed-point constants, passes and descaling), the Huffman table
+layout and decoding of jdhuff.c (mincode, maxcode and valptr), the triangle
+("fancy") chroma upsampling of jdsample.c with its rounding terms and the
+fixed-point YCbCr to RGB conversion of jdcolor.c, which src/jpeg-cmyk.ts also
+uses for YCCK. It is covered by the same license.
 
 scripts/gdi-fixtures/arith-jpeg-encoder.ts, a test tool that is not part of the
 published package, is a port of the arithmetic encoder in libjpeg's jcarith.c
@@ -144,13 +152,13 @@ and is covered by the same license.
 The following is the IJG license under which libjpeg (as distributed in
 libjpeg-turbo's README.ijg) is provided:
 
-This software is copyright (C) 1991-2020, Thomas G. Lane, Guido Vollbeding.
-All Rights Reserved except as specified below.
-
 The authors make NO WARRANTY or representation, either express or implied,
 with respect to this software, its quality, accuracy, merchantability, or
 fitness for a particular purpose.  This software is provided "AS IS", and you,
 its user, assume the entire risk as to its quality and accuracy.
+
+This software is copyright (C) 1991-2020, Thomas G. Lane, Guido Vollbeding.
+All Rights Reserved except as specified below.
 
 Permission is hereby granted to use, copy, modify, and distribute this
 software (or portions thereof) for any purpose, without fee, subject to these
@@ -223,3 +231,22 @@ Consortium, and may be copied, distributed, embedded, made, used, and sold
 without restriction. Altered versions of this profile shall have the original
 identification and copyright information removed and shall not be
 misrepresented as the original profile.
+
+
+===== Measured Windows data and cited references (no third-party code) =====
+
+src/jpeg-cmyk-data.ts, src/emf-gdi-illuminant-data.ts, src/emf-plus-image-curves.ts,
+src/emf-plus-hq-cubic-weights.ts and src/emf-ansi-tables.ts are tables measured by
+running Windows (the ICM colour-management module, GDI halftone and colour
+adjustment, GDI+, the Windows code pages) on test inputs; the capture and
+generator scripts are under scripts/gdi-fixtures and each file's header names its
+origin. They are measurements of program output, not copies of Microsoft source
+code or data files: the RSWOP.icm profile, mscms.dll and the Windows fonts are not
+bundled, and are read from the host only when the fixtures are regenerated or
+compared. The diagnostic TrueType fonts under src/__fixtures__/gdi are built by
+scripts/gdi-fixtures/build-*-fonts.py (fontTools, a build-time tool that is not
+bundled) from hand-written four-point glyphs and contain no third-party glyph
+data.
+
+Comments in the source cite the Wine project's gdi32 tests (gdi32/tests/path.c)
+as evidence of GDI's behaviour. No Wine code or data is copied.

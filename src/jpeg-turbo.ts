@@ -7,6 +7,9 @@
  * three or four (CMYK, YCCK; see `jpeg-cmyk.ts`) components.
  * `decodeJpegTurbo` returns `null` for anything else (12-bit, lossless,
  * hierarchical) so the caller can fall back.
+ *
+ * Origin: this follows the algorithms of the Independent JPEG Group's libjpeg (jidctint.c, jdhuff.c,
+ * jdsample.c, jdcolor.c; see THIRD_PARTY_NOTICES), so that its output matches Windows exactly.
  */
 import { cmykPlanesToRgba } from './jpeg-cmyk';
 import { ArithDecoder, defaultArithConditioning, type ArithConditioning } from './jpeg-arith';
