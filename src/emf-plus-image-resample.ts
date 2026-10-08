@@ -284,6 +284,27 @@ function nearSourceExtent(deviceLen: number, srcLen: number): boolean {
 	return d >= -1 && d <= 1;
 }
 
+/**
+ * Whether the translation `t` along one axis of an unscaled plain Bicubic draw (`other` along the other axis) is
+ * close enough to a whole number for native GDI+ to copy the texels. The interval is (-1/64, 1/64] away from a whole
+ * number, so a source phase of -1/64 copies and a source phase of +1/64 (a translation of exactly -1/64 from a whole
+ * number) is the boundary. The boundary copies only when the rectangle's width and height are both powers of two
+ * (the matrix is then exact in float32) and either `w * h * max(w, h)` is at most 256 or the other axis' translation
+ * is a multiple of 1/128 (`bicubic-boundary`: noise bitmaps of 12 x 12 and 48 x 48 texels, 11,058 draws with
+ * rectangles from 1 x 1 to 32 x 32, whole and fractional destination offsets, the two offsets swept independently).
+ */
+function unitCopyOffset(t: number, other: number, spec: DeferredImageResample): boolean {
+	const f = t - Math.round(t);
+	if (f > -1 / 64 + 1e-9) {
+		return f <= 1 / 64 + 1e-9;
+	}
+	if (Math.abs(f + 1 / 64) > 1e-9 || !isPowerOfTwo(spec.srcW) || !isPowerOfTwo(spec.srcH)) {
+		return false;
+	}
+	const g = (other - Math.round(other)) * 128;
+	return spec.srcW * spec.srcH * Math.max(spec.srcW, spec.srcH) <= 256 || Math.abs(g - Math.round(g)) < 1e-9;
+}
+
 /** Cubic parameter GDI+ uses for `Bicubic` (point-sampled). */
 const BICUBIC_A = -0.5;
 /** Cubic parameter GDI+ uses for `HighQualityBicubic` (area-integrated). */
@@ -526,13 +547,11 @@ export function resampleImage(
 	// captures (modes 2 and 3) do not support the integer arithmetic there
 	// at every scale.
 	let plainRotated = plainRotatedPass;
-	// Native unit-scale draws copy near-integral texels within this signed
-	// 1/64 phase interval. The positive source-phase endpoint has additional
-	// dispatch conditions, so keep it on the convolution path. Public captures
-	// cover both axes, fractional destination origins, cropped sizes and alpha.
+	// Native unit-scale draws copy near-integral texels when each axis' translation is within 1/64 of a whole
+	// number (see `unitCopyOffset` for the two ends). Public captures cover both axes, fractional destination
+	// origins, cropped sizes and alpha.
 	const unitBicubicCopy = kernel === 'bicubic' && axisAligned && !spec.halfPixelOffset && m[0] === 1 && m[3] === 1 &&
-		m[4] - Math.round(m[4]) > -1 / 64 && m[4] - Math.round(m[4]) <= 1 / 64 &&
-		m[5] - Math.round(m[5]) > -1 / 64 && m[5] - Math.round(m[5]) <= 1 / 64;
+		unitCopyOffset(m[4], m[5], spec) && unitCopyOffset(m[5], m[4], spec);
 	let farFade = false;
 	let shiftX = 0;
 	let shiftY = 0;
@@ -735,6 +754,39 @@ export function resampleImage(
 /** Phases per texel of the high-quality weight tables. */
 const HQ_PHASES = 128;
 
+function isPowerOfTwo(v: number): boolean {
+	return Number.isInteger(v) && v > 0 && (v & (v - 1)) === 0;
+}
+
+/**
+ * Whether a mirrored draw is computed exactly (native captures `hq-crop-impulse`, impulse draws of 22 source
+ * rectangles with both record forms, and `hq-crop-alpha`, 65,536 white draws). A DrawImage destination rectangle
+ * with a negative width always is. DrawImagePoints with reversed points is only when the source rectangle's width
+ * and height are both powers of two, a function of the two sizes alone (the same for every offset, kernel and
+ * vertical scale): the matrix inferred from the three points carries float32 rounding for any other size.
+ */
+function mirroredUnitIsExact(spec: DeferredImageResample): boolean {
+	return !spec.pointsForm || (isPowerOfTwo(spec.srcW) && isPowerOfTwo(spec.srcH));
+}
+
+/**
+ * The offset, in 1/65536 texel, that a mirrored axis adds to the mirrored position model `(covered + d - k) S`.
+ *
+ * At scale 1 an exact mirror (see {@link mirroredUnitIsExact}) puts pixel `k` of the covered run on texel
+ * `covered - 1 - k` and moves only the filter phase with the fractional edge, so the model drops two texels for a
+ * fractional left edge and one for a whole one, plus one unit for the cubic (its bin-centre convention puts the
+ * exact 7/8 phase on the next bin). A rounded points draw is the general path: an image translated two texels
+ * from the exact mirror, which the model already describes, one unit higher in the position (the float32
+ * rounding of the matrix is a coin toss for this unit, so it is fitted: see "Cropped sources and mirrors" in
+ * outstanding-work.md). Reductions of a rounded points draw want the same unit; upscales want none.
+ */
+function mirroredBias(spec: DeferredImageResample, scale: number, fractionalEdge: boolean): number {
+	if (mirroredUnitIsExact(spec)) {
+		return scale === 1 ? -(fractionalEdge ? 2 : 1) * 65536 + (spec.kernel === 'hq-bicubic' ? 1 : 0) : 0;
+	}
+	return scale <= 1 ? 1 : 0;
+}
+
 /**
  * The 16.16 step per destination pixel of an axis-aligned high-quality draw scaled by `scale`: the rounded
  * reciprocal. A reciprocal within about 0.004 below a half (1.37 is 47836.496) rounds either way in native
@@ -845,11 +897,8 @@ function resampleHqAxisAligned(
 	if (scaleU === 1 && scaleV === 1 && !mirrorU && integral(m[4]) && integral(m[5])) {
 		return undefined;
 	}
-	// A mirrored unit axis keeps the general path (open: a DrawImage rectangle with a negative width copies it
-	// exactly, DrawImagePoints with reversed points filters it, and the converter cannot tell the two apart).
-	if (mirrorU && scaleU === 1) {
-		return undefined;
-	}
+	// A mirrored unit axis steps through the same fixed-point machinery as any other mirror (see `mirroredBias`).
+	const unitMirror = mirrorU && scaleU === 1;
 	const shift = spec.halfPixelOffset ? 0.5 : 0;
 	const edge0 = m[0] * spec.srcX + m[4] - shift;
 	const edge1 = edge0 + m[0] * spec.srcW;
@@ -903,8 +952,15 @@ function resampleHqAxisAligned(
 		// A mirrored draw steps backwards from the far end: pixel k sits at (covered pixels + fraction - k) steps.
 		// The far end of the source is a few units off in native draws, growing with the source width (3 at 512 texels, 0 at 13)
 		// and absent for a power-of-two step (a scale of 2, 0.5 or 4 computes exactly).
-		const farBias = (step & (step - 1)) === 0 ? 0 : Math.round(spec.srcW / 170);
+		const farBias = ((step & (step - 1)) === 0 ? 0 : Math.round(spec.srcW / 170)) + (mirror ? mirroredBias(spec, scale, dx > 1e-9) : 0);
 		const position = (k: number): number => (mirror ? Math.round((mirroredPixels - k) * step) + farBias : k * step + offset);
+		if (mirror && unitMirror && dx <= 1e-9 && mirroredUnitIsExact(spec)) {
+			// An exact mirror of a whole left edge is a copy: every pixel reads one texel.
+			for (let k = from; k <= to; k++) {
+				taps.push({ first: Math.round(origin + position(k) / 65536), weights: [1] });
+			}
+			return taps;
+		}
 		// The measured integer table applies when the source origin is a whole number of phase bins.
 		const originBins = origin * HQ_PHASES;
 		const wholeBins = Math.abs(originBins - Math.round(originBins)) < 1e-6;
@@ -958,11 +1014,16 @@ function resampleHqAxisAligned(
 		rowMax = Math.min(height - 1, rowMax);
 	}
 	const rows = Math.max(0, rowMax - rowMin + 1);
+	// The vertical pass of a scaled draw reads the source rectangle's rows plus a margin of the kernel's radius
+	// (rounded up, in texels) on each side; a tap farther out is transparent. A unit-scale axis is left open: whether
+	// its margin is that one or one texel wider is a float32 coin toss (see "Cropped sources and mirrors" in
+	// outstanding-work.md). Under a WrapMode the taps wrap instead.
+	const rowMargin = edge || Math.abs(scaleV - 1) < 1e-9 ? Infinity : Math.ceil((cubic ? 2 : 1) / Math.min(1, scaleV));
 	// Horizontal pass: premultiplied, rounded to 8 bits, limited to the alpha.
 	const inter = new Uint8Array(rows * w * 4);
 	for (let r = 0; r < rows; r++) {
 		const rowTexel = edge ? wrapTap(rowMin + r, 0, height, edge.mirrorY, edge) : rowMin + r;
-		if (rowTexel === OUTSIDE_TRANSPARENT) {
+		if (rowTexel === OUTSIDE_TRANSPARENT || rowTexel < spec.srcY - rowMargin || rowTexel > spec.srcY + spec.srcH + rowMargin - 1) {
 			continue;
 		}
 		const srcRow = rowTexel * width;

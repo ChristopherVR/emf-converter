@@ -27,7 +27,7 @@ function compare(c: Capture, independent: boolean): [number, number, number] {
 	const block = resampleImage(rgba, width, height, {
 		srcX: c.srcX ?? 0, srcY: c.srcY ?? 0, srcW: c.srcW ?? 8, srcH: c.srcH ?? 8,
 		toDevice: c.m ?? [c.sx!, 0, 0, c.sy!, 4 + c.origin!, 4 + c.origin!],
-		kernel: c.kernel === 6 ? 'hq-bilinear' : 'hq-bicubic', halfPixelOffset: false,
+		kernel: c.kernel === 6 ? 'hq-bilinear' : 'hq-bicubic', halfPixelOffset: false, pointsForm: independent,
 	}, { w: extent, h: extent })!;
 	const native = Buffer.from(c.bgra, 'base64');
 	let count = 0, sum = 0, maximum = 0;

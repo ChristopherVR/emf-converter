@@ -26,6 +26,7 @@
 #   path-gradient-ties, path-gradient-colors, path-gradient-focus,
 #   focus-contours, redeye-independent, vertical-focus-line, playback-extents,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
+#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
 #   halftone-kernel, halftone-arrangement, halftone-selection, halftone-boundary,
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
@@ -323,6 +324,36 @@ if ($Which -eq 'hq-axis') {
 if ($Which -eq 'hq-phases') {
     Add-Type -Path (Join-Path $here 'HighQualityPhaseProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityPhaseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-crop-impulse') {
+    Add-Type -Path (Join-Path $here 'HighQualityCropImpulseProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityCropImpulseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-crop-alpha') {
+    Add-Type -Path (Join-Path $here 'HighQualityCropAlphaProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityCropAlphaProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-crop-height') {
+    Add-Type -Path (Join-Path $here 'HighQualityCropHeightProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityCropHeightProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-half-length') {
+    Add-Type -Path (Join-Path $here 'HighQualityHalfLengthProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityHalfLengthProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'bicubic-boundary') {
+    Add-Type -Path (Join-Path $here 'BicubicBoundaryProbe.cs') -ReferencedAssemblies System.Drawing
+    [BicubicBoundaryProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

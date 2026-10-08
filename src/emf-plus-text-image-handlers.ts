@@ -105,6 +105,7 @@ function imageResampleSpec(
 	dataOff: number,
 	isMetafile: boolean,
 	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
+	points: boolean,
 ): DeferredImageResample | undefined {
 	const { view } = rCtx;
 	const kernel = resampleKernelFor(rCtx.interpolationMode ?? 0);
@@ -126,6 +127,7 @@ function imageResampleSpec(
 		toDevice: mulMatrix(plusWorldMatrix(rCtx), toWorld(srcX, srcY, srcW, srcH)),
 		kernel,
 		halfPixelOffset: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0),
+		...(points ? { pointsForm: true } : {}),
 		...imageAttributesWrap(rCtx, view.getUint32(dataOff, true)),
 	};
 }
@@ -149,6 +151,7 @@ function drawOrDeferImage(
 	dh: number,
 	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
 	effect: EmfPlusImageEffect | null = null,
+	points = false,
 ): void {
 	if (!imgObj.data) {
 		return;
@@ -162,7 +165,7 @@ function drawOrDeferImage(
 		dh,
 		transform: plusWorldMatrix(rCtx),
 		isMetafile,
-		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld),
+		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld, points),
 	};
 	const { view } = rCtx;
 	const source = {
@@ -845,7 +848,7 @@ export function handleEmfPlusTextImageRecord(
 						const c = (p3x - p1x) / sh;
 						const d = (p3y - p1y) / sh;
 						return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
-					}, effect);
+					}, effect, true);
 				} else {
 					const hasData = imgObj && imgObj.kind === 'plus-image' && imgObj.data;
 					emfWarn(
