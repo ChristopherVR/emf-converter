@@ -452,6 +452,45 @@ public static class PathProbe
 			File.WriteAllText(Path.Combine(dir,"scaled-pen-widths.json"),json.Append(']').ToString());
 		}finally{DeleteDC(dc);}
 	}
+	// Native WidenPath of chords whose arc is nearly a whole turn (330 to 359.5 degrees in half-degree steps, so the closing line is a few pixels
+	// long) on the ellipse of curve-widen.json sample 206 (box 103,99 to 195,235) and on a circle of radius 100, from four start angles, width 9,
+	// every cap and join (chord-closing.json.gz), then the neighbourhood of sample 206: the chord's own GetPath points ("source", FIX) and the widened outline ("expected").
+	public static void ChordClosing(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		int[][] boxes={new[]{103,99,195,235},new[]{100,100,300,300}};
+		try {
+			foreach(int[] bx in boxes)foreach(double start in new[]{-71.1,0,37,120})for(int half=660;half<=719;half++)for(int cap=0;cap<3;cap++)for(int join=0;join<3;join++){
+				double sweep=half/2.0,cx=(bx[0]+bx[2])/2.0,cy=(bx[1]+bx[3])/2.0;
+				double a0=Math.PI*start/180.0,a1=Math.PI*(start+sweep)/180.0;
+				int[] p1=new[]{(int)Math.Round(cx+Math.Cos(a0)*1000),(int)Math.Round(cy-Math.Sin(a0)*1000)},p2=new[]{(int)Math.Round(cx+Math.Cos(a1)*1000),(int)Math.Round(cy-Math.Sin(a1)*1000)};
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|cap*0x100|join*0x1000),(uint)9,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					BeginPath(dc);Chord(dc,bx[0],bx[1],bx[2],bx[3],p1[0],p1[1],p2[0],p2[1]);EndPath(dc);
+					string source=ReadFixPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"box\":[").Append(string.Join(",",bx)).Append("],\"start\":").Append(start.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"sweep\":").Append(sweep.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"cap\":").Append(cap).Append(",\"join\":").Append(join).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			// The neighbourhood of curve-widen.json sample 206: the same box and start radial (175, 243), the end radial (172, 250) moved by up to 6 pixels each way.
+			for(int ddx=-6;ddx<=6;ddx++)for(int ddy=-6;ddy<=6;ddy++)for(int cap=0;cap<3;cap++)for(int join=0;join<3;join++){
+				int[] p1=new[]{175,243},p2=new[]{172+ddx,250+ddy};
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|cap*0x100|join*0x1000),(uint)9,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					BeginPath(dc);Chord(dc,103,99,195,235,p1[0],p1[1],p2[0],p2[1]);EndPath(dc);
+					string source=ReadFixPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					json.Append(",{\"box\":[103,99,195,235],\"radials\":[175,243,").Append(p2[0]).Append(',').Append(p2[1]).Append("],\"cap\":").Append(cap).Append(",\"join\":").Append(join).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"chord-closing.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
 	// Native WidenPath of chords whose arc is very short (1 to 15 degrees in half-degree steps on a circle of radius 100 px, so the arc flattens
 	// to one or two segments that the closing line retraces), at two widths under every cap and join (chord-sweep.json.gz): the chord's
 	// own GetPath points ("source", FIX) and the widened outline ("expected").
@@ -536,6 +575,44 @@ public static class PathProbe
 				} finally { SelectObject(dc,old);DeleteObject(pen); }
 			}
 			File.WriteAllText(Path.Combine(dir,"curve-dash.json"),json.Append(']').ToString());
+		}finally{DeleteDC(dc);}
+	}
+	// The neighbourhood of curve-dash.json sample 117 (the Bezier (70,105) (162,65) (147,194) (170,164), width 13, square caps, user style 21 12 9 23):
+	// the second control point moved by -2..2 pixels in each axis and the first dash 15..40 pixels long, with the other lengths kept
+	// (curve-dash-neighbourhood.json.gz), to find what makes a dash start one FIX away.
+	public static void CurveDashNeighbourhood(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			for(int dx=-2;dx<=2;dx++)for(int dy=-2;dy<=2;dy++)for(int on=15;on<=40;on++)for(int cap=1;cap<=2;cap++){
+				uint[] dashes=new uint[]{(uint)on,12,9,23};
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePenDashes((uint)(0x10000|7|cap*0x100),13u,ref brush,4u,dashes);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					var p=new Point[]{new Point{X=70,Y=105},new Point{X=162+dx,Y=65+dy},new Point{X=147,Y=194},new Point{X=170,Y=164}};
+					BeginPath(dc);PolyBezier(dc,p,4);EndPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"points\":[70,105,").Append(162+dx).Append(',').Append(65+dy).Append(",147,194,170,164],\"style\":7,\"cap\":").Append(cap).Append(",\"width\":13,\"dashes\":[").Append(on).Append(",12,9,23],\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			// The neighbourhood of curve-dash.json sample 128 (an Arc on the box 53,53 to 95,210 from the radial (49,169) to (110,107), flat caps, a dotted
+			// pen 5 pixels wide): the end radial moved by up to 3 pixels each way, widths 3 to 8, the dash, dot and dash-dot styles.
+			foreach(int style in new[]{0,2,3,4})for(int wd=2;wd<=9;wd++)for(int ddx=-3;ddx<=3;ddx++)for(int ddy=-3;ddy<=3;ddy++){
+				if(style==0&&(ddx!=0||ddy!=0))continue;
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePenDashes((uint)(0x10000|style|2*0x100),(uint)wd,ref brush,0u,null);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					BeginPath(dc);Arc(dc,53,53,95,210,49,169,110+ddx,107+ddy);EndPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					json.Append(",{\"kind\":\"arc\",\"box\":[53,53,95,210],\"radials\":[49,169,").Append(110+ddx).Append(',').Append(107+ddy).Append("],\"style\":").Append(style).Append(",\"cap\":2,\"width\":").Append(wd).Append(",\"dashes\":[],\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"curve-dash-neighbourhood.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
 		}finally{DeleteDC(dc);}
 	}
 }

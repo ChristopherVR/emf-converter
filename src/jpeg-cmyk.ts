@@ -3,13 +3,19 @@
  *
  * GDI+ draws a four-component JPEG through the Windows ICM colour-management module (`mscms.dll`): the RSWOP
  * profile to sRGB, perceptual intent, best-quality transform. Measured with `scripts/gdi-fixtures/IcmProbe.cs`,
- * that transform is byte for byte what GDI+ writes. The module resamples the profile chain onto a table of
- * 16 x 16 x 16 x 16 colours over the 8-bit sample taken as `v << 8` (node `j` sits at 4369 j, so ink `v` is at grid
- * position `v * 256 / 4369`, and the last node is never reached), interpolates tetrahedrally (the four fractions
- * sorted in descending order; node weights are the steps between them) and keeps the top eight bits of the 16-bit
- * result. Nodes beyond the sRGB gamut are not clipped, so a colour crossing the gamut edge inside a cell clips
- * only after interpolation. The table (`jpeg-cmyk-data.ts`) is solved from `mscms.dll` samples (see
- * `scripts/gdi-fixtures/generate-cmyk-lut.ts`); the profile data itself is not bundled.
+ * that transform is byte for byte what GDI+ writes (the same module returns the same 16-bit colours through
+ * `TranslateColors` from 16-bit input `257 v`). It resamples the profile chain onto a table of 16 x 16 x 16 x 16
+ * colours with 16-bit integer nodes and interpolates it tetrahedrally (the four fractions sorted in descending
+ * order; node weights are the steps between them), keeping the top eight bits of the 16-bit result. Nodes beyond
+ * the sRGB gamut are not clipped, so a colour crossing the gamut edge inside a cell clips only after interpolation.
+ *
+ * Where an ink sits on the grid is the profile's own input curve, not a linear ramp: the A2B0 tag of RSWOP.icm
+ * carries a 256-entry table per ink (the same four times), `t(0) = 0`, `t(v) = 256 v - 1` up to `v = 224`, then
+ * a steeper line to `t(255) = 65535` (`cmykInputCurve`). The module takes the table entry as the 16-bit ink and
+ * puts node `j` at `t = 4369 j` (`65535 / 15`), so ink `v` is at grid position `t(v) / 4369` and the last node is
+ * reached by `v = 255`. (Treating `v` as `v << 8`, `v * 256 / 4369`, leaves the whole table wrong by up to ten
+ * thousandths of a cell and misses the top inks entirely.) The table (`jpeg-cmyk-data.ts`) is solved from
+ * `mscms.dll` samples (see `scripts/gdi-fixtures/generate-cmyk-lut.ts`); the profile data itself is not bundled.
  *
  * Sample conventions, all measured against GDI+:
  *   - the samples are stored inverted (Adobe style), with or without an Adobe APP14 marker: ink = 255 - sample;
@@ -29,7 +35,26 @@ export const CMYK_QUANT = 4;
 export const CMYK_NODE_LIMIT = 2048;
 const N = CMYK_GRID;
 const GRID_SIZE = N ** 4;
-const SCALE = 256 / 4369;
+/** Table units per grid cell: `65535 / 15`. */
+const CELL = 4369;
+
+/**
+ * The profile's input curve for an 8-bit ink `v`, in 16-bit units (node `j` of the grid is at `4369 j`): the A2B0 input
+ * table of RSWOP.icm, identical for the four inks. Verified against the 256 entries of all four tables by
+ * `generate-cmyk-lut.ts curve`.
+ */
+export function cmykInputCurve(v: number): number {
+	return v === 0 ? 0 : v <= 224 ? 256 * v - 1 : 57343 + Math.floor(((v - 224) * 8192) / 31);
+}
+
+/** Cell index (0 to 14) and fraction (0 to 1) of every 8-bit ink value. */
+const BASE_OF = new Int32Array(256);
+const FRAC_OF = new Float64Array(256);
+for (let v = 0; v < 256; v++) {
+	const t = cmykInputCurve(v);
+	BASE_OF[v] = Math.min(N - 2, Math.floor(t / CELL));
+	FRAC_OF[v] = (t - BASE_OF[v] * CELL) / CELL;
+}
 
 let table: Int32Array | null = null;
 
@@ -40,9 +65,26 @@ export const CMYK_DATA_ALPHABET = Array.from({ length: 90 }, (_, i) => String.fr
 	.join('');
 
 /**
+ * Nodes whose non-zero coordinates are all equal (the origin first, then every subset of the inks at one grid position):
+ * the nodes that pure inks, every equal mixture of inks and neutral ramps interpolate between. They are refined to single
+ * 16-bit levels, the rest of the grid being stored in steps of `CMYK_QUANT`. Shared with `generate-cmyk-lut.ts`.
+ */
+export function cmykRefinedNodes(): number[] {
+	const strides = [N ** 3, N ** 2, N, 1];
+	const nodes = [0];
+	for (let mask = 1; mask < 16; mask++) {
+		let step = 0;
+		for (let d = 0; d < 4; d++) if (mask >> d & 1) step += strides[d];
+		for (let j = 1; j < N; j++) nodes.push(j * step);
+	}
+	return nodes;
+}
+
+/**
  * The decoded grid: `GRID_SIZE` nodes of R, G and B interleaved (index `(((c * N + m) * N + y) * N + k) * 3 + channel`),
- * in steps of `CMYK_QUANT`. They are stored as the 4-D difference of the grid, zigzag coded as one byte or, from
- * 255, an escape byte and three more, deflated and written in base 85; decoding sums the differences along C, M, Y and K.
+ * in 16-bit levels. The data are the 4-D difference of the grid in steps of `CMYK_QUANT` followed by one correction
+ * per channel for each of `cmykRefinedNodes`, all zigzag coded as one byte or, from 255, an escape byte and three more,
+ * deflated and written in base 85; decoding sums the differences along C, M, Y and K.
  */
 function nodeTable(): Int32Array {
 	if (table) return table;
@@ -59,20 +101,24 @@ function nodeTable(): Int32Array {
 		packed[o + 3] = group & 255;
 	}
 	const bytes = inflateZlibSync(packed.subarray(0, Math.floor((text.length * 4) / 5)));
-	const values = new Int32Array(3 * GRID_SIZE);
-	for (let i = 0, p = 0; i < values.length; i++) {
+	let p = 0;
+	const next = (): number => {
 		let v = bytes[p++];
 		if (v === 255) {
 			v = bytes[p] | (bytes[p + 1] << 8) | (bytes[p + 2] << 16);
 			p += 3;
 		}
-		values[i] = v & 1 ? -((v + 1) >> 1) : v >> 1;
-	}
+		return v & 1 ? -((v + 1) >> 1) : v >> 1;
+	};
+	const values = new Int32Array(3 * GRID_SIZE);
+	for (let i = 0; i < values.length; i++) values[i] = next();
 	for (const stride of [N ** 3, N ** 2, N, 1]) {
 		for (let i = 0; i < GRID_SIZE; i++) {
 			if (Math.floor(i / stride) % N) for (let c = 0; c < 3; c++) values[i * 3 + c] += values[(i - stride) * 3 + c];
 		}
 	}
+	for (let i = 0; i < values.length; i++) values[i] *= CMYK_QUANT;
+	for (const node of cmykRefinedNodes()) for (let c = 0; c < 3; c++) values[node * 3 + c] += next();
 	return (table = values);
 }
 
@@ -84,13 +130,8 @@ const clamp8 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
  */
 export function cmykPlanesToRgba(planes: Uint8Array[], width: number, height: number, ycck: boolean): Uint8Array {
 	const nodes = nodeTable();
-	const baseOf = new Int32Array(256);
-	const fracOf = new Float64Array(256);
-	for (let v = 0; v < 256; v++) {
-		const pos = v * SCALE;
-		baseOf[v] = Math.min(N - 2, Math.floor(pos));
-		fracOf[v] = pos - baseOf[v];
-	}
+	const baseOf = BASE_OF;
+	const fracOf = FRAC_OF;
 	const strides = [N * N * N * 3, N * N * 3, N * 3, 3];
 	const out = new Uint8Array(width * height * 4);
 	const fix = (x: number): number => Math.floor(x * 65536 + 0.5);
@@ -151,8 +192,43 @@ export function cmykPlanesToRgba(planes: Uint8Array[], width: number, height: nu
 	return out;
 }
 
-/** The top eight bits of an interpolated node value (in `CMYK_QUANT` steps), clamped to the 16-bit range. */
-function level(v: number): number {
-	const x = v * CMYK_QUANT;
+/**
+ * The colour the table gives four 8-bit ink amounts before the top eight bits are taken: R, G and B on the 16-bit scale
+ * of `TranslateColors` / `BM_16b_RGB` (unclamped, fractional). For tests and for comparing against the 16-bit captures.
+ */
+export function cmykRgb16(c: number, m: number, y: number, k: number, out: number[] = [0, 0, 0]): number[] {
+	return cmykRgb16At(cmykInputCurve(c), cmykInputCurve(m), cmykInputCurve(y), cmykInputCurve(k), out);
+}
+
+/**
+ * Like `cmykRgb16` for ink positions already in table units (0 to 65535, node `j` at `4369 j`): what `TranslateColors`
+ * does with a 16-bit ink word, which it maps through the input table with a linear interpolation between entries
+ * (`word / 257` is the table index).
+ */
+export function cmykRgb16At(tc: number, tm: number, ty: number, tk: number, out: number[] = [0, 0, 0]): number[] {
+	const nodes = nodeTable();
+	const strides = [N * N * N * 3, N * N * 3, N * 3, 3];
+	const positions = [tc, tm, ty, tk];
+	const frac = [0, 0, 0, 0];
+	const order = [0, 1, 2, 3];
+	let at = 0;
+	for (let d = 0; d < 4; d++) {
+		const base = Math.min(N - 2, Math.floor(positions[d] / CELL));
+		at += base * strides[d];
+		frac[d] = (positions[d] - base * CELL) / CELL;
+	}
+	order.sort((a, b) => frac[b] - frac[a] || a - b);
+	let weight = 1 - frac[order[0]];
+	for (let ch = 0; ch < 3; ch++) out[ch] = weight * nodes[at + ch];
+	for (let s = 0; s < 4; s++) {
+		at += strides[order[s]];
+		weight = frac[order[s]] - (s < 3 ? frac[order[s + 1]] : 0);
+		for (let ch = 0; ch < 3; ch++) out[ch] += weight * nodes[at + ch];
+	}
+	return out;
+}
+
+/** The top eight bits of an interpolated node value, clamped to the 16-bit range. */
+function level(x: number): number {
 	return x <= 0 ? 0 : x >= 65535 ? 255 : Math.floor(x / 256);
 }

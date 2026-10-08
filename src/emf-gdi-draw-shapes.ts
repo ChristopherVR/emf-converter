@@ -613,15 +613,17 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const cornerOnFrame = (fix: number, size: number, framedSize: number): number => (inset && size !== 0 ? Math.floor((Math.min(fix, size) * framedSize) / size) : fix);
 		let cw = cornerOnFrame(cornerFixW, Math.abs((r - l) * devM[0]) * 16, Math.abs(framed.exx));
 		let ch = cornerOnFrame(cornerFixH, Math.abs((b - t) * devM[3]) * 16, Math.abs(framed.eyy));
-		if (!inset && rCtx.state.penStyle !== 6 && cornerW !== 0 && cornerH !== 0 && Math.abs(devM[1]) < 1e-9 && Math.abs(devM[2]) < 1e-9 && rCtx.state.penStyle !== 5 && !penIsCosmetic(rCtx) && rCtx.state.worldTransform.every((v, i) => v === [1, 0, 0, 1, 0, 0][i])) {
-			// GM_COMPATIBLE (no world transform; GM_ADVANCED keeps the corner unscaled): GDI builds the corner on the logical box with its right and bottom pixel included (the record's box is inclusive), then
-			// scales it onto the drawn box, truncating to whole FIX under a wide or null pen (native GetPath of RoundRect(165, 145, 230,
-			// 192, 20, 20): corners of 157 and 156 FIX where the unscaled 160 gave the 16 pixels of emfrec-path-widen).
-			const fullW = (Math.abs(r - l) + 1) * Math.abs(devM[0]) * 16;
-			const fullH = (Math.abs(b - t) + 1) * Math.abs(devM[3]) * 16;
-			cw = Math.floor((Math.min(cornerFixW, fullW) * Math.abs(framed.exx)) / fullW);
-			ch = Math.floor((Math.min(cornerFixH, fullH) * Math.abs(framed.eyy)) / fullH);
+		// A null pen's box grows by a quarter pixel on every side (identity scale), and GDI scales the corner ellipse onto the grown box,
+		// truncating to whole FIX (native GetPath and playback of 400 null-pen RoundRects in either graphics mode).
+		const drawBox = inset ? framed : curvedFixBox(rCtx, l, t, r, b, true);
+		if (!inset && drawBox.exx !== unframed.exx && Math.abs(unframed.exx) > 0 && Math.abs(unframed.eyy) > 0 && cornerW !== 0 && cornerH !== 0) {
+			cw = Math.floor((Math.min(cornerFixW, Math.abs(unframed.exx)) * Math.abs(drawBox.exx)) / Math.abs(unframed.exx));
+			ch = Math.floor((Math.min(cornerFixH, Math.abs(unframed.eyy)) * Math.abs(drawBox.eyy)) / Math.abs(unframed.eyy));
 		}
+		// A wide or cosmetic pen keeps the corner unscaled on the record's box in every graphics mode: PlayEnhMetaFile draws a RoundRect
+		// record the same whether the application recorded it in GM_COMPATIBLE (the record then stores the call's right and bottom less
+		// one) or in GM_ADVANCED (native GetPath after playback, 400 shapes per mode, emf-roundrect-mode-paths.json.gz). The scaling a
+		// GM_COMPATIBLE application sees when it draws straight onto a device (emf-roundrect-wide-paths.json.gz) is not part of playback.
 		// Rotated/skewed: build in LOGICAL space and map every point (Bezier
 		// control points included) through the full affine. Otherwise the
 		// device mapping is a plain per-axis scale + offset, so build directly
@@ -660,7 +662,7 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		}
 		const raster = (box = framed) => roundRectRasterPath(box, cw, ch, clockwise, cornerW === 0 || cornerH === 0);
 		if (inPath) {
-			const box = framed;
+			const box = drawBox;
 			if (cornerW === 0 || cornerH === 0) recordRectangle(rCtx, box, clockwise);
 			else {
 				recordBezierShape(rCtx, roundRectDeviceBeziers(box, cw, ch, clockwise), 8);
@@ -673,7 +675,7 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 					c.beginPath();
 					drawRoundRect(c);
 				},
-				raster: () => raster(inset ? framed : curvedFixBox(rCtx, l, t, r, b, true)),
+				raster: () => raster(drawBox),
 				roundPen: true,
 				fill: true,
 				stroke: true,
