@@ -62,7 +62,8 @@ const KNOWN_LOSSES = ['Arial 11px g', 'Tahoma bold 18px y'];
 
 describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles', () => {
 	const fonts = new GdiFontCollection(windowsFonts() ?? []);
-	const exact = captures.map((c) => {
+	// The body of a skipped describe still runs, so the captures are only rendered when the fonts are there.
+	const exact = !windowsFonts() ? [] : captures.map((c) => {
 		const native = nativeRgb(c);
 		const mine = ours(fonts, c);
 		return native.every((v, i) => v === mine[i]);

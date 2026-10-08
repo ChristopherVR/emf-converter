@@ -61,7 +61,7 @@ describe('roundedRotationMatrix', () => {
 });
 
 describe.skipIf(!windowsFonts())('against the native outlines', () => {
-	const collection = new GdiFontCollection(windowsFonts()!, 'cleartype');
+	const collection = new GdiFontCollection(windowsFonts() ?? [], 'cleartype');
 	/** Least-squares matrix (per unit of ppem) mapping the font-unit outline onto the native one, and the exactly matched points. */
 	function analyse(face: string, lfHeight: number, degrees: number) {
 		const font = collection.realize({ face, height: lfHeight, width: 0, weight: 400, italic: false, charSet: 1, pitchAndFamily: 0, quality: 3 }) as RealizedFont;

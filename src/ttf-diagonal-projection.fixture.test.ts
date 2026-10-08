@@ -83,7 +83,8 @@ function compare(candidate: boolean[][], baseline: boolean[][]): { lost: string[
 }
 
 describe.skipIf(!windowsFonts())('the per-product projection candidate against real-font GDI+ grayscale captures', () => {
-	const baseline = exactness();
+	// The body of a skipped describe still runs, so the baseline is only computed when the fonts are there.
+	const baseline = windowsFonts() ? exactness() : [];
 	it('the closed set is exact today: 2,400 coverage, 1,280 x-phase and 1,280 y-phase controls', () => {
 		const closedCoverage = coverage.filter((c) => {
 			const char = String.fromCharCode(c.code);

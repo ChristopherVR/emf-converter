@@ -42,7 +42,7 @@ describe('call-level first divergences of the projection arithmetic (state B)', 
 });
 
 describe.skipIf(!windowsFonts())('native glyph output differs between runs on one machine', () => {
-	const fonts = { combined: new GdiFontCollection(windowsFonts()!), perProduct: new GdiFontCollection(windowsFonts()!) };
+	const fonts = { combined: new GdiFontCollection(windowsFonts() ?? []), perProduct: new GdiFontCollection(windowsFonts() ?? []) };
 	function render(kind: 'combined' | 'perProduct', c: any, side: number, x: number, y: number, scale: number, contrast: number): Uint8Array {
 		const font = fonts[kind].realize({ face: c.face, height: -c.size, width: 0, weight: c.style & 1 ? 700 : 400, italic: !!(c.style & 2), charSet: 1, pitchAndFamily: 0, quality: 4, unhinted: c.hint === 4, ignoreGasp: c.hint === 4, gdiPlus: true })!;
 		const hinted = (font as any).hinted;
