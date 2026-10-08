@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-06T02:11:47.0888294Z",
+    "capturedAt":  "2026-10-08T06:48:51.1913676Z",
     "groups":  "general-matrix-pen-probe",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -8,8 +8,8 @@
     "runnerImage":  null,
     "runnerImageVersion":  null,
     "screenDpi":  [
-                      96,
-                      96
+                      144,
+                      144
                   ],
     "libraries":  [
                       {
@@ -26,6 +26,11 @@
                           "name":  "win32u.dll",
                           "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
                           "sha256":  "9cd636e8a1b300e2f4b16f339d650eda71fa02b92b100e4b2f89ce7c04811767"
+                      },
+                      {
+                          "name":  "mscms.dll",
+                          "version":  "10.0.26100.1 (WinBuild.160101.0800)",
+                          "sha256":  "062d1ca19c5b7d076c11baa3fb41d23e3b05b37d3f5852a5d1fa14f86b95d528"
                       }
                   ],
     "fonts":  [
@@ -3384,6 +3389,10 @@
                        {
                            "name":  "general-matrix-pen.json.gz",
                            "sha256":  "22da4bc40ddb8d794162db7a65f957b761c9f022b6d566382f14067e7bb74924"
+                       },
+                       {
+                           "name":  "general-matrix-pen-joins.json.gz",
+                           "sha256":  "659900f037a60bca7d3ed5ef2885899248098a33091f5517aa534195a0a69777"
                        }
                    ]
 }

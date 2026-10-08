@@ -15,7 +15,7 @@
 #   curve-widen-probe, curve-dash-probe, arc-cap-sweep-probe,
 #   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
-#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
+#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, arc-small-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
 #   text-cleartype-coverage, text-raster-polygons, text-raster-bars, text-raster-mono,
 #   text-real-glyphs, text-origin-phases, text-origin-vertical-phases,
@@ -76,9 +76,9 @@ if ($Which -eq 'illuminant-cubes') {
     [HalftoneColorProbe]::IlluminantCubes($destination)
     return
 }
-if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe' -or $Which -eq 'dash-cut-tie-probe' -or $Which -eq 'scaled-dash-cap-probe' -or $Which -eq 'curve-end-reversal-probe' -or $Which -eq 'tiny-final-segment-probe') {
+if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe' -or $Which -eq 'dash-cut-tie-probe' -or $Which -eq 'dash-lengthened-probe' -or $Which -eq 'arc-small-probe' -or $Which -eq 'scaled-dash-cap-probe' -or $Which -eq 'curve-end-reversal-probe' -or $Which -eq 'tiny-final-segment-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } elseif ($Which -eq 'dash-cut-tie-probe') { [PathProbe]::DashCutTies($outDir) } elseif ($Which -eq 'scaled-dash-cap-probe') { [PathProbe]::ScaledDashCaps($outDir) } elseif ($Which -eq 'curve-end-reversal-probe') { [PathProbe]::CurveEndReversal($outDir) } elseif ($Which -eq 'tiny-final-segment-probe') { [PathProbe]::TinyFinalSegmentLines($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
+    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } elseif ($Which -eq 'dash-cut-tie-probe') { [PathProbe]::DashCutTies($outDir) } elseif ($Which -eq 'dash-lengthened-probe') { [PathProbe]::DashLengthened($outDir) } elseif ($Which -eq 'arc-small-probe') { [PathProbe]::ArcSmall($outDir) } elseif ($Which -eq 'scaled-dash-cap-probe') { [PathProbe]::ScaledDashCaps($outDir) } elseif ($Which -eq 'curve-end-reversal-probe') { [PathProbe]::CurveEndReversal($outDir) } elseif ($Which -eq 'tiny-final-segment-probe') { [PathProbe]::TinyFinalSegmentLines($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
     Complete-Fixtures
     return
 }
@@ -87,6 +87,13 @@ if ($Which -eq 'emf-roundrect-mode-probe') {
     [RoundRectModeProbe]::Run($outDir)
     [RoundRectModeProbe]::Paths($outDir)
     [RoundRectModeProbe]::PlayExisting($outDir, 'emfrec-path-widen')
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'compat-playback-probe') {
+    Add-Type -Path (Join-Path $here 'CompatPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
+    [CompatPlaybackProbe]::Run($outDir)
+    [CompatPlaybackProbe]::RectSweep($outDir)
     Complete-Fixtures
     return
 }
@@ -589,12 +596,14 @@ if ($Which -eq 'dashed-pen-axis-probe') {
 if ($Which -eq 'general-matrix-pen-probe') {
     Add-Type -Path (Join-Path $here 'GeneralMatrixPenProbe.cs')
     [GeneralMatrixPenProbe]::Run($outDir)
+    [GeneralMatrixPenProbe]::RunJoins($outDir)
     Complete-Fixtures
     return
 }
 if ($Which -eq 'nib-matrix-pen-probe') {
     Add-Type -Path (Join-Path $here 'NibMatrixPenProbe.cs')
     [NibMatrixPenProbe]::Run($outDir)
+    [NibMatrixPenProbe]::RunAngles($outDir)
     Complete-Fixtures
     return
 }
@@ -710,7 +719,7 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -
 
 $known = @('all', 'rop', 'gradient', 'text', 'pattern', 'rotation', 'rop2', 'image', 'rotation-affine',
 	'text-extra', 'text-c1', 'pen-axis-scales', 'gdi-raster', 'emfplus-records', 'gdiplus-extra', 'wmf-records', 'emf-records',
-	'halftone', 'halftone-mixed', 'halftone-origin', 'halftone-mixed-probe', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'wmf-roundrect-corners', 'emf-insideframe', 'emfplus-effects', 'pen-transform')
+	'halftone', 'halftone-mixed', 'halftone-origin', 'halftone-mixed-probe', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'emfplus-pens', 'wmf-roundrect-corners', 'emf-insideframe', 'emfplus-effects', 'pen-transform')
 $groups = @($Which -split '[,\s]+' | Where-Object { $_ })
 if ($groups.Count -eq 0) { $groups = @('all') }
 foreach ($g in $groups) {

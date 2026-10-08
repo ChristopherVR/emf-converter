@@ -386,6 +386,22 @@ function handleLineTo(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): 
 	return true;
 }
 
+/**
+ * A Rectangle drawn with a cosmetic (one device pixel) pen takes every edge to the next whole device pixel: native playback of
+ * 5,040 recorded rectangles (`compat-rects-*`, eight map modes and two world scales, window and viewport origins, 1/7 to 6/7
+ * fractions) puts the outline and the fill at `ceil(device coordinate)` on all four sides, where the exact FIX box rounded to
+ * the nearest pixel. A null pen keeps the exact box (its edges already agree) and a wide pen builds the shape in FIX.
+ */
+function cosmeticRectangleBox(rCtx: EmfGdiReplayCtx, box: FixBox): FixBox {
+	const { state } = rCtx;
+	if (rCtx.inPath || state.penStyle === 5 || state.penStyle === 6 || box.exy !== 0 || box.eyx !== 0 || box.exx <= 0 || box.eyy <= 0 || !penIsCosmetic(rCtx)) {
+		return box;
+	}
+	const ax = Math.ceil(box.ax / 16) * 16;
+	const ay = Math.ceil(box.ay / 16) * 16;
+	return { ...box, ax, ay, exx: Math.ceil((box.ax + box.exx) / 16) * 16 - ax, eyy: Math.ceil((box.ay + box.eyy) / 16) * 16 - ay };
+}
+
 function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): boolean {
 	const { ctx, view, state, inPath } = rCtx;
 	if (recSize >= 24) {
@@ -393,7 +409,7 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 		const t = view.getInt32(dataOff + 4, true);
 		const r = view.getInt32(dataOff + 8, true);
 		const b = view.getInt32(dataOff + 12, true);
-		const unframed = uprightFixBox(rCtx, l, t, r, b);
+		const unframed = cosmeticRectangleBox(rCtx, uprightFixBox(rCtx, l, t, r, b));
 		const inset = insideFrameInset(rCtx, unframed, true, rCtx.state.arcDirection === 2);
 		const box = inset ? insetFixBox(unframed, inset) : unframed;
 		const clockwise = rCtx.state.arcDirection === 2;
@@ -687,12 +703,13 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 
 /**
  * GDI's device box for a curved shape (Ellipse, RoundRect, Chord, Pie). With
- * a null pen and a one-to-one logical-to-device mapping GDI grows the box
- * by a quarter pixel (4 FIX) on every side before building the path, so the
- * filled area reaches the inclusive box's right and bottom edges; under any
- * other scale or a rotation it does not (measured: 200 of 200 null-pen
- * ellipses at identity need exactly the quarter pixel, 150 of 150 under
- * random scales need none).
+ * a null pen and a box whose four edges all land on whole device pixels GDI
+ * grows it by a quarter pixel (4 FIX) on every side before building the path,
+ * so the filled area reaches the inclusive box's right and bottom edges. Native
+ * playback of 840 recorded null-pen ellipses (`compat-ellipses-*`, ten maps and
+ * world scales) shows the growth in every box with four whole-pixel edges (identity, 2:1, and
+ * the integral boxes of 3:4, 4:3, 2:3 maps) and in none of the 1,600 with a fractional edge; the
+ * earlier "identity scale only" rule measured direct calls with fractional edges.
  */
 function curvedFixBox(rCtx: EmfGdiReplayCtx, l: number, t: number, r: number, b: number, upright = false): FixBox {
 	const box = upright ? uprightFixBox(rCtx, l, t, r, b) : fixBox(rCtx, l, t, r, b);
@@ -700,18 +717,21 @@ function curvedFixBox(rCtx: EmfGdiReplayCtx, l: number, t: number, r: number, b:
 		return box;
 	}
 	const m = gdiDeviceMatrix(rCtx);
-	if (Math.abs(m[0]) !== 1 || Math.abs(m[3]) !== 1 || m[1] !== 0 || m[2] !== 0) {
+	if (m[1] !== 0 || m[2] !== 0) {
 		return box;
 	}
+	const whole = box.ax % 16 === 0 && box.ay % 16 === 0 && box.exx % 16 === 0 && box.eyy % 16 === 0;
+	const gx = whole ? 4 : 0;
+	const gy = gx;
 	const sx = box.exx < 0 ? -1 : 1;
 	const sy = box.eyy < 0 ? -1 : 1;
 	return {
-		ax: box.ax - 4 * sx,
-		ay: box.ay - 4 * sy,
-		exx: box.exx + 8 * sx,
+		ax: box.ax - gx * sx,
+		ay: box.ay - gy * sy,
+		exx: box.exx + 2 * gx * sx,
 		exy: 0,
 		eyx: 0,
-		eyy: box.eyy + 8 * sy,
+		eyy: box.eyy + 2 * gy * sy,
 	};
 }
 

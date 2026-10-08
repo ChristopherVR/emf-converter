@@ -17,8 +17,11 @@
  * - an open figure is one outline (left side forward, end cap, right side
  *   back, start cap); a closed figure two loops, one per side;
  * - a compound pen strokes each band of its compound array as its own
- *   outline (exact on the probed pens); an Inset pen on a closed figure
- *   puts the whole width inside it;
+ *   outline (on a closed figure the inner side of each band meets where
+ *   its offset lines cross: exact on 24 figures, aliased and antialiased); an Inset pen on a closed figure strokes the ring
+ *   between the figure and the figure offset inward by the whole width
+ *   (the inner corners where the offset lines meet, the pen's join at a
+ *   reflex vertex; see `emf-plus-pen-figures.fixture.test.ts`);
  * - a dashed pen widens every dash as its own open figure, capped with the
  *   pen's DashCap, the line's own start and end caps kept for the ends of
  *   the whole line.
@@ -126,7 +129,7 @@ function frame(a: Pt, b: Pt): { ux: number; uy: number; nx: number; ny: number }
  * The join at vertex `p` between segments with frames `f1` (incoming) and
  * `f2` (outgoing), on the side at signed offset `o` along the left normal.
  */
-function joinPoints(p: Pt, f1: ReturnType<typeof frame>, f2: ReturnType<typeof frame>, o: number, pen: DevicePen): Pt[] {
+function joinPoints(p: Pt, f1: ReturnType<typeof frame>, f2: ReturnType<typeof frame>, o: number, pen: DevicePen, meetInside = false): Pt[] {
 	const a = { x: p.x + f1.nx * o, y: p.y + f1.ny * o };
 	const b = { x: p.x + f2.nx * o, y: p.y + f2.ny * o };
 	if (o === 0) {
@@ -138,6 +141,11 @@ function joinPoints(p: Pt, f1: ReturnType<typeof frame>, f2: ReturnType<typeof f
 	}
 	const outer = cross * o < 0;
 	if (!outer) {
+		if (meetInside) {
+			const den2 = f1.ux * f2.uy - f1.uy * f2.ux;
+			const t2 = ((b.x - a.x) * f2.uy - (b.y - a.y) * f2.ux) / den2;
+			return [{ x: a.x + f1.ux * t2, y: a.y + f1.uy * t2 }];
+		}
 		return [a, b];
 	}
 	if (pen.join === 2) {
@@ -221,7 +229,7 @@ function sidePoints(pts: Pt[], closed: boolean, o: number, pen: DevicePen): Pt[]
 		const inIdx = i - 1 >= 0 ? i - 1 : closed ? segs - 1 : -1;
 		const outIdx = i < segs ? i : -1;
 		if (inIdx >= 0 && outIdx >= 0) {
-			out.push(...joinPoints(pts[i], frames[inIdx], frames[outIdx], o, pen));
+			out.push(...joinPoints(pts[i], frames[inIdx], frames[outIdx], o, pen, closed && !!pen.compound));
 		} else {
 			const f = frames[outIdx >= 0 ? outIdx : inIdx];
 			out.push({ x: pts[i].x + f.nx * o, y: pts[i].y + f.ny * o });
@@ -356,6 +364,62 @@ function signedArea(pts: Pt[]): number {
 	return a / 2;
 }
 
+/** True when `q` lies inside the polygon `pts` (even-odd). */
+function insidePolygon(pts: Pt[], q: Pt): boolean {
+	let inside = false;
+	for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+		const a = pts[i];
+		const b = pts[j];
+		if (a.y > q.y !== b.y > q.y && q.x < ((b.x - a.x) * (q.y - a.y)) / (b.y - a.y) + a.x) {
+			inside = !inside;
+		}
+	}
+	return inside;
+}
+
+/**
+ * Whether offsetting the polygon `pts` inward by `d` leaves nothing: the miter-offset polygon turns the other way round, or a vertex of it
+ * has left the figure (the offset lines have crossed), as when the pen is wider than the figure.
+ */
+function insetCollapses(pts: Pt[], d: number): boolean {
+	const sign = signedArea(pts) > 0 ? 1 : -1;
+	const n = pts.length;
+	const frames = Array.from({ length: n }, (_, i) => frame(pts[i], pts[(i + 1) % n]));
+	const moved = pts.map((v, i) => {
+		const f1 = frames[(i + n - 1) % n];
+		const f2 = frames[i];
+		const n1x = f1.nx * sign, n1y = f1.ny * sign, n2x = f2.nx * sign, n2y = f2.ny * sign;
+		const k = 1 + n1x * n2x + n1y * n2y;
+		return k < 1e-9 ? { x: v.x + n1x * d, y: v.y + n1y * d } : { x: v.x + ((n1x + n2x) * d) / k, y: v.y + ((n1y + n2y) * d) / k };
+	});
+	return Math.sign(signedArea(moved)) !== sign || moved.some((q) => !insidePolygon(pts, q));
+}
+
+/**
+ * The inner boundary of an Inset stroke on a closed figure: the figure offset inward by `d`, where the offset lines of a convex vertex meet
+ * and a reflex vertex (an outside turn of the offset) takes the pen's join.
+ */
+function innerBoundary(pts: Pt[], d: number, pen: DevicePen): Pt[] {
+	const sign = signedArea(pts) > 0 ? 1 : -1;
+	const n = pts.length;
+	const frames = Array.from({ length: n }, (_, i) => frame(pts[i], pts[(i + 1) % n]));
+	const out: Pt[] = [];
+	for (let i = 0; i < n; i++) {
+		const f1 = frames[(i + n - 1) % n];
+		const f2 = frames[i];
+		const o = sign * d;
+		const cross = f1.ux * f2.uy - f1.uy * f2.ux;
+		if (cross * o < 0) {
+			out.push(...joinPoints(pts[i], f1, f2, o, pen));
+		} else {
+			const n1x = f1.nx * sign, n1y = f1.ny * sign, n2x = f2.nx * sign, n2y = f2.ny * sign;
+			const k = 1 + n1x * n2x + n1y * n2y;
+			out.push(k < 1e-9 ? { x: pts[i].x + n1x * d, y: pts[i].y + n1y * d } : { x: pts[i].x + ((n1x + n2x) * d) / k, y: pts[i].y + ((n1y + n2y) * d) / k });
+		}
+	}
+	return out;
+}
+
 /**
  * The outline polygons (device pixels, filled nonzero) GDI+ fills for
  * stroking `figures` with `pen` (see the module doc). Pure.
@@ -372,6 +436,15 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 		// Band edges along the left normal: [lo, hi] per compound band.
 		let lo = -h;
 		let hi = h;
+		if (pen.inset && closed && !pen.dash && !pen.compound) {
+			// An Inset stroke on a closed figure is the ring between the figure itself and the figure offset inward by the whole width
+			// (its corners where the offset lines meet, the pen's join at a reflex vertex); a figure the pen fills completely has no hole.
+			polys.push(pts.slice());
+			if (!insetCollapses(pts, 2 * h)) {
+				polys.push(innerBoundary(pts, 2 * h, pen).reverse());
+			}
+			continue;
+		}
 		if (pen.inset && closed) {
 			if (signedArea(pts) > 0) {
 				lo = 0;

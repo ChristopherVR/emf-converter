@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-06T02:29:20.0712591Z",
+    "capturedAt":  "2026-10-08T06:44:10.5917154Z",
     "groups":  "nib-matrix-pen-probe",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -8,8 +8,8 @@
     "runnerImage":  null,
     "runnerImageVersion":  null,
     "screenDpi":  [
-                      96,
-                      96
+                      144,
+                      144
                   ],
     "libraries":  [
                       {
@@ -26,6 +26,11 @@
                           "name":  "win32u.dll",
                           "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
                           "sha256":  "9cd636e8a1b300e2f4b16f339d650eda71fa02b92b100e4b2f89ce7c04811767"
+                      },
+                      {
+                          "name":  "mscms.dll",
+                          "version":  "10.0.26100.1 (WinBuild.160101.0800)",
+                          "sha256":  "062d1ca19c5b7d076c11baa3fb41d23e3b05b37d3f5852a5d1fa14f86b95d528"
                       }
                   ],
     "fonts":  [
@@ -3381,6 +3386,10 @@
                   }
               ],
     "references":  [
+                       {
+                           "name":  "nib-angle-sweep.json.gz",
+                           "sha256":  "f69b3bc5ce6cc0e9e23013f8f721316859c24044400a40698152a13403f8e4d9"
+                       },
                        {
                            "name":  "nib-matrix-pen.json.gz",
                            "sha256":  "577a20c8226e7555715122e2ed38a4908067d10e96fd3885723c461c921569ed"

@@ -232,6 +232,26 @@ public static class PathProbe
 	}
 	[DllImport("gdi32.dll")] static extern bool Rectangle(IntPtr dc,int l,int t,int r,int b);
 	[DllImport("gdi32.dll",EntryPoint="CreatePen")] static extern IntPtr CreatePenNative(int style,int width,uint color);
+	/** Native GetPath of 624 arcs 0.01 to 3 degrees wide on circles of 100,000 to 400,000 FIX radius (`arc-small.json.gz`, `arc-precise.json` layout plus `radius`): both directions, Arc, Chord and Pie. */
+	public static void ArcSmall(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var rnd=new Random(90210);var js=new StringBuilder("[");
+		try {
+			Func<int,double,int[]> far=delegate(int size,double deg){double a=deg*Math.PI/180;return new[]{(int)Math.Round(size/2.0+Math.Cos(a)*8e6),(int)Math.Round(size/2.0-Math.Sin(a)*8e6)};};
+			double[] sweeps={0.01,0.02,0.05,0.1,0.2,0.3,0.5,0.8,1,1.5,2,2.5,3};
+			int[] sizes={12500,25000,40000,50000};
+			int n=0;
+			foreach(int size in sizes)foreach(double sweep in sweeps)for(int rep=0;rep<12;rep++){
+				double start=rep==0?0:rep==1?90*rnd.Next(1,4)-sweep/2:rnd.NextDouble()*360;
+				int way=(n%2==1)?2:1;int kind=n%3;
+				int[] q1=far(size,start),q2=far(size,way==1?start+sweep:start-sweep);
+				if(n>0)js.Append(',');
+				js.Append("{\"kind\":").Append(kind).Append(",\"clockwise\":").Append(way==2?"true":"false").Append(",\"radius\":").Append(size*8).Append(",\"sweep\":").Append(sweep.ToString("R",System.Globalization.CultureInfo.InvariantCulture)).Append(",\"box\":[0,0,").Append(size).Append(',').Append(size).Append("],\"radials\":[").Append(q1[0]).Append(',').Append(q1[1]).Append(',').Append(q2[0]).Append(',').Append(q2[1]).Append("],\"expected\":").Append(ArcPath(dc,kind,0,0,size,size,q1[0],q1[1],q2[0],q2[1],way)).Append('}');
+				n++;
+			}
+			var bytes=Encoding.UTF8.GetBytes(js.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"arc-small.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
 	public static void ArcPaths(string dir) {
 		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(6047);var json=new StringBuilder("[");var jsonCw=new StringBuilder("[");
 		try {
@@ -286,6 +306,9 @@ public static class PathProbe
 		return ReadFixPath(dc);
 	}
 	[DllImport("gdi32.dll")] static extern bool PolyBezier(IntPtr dc,Point[] points,uint count);
+	[DllImport("gdi32.dll")] static extern bool PolyBezierTo(IntPtr dc,Point[] points,uint count);
+	[DllImport("gdi32.dll")] static extern bool MoveToEx(IntPtr dc,int x,int y,IntPtr old);
+	[DllImport("gdi32.dll")] static extern bool LineTo(IntPtr dc,int x,int y);
 	// Native WidenPath of wide curves: random Beziers, Arcs, Chords and Pies under flat/square/round caps and several joins, at the identity scale.
 	public static void CurveWiden(string dir) {
 		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(5171);var json=new StringBuilder("[");
@@ -743,6 +766,40 @@ public static class PathProbe
 			}
 			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
 			using(var file=File.Create(Path.Combine(dir,"dash-cut-ties.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
+
+	/**
+	 * `DashCutTies` with a straight run in front of the curve: a horizontal line of k whole periods of the dash pattern ending at the curve's start, so
+	 * every dash cut on the curve falls on the same fractions (the pattern starts again at the curve) but the walk has already travelled k periods.
+	 * Reads `dash-lengthened-cases.txt` (lines of `DashCutTies` cases) and writes `dash-lengthened.json.gz` (case, k and the outline).
+	 */
+	public static void DashLengthened(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			int caseIndex=0;
+			foreach(string line in File.ReadAllLines(Path.Combine(dir,"dash-lengthened-cases.txt"))){
+				if(line.Trim().Length==0)continue;
+				var f=line.Trim().Split(' ');var v=new int[f.Length];for(int i=0;i<f.Length;i++)v[i]=int.Parse(f[i]);
+				int cap=v[0],width=v[1];var p=new Point[4];for(int i=0;i<4;i++)p[i]=new Point{X=v[2+2*i],Y=v[3+2*i]};
+				var dl=new System.Collections.Generic.List<uint>();for(int i=10;i<v.Length;i++)if(v[i]>0)dl.Add((uint)v[i]);
+				uint[] dashes=dl.ToArray();int period=0;foreach(uint d in dashes)period+=(int)d;
+				foreach(int k in new[]{1,64,512}){
+					SetMapMode(dc,1);
+					var brush=new LogBrush();IntPtr pen=ExtCreatePenDashes((uint)(0x10000|7|cap*0x100),(uint)width,ref brush,(uint)dashes.Length,dashes);
+					IntPtr old=SelectObject(dc,pen);
+					try {
+						BeginPath(dc);MoveToEx(dc,p[0].X-k*period,p[0].Y,IntPtr.Zero);LineTo(dc,p[0].X,p[0].Y);PolyBezierTo(dc,new[]{p[1],p[2],p[3]},3);EndPath(dc);
+						if(!WidenPath(dc))throw new Exception("WidenPath failed");
+						if(json.Length>1)json.Append(',');
+						json.Append("{\"case\":").Append(caseIndex).Append(",\"k\":").Append(k).Append(",\"period\":").Append(period).Append(",\"points\":[");for(int i=0;i<8;i++){if(i>0)json.Append(',');json.Append(v[2+i]);}
+						json.Append("],\"cap\":").Append(cap).Append(",\"width\":").Append(width).Append(",\"dashes\":[").Append(string.Join(",",dashes)).Append("],\"expected\":").Append(ReadFixPath(dc)).Append('}');
+					} finally { SelectObject(dc,old);DeleteObject(pen); }
+				}
+				caseIndex++;
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"dash-lengthened.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
 		}finally{DeleteDC(dc);}
 	}
 }

@@ -79,8 +79,8 @@ describe('native Arc, Chord and Pie paths (GM_COMPATIBLE)', () => {
 		const arcs = preciseArcs as NativeArc[];
 		expect(arcs.length).toBeGreaterThanOrEqual(250);
 		const { exact, largest } = score(arcs, (c) => c.clockwise === true);
-		// Measured: 187 of 260 exact (182 before the single-precision arc points) and none more than 3 FIX off (the radials are whole pixels 8 million away).
-		expect(exact).toBeGreaterThanOrEqual(187);
+		// Measured: 191 of 260 exact (187 before the single-precision tangent lines of arcs up to 3 degrees, 182 before the single-precision arc points) and none more than 3 FIX off (the radials are whole pixels 8 million away).
+		expect(exact).toBeGreaterThanOrEqual(191);
 		expect(largest).toBeLessThanOrEqual(3);
 	});
 });
