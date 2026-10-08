@@ -156,11 +156,11 @@ const PATH_TILE_CASES: ParityCase[] = [
 	close('grad-path-rect-blend-flipx', 0.001),
 	close('grad-path-rect-blend-flipy', 0.001),
 	close('grad-path-rect-blend-flipxy', 0.001),
-	close('grad-path-triangle-clamp', 0.001),
-	close('grad-path-triangle-tile', 0.003),
-	close('grad-path-triangle-flipx', 0.003),
-	close('grad-path-triangle-flipy', 0.003),
-	close('grad-path-triangle-flipxy', 0.003),
+	levelExact('grad-path-triangle-clamp'),
+	close('grad-path-triangle-tile', 0.0012),
+	close('grad-path-triangle-flipx', 0.0012),
+	close('grad-path-triangle-flipy', 0.0012),
+	close('grad-path-triangle-flipxy', 0.0012),
 ];
 
 /**

@@ -33,6 +33,7 @@
 import { canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mulMatrix, pathGradientColorAt, pathGradientQuantum } from './emf-plus-brush-gradient';
 import { hatchSampler } from './emf-plus-brush-hatch';
+import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
 import { writeTextureColor } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { linearRampSampler } from './emf-plus-linear-ramp';
@@ -191,8 +192,9 @@ export function pathGradientSampler(
 	}
 	// Native paints a path gradient as nested copies of its boundary, so each pixel
 	// is one of `pathGradientQuantum` steps. Three cases are not reproduced yet and
-	// keep the smooth ratio: surround colours that differ from vertex to vertex (a
-	// Blend or preset curve is read at the step instead), an anisotropic focus (its
+	// keep the smooth ratio: surround colours that differ from vertex to vertex with a
+	// focus, Blend or preset (they are Gouraud fan triangles otherwise, see
+	// `vertexGradient` below; a Blend or preset curve is read at the step instead), an anisotropic focus (its
 	// strips put about one pixel in 500 a step off) and a tile cut from a bounding
 	// box on fractional pixels (its colours sit on a shifted grid).
 	const anisotropicFocus = !!shape.focus && Math.abs(shape.focus.x - shape.focus.y) > 1e-9;
@@ -200,6 +202,9 @@ export function pathGradientSampler(
 	const smooth = (!uniformSurround && !shape.preset) || anisotropicFocus ||
 		(wrap !== 'clamp' && !pixelAligned(shape.boundary, full));
 	const quantum = smooth ? 0 : pathGradientQuantum(shape.boundary, full);
+	// Surround colours that differ from vertex to vertex are Gouraud-shaded fan triangles, not nested
+	// copies (see emf-plus-path-gradient-vertices.ts). A tile cut from fractional bounds keeps the old path.
+	const vertexGradient = wrap === 'clamp' || pixelAligned(shape.boundary, full) ? prepareVertexGradient(shape, full) : null;
 	const pxX = Math.hypot(full[0], full[1]);
 	const pxY = Math.hypot(full[2], full[3]);
 	const lagX = pxX > 0 ? 1 / pxX : 0;
@@ -226,7 +231,16 @@ export function pathGradientSampler(
 				// line's constant samples, a step edge) is taken at the unnudged location.
 				const focusPoint = bias
 					? { x: bx - inv[0] * bias, y: by - inv[1] * bias } : undefined;
-				const c = pathGradientColorAt(shape, bx, by, focusPoint, quantum);
+				let c: number | null = null;
+				if (vertexGradient) {
+					// The scan converter works on whole pixels: the (folded) sample is a device pixel.
+					const fx = wrap === 'clamp' ? x0 + i : full[0] * bx + full[2] * by + full[4];
+					const fy = wrap === 'clamp' ? dy : full[1] * bx + full[3] * by + full[5];
+					const rx = Math.round(fx);
+					const ry = Math.round(fy);
+					if (Math.abs(fx - rx) < 1e-6 && Math.abs(fy - ry) < 1e-6) c = vertexGradientColorAt(vertexGradient, rx, ry);
+				}
+				if (c === null) c = pathGradientColorAt(shape, bx, by, focusPoint, quantum);
 				if (c === null) {
 					continue;
 				}
