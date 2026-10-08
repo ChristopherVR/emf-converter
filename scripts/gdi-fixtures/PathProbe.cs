@@ -286,6 +286,9 @@ public static class PathProbe
 		return ReadFixPath(dc);
 	}
 	[DllImport("gdi32.dll")] static extern bool PolyBezier(IntPtr dc,Point[] points,uint count);
+	[DllImport("gdi32.dll")] static extern bool PolyBezierTo(IntPtr dc,Point[] points,uint count);
+	[DllImport("gdi32.dll")] static extern bool MoveToEx(IntPtr dc,int x,int y,IntPtr old);
+	[DllImport("gdi32.dll")] static extern bool LineTo(IntPtr dc,int x,int y);
 	// Native WidenPath of wide curves: random Beziers, Arcs, Chords and Pies under flat/square/round caps and several joins, at the identity scale.
 	public static void CurveWiden(string dir) {
 		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var random=new Random(5171);var json=new StringBuilder("[");
@@ -743,6 +746,40 @@ public static class PathProbe
 			}
 			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
 			using(var file=File.Create(Path.Combine(dir,"dash-cut-ties.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
+
+	/**
+	 * `DashCutTies` with a straight run in front of the curve: a horizontal line of k whole periods of the dash pattern ending at the curve's start, so
+	 * every dash cut on the curve falls on the same fractions (the pattern starts again at the curve) but the walk has already travelled k periods.
+	 * Reads `dash-lengthened-cases.txt` (lines of `DashCutTies` cases) and writes `dash-lengthened.json.gz` (case, k and the outline).
+	 */
+	public static void DashLengthened(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			int caseIndex=0;
+			foreach(string line in File.ReadAllLines(Path.Combine(dir,"dash-lengthened-cases.txt"))){
+				if(line.Trim().Length==0)continue;
+				var f=line.Trim().Split(' ');var v=new int[f.Length];for(int i=0;i<f.Length;i++)v[i]=int.Parse(f[i]);
+				int cap=v[0],width=v[1];var p=new Point[4];for(int i=0;i<4;i++)p[i]=new Point{X=v[2+2*i],Y=v[3+2*i]};
+				var dl=new System.Collections.Generic.List<uint>();for(int i=10;i<v.Length;i++)if(v[i]>0)dl.Add((uint)v[i]);
+				uint[] dashes=dl.ToArray();int period=0;foreach(uint d in dashes)period+=(int)d;
+				foreach(int k in new[]{1,64,512}){
+					SetMapMode(dc,1);
+					var brush=new LogBrush();IntPtr pen=ExtCreatePenDashes((uint)(0x10000|7|cap*0x100),(uint)width,ref brush,(uint)dashes.Length,dashes);
+					IntPtr old=SelectObject(dc,pen);
+					try {
+						BeginPath(dc);MoveToEx(dc,p[0].X-k*period,p[0].Y,IntPtr.Zero);LineTo(dc,p[0].X,p[0].Y);PolyBezierTo(dc,new[]{p[1],p[2],p[3]},3);EndPath(dc);
+						if(!WidenPath(dc))throw new Exception("WidenPath failed");
+						if(json.Length>1)json.Append(',');
+						json.Append("{\"case\":").Append(caseIndex).Append(",\"k\":").Append(k).Append(",\"period\":").Append(period).Append(",\"points\":[");for(int i=0;i<8;i++){if(i>0)json.Append(',');json.Append(v[2+i]);}
+						json.Append("],\"cap\":").Append(cap).Append(",\"width\":").Append(width).Append(",\"dashes\":[").Append(string.Join(",",dashes)).Append("],\"expected\":").Append(ReadFixPath(dc)).Append('}');
+					} finally { SelectObject(dc,old);DeleteObject(pen); }
+				}
+				caseIndex++;
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"dash-lengthened.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
 		}finally{DeleteDC(dc);}
 	}
 }

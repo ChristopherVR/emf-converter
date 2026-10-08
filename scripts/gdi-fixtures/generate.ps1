@@ -15,7 +15,7 @@
 #   curve-widen-probe, curve-dash-probe, arc-cap-sweep-probe,
 #   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
-#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, chord-closing-probe,
+#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
 #   text-cleartype-coverage, text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
@@ -74,9 +74,9 @@ if ($Which -eq 'illuminant-cubes') {
     [HalftoneColorProbe]::IlluminantCubes($destination)
     return
 }
-if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe' -or $Which -eq 'dash-cut-tie-probe' -or $Which -eq 'scaled-dash-cap-probe' -or $Which -eq 'curve-end-reversal-probe' -or $Which -eq 'tiny-final-segment-probe') {
+if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe' -or $Which -eq 'dash-cut-tie-probe' -or $Which -eq 'dash-lengthened-probe' -or $Which -eq 'scaled-dash-cap-probe' -or $Which -eq 'curve-end-reversal-probe' -or $Which -eq 'tiny-final-segment-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } elseif ($Which -eq 'dash-cut-tie-probe') { [PathProbe]::DashCutTies($outDir) } elseif ($Which -eq 'scaled-dash-cap-probe') { [PathProbe]::ScaledDashCaps($outDir) } elseif ($Which -eq 'curve-end-reversal-probe') { [PathProbe]::CurveEndReversal($outDir) } elseif ($Which -eq 'tiny-final-segment-probe') { [PathProbe]::TinyFinalSegmentLines($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
+    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } elseif ($Which -eq 'dash-cut-tie-probe') { [PathProbe]::DashCutTies($outDir) } elseif ($Which -eq 'dash-lengthened-probe') { [PathProbe]::DashLengthened($outDir) } elseif ($Which -eq 'scaled-dash-cap-probe') { [PathProbe]::ScaledDashCaps($outDir) } elseif ($Which -eq 'curve-end-reversal-probe') { [PathProbe]::CurveEndReversal($outDir) } elseif ($Which -eq 'tiny-final-segment-probe') { [PathProbe]::TinyFinalSegmentLines($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
     Complete-Fixtures
     return
 }
