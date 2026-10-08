@@ -9,6 +9,7 @@ import {
 	resampleNearest,
 	resampleKernelFor,
 } from './emf-plus-image-resample';
+import type { ResampleOptions } from './emf-plus-image-resample';
 import type { DeferredImageResample } from './emf-types';
 
 /** A 2x1 bitmap: opaque black, opaque white. */
@@ -298,8 +299,8 @@ describe('rotated high-quality draws and edge taps (native GDI+ output)', () => 
 		expect(actual).toHaveLength(expected.length);
 		actual.forEach((v, i) => expect(Math.abs(v - expected[i])).toBeLessThanOrEqual(tolerance));
 	};
-	const totalAlpha = (sx: number, sy: number, kernel: DeferredImageResample['kernel']): number => {
-		const out = resampleImage(WHITE, 20, 20, { srcX: 0, srcY: 0, srcW: 20, srcH: 20, toDevice: [sx * 0.866, sx * 0.5, -sy * 0.5, sy * 0.866, 40, 10], kernel, halfPixelOffset: false }, { w: 140, h: 140 })!;
+	const totalAlpha = (sx: number, sy: number, kernel: DeferredImageResample['kernel'], plainPass: ResampleOptions | boolean = false): number => {
+		const out = resampleImage(WHITE, 20, 20, { srcX: 0, srcY: 0, srcW: 20, srcH: 20, toDevice: [sx * 0.866, sx * 0.5, -sy * 0.5, sy * 0.866, 40, 10], kernel, halfPixelOffset: false }, { w: 140, h: 140 }, plainPass)!;
 		return out.rgba.reduce((t, v, i) => t + (i % 4 === 3 ? v : 0), 0);
 	};
 
@@ -313,8 +314,8 @@ describe('rotated high-quality draws and edge taps (native GDI+ output)', () => 
 		// 20 texels at scale 1: the plain a = -0.5 kernel, not the area-integrated one.
 		expectClose(alphaRow(1, 'hq-bicubic', false, 28, 49, 7), [255, 255, 255, 162, 0, 0, 0], 3);
 		// One unscaled axis of an anisotropic draw is enough, up to 21 device texels for 20.
-		expect(totalAlpha(1.05, 3, 'hq-bicubic')).toBe(totalAlpha(1.05, 3, 'bicubic'));
-		expect(totalAlpha(1.06, 3, 'hq-bicubic')).not.toBe(totalAlpha(1.06, 3, 'bicubic'));
+		expect(totalAlpha(1.05, 3, 'hq-bicubic')).toBe(totalAlpha(1.05, 3, 'bicubic', { plainRotated: true }));
+		expect(totalAlpha(1.06, 3, 'hq-bicubic')).not.toBe(totalAlpha(1.06, 3, 'bicubic', { plainRotated: true }));
 	});
 
 	it('moves a Half/HighQuality draw half a device pixel along its own axes', () => {

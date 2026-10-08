@@ -431,13 +431,13 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 	}
 	// A world scale (not one logical unit per pixel, not GM_COMPATIBLE's whole device pixels): GDI converts a segment's device
 	// vector back to logical units and normalises a square cap's extension by it cut to the nearest whole unit (native
-	// WidenPath: 323 lines under eight scales, 344 to 329 of 358 arcs), and rounds the pen to whole pixels.
+	// WidenPath: 323 lines under eight scales, every swept arc under four), with the pen's nib at its width in FIX: the whole-pixel
+	// extent of a pen on a horizontal or vertical line is the perpendicular's rounding, not a rounded width (400 of 400 pens exact).
 	const unrotated = Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6;
 	const scaled = !rCtx.wholeDevicePixels && unrotated && (Math.abs(Math.abs(matrix[0]) - 1) > 1e-6 || Math.abs(Math.abs(matrix[3]) - 1) > 1e-6);
 	const uniform = scaled && !ellipse && state.penExtended && (flags & 0xf) !== 6;
-	const nibWidth = uniform ? Math.max(1, Math.floor(widthPx + 0.5)) : widthPx;
 	return {
-		width: Math.round((ellipse ? state.penWidth * Math.abs(matrix[0]) : nibWidth) * 16),
+		width: Math.round((ellipse ? state.penWidth * Math.abs(matrix[0]) : widthPx) * 16),
 		...(ellipse ? { height: Math.round(state.penWidth * Math.abs(matrix[3]) * 16) } : {}),
 		cap: opts.roundPen || !state.penExtended || capBits === 0 ? 'round' : capBits === 0x100 ? 'square' : 'flat',
 		join: opts.roundPen
@@ -461,7 +461,7 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 			? {
 					cutToLogicalUnits: true,
 					logicalScale: (ellipse ? [Math.abs(matrix[0]), Math.abs(matrix[3])] : Math.abs(matrix[0])) as number | [number, number],
-					// The pen rounds to whole pixels, but a square cap extends by half the unrounded width.
+					// A square cap extends by half the unrounded width in FIX.
 					...(uniform ? { capWidth: state.penWidth * Math.abs(matrix[0]) * 16 } : {}),
 				}
 			: {}),

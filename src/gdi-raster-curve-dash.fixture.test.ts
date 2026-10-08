@@ -83,9 +83,11 @@ describe('native WidenPath of dashed wide pens on curves', () => {
 		// Flat: 1 of 100 differs by 1 pixel (before: 5 by 24; a dash that starts or ends on a flattened vertex keeps a zero-length piece along the
 		// segment it was cut from, which native joins). Square: 1 of 100 by 1 pixel (a cut point one FIX away; before: 2 by 5, the second an
 		// exact rounding tie that Math.hypot put either side of x.5 depending on the engine, now Math.sqrt of the exact sum of squares).
+		// Flat is exact since a flat cap loops round the pen between the inner sides of a flattened curve when the wedge holds two pen
+		// vertices or more (sample 128; see gdi-raster-dash-neighbourhood.fixture.test.ts).
 		const flat = summary(2, true);
-		expect(flat.differing).toBeLessThanOrEqual(1);
-		expect(flat.total).toBeLessThanOrEqual(1);
+		expect(flat.differing).toBe(0);
+		expect(flat.total).toBe(0);
 		const square = summary(1, true);
 		expect(square.differing).toBeLessThanOrEqual(1);
 		expect(square.total).toBeLessThanOrEqual(1);
