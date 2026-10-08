@@ -140,6 +140,69 @@ function floatCopyIndex(g: CopiesGradient, edge: number, dx: number, dy: number)
 }
 
 /**
+ * The copy of a pixel under an isotropic focus, computed in float32 the way native does it. Unlike the focus-free
+ * ratio (relative to the centre), the focus is applied in ABSOLUTE device coordinates: the boundary point `O` and the
+ * point `I` where the ray meets the focus polygon (the boundary scaled by `f` about the centre, its vertices rounded as
+ * absolute coordinates) are positions on the pixel grid, and the copy is `floor(N t + 1/2)` with
+ * `t = (P - I) / (O - I)` along the larger coordinate of the boundary point. That is what makes a tie fall on one side
+ * at the right/bottom of the centre and the other at the left/top for a focus that is not a binary fraction
+ * (`path-gradient-focus-thresholds.json.gz`: the focus swept over float32 neighbours of 0.6, 0.3, 0.1, 0.7, 0.2 and
+ * 0.4, with the tie threshold depending on the mantissa of the boundary distance). On the axis-aligned edges of a
+ * rectangle this reproduces every pixel of the focus-edge captures bar a few dozen. On a slanted edge the
+ * larger coordinate of the boundary point is inexact, the chain is right for about 92% of the pixels within float
+ * noise of a copy's edge, and the three pixels of alpha control 151 that it puts on the wrong side lie within three
+ * ulps of `t` of the edge: those return `null` and keep the measured tie rules (`tieSide`).
+ */
+function focusCopyIndex(g: CopiesGradient, edge: number, px: number, py: number): number | null {
+	const n = g.vx.length;
+	const dx = px - g.cx;
+	const dy = py - g.cy;
+	const f = Math.fround(g.focus);
+	const j = (edge + 1) % n;
+	const ax = g.vx[edge] - g.cx;
+	const ay = g.vy[edge] - g.cy;
+	const ex = g.vx[j] - g.vx[edge];
+	const ey = g.vy[j] - g.vy[edge];
+	const denominator = down32(down32(ex * dy) - down32(ey * dx));
+	if (denominator === 0) return null;
+	const u = down32(down32(down32(ay * dx) - down32(ax * dy)) / denominator);
+	const bx = down32(ax + down32(u * ex));
+	const by = down32(ay + down32(u * ey));
+	const useX = Math.abs(bx) >= Math.abs(by);
+	const b = useX ? bx : by;
+	if (b === 0) return null;
+	const c = useX ? g.cx : g.cy;
+	const p = useX ? px : py;
+	const outer = down32(c + b);
+	// The focus polygon's vertices in absolute coordinates, and the ray against its edge.
+	const scaled = (c0: number, v: number): number => down32(c0 + down32(f * (v - c0)));
+	const f0x = scaled(g.cx, g.vx[edge]);
+	const f0y = scaled(g.cy, g.vy[edge]);
+	const f1x = scaled(g.cx, g.vx[j]);
+	const f1y = scaled(g.cy, g.vy[j]);
+	const fax = down32(f0x - g.cx);
+	const fay = down32(f0y - g.cy);
+	const fex = down32(f1x - f0x);
+	const fey = down32(f1y - f0y);
+	const focusDenominator = down32(down32(fex * dy) - down32(fey * dx));
+	if (focusDenominator === 0) return null;
+	const fu = down32(down32(down32(fay * dx) - down32(fax * dy)) / focusDenominator);
+	const inner = down32((useX ? f0x : f0y) + down32(fu * (useX ? fex : fey)));
+	const span = Math.fround(outer - inner);
+	if (span === 0) return null;
+	const t = down32(Math.fround(p - inner) / span);
+	const position = Math.fround(down32(g.steps * t) + 0.5);
+	if (ex !== 0 && ey !== 0) {
+		// The float noise of the chain: an ulp of each absolute position, as a share of the span, scaled by the step count.
+		const ulp = (v: number): number => 2 ** (Math.floor(Math.log2(Math.abs(v) || 1)) - 23);
+		const slack = g.steps * (ulp(inner) + ulp(outer)) / Math.abs(span);
+		const short = Math.ceil(position) - position;
+		if (short > 0 && short <= slack) return null;
+	}
+	return Math.max(0, Math.floor(position));
+}
+
+/**
  * Whether a pixel exactly on the edge of copy `q` is inside it (`true`), outside (`false`), or not decided by
  * a measured rule (`null`). See the header.
  */
@@ -366,6 +429,13 @@ export function copiesStepAt(g: CopiesGradient, px: number, py: number, nudge = 
 		const m = floatCopyIndex(g, edge, dx, dy);
 		if (m !== null) {
 			// The outermost ring is the boundary itself: a pixel on its right or bottom edge is not painted.
+			if (m >= g.steps && !insideCopy(g, 1, px, py)) return null;
+			return g.steps - Math.min(m, g.steps);
+		}
+	}
+	if (!g.anisotropic && g.focus > 0 && g.focus < 1 && edge >= 0 && !(px === g.cx && py === g.cy)) {
+		const m = focusCopyIndex(g, edge, px, py);
+		if (m !== null) {
 			if (m >= g.steps && !insideCopy(g, 1, px, py)) return null;
 			return g.steps - Math.min(m, g.steps);
 		}
