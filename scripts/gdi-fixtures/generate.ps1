@@ -47,7 +47,10 @@
 #   path-gradient-tips, path-gradient-corners, path-gradient-focus-ties,
 #   path-gradient-large, path-gradient-edges, path-gradient-focus-small,
 #   path-gradient-tiles, hq-phases, hq-wrap, hq-reductions, hq-cubic-weights,
-#   redeye-stages, redeye-sequence (internal), halftone-transitions
+#   redeye-stages, redeye-sequence (internal), halftone-transitions,
+#   path-gradient-focus-corners, path-gradient-focus-edges, path-gradient-focus-thresholds,
+#   path-gradient-focus-slants, path-gradient-tile-rotations, compat-playback-paths-probe,
+#   compat-playback-shapes-probe, compat-playback-mirror-probe
 #
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
