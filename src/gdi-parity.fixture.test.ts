@@ -147,20 +147,20 @@ const LINEAR_RAMP_CASES: ParityCase[] = [
  */
 const PATH_TILE_CASES: ParityCase[] = [
 	exact('grad-path-ellipse-clamp'),
-	close('grad-path-ellipse-tile', 0.0008),
-	close('grad-path-ellipse-flipx', 0.0008),
-	close('grad-path-ellipse-flipy', 0.0011),
-	close('grad-path-ellipse-flipxy', 0.0011),
+	exact('grad-path-ellipse-tile'),
+	exact('grad-path-ellipse-flipx'),
+	exact('grad-path-ellipse-flipy'),
+	exact('grad-path-ellipse-flipxy'),
 	exact('grad-path-rect-blend-clamp'),
 	exact('grad-path-rect-blend-tile'),
 	exact('grad-path-rect-blend-flipx'),
 	exact('grad-path-rect-blend-flipy'),
 	exact('grad-path-rect-blend-flipxy'),
 	levelExact('grad-path-triangle-clamp'),
-	close('grad-path-triangle-tile', 0.0012),
-	close('grad-path-triangle-flipx', 0.0012),
-	close('grad-path-triangle-flipy', 0.0012),
-	close('grad-path-triangle-flipxy', 0.0012),
+	levelExact('grad-path-triangle-tile'),
+	levelExact('grad-path-triangle-flipx'),
+	levelExact('grad-path-triangle-flipy'),
+	levelExact('grad-path-triangle-flipxy'),
 ];
 
 /**
@@ -666,7 +666,7 @@ const TEXTURE_SAMPLING_CASES: ParityCase[] = [
 const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 	close('gpx-pen-texture', 0.001), // measured 0.019%
 	close('gpx-pen-lingrad', 0.001), // measured 0.019%
-	close('gpx-pen-pathgrad', 0.00013), // measured 0.013%, 0.070% before the nested copies
+	exact('gpx-pen-pathgrad'), // 0.070% before the nested copies, 0.013% before the unpainted outside pixels
 	exact('gpx-pen-styles'),
 	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
 	close('gpx-text-lingrad', 0.14), // measured 10.98% (glyph shapes)
@@ -682,7 +682,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-texture', 0.025), // measured 1.977%
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.0099), // measured 0.978%, 1.649% before the nested copies
+	close('gpx-text-pathgrad', 0.0070), // measured 0.692%, 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0.0281), // measured 2.802%, 3.093% before the size-specific SHPIX tweaks
 ];
@@ -967,8 +967,8 @@ const HALFTONE_CASES: ParityCase[] = [
 	halftone('emfrec-halftone-ramp-0p5x-2y'), // 0% (17.698% before)
 	halftone('emfrec-halftone-checker-2x-0p5y'), // 0% (23.629% before)
 	halftone('emfrec-halftone-checker-0p5x-2y'), // 0% (22.498% before)
-	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.001), // 0.070%, max 4 (0.469% before the exact XYZ matrix)
-	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.0015), // 0.111%, max 2 (0.585% before the dithered edge row)
+	adjusted('emfrec-halftone-ramp-2x-0p5y-ca', 0.0007), // 0.068%, max 4 (0.070% before the mixed-engine selection, 0.469% before the exact XYZ matrix)
+	adjusted('emfrec-halftone-ramp-0p5x-2y-ca', 0.0011), // 0.108%, max 2 (0.111% before the mixed-engine selection, 0.585% before the dithered edge row)
 	halftone('emfrec-halftone-checker-2x-0p5y-ca'), // 0% (0.549% before)
 	halftone('emfrec-halftone-checker-0p5x-2y-ca'), // 0% (1.447% before)
 	halftone('emfrec-halftone-ramp-2x-ca'), // 0% (0.614% before the exact XYZ matrix)
@@ -1122,8 +1122,8 @@ const EMF_PLUS_ONLY_EFFECT_CASES: ParityCase[] = EMF_PLUS_EFFECT_CASES
 		// fallback painting over it. These bounds measure the real algorithm.
 		tolerance: c.name.includes('-hsl-') ? (c.name === 'plus-effect-hsl-h0-s60-l0' || c.name === 'plus-effect-hsl-h30-sn30-l20' ? 1 : 0)
 			: c.name.includes('-tint-') ? 3 : c.name === 'plus-effect-sharpen-r3-a100' ? 2 : 1,
-		maxMismatch: c.name.endsWith('-redeye-left') ? 0.0002
-			: c.name.endsWith('-redeye-both') ? 0.00123
+		maxMismatch: c.name.endsWith('-redeye-left') ? 0
+			: c.name.endsWith('-redeye-both') ? 0.00104
 			: c.name.endsWith('-redeye-whole') ? 0.00521
 			: c.name.includes('-hsl-') ? 0
 			: c.name === 'plus-effect-sharpen-r3-a100' ? 0.00013 : c.maxMismatch,

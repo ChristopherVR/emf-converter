@@ -261,11 +261,13 @@ describe('stretchHalftone', () => {
 		]);
 	});
 
-	it('area-averages on a reduction, rounding half up', () => {
-		expect(unpack(stretchHalftone(row([0xffffff, 0x000000]), 0, 0, 2, 1, 1, 1))).toEqual([0x808080]);
-		// 3 -> 2 along a row only (not sharpened): 2/3 of one pixel plus 1/3 of the next.
+	it('area-averages on a reduction along a row and sharpens it', () => {
+		// 127.5 is not rounded up: the reduction is sharpened unrounded along the row and floored (native: 127).
+		expect(unpack(stretchHalftone(row([0xffffff, 0x000000]), 0, 0, 2, 1, 1, 1))).toEqual([0x7f7f7f]);
+		// 3 -> 2 along a row only: 2/3 of one pixel plus 1/3 of the next (0x600030, 0x006030), sharpened
+		// along the row as Windows does (the values are the native result).
 		expect(unpack(stretchHalftone(row([0x900000, 0x000090, 0x009000]), 0, 0, 3, 1, 2, 1))).toEqual([
-			0x600030, 0x006030,
+			0x770030, 0x00782f,
 		]);
 	});
 

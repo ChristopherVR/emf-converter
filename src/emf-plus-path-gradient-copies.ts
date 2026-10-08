@@ -19,27 +19,22 @@
  * fractional geometry are reproduced to the level, where the smooth ratio rounds about 9% of them
  * the wrong way. An isotropic focus scales each copy by `f + (1 - f) (m + 1/2) / N`.
  *
- * A pixel exactly on a copy's edge is decided by `tieSide`, from the single-edge captures in
- * `path-gradient-edges.json.gz` (`PathGradientEdgeProbe.cs`: 176,222 of 176,400 pixels of the clockwise
- * sweep are exact, where the half-way colour gave 164,684). It is not a float32 edge test (that fits the
- * 116 ties of the whole-row captures and 40 to 45% of the rectangle ties of `path-gradient-ties.json.gz`):
- * - The ratio of the tie is `(2q + 1) / (2N)`. Native holds the ratio in binary fixed point, and the copy
- *   index is its product with `N` rounded half up, so a ratio that is a binary fraction (the odd part of
- *   `N` divides `2q + 1`) puts the pixel outside copy `q` and any other ratio, truncated, inside it. This is
- *   exact for every pixel that reads the exact coordinate of its edge (an x-major pixel on a vertical edge, a
- *   y-major one on a horizontal edge): none of 38,872 such ties differs.
- * - A pixel that reads the other coordinate goes through its position along the edge. On an edge directed to
- *   the right or straight down the half before the centre's foot is inside unless that position (a fraction
- *   of the copy's edge from its first vertex) is a binary fraction, and the half after it is outside; any
- *   other edge follows the first rule. The winding matters (a counter-clockwise rectangle mirrors a clockwise
- *   one), the first vertex does not, and translation by whole pixels changes nothing. The same holds for 45
- *   degree edges and for the same-axis pixels of other slopes; the other pixels of a slanted edge keep the
- *   colour half way between the two steps, which is within a level of either answer.
- * Left open: about a tenth of the along-the-edge pixels of an edge directed up or left (the decision there follows
- * something finer, and clusters at a copy's vertex rows) and the other pixels of slanted edges.
+ * What decides the pixels exactly on a copy's edge, and all the others, is float32 arithmetic rounded toward minus
+ * infinity (`floatCopyIndex`). Native finds the ratio of a pixel by meeting the ray from the centre with the boundary edge
+ * of its fan triangle and dividing, and the copy is `floor(N r + 1/2)` in the same arithmetic: a ratio that is a
+ * binary fraction stays exact and puts the pixel outside copy `q`, any other ratio falls short and puts it inside, and
+ * the rounding of the boundary point moves slanted and along-the-edge pixels either way. This reproduces every pixel of
+ * the single-edge captures (`path-gradient-edges.json.gz`: 176,400 of 176,400 of the clockwise sweep, where the earlier
+ * binary-fraction rule gave 176,222 and the half-way colour 164,684), of the sheared rectangles and corner triangles
+ * (`path-gradient-slopes.json.gz`, `path-gradient-corners.json.gz`: 404,004 of 404,004) and of the tip sweep
+ * (`path-gradient-tips.json.gz`). A boundary edge that runs through the centre (the corner triangles) leaves the pixels on
+ * it to the boundary's own scan conversion.
  *
- * An isotropic focus scales each copy about the centre the same way and uses the same rules (with a focus, the noisy
- * edges that are not axis-aligned stay undecided). Independent focus scales (`anisotropicTieStep`): each copy is the
+ * With an isotropic focus the old rules stay (`tieSide`: the binary-fraction rule for the pixels that read the exact
+ * coordinate of an axis-aligned edge, the position along the edge for the others, the half-way colour for the rest). A
+ * float32 version (the ray also meets the focus polygon, `t = (d - F) / (b - F)`) reproduces 407 of 420 labelled focus
+ * ties and cuts the differing pixels of the focus-tie captures from 903 to 287, but it turns two one-level pixels of
+ * alpha control 151 into two-level ones, so it is not shipped (see docs/outstanding-work.md). Independent focus scales (`anisotropicTieStep`): each copy is the
  * boundary scaled per axis about the centre point, so a pixel on a vertical or horizontal edge of it follows the same
  * rules; a pixel on a fully focused axis's edge is a tie of every copy at once and takes the innermost copy whose other
  * extent holds it (the span rule: left and top edges in, right and bottom out); a pixel near an edge but not on it is
@@ -63,6 +58,8 @@ export interface CopiesGradient {
 	focus: number;
 	/** The rounded device-space shape, when the focus scales differ per axis (the ratio then comes from the strip solver). */
 	anisotropic: EmfPlusPathGradientShape | null;
+	/** A fan triangle (centre, vertex, vertex) has no area: a boundary edge runs through the centre, so a pixel on it is decided by the boundary's scan conversion, not by its copy. */
+	degenerate: boolean;
 }
 
 /** Rounds to the nearest 1/16 pixel, half up. */
@@ -105,7 +102,56 @@ export function prepareCopies(shape: EmfPlusPathGradientShape, full: TransformMa
 		preset: null,
 		transform: null,
 	};
-	return { cx, cy, vx, vy, steps, focus, anisotropic };
+	let degenerate = false;
+	for (let i = 0; i < n; i++) {
+		const j = (i + 1) % n;
+		if ((vx[i] - cx) * (vy[j] - cy) - (vy[i] - cy) * (vx[j] - cx) === 0) degenerate = true;
+	}
+	return { cx, cy, vx, vy, steps, focus, anisotropic, degenerate };
+}
+
+const float32 = new Float32Array(1);
+const float32Bits = new Uint32Array(float32.buffer);
+
+/** The float32 at or below `x` (rounding toward minus infinity, as the FPU of the GDI+ gradient code does). */
+function down32(x: number): number {
+	const r = Math.fround(x);
+	if (r <= x || Number.isNaN(r)) return r;
+	if (r === 0) {
+		float32Bits[0] = 0x80000001;
+		return float32[0];
+	}
+	float32[0] = r;
+	float32Bits[0] += r > 0 ? -1 : 1;
+	return float32[0];
+}
+
+/**
+ * The copy a pixel belongs to, counted from the centre, computed the way native computes it: in float32 with every
+ * operation rounded toward minus infinity. The ray from the centre through the pixel meets edge `edge` of the boundary
+ * at parameter `u` of the edge, the ratio `r` is the pixel's distance over the boundary point's along the boundary
+ * point's larger coordinate (the x coordinate when the two are equal after rounding), and the copy is
+ * `floor(N r + 1/2)`. Every pixel exactly on a copy's edge is decided by the rounding of these operations (what the
+ * single-edge sweeps found: a ratio that is a binary fraction stays exact and puts the pixel outside the copy, any
+ * other ratio falls short and puts it inside, and a boundary point that is not exact moves a slanted or along-the-edge
+ * pixel either way). Returns `null` for the centre or a ray parallel to the edge.
+ */
+function floatCopyIndex(g: CopiesGradient, edge: number, dx: number, dy: number): number | null {
+	const n = g.vx.length;
+	const ax = g.vx[edge] - g.cx;
+	const ay = g.vy[edge] - g.cy;
+	const ex = g.vx[(edge + 1) % n] - g.vx[edge];
+	const ey = g.vy[(edge + 1) % n] - g.vy[edge];
+	const denominator = down32(down32(ex * dy) - down32(ey * dx));
+	if (denominator === 0) return null;
+	const u = down32(down32(down32(ay * dx) - down32(ax * dy)) / denominator);
+	const bx = down32(ax + down32(u * ex));
+	const by = down32(ay + down32(u * ey));
+	const useX = Math.abs(bx) >= Math.abs(by);
+	const boundary = useX ? bx : by;
+	if (boundary === 0) return null;
+	const r = Math.abs(down32((useX ? dx : dy) / boundary));
+	return Math.max(0, Math.floor(down32(down32(g.steps * r) + 0.5)));
 }
 
 /**
@@ -330,6 +376,15 @@ export function copiesStepAt(g: CopiesGradient, px: number, py: number, nudge = 
 		s = ratio;
 	}
 	if (s < 0) return null;
+	if (g.degenerate && !insideCopy(g, 1, px, py)) return null;
+	if (!g.anisotropic && g.focus === 0 && edge >= 0) {
+		const m = floatCopyIndex(g, edge, dx, dy);
+		if (m !== null) {
+			// The outermost ring is the boundary itself: a pixel on its right or bottom edge is not painted.
+			if (m >= g.steps && !insideCopy(g, 1, px, py)) return null;
+			return g.steps - Math.min(m, g.steps);
+		}
+	}
 	const f = g.focus;
 	// The copy scale of a pixel at ratio s is s = f + (1 - f)(m + 1/2)/N, so the innermost copy
 	// holding it is the smallest m at least q.

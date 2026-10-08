@@ -525,10 +525,14 @@ const TINT_FULL = 254;
  *   feeds the falloff below.
  * - **Centre.** The centroid of the pixels' weights, over pixel centres:
  *   `x / L` for red pixels (1 flat when `L = 0`), nothing for the rest,
- *   uncapped. (Areas of more than one red pixel that hold red of `L = 0`, or
- *   whose centroid is exactly on a pixel centre, use the previous weights: `x / D` with
- *   `D = G + 0.225 B`, `1 / 1.225` below 1, 0.81 of the previous centroid. The luma
- *   weights measured worse there and no residual ceiling may rise.) An area processed after another (one that held red) is nudged:
+ *   uncapped, also when the area holds many red pixels of `L = 0` (measured in
+ *   fresh processes with 2% to 75% of the red pixels at `L = 0`). (Areas of more than one red pixel
+ *   whose centroid is exactly on a pixel centre use the previous weights: `x / D` with
+ *   `D = G + 0.225 B`, `1 / 1.225` below 1, 0.81 of the previous centroid, unless the scene is exactly
+ *   symmetric in float32: when the float32 sums of the luma weights land exactly on the pixel centre
+ *   (every weight is exactly representable) and the reds are not all one value, the luma weights
+ *   hold. The previous weights measured better on the remaining symmetric scenes, whose native
+ *   centroid carries float noise, and no residual ceiling may rise.) An area processed after another (one that held red) is nudged:
  *   the previous area's centroid, in image pixel-index coordinates (its
  *   origin plus the centroid minus 0.5, before any fallback), is added once to
  *   the weighted coordinate sums (the denominator is unchanged), which is why
@@ -558,14 +562,17 @@ const TINT_FULL = 254;
  *   the sector from 90 to 96 degrees (a lone red pixel is the centre; this
  *   fits 2,105 of 2,110 lone pixels inside the fallback circle, in nine area
  *   shapes and offsets; the sector at 0 misses 322 of them, the one at 270
- *   575).
+ *   575). The pixels exactly on the horizontal axis through the centroid (dy = 0) all belong
+ *   to the sector from 0 to 6 degrees, the left ones too.
  *
- * Not reproduced: the native output when the area holds red pixels with
- * `L = 0` and no other spread information (it depends on the calls made
- * before it, as the committed `redeye-stages` sequences show), the exact
+ * Not reproduced: the native output of a call that follows a two-valued field of 16 x 16 pixels or more
+ * in the same process when its area holds red pixels of `L = 0` and no other spread information (it
+ * takes stale memory of the earlier call, and the same sequence gives different outputs in different
+ * processes, `redeye-state`; the model is what a fresh process does), the exact
  * fallback centre of the farthest-off areas, and which sector the pixels on
- * the four axes fall in when a symmetric scene puts the centre exactly on a
- * pixel centre (the native choice follows rounding noise).
+ * the four axes fall in when a symmetric scene with weights that are not exactly
+ * representable puts the centre exactly on a pixel centre (the native choice follows float
+ * rounding noise in its centroid).
  */
 export function applyRedEyeCorrection(
 	src: Uint8ClampedArray,
@@ -591,14 +598,14 @@ interface RedEyeCarry {
 
 /**
  * The previous centroid weights (redness over `G + 0.225 B`, 1 / 1.225 when that is below 1, and 0.81
- * of the previous area's centroid carried), kept for two classes of area of more than one red pixel
- * where the integer-luma weights measured worse on the committed independent captures (the per-capture
- * residual ceilings of `emf-plus-redeye.fixture.test.ts` were never raised, and these are the areas where
- * the luma weights would have raised eight of them):
- * - scenes whose centroid sits exactly on a pixel centre, where the native choice for the pixels on the
- *   four axes follows rounding noise;
- * - areas holding a red pixel of integer luma 0, where the native strength comes from earlier calls
- *   (see the `redeye-stages` captures).
+ * of the previous area's centroid carried), kept for scenes of more than one red pixel whose centroid
+ * sits exactly on a pixel centre and whose float32 centroid is not exactly that centre (or whose reds
+ * are all one value), where the integer-luma weights measured worse on some of the committed
+ * independent captures (the per-capture residual ceilings of `emf-plus-redeye.fixture.test.ts` were
+ * never raised, and the luma weights would have raised eight of them). The residual of those scenes
+ * lies on the horizontal axis row and the rows next to it. (Areas holding red of integer luma 0 used
+ * these weights too until fresh-process captures showed that the earlier in-process captures they
+ * were fitted to had been disturbed by earlier calls.)
  */
 const RED_EYE_LEGACY = {
 	blueWeight: 0.225,
@@ -640,6 +647,12 @@ const RED_EYE_STRENGTHS = [0.25, 0.5, 0.661, 0.75] as const;
  * levels of redness per squared pixel of distance from it.
  */
 const RED_EYE_HIGHLIGHT_RISE = 40;
+/**
+ * When the centroid lies beyond the fallback circle and the area's middle stands in for it, the falloff is not the
+ * quadratic `strength (1 - u)^2` alone but at least `0.33 (1 - u)`, linear in the distance (all 709 lone pixels of the
+ * `redeye-stages` fallback group beyond the circle are exact with a slope between 0.329 and 0.3325).
+ */
+const RED_EYE_FALLBACK_SLOPE = 0.33;
 const RED_EYE_HIGHLIGHT_REST = 5;
 
 function correctRedEyeArea(
@@ -666,8 +679,13 @@ function correctRedEyeArea(
 	let sxL = 0;
 	let syL = 0;
 	let swL = 0;
-	let lumaZeroRed = false;
 	let redCount = 0;
+	// The same sums in float32 (a native centroid is float): whether they land exactly on a pixel centre decides the sector of the axis pixels.
+	let sx32 = 0;
+	let sy32 = 0;
+	let sw32 = 0;
+	let firstRed = -1;
+	let uniformRed = true;
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const i = ((y0 + y) * stride + x0 + x) * 4;
@@ -688,8 +706,15 @@ function correctRedEyeArea(
 				sy += weight * (y + 0.5);
 				sw += weight;
 				redCount++;
-				if (luma === 0) {
-					lumaZeroRed = true;
+				const weight32 = Math.fround(weight);
+				sx32 = Math.fround(sx32 + Math.fround(weight32 * Math.fround(x + 0.5)));
+				sy32 = Math.fround(sy32 + Math.fround(weight32 * Math.fround(y + 0.5)));
+				sw32 = Math.fround(sw32 + weight32);
+				const triple = (r << 16) | (g << 8) | b;
+				if (firstRed < 0) {
+					firstRed = triple;
+				} else if (triple !== firstRed) {
+					uniformRed = false;
 				}
 				const weightL = dL >= 1 ? v / dL : RED_EYE_LEGACY.pureWeight;
 				sxL += weightL * (x + 0.5);
@@ -711,13 +736,22 @@ function correctRedEyeArea(
 	const onPixelCentre = (v: number): boolean => Number.isInteger(snap(v - 0.5));
 	// A lone red pixel is always on a pixel centre and is fitted exactly by the luma model.
 	const symmetric = redCount > 1 && (onPixelCentre(lumaCx) || onPixelCentre(lumaCy));
-	const legacyWeights = symmetric || (redCount > 1 && lumaZeroRed);
+	// A symmetric scene whose weights are exactly representable (the float32 sums land exactly on the pixel centre on
+	// every axis that is centred, as 197 / 3 or 68 / 6 never do) is fitted by the luma weights: its native centroid
+	// has no rounding noise, so the pixels exactly on the horizontal axis row form one sector group (see the
+	// sector assignment below). The previous weights keep the other symmetric scenes, whose native centroid carries
+	// float noise that decides the axis pixels, and scenes of one red value.
+	const exactCentre = (c: number, sum32: number): boolean => !onPixelCentre(c) || Math.fround(sum32 / sw32) === c;
+	const exactSymmetric = symmetric && !uniformRed && !carry.set && exactCentre(lumaCx, sx32) && exactCentre(lumaCy, sy32);
+	const legacyWeights = symmetric && !exactSymmetric;
 	let cx = legacyWeights ? (sxL + RED_EYE_LEGACY.carry * (carry.set ? carry.x : 0)) / swL : lumaCx;
 	let cy = legacyWeights ? (syL + RED_EYE_LEGACY.carry * (carry.set ? carry.y : 0)) / swL : lumaCy;
 	carry.x = x0 + cx;
 	carry.y = y0 + cy;
 	carry.set = true;
+	let fellBack = false;
 	if (Math.hypot(cx - w / 2, cy - h / 2) >= (w + h) / 6) {
+		fellBack = true;
 		cx = w / 2;
 		cy = h / 2;
 	}
@@ -765,7 +799,11 @@ function correctRedEyeArea(
 			}
 			// The pixel exactly at the centre (a lone red pixel, or a centroid on a pixel centre) belongs to
 			// the sector at 90 degrees, not to the one at 0.
-			const s = dx === 0 && dy === 0 ? RED_EYE_CENTRE_SECTOR : Math.min(RED_EYE_SECTORS - 1, Math.floor(angle / 6));
+			// The pixels exactly on the horizontal axis through the centre (dy = 0) all fall in the sector from 0 to 6
+			// degrees, the left ones too (their angle of 180 degrees would be sector 30): in the nudged 31 x 31 scenes
+			// (`redeye-nudge`) the axis row, both sides and the centre pixel, forms one group with the pixels of the
+			// right flank only.
+			const s = dx === 0 && dy === 0 ? RED_EYE_CENTRE_SECTOR : dy === 0 ? 0 : Math.min(RED_EYE_SECTORS - 1, Math.floor(angle / 6));
 			sector[k] = s;
 			if (d < radius) {
 				sectorSum[s] += redness[k];
@@ -789,7 +827,7 @@ function correctRedEyeArea(
 			// Native concentric controls correct both sides of the mean, but stop
 			// using this darkness term at twice the sector mean.
 			const darknessFalloff = ratio < 2 ? 0.5 * (1 - ratio) ** 2 : 0;
-			const falloff = Math.max(strength * (1 - u) * (1 - u), darknessFalloff);
+			const falloff = Math.max(strength * (1 - u) * (1 - u), darknessFalloff, fellBack ? RED_EYE_FALLBACK_SLOPE * (1 - u) : 0);
 			let rest = (1 - falloff) * mean;
 			if (highlight >= 0) {
 				// A highlight leaves at most 5 levels of redness per squared pixel of distance from it.
@@ -802,6 +840,9 @@ function correctRedEyeArea(
 			}
 			const removed = v - rest;
 			const i = ((y0 + y) * stride + x0 + x) * 4;
+			// The final value is rounded half up. Exact ties (11/16 a and 5/16 a land on x.5 when a is a multiple of 8) go
+			// this way in 249 of 256 native cases; the other 7 follow native float noise (two pixels of the 31 x 31 pure-red
+			// scene, one noise-field pixel), and rounding the amounts instead (the red tie down) loses more than it gains.
 			out[i] = Math.round(out[i] - (1 - RED_EYE_GREEN_SHARE) * removed);
 			out[i + 1] = Math.round(out[i + 1] + RED_EYE_GREEN_SHARE * removed);
 			out[i + 2] = Math.round(out[i + 2] + RED_EYE_GREEN_SHARE * removed);

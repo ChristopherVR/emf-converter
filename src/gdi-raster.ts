@@ -956,10 +956,38 @@ export function approximateArcAngle(x: number, y: number): number {
  * that close to a full turn) the end points and tangent lines use exact
  * trigonometry, but `kappa` keeps the polygon's cosine.
  */
-function unitPiece(from: number, to: number, small: boolean): { start: [number, number]; ctrl: number[] } {
+function unitPiece(from: number, to: number, small: boolean, radius = Infinity): { start: [number, number]; ctrl: number[] } {
 	const trig = small ? (a: number): [number, number] => [Math.cos(a), Math.sin(a)] : polygonTrig;
 	const p0 = trig(from);
 	const p3 = trig(to);
+	if (small && (6e-8 * radius) / Math.abs(Math.sin(to - from)) > 0.5) {
+		// An arc of 3 degrees or less solves its tangent lines in single precision where that matters: the cosine of such a sweep rounds
+		// to 1, the numerators of the intersection cancel to a few units of 2^-24 and the error they leave in X, `6e-8 / sin(sweep)` of
+		// the radius, is half a FIX or more (below that the double-precision controls round the same, and 1 of the 1,500 WMF scaled
+		// shapes, a pie on a few hundred FIX, differs at a rounding tie if single precision is applied there too). The controls of a
+		// 0.01 degree arc on a radius of 100,000 FIX are then off the chord by up to a dozen FIX, and exactly on it when the arc starts on
+		// an axis, where cos rounds to 1.0: 624 native arcs of 0.01 to 3 degrees (`arc-small.json.gz`).
+		const f = Math.fround;
+		const q0: [number, number] = [f(p0[0]), f(p0[1])];
+		const q3: [number, number] = [f(p3[0]), f(p3[1])];
+		const det32 = f(f(q0[0] * q3[1]) - f(q0[1] * q3[0]));
+		if (det32 !== 0) {
+			const X: [number, number] = [f(f(q3[1] - q0[1]) / det32), f(f(q0[0] - q3[0]) / det32)];
+			const c = f(polygonTrig(Math.abs(to - from) / 2)[0]);
+			const kappa = f(f(f(4 / 3) * c) / f(1 + c));
+			return {
+				start: p0,
+				ctrl: [
+					f(q0[0] + f(kappa * f(X[0] - q0[0]))),
+					f(q0[1] + f(kappa * f(X[1] - q0[1]))),
+					f(q3[0] + f(kappa * f(X[0] - q3[0]))),
+					f(q3[1] + f(kappa * f(X[1] - q3[1]))),
+					p3[0],
+					p3[1],
+				],
+			};
+		}
+	}
 	const det = p0[0] * p3[1] - p0[1] * p3[0];
 	let ctrl: number[];
 	if (Math.abs(det) < 1e-12) {
@@ -1084,7 +1112,7 @@ export function arcBeziers(
 			continue;
 		}
 		const e = s > 0 ? Math.min(next, a1) : Math.max(next, a1);
-		const piece = unitPiece(a, e, small);
+		const piece = unitPiece(a, e, small, Math.max(rx, ry));
 		for (let i = 0; i < 6; i += 2) {
 			out.push(px(piece.ctrl[i], piece.ctrl[i + 1]), py(piece.ctrl[i + 1]));
 		}

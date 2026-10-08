@@ -122,9 +122,10 @@ export interface WidenOptions {
 	dashMetric?: [number, number];
 	/**
 	 * A rotated or sheared device matrix `[a, b, c, d]` (`x' = a x + c y`, `y' = b x + d y`): native WidenPath's pen is a
-	 * circle in logical space (`width` and `dashes` are then in logical FIX). With `deviceNib` and round joins the path is
-	 * widened in device space with the matrix's nib (`penPolygonMatrix`); otherwise it is mapped back through the inverse,
-	 * widened in logical space and the outline mapped forward, which does not reproduce the device-space rounding rules.
+	 * circle in logical space (`width` and `dashes` are then in logical FIX). With `deviceNib` the path is widened in device
+	 * space with the matrix's nib (`penPolygonMatrix`), whatever the join (round, bevel or miter: `general-matrix-pen-joins.json.gz`,
+	 * 221 of 288 outlines exact against 42 widened in logical space); otherwise it is mapped back through the inverse, widened in
+	 * logical space and the outline mapped forward, which does not reproduce the device-space rounding rules.
 	 */
 	matrix?: [number, number, number, number];
 	/** With `matrix`: widen in device space with the matrix's nib (`penPolygonMatrix`) instead of in logical space. */
@@ -1038,7 +1039,7 @@ function widenInLogicalSpace(path: GdiRasterPath, opts: WidenOptions, m: [number
  * `path` with a wide pen, as GDI builds them (see the module doc).
  */
 export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
-	if (opts.matrix && !(opts.deviceNib && opts.join === 'round')) {
+	if (opts.matrix && !opts.deviceNib) {
 		return widenInLogicalSpace(path, opts, opts.matrix);
 	}
 	const out: number[][] = [];

@@ -15,7 +15,7 @@
 #   curve-widen-probe, curve-dash-probe, arc-cap-sweep-probe,
 #   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
-#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
+#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, arc-small-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-coverage,
 #   text-cleartype-coverage, text-cleartype-sizes, text-shpix, text-iup,
 #   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
@@ -25,7 +25,8 @@
 #   text-vector-stage-coverage, text-signed-diagonal, path-gradient-steps,
 #   path-gradient-vertices, path-gradient-rotated, path-gradient-focus-shapes,
 #   path-gradient-ties, path-gradient-colors, path-gradient-focus,
-#   focus-contours, redeye-independent, vertical-focus-line, playback-extents,
+#   focus-contours, redeye-independent, redeye-state, redeye-fresh,
+#   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, vertical-focus-line, playback-extents,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
 #   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
@@ -77,9 +78,9 @@ if ($Which -eq 'illuminant-cubes') {
     [HalftoneColorProbe]::IlluminantCubes($destination)
     return
 }
-if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe' -or $Which -eq 'dash-cut-tie-probe' -or $Which -eq 'scaled-dash-cap-probe' -or $Which -eq 'curve-end-reversal-probe' -or $Which -eq 'tiny-final-segment-probe') {
+if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe' -or $Which -eq 'dash-cut-tie-probe' -or $Which -eq 'dash-lengthened-probe' -or $Which -eq 'arc-small-probe' -or $Which -eq 'scaled-dash-cap-probe' -or $Which -eq 'curve-end-reversal-probe' -or $Which -eq 'tiny-final-segment-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } elseif ($Which -eq 'dash-cut-tie-probe') { [PathProbe]::DashCutTies($outDir) } elseif ($Which -eq 'scaled-dash-cap-probe') { [PathProbe]::ScaledDashCaps($outDir) } elseif ($Which -eq 'curve-end-reversal-probe') { [PathProbe]::CurveEndReversal($outDir) } elseif ($Which -eq 'tiny-final-segment-probe') { [PathProbe]::TinyFinalSegmentLines($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
+    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } elseif ($Which -eq 'dash-cut-tie-probe') { [PathProbe]::DashCutTies($outDir) } elseif ($Which -eq 'dash-lengthened-probe') { [PathProbe]::DashLengthened($outDir) } elseif ($Which -eq 'arc-small-probe') { [PathProbe]::ArcSmall($outDir) } elseif ($Which -eq 'scaled-dash-cap-probe') { [PathProbe]::ScaledDashCaps($outDir) } elseif ($Which -eq 'curve-end-reversal-probe') { [PathProbe]::CurveEndReversal($outDir) } elseif ($Which -eq 'tiny-final-segment-probe') { [PathProbe]::TinyFinalSegmentLines($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
     Complete-Fixtures
     return
 }
@@ -88,6 +89,13 @@ if ($Which -eq 'emf-roundrect-mode-probe') {
     [RoundRectModeProbe]::Run($outDir)
     [RoundRectModeProbe]::Paths($outDir)
     [RoundRectModeProbe]::PlayExisting($outDir, 'emfrec-path-widen')
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'compat-playback-probe') {
+    Add-Type -Path (Join-Path $here 'CompatPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
+    [CompatPlaybackProbe]::Run($outDir)
+    [CompatPlaybackProbe]::RectSweep($outDir)
     Complete-Fixtures
     return
 }
@@ -296,6 +304,42 @@ if ($Which -eq 'path-gradient-focus-shapes') {
 if ($Which -eq 'path-gradient-ties') {
     Add-Type -Path (Join-Path $here 'PathGradientTieProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientTieProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-slopes') {
+    Add-Type -Path (Join-Path $here 'PathGradientSlopeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientSlopeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-fills') {
+    Add-Type -Path (Join-Path $here 'PathGradientFillProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFillProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-tips') {
+    Add-Type -Path (Join-Path $here 'PathGradientTipProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientTipProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-corners') {
+    Add-Type -Path (Join-Path $here 'PathGradientCornerProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientCornerProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus-ties') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusTieProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusTieProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-large') {
+    Add-Type -Path (Join-Path $here 'PathGradientLargeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientLargeProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
@@ -540,6 +584,92 @@ if ($Which -eq 'redeye-independent') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'redeye-sequence') {
+    # Internal: one sequence of red-eye calls in THIS process (spec in -PlaybackCase), JSON on stdout.
+    Add-Type -Path (Join-Path $here 'RedEyeStageProbe.cs') -ReferencedAssemblies System.Drawing
+    [RedEyeStageProbe]::RunSequence($PlaybackCase)
+    return
+}
+if ($Which -eq 'redeye-state' -or $Which -eq 'redeye-zero-fraction' -or $Which -eq 'redeye-fresh' -or $Which -eq 'redeye-fallback-strength' -or $Which -eq 'redeye-nudge') {
+    # redeye-fresh: the 192 independent controls (RedEyeCorrectionProbe, sizes 16 to 40) each alone in a fresh process.
+    # Runs each call sequence in fresh processes (the child is this script in redeye-sequence mode) to separate in-process
+    # history from anything that persists between processes. Writes redeye-state.json.gz: { spec, runs: [ [step...] ... ] }.
+    # redeye-zero-fraction: the pattern-3 noise field with K pixels replaced by pure red (luma 0), one process each, to find
+    # the share of luma-0 red pixels at which the centroid weights change (redeye-zero-fraction.json.gz).
+    $fileName = 'redeye-state.json.gz'
+    $specs = @(
+        'R24', 'R12', 'R20', 'R48', 'T24:60', 'G24;R24', 'R24;R24', 'R24;R24;R24',
+        'P24:40:160;R24', 'R24;P24:40:160;R24', 'P24:40:160;G24;R24', 'P24:40:160;R24;R24', 'P24:40:160;U24;R24',
+        'P24:40:70;R24', 'P24:40:90;R24', 'P24:40:105;R24', 'P24:40:125;R24',
+        'P8:40:160;R24', 'P16:40:160;R24', 'P20:40:160;R24', 'P24:40:160;R12', 'P24:40:160;R20', 'P24:40:160;R48', 'P48:40:160;R24',
+        'P24:40:160;T24:60', 'P24:40:160;P24:40:40;R24', 'P24:40:160', 'R24;P24:40:160', 'P24:40:160;P24:40:70', 'P24:40:70;P24:40:160'
+    )
+    $repeats = 6
+    if ($Which -eq 'redeye-zero-fraction') {
+        $fileName = 'redeye-zero-fraction.json.gz'
+        $repeats = 1
+        $specs = @()
+        foreach ($n in 24, 30) {
+            foreach ($k in 0, 2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 288, 432, 576) {
+                if ($k -le $n * $n) { $specs += "Z${n}:${k}:0" }
+            }
+        }
+        foreach ($k in 0, 4, 12, 32, 96, 288) { $specs += "Z24:${k}:1" }
+    }
+    if ($Which -eq 'redeye-fallback-strength') {
+        # A lone red pixel beyond the fallback circle on two-valued grey fields of four luma spreads (strengths 1/4, 1/2, 0.661, 3/4),
+        # at positions around the circle; each spread is one process (no earlier call can leak into a call without luma-0 red).
+        $fileName = 'redeye-fallback-strength.json.gz'
+        $repeats = 1
+        $specs = @()
+        foreach ($spread in 0, 30, 60, 100) {
+            $tokens = @()
+            foreach ($d in 14.0, 15.5, 17.0) {
+                foreach ($theta in 15, 75, 135, 195, 255, 315) {
+                    $x = [int][Math]::Floor(22 + $d * [Math]::Cos($theta * [Math]::PI / 180) - 0.5)
+                    $y = [int][Math]::Floor(18 + $d * [Math]::Sin($theta * [Math]::PI / 180) - 0.5)
+                    $tokens += ('F44:36:60:' + (60 + $spread) + ':' + $x + ':' + $y)
+                }
+            }
+            $specs += ($tokens -join ';')
+        }
+    }
+    if ($Which -eq 'redeye-nudge') {
+        # Symmetric 31 x 31 scenes (the centroid exactly on a pixel centre) with one faint red pixel in each corner and at the
+        # middle of each edge, one fresh process per scene: which side of the axes the centroid then falls on is read from the output.
+        $fileName = 'redeye-nudge.json.gz'
+        $repeats = 1
+        $specs = @()
+        foreach ($sc in @(@(1, 2), @(4, 2), @(5, 2), @(1, 8), @(2, 8), @(1, 3), @(0, 2))) {
+            $specs += ('Y31:' + $sc[0] + ':' + $sc[1] + ':15:15')
+            foreach ($pos in @(@(0, 0), @(30, 0), @(0, 30), @(30, 30), @(15, 0), @(15, 30), @(0, 15), @(30, 15), @(0, 1), @(1, 0))) {
+                $specs += ('Y31:' + $sc[0] + ':' + $sc[1] + ':' + $pos[0] + ':' + $pos[1])
+            }
+        }
+    }
+    if ($Which -eq 'redeye-fresh') {
+        $fileName = 'redeye-fresh.json.gz'
+        $repeats = 1
+        $specs = @()
+        foreach ($n in 16, 24, 31, 40) { foreach ($p in 0..5) { foreach ($b in 0, 1, 2, 3, 4, 8, 16, 32) { $specs += "I${n}:${p}:${b}" } } }
+    }
+    $self = $MyInvocation.MyCommand.Path
+    $records = New-Object System.Collections.Generic.List[string]
+    foreach ($spec in $specs) {
+        $runs = New-Object System.Collections.Generic.List[string]
+        for ($i = 0; $i -lt $repeats; $i++) {
+            $text = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $self redeye-sequence -PlaybackCase $spec 2>&1 | Out-String
+            $runs.Add($text.Trim())
+        }
+        $records.Add('{"spec":' + (ConvertTo-Json $spec) + ',"runs":[' + ($runs -join ',') + ']}')
+    }
+    $bytes = [Text.Encoding]::UTF8.GetBytes('[' + ($records -join ',') + ']')
+    $f = [IO.File]::Create((Join-Path $outDir $fileName))
+    $z = New-Object IO.Compression.GZipStream($f, [IO.Compression.CompressionMode]::Compress)
+    $z.Write($bytes, 0, $bytes.Length); $z.Dispose(); $f.Dispose()
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'redeye-stages') {
     Add-Type -Path (Join-Path $here 'RedEyeStageProbe.cs') -ReferencedAssemblies System.Drawing
     [RedEyeStageProbe]::Run($outDir)
@@ -585,12 +715,14 @@ if ($Which -eq 'dashed-pen-axis-probe') {
 if ($Which -eq 'general-matrix-pen-probe') {
     Add-Type -Path (Join-Path $here 'GeneralMatrixPenProbe.cs')
     [GeneralMatrixPenProbe]::Run($outDir)
+    [GeneralMatrixPenProbe]::RunJoins($outDir)
     Complete-Fixtures
     return
 }
 if ($Which -eq 'nib-matrix-pen-probe') {
     Add-Type -Path (Join-Path $here 'NibMatrixPenProbe.cs')
     [NibMatrixPenProbe]::Run($outDir)
+    [NibMatrixPenProbe]::RunAngles($outDir)
     Complete-Fixtures
     return
 }
@@ -706,7 +838,7 @@ if ($Which -eq 'image-effect-sharpen' -or $Which -eq 'image-effect-large-blur' -
 
 $known = @('all', 'rop', 'gradient', 'text', 'pattern', 'rotation', 'rop2', 'image', 'rotation-affine',
 	'text-extra', 'text-c1', 'pen-axis-scales', 'gdi-raster', 'emfplus-records', 'gdiplus-extra', 'wmf-records', 'emf-records',
-	'halftone', 'halftone-mixed', 'halftone-origin', 'halftone-mixed-probe', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'wmf-roundrect-corners', 'emf-insideframe', 'emfplus-effects', 'pen-transform')
+	'halftone', 'halftone-mixed', 'halftone-origin', 'halftone-mixed-probe', 'color-adjustment-controls', 'illuminant-charts', 'illuminant-tables', 'halftone-dither', 'wmf-insideframe-curves', 'emfplus-pens', 'wmf-roundrect-corners', 'emf-insideframe', 'emfplus-effects', 'pen-transform')
 $groups = @($Which -split '[,\s]+' | Where-Object { $_ })
 if ($groups.Count -eq 0) { $groups = @('all') }
 foreach ($g in $groups) {

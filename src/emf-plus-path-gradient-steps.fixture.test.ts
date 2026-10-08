@@ -111,28 +111,28 @@ describe('path-gradient step quantisation', () => {
 	// hundredth of a level of a rounding boundary; the over-one rows are the same
 	// half-way ties in rectangles so small that one step is several levels.
 	const pinned: Record<string, [number, number, number]> = {
-		rows: [25394, 25568, 20],
-		'image 0 plain': [31770, 32000, 0],
-		'image 0 world2': [31770, 32000, 0],
-		'image 0 world0.5': [15885, 16000, 0],
-		'image 0 brush2': [15885, 16000, 0],
+		rows: [25492, 25568, 0],
+		'image 0 plain': [32000, 32000, 0],
+		'image 0 world2': [32000, 32000, 0],
+		'image 0 world0.5': [16000, 16000, 0],
+		'image 0 brush2': [16000, 16000, 0],
 		'image 0 focus': [16000, 16000, 0],
-		'image 0 blend': [7945, 8000, 0],
-		'image 0 preset': [7940, 8000, 0],
-		'image 1 plain': [31996, 32000, 0],
-		'image 1 world2': [31996, 32000, 0],
-		'image 1 world0.5': [15998, 16000, 0],
-		'image 1 brush2': [15998, 16000, 0],
-		'image 1 focus': [15996, 16000, 0],
-		'image 1 blend': [7999, 8000, 0],
-		'image 1 preset': [7999, 8000, 0],
-		'image 2 plain': [31992, 32000, 0],
-		'image 2 world2': [31992, 32000, 0],
-		'image 2 world0.5': [15996, 16000, 0],
-		'image 2 brush2': [15996, 16000, 0],
+		'image 0 blend': [8000, 8000, 0],
+		'image 0 preset': [8000, 8000, 0],
+		'image 1 plain': [32000, 32000, 0],
+		'image 1 world2': [32000, 32000, 0],
+		'image 1 world0.5': [16000, 16000, 0],
+		'image 1 brush2': [16000, 16000, 0],
+		'image 1 focus': [15998, 16000, 0],
+		'image 1 blend': [8000, 8000, 0],
+		'image 1 preset': [8000, 8000, 0],
+		'image 2 plain': [32000, 32000, 0],
+		'image 2 world2': [32000, 32000, 0],
+		'image 2 world0.5': [16000, 16000, 0],
+		'image 2 brush2': [16000, 16000, 0],
 		'image 2 focus': [16000, 16000, 0],
-		'image 2 blend': [7998, 8000, 0],
-		'image 2 preset': [7998, 8000, 0],
+		'image 2 blend': [8000, 8000, 0],
+		'image 2 preset': [8000, 8000, 0],
 		'image 3 plain': [32000, 32000, 0],
 		'image 3 world2': [32000, 32000, 0],
 		'image 3 world0.5': [16000, 16000, 0],
@@ -233,8 +233,8 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			const exact = exactPixels(c, c.a, [], 'premultiplied');
 			if (c.color! <= 1) opaque += exact; else translucent += exact;
 		}
-		expect(opaque).toBeGreaterThanOrEqual(596053); // 595655 with the smooth tie, 497349 of 640000 before the steps
-		expect(translucent).toBeGreaterThanOrEqual(218385); // 217832, then 197700 of 320000 before
+		expect(opaque).toBeGreaterThanOrEqual(632109); // 596053 with the binary-fraction ties, 595655 with the smooth tie, 497349 of 640000 before the steps
+		expect(translucent).toBeGreaterThanOrEqual(222321); // 218385 with the binary-fraction ties, 217832, then 197700 of 320000 before
 	});
 
 	it('keeps the alpha captures exact to the step', () => {
@@ -245,13 +245,13 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			const key = `${c.varying ? 'varying' : 'uniform'} ${anisotropic ? 'anisotropic' : c.focus && c.focus[0] > 0 ? 'isotropic' : 'no'} focus`;
 			totals[key] = (totals[key] ?? 0) + exactPixels(c, c.a, c.boundaryArgb!, 'premultiplied');
 		}
-		expect(totals['uniform no focus']).toBeGreaterThanOrEqual(319858); // 318577, then 282949 before
-		expect(totals['uniform isotropic focus']).toBeGreaterThanOrEqual(319785); // 318583, then 292048 before
+		expect(totals['uniform no focus']).toBeGreaterThanOrEqual(320000); // every pixel; 319858 with the binary-fraction ties, 318577, then 282949 before
+		expect(totals['uniform isotropic focus']).toBeGreaterThanOrEqual(319821); // 319785 before the unpainted outside pixels, 318583, then 292048 before
 		// Varying surrounds are Gouraud fan triangles (246132, 246030 and 245704 before).
-		expect(totals['uniform anisotropic focus']).toBeGreaterThanOrEqual(319529); // 289797 before the copies
+		expect(totals['uniform anisotropic focus']).toBeGreaterThanOrEqual(319574); // 319529 before the unpainted outside pixels, 289797 before the copies
 		expect(totals['varying no focus']).toBeGreaterThanOrEqual(319926);
 		expect(totals['varying isotropic focus']).toBeGreaterThanOrEqual(319913);
-		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(319600);
+		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(319920);
 	});
 
 	it('keeps the focus contours exact to the step when the focus is isotropic', () => {
@@ -262,11 +262,11 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			const exact = exactPixels(c, 0xffffffff, [0xff000000, 0xff000000, 0xff000000], 'red');
 			if (c.focus![0] === c.focus![1]) isotropic += exact; else anisotropic += exact;
 		}
-		expect(isotropic).toBeGreaterThanOrEqual(287982); // 269712 of 288000 before
-		expect(anisotropic).toBeGreaterThanOrEqual(1725250); // 1594271 before the copies
+		expect(isotropic).toBeGreaterThanOrEqual(287988); // 287982 before the unpainted outside pixels, 269712 of 288000 before
+		expect(anisotropic).toBeGreaterThanOrEqual(1725649); // 1725250 before the unpainted outside pixels, 1594271 before the copies
 		const lines = readSet('path-gradient-vertical-focus-line.json.gz');
 		let line = 0;
 		for (const c of lines) line += exactPixels(c, 0xffc06020, [0xff2080c0, 0xff2080c0, 0xff2080c0], 'rgb');
-		expect(line).toBeGreaterThanOrEqual(863072); // 811118 before the copies
+		expect(line).toBeGreaterThanOrEqual(863162); // 863072 before the unpainted outside pixels, 811118 before the copies
 	});
 });
