@@ -9,7 +9,10 @@
  * Round 4: a rotation with a uniform scale maps the logical circle to a device circle, and a device circle narrower than 6.5 pixels
  * is one of the digital (Hobby) pens, not a rotated polygon. The 12 nibs of widths 1 to 6 under the 30 and 45 degree matrices
  * (`nib-matrix-pen.json.gz`) are exactly those pens; before, none of the 12 was. The rotated outlines fell from 1,087 and 424 differing
- * pixels (matrices 0 and 1) to 650 and 313; matrix 5 (a rotation with an unequal scale) is not a circle and is unchanged.
+ * pixels (matrices 0 and 1) to 650 and 313; matrix 5 (a rotation with an unequal scale) is not a circle and is unchanged. A dashed pen under
+ * a matrix measures each segment by its logical vector rounded to the nearest whole unit, as under a scale (`dashPieces`), which
+ * took the three rotated matrices to 620, 292 and 554 differing pixels (matrix 5 from 600) and 48, 56 and 48 of the 72 outlines each
+ * exact (23, 41 and 34 before round 4).
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -45,7 +48,7 @@ const SOURCES = [
 	[[10, 10], [40, 55], [70, 20]],
 ];
 /** Pixel-difference bound per matrix (the sum over its 72 outlines), as measured; the exact ones are 0. */
-const MATRIX_BOUND: Record<number, number> = { 0: 650, 1: 313, 3: 0, 4: 0, 5: 600, 6: 0, 7: 416 };
+const MATRIX_BOUND: Record<number, number> = { 0: 620, 1: 292, 3: 0, 4: 0, 5: 554, 6: 0, 7: 416 };
 
 function pixels(spans: SpanList): Set<number> {
 	const set = new Set<number>();

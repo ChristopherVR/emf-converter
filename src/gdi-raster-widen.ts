@@ -947,7 +947,7 @@ function dashPieces(
 		// infinity), then places the cut at the same fraction of the real
 		// segment. Lines on whole pixels lose nothing; the odd-FIX segments of a
 		// flattened curve come out up to a pixel short or long.
-		const len = metric ? norm(nearestUnit(dir[0] / metric[0]), nearestUnit(dir[1] / metric[1])) : matrix ? real : wholePixelVectors ? norm(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : norm(dir[0], dir[1]);
+		const len = metric ? norm(nearestUnit(dir[0] / metric[0]), nearestUnit(dir[1] / metric[1])) : matrix ? norm(nearestUnit((matrix[3] * dir[0] - matrix[2] * dir[1]) / det), nearestUnit((-matrix[1] * dir[0] + matrix[0] * dir[1]) / det)) : wholePixelVectors ? norm(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : norm(dir[0], dir[1]);
 		if (len === 0) {
 			if (on && cur) {
 				cur.pts.push(P[i + 1]);
