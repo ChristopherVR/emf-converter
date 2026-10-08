@@ -197,3 +197,25 @@ it.each([
 	expect(exact).toBe(exactCount);
 	expect(max).toBeLessThanOrEqual(maxError);
 });
+
+// The probe plays each metafile onto a 300 x 200 magenta surface; the metafile (header bounds 0..279 x 0..179, frame 4338 x
+// 2784 hundredths of a millimetre) covers 280 x 180 of it. The margin right and below is the surface's own background, so the
+// reference is the 280 x 180 extent (as rendered) and the whole surface is kept as `.surface.png`.
+it.each(['12bit', 'arithmetic', 'arith-prog-420-dri2', 'cmyk-photo'])('the %s playback reference is the metafile extent, with the full surface kept beside it', async (name) => {
+	const file = `codec-jpeg-${name}-playback`;
+	const rendered = (await renderFixture(`${file}.emf`))!;
+	const reference = await loadReference(file);
+	const surface = await loadReference(`${file}.surface`);
+	expect([rendered.width, rendered.height]).toEqual([280, 180]);
+	expect([reference.width, reference.height]).toEqual([280, 180]);
+	expect([surface.width, surface.height]).toEqual([300, 200]);
+	for (let y = 0; y < surface.height; y++) {
+		for (let x = 0; x < surface.width; x++) {
+			const s = (y * surface.width + x) * 4;
+			if (x < 280 && y < 180) {
+				const r = (y * reference.width + x) * 4;
+				if (surface.data[s] !== reference.data[r] || surface.data[s + 1] !== reference.data[r + 1] || surface.data[s + 2] !== reference.data[r + 2]) throw new Error(`${file}: surface differs from reference at ${x},${y}`);
+			} else if (surface.data[s] !== 255 || surface.data[s + 1] !== 0 || surface.data[s + 2] !== 255) throw new Error(`${file}: surface margin is not magenta at ${x},${y}`);
+		}
+	}
+});

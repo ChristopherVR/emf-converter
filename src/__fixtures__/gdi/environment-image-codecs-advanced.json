@@ -3391,6 +3391,10 @@
                        },
                        {
                            "name":  "codec-jpeg-12bit-playback.png",
+                           "sha256":  "aafce43296178da6e5ac531b6aa73224ca70e69ab21af00d6b211e78eb8d57de"
+                       },
+                       {
+                           "name":  "codec-jpeg-12bit-playback.surface.png",
                            "sha256":  "a0ca75b3abcbb66a8abcf225d9b2668007764e8abafe57e0c832e2b364c4e06b"
                        },
                        {
@@ -3427,6 +3431,10 @@
                        },
                        {
                            "name":  "codec-jpeg-arithmetic-playback.png",
+                           "sha256":  "4ebc94b2274042c4d3b0f640130695479926a2657c495b90354f12ad0ff25448"
+                       },
+                       {
+                           "name":  "codec-jpeg-arithmetic-playback.surface.png",
                            "sha256":  "25a88442ff46b7113871e2660c11154ee0bed360c19b5a96e5cfcdb30ca10f5e"
                        },
                        {
@@ -3467,6 +3475,10 @@
                        },
                        {
                            "name":  "codec-jpeg-cmyk-photo-playback.png",
+                           "sha256":  "18fcb2d34e628331719a1cfac758eed2b65f89f7ab58d7f9ef720b9320240b5d"
+                       },
+                       {
+                           "name":  "codec-jpeg-cmyk-photo-playback.surface.png",
                            "sha256":  "62cbbcee59b738c4baed08a3d94087ab3998007462e104d5b081672a72143d97"
                        },
                        {

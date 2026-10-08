@@ -3403,6 +3403,10 @@
                        },
                        {
                            "name":  "codec-jpeg-arith-prog-420-dri2-playback.png",
+                           "sha256":  "a18e9a64d4ea1d538831b5578ded5414344db8be9dfafff9be2f5882e60a6e94"
+                       },
+                       {
+                           "name":  "codec-jpeg-arith-prog-420-dri2-playback.surface.png",
                            "sha256":  "2b1513185aec4b524abe6fc9efb54f45d1ddbd0ed530df716e6258206d50f204"
                        },
                        {

@@ -62,7 +62,11 @@ public static class CodecProbe
 		{
 			g.Clear(Color.Magenta);
 			g.DrawImage(mf, new Rectangle(0, 0, mf.Width, mf.Height), 0, 0, mf.Width, mf.Height, GraphicsUnit.Pixel);
-			output.Save(Path.Combine(dir, "codec-jpeg-" + name + "-playback.png"), ImageFormat.Png);
+			// The whole 300 x 200 surface (the magenta margin right and below the metafile is the probe's own background, not
+			// playback output) is kept as .surface.png; the reference is the metafile's own extent, as the converter renders it.
+			output.Save(Path.Combine(dir, "codec-jpeg-" + name + "-playback.surface.png"), ImageFormat.Png);
+			using (var cropped = output.Clone(new Rectangle(0, 0, mf.Width, mf.Height), PixelFormat.Format32bppArgb))
+				cropped.Save(Path.Combine(dir, "codec-jpeg-" + name + "-playback.png"), ImageFormat.Png);
 		}
 	}
 	/// <summary>Rebuilds an EMR_COMMENT holding EMF+ records with the JPEG inside its image object replaced.</summary>
