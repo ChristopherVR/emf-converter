@@ -111,13 +111,20 @@ function lerpUniformPathArgb(a: number, b: number, t: number): number {
 
 /**
  * Number of distance steps GDI+ quantises a path gradient's centre-to-boundary
- * ratio into: `ceil(2 * hypot(w, h))` for the `w` x `h` device-space bounding box
- * of the boundary, which is `4 * L` rounded up for the half diagonal `L` (so the
- * ratio moves in quarter-pixel steps along the longest possible ray). Measured
- * on rectangle path gradients of every size (a row through the centre is
- * `round(255 * k / N)` for the step count `k`); the same count reproduces
- * triangles and ellipses. It is the device-space bounds: a 2x world or brush
- * scale doubles the step count.
+ * ratio into: `ceil(|M(w, h)| + |M(w, -h)|)` for the `w` x `h` bounding box
+ * of the boundary in brush space and the linear part `M` of the brush-to-device
+ * matrix, that is the sum of the two device-space diagonals of the bounds. With
+ * no rotation or shear both diagonals are `hypot(w sx, h sy)`, so this is
+ * `ceil(2 * hypot(w, h))` for the device-space size `w` x `h` (`4 * L` rounded
+ * up for the half diagonal `L`, so the ratio moves in quarter-pixel steps along
+ * the longest possible ray). Measured on rectangle path gradients of every size
+ * (a row through the centre is `round(255 * k / N)` for the step count `k`); the
+ * same count reproduces triangles and ellipses, a 2x world or brush scale
+ * doubles it, and a rotation leaves it alone (the diagonals keep their length;
+ * the device bounding box of the rotated shape would grow it, which native does
+ * not do). Under shear the two diagonals differ and their sum is the count that
+ * scores best against every one of the 70 rotated, scaled and sheared captures
+ * (no other count within 12 steps of it does).
  *
  * `matrix` maps the boundary's brush space to device pixels.
  */
@@ -130,14 +137,16 @@ export function pathGradientQuantum(
 	let x1 = -Infinity;
 	let y1 = -Infinity;
 	for (const p of boundary) {
-		const x = matrix[0] * p.x + matrix[2] * p.y + matrix[4];
-		const y = matrix[1] * p.x + matrix[3] * p.y + matrix[5];
-		x0 = Math.min(x0, x);
-		y0 = Math.min(y0, y);
-		x1 = Math.max(x1, x);
-		y1 = Math.max(y1, y);
+		x0 = Math.min(x0, p.x);
+		y0 = Math.min(y0, p.y);
+		x1 = Math.max(x1, p.x);
+		y1 = Math.max(y1, p.y);
 	}
-	const steps = Math.ceil(2 * Math.hypot(x1 - x0, y1 - y0));
+	const w = x1 - x0;
+	const h = y1 - y0;
+	const first = Math.hypot(matrix[0] * w + matrix[2] * h, matrix[1] * w + matrix[3] * h);
+	const second = Math.hypot(matrix[0] * w - matrix[2] * h, matrix[1] * w - matrix[3] * h);
+	const steps = Math.ceil(first + second);
 	return Number.isFinite(steps) && steps > 0 ? steps : 0;
 }
 

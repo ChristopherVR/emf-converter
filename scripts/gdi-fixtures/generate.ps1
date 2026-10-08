@@ -151,6 +151,12 @@ if ($Which -eq 'path-gradient-vertices') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-rotated') {
+    Add-Type -Path (Join-Path $here 'PathGradientRotateProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientRotateProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'bicubic-copy') {
     Add-Type -Path (Join-Path $here 'BicubicCopyProbe.cs') -ReferencedAssemblies System.Drawing
     [BicubicCopyProbe]::Run($outDir)
