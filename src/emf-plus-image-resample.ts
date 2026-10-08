@@ -755,12 +755,12 @@ interface HqTaps {
  *
  * `originBins` is the source origin in 1/128 texel (a whole number).
  */
-function hqReductionTaps(cubic: boolean, scale: number, step: number, offset: number, origin: number, from: number, to: number): HqTaps[] {
+function hqReductionTaps(cubic: boolean, scale: number, step: number, position: (k: number) => number, origin: number, from: number, to: number): HqTaps[] {
 	const taps: HqTaps[] = [];
 	const s = Math.fround(scale);
 	const radius = (cubic ? 2 : 1) * (step / 65536) + 1;
 	for (let k = from; k <= to; k++) {
-		const p = k * step + offset;
+		const p = position(k);
 		const centre = origin + p / 65536;
 		const first = Math.ceil(centre - radius);
 		const last = Math.floor(centre + radius);
@@ -768,7 +768,8 @@ function hqReductionTaps(cubic: boolean, scale: number, step: number, offset: nu
 		let prev = Number.NaN;
 		for (let t = first; t <= last + 1; t++) {
 			// 128 u at texel edge t - 1/2, u = s (e - origin - P) in destination pixels.
-			const edge = Math.floor(128 * s * (t - 0.5 - origin - p / 65536));
+			const q = 128 * s * (t - 0.5 - origin - p / 65536);
+			const edge = Math.floor(q);
 			const cdf = cubic ? hqCubicCdf(edge) : hqTentCdf(edge);
 			if (t > first) {
 				weights.push((cdf - prev) / 65536);
@@ -781,27 +782,29 @@ function hqReductionTaps(cubic: boolean, scale: number, step: number, offset: nu
 }
 
 /**
- * An axis-aligned HighQualityBilinear/HighQualityBicubic draw whose two axes
- * are each scaled by one or more, as GDI+ computes it (measured from native
- * impulse and noise draws, `hq-axis`, `hq-axis-noise`, `hq-arithmetic`):
+ * An axis-aligned HighQualityBilinear/HighQualityBicubic draw, as GDI+ computes
+ * it (measured from native impulse and noise draws: `hq-axis`, `hq-axis-noise`,
+ * `hq-arithmetic`, `hq-independent`, `hq-cubic-weights`, `hq-phases`):
  *
  * - Each axis steps through the source in 16.16 fixed point, `S = round(65536 /
  *   scale)` per destination pixel, from the first covered pixel; the position is
  *   `P = k S + offset`, where the offset is the distance from the destination
- *   edge to the first covered pixel (`1 - d` of the fraction `d` along y) and
- *   mirrored along x (`d`, the long-known x mirror), zero for an integral edge.
- * - The weights depend only on the phase `floor((P - 1) / 512)`, 1/128 of a
- *   texel: for the cubic, the measured integer table of
- *   {@link hqCubicBinWeights} (the kernel's integral over each texel box at
- *   the phase's centre `(phase + 1/2) / 128`, give or take one unit of 1/65536
- *   between two taps in 40 of the 128 bins); for the tent, the kernel's
+ *   edge to the first covered pixel (`1 - d` of the fraction `d` along x, `d` along
+ *   y; `d` follows the unsnapped edge), zero for an integral edge.
+ * - An upscaled axis (scale of one or more): the weights depend only on the
+ *   phase `floor((P - 1) / 512)`, 1/128 of a texel: for the cubic, the measured
+ *   integer table of {@link hqCubicBinWeights}; for the tent, the kernel's
  *   integral at `(phase + 1) / 128`.
+ * - A reduced axis: see {@link hqReductionTaps}.
+ * - A mirrored x axis (negative scale) steps backwards from the far end, `P =
+ *   (covered pixels + d - k) S`, plus a few units that grow with the source width,
+ *   through the same rules in the source's own direction.
  * - The horizontal pass runs first and is rounded to 8 bits (colours
  *   premultiplied, alpha limited to 255 and colours to alpha) before the
  *   vertical pass, which is rounded the same way.
  *
- * Returns `undefined` when the draw is not of this kind (a reduction on
- * either axis, a mirror, or a complete unit copy): the caller keeps its
+ * Returns `undefined` when the draw is not of this kind (a mirrored unit axis, a
+ * complete unit copy, a half-pixel offset under a mirror): the caller keeps its
  * general path. A tap outside the bitmap is transparent, one inside it but
  * outside the source rectangle reads the bitmap.
  */
@@ -815,19 +818,29 @@ function resampleHqAxisAligned(
 	premultOut: boolean,
 ): ResampledBlock | null | undefined {
 	const kernel = spec.kernel;
-	const scaleU = m[0];
+	const mirrorU = m[0] < 0;
+	const scaleU = Math.abs(m[0]);
 	const scaleV = m[3];
 	if (!(scaleU > 0 && scaleV > 0) || spec.rightHalo) {
 		return undefined;
 	}
 	const integral = (v: number): boolean => Math.abs(v - Math.round(v)) < 1e-9;
-	if (scaleU === 1 && scaleV === 1 && integral(m[4]) && integral(m[5])) {
+	if (scaleU === 1 && scaleV === 1 && !mirrorU && integral(m[4]) && integral(m[5])) {
+		return undefined;
+	}
+	// A mirrored unit axis keeps the general path (open: a DrawImage rectangle with a negative width copies it
+	// exactly, DrawImagePoints with reversed points filters it, and the converter cannot tell the two apart).
+	if (mirrorU && scaleU === 1) {
 		return undefined;
 	}
 	const shift = spec.halfPixelOffset ? 0.5 : 0;
-	const left = m[0] * spec.srcX + m[4] - shift;
+	const edge0 = m[0] * spec.srcX + m[4] - shift;
+	const edge1 = edge0 + m[0] * spec.srcW;
+	// A mirrored draw snaps its left edge (the far end of the source rectangle) to the 1/16 grid, not the right one.
+	const rawLeft = spec.toDevice[0] * (spec.srcX + spec.srcW) + spec.toDevice[4] - shift;
+	const left = mirrorU ? Math.round(rawLeft * SUBPIXEL_GRID) / SUBPIXEL_GRID : Math.min(edge0, edge1);
 	const top = m[3] * spec.srcY + m[5] - shift;
-	const right = left + m[0] * spec.srcW;
+	const right = mirrorU ? left + scaleU * spec.srcW : Math.max(edge0, edge1);
 	const bottom = top + m[3] * spec.srcH;
 	const xFirst = Math.ceil(left - COVERAGE_NUDGE_X);
 	const xLast = Math.ceil(right - COVERAGE_NUDGE_X) - 1;
@@ -849,9 +862,18 @@ function resampleHqAxisAligned(
 	const bin = cubic ? 0.5 : 1;
 	const stepU = hqStep(scaleU);
 	const stepV = hqStep(scaleV);
-	const dx = Math.max(0, xFirst - left);
+	const rawLeftEdge = mirrorU ? rawLeft : spec.toDevice[0] * spec.srcX + spec.toDevice[4] - shift;
+	// The phase offset follows the unsnapped edge (a 3.4 origin steps from 0.6, not from the snapped 0.625).
+	const dxRaw = xFirst - rawLeftEdge;
+	const dx = dxRaw < 1e-5 ? 0 : dxRaw;
 	const dy = Math.max(0, yFirst - top);
-	const offsetU = dx > 1e-9 ? Math.round((1 - dx) * stepU) : 0;
+	if (mirrorU && (spec.halfPixelOffset || !integral(spec.srcX) || !integral(spec.srcW))) {
+		return undefined;
+	}
+	// A mirrored draw reads the flipped source from its far end: pixel k sits at the flipped position
+	// (source width - one texel) - (covered pixels - k) steps.
+	const mirroredPixels = xLast - xFirst + 1 + dx;
+	const offsetU = !mirrorU && dx > 1e-9 ? Math.round((1 - dx) * stepU) : 0;
 	const offsetV = dy > 1e-9 ? Math.round(dy * stepV) : 0;
 	const filterU = axisFilter(kernel, scaleU, false);
 	const filterV = axisFilter(kernel, scaleV, false);
@@ -859,17 +881,22 @@ function resampleHqAxisAligned(
 		first: number;
 		weights: number[];
 	}
-	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number, scale: number): Taps[] => {
+	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number, scale: number, mirror = false): Taps[] => {
 		const taps: Taps[] = [];
+		// A mirrored draw steps backwards from the far end: pixel k sits at (covered pixels + fraction - k) steps.
+		// The far end of the source is a few units off in native draws, growing with the source width (3 at 512 texels, 0 at 13)
+		// and absent for a power-of-two step (a scale of 2, 0.5 or 4 computes exactly).
+		const farBias = (step & (step - 1)) === 0 ? 0 : Math.round(spec.srcW / 170);
+		const position = (k: number): number => (mirror ? Math.round((mirroredPixels - k) * step) + farBias : k * step + offset);
 		// The measured integer table applies when the source origin is a whole number of phase bins.
 		const originBins = origin * HQ_PHASES;
 		const wholeBins = Math.abs(originBins - Math.round(originBins)) < 1e-6;
 		if (scale < 1 && wholeBins) {
-			return hqReductionTaps(cubic, scale, step, offset, origin, from, to);
+			return hqReductionTaps(cubic, scale, step, position, origin, from, to);
 		}
 		const tabulated = cubic && wholeBins;
 		for (let k = from; k <= to; k++) {
-			const phase = Math.floor((k * step + offset - 1) / (65536 / HQ_PHASES));
+			const phase = Math.floor((position(k) - 1) / (65536 / HQ_PHASES));
 			if (tabulated) {
 				const total = Math.round(originBins) + phase;
 				const bins = hqCubicBinWeights(((total % HQ_PHASES) + HQ_PHASES) % HQ_PHASES);
@@ -890,7 +917,7 @@ function resampleHqAxisAligned(
 		}
 		return taps;
 	};
-	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst, scaleU);
+	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst, scaleU, mirrorU);
 	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst, scaleV);
 	// Source rows the vertical pass reads (rows outside the bitmap are transparent).
 	let rowMin = Infinity;
