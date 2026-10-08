@@ -24,6 +24,7 @@ const dithered: Record<string, [number, number, number]> = {
 	'dithered-3x-m3-f0': [146, 149, 2], 'dithered-3x-m3-f8': [190, 194, 2],
 	'dithered-2x-m4-f0': [49, 49, 2], 'dithered-2x-m4-f8': [80, 84, 2],
 	'dithered-7x-m3-f0': [573, 573, 2],
+	'dithered-160x100-m3-f0': [102, 102, 2], 'dithered-160x100-m3-f8': [134, 136, 2],
 };
 
 function run(c: (typeof cases)[number]): { pixels: number; values: number; maximum: number } {
@@ -56,7 +57,7 @@ function run(c: (typeof cases)[number]): { pixels: number; values: number; maxim
 describe('native HALFTONE filtered enlargements', () => {
 	it('retains the captured cases and their one-axis profiles', () => {
 		expect(capture.cases).toHaveLength(cases.length);
-		expect(cases).toHaveLength(36);
+		expect(cases).toHaveLength(48);
 		expect(capture.profiles).toHaveLength(30);
 		for (const c of cases) expect(halftoneBranch(Int32Array.from(filteredSource(c.kind, c.w, c.h)), c.w, c.h), c.id).toBe('filter');
 	});
@@ -69,6 +70,13 @@ describe('native HALFTONE filtered enlargements', () => {
 			exact++;
 		}
 		expect(exact).toBe(16);
+	});
+
+	it('reproduces fractional ratios up to 5x on both axes by runs: the weights follow the length of the run of destination pixels a source pixel gets', () => {
+		// 1.025x to 4.98x, 2x by 1.025x, and 2.5x mirrored on either axis: every one pixel-exact.
+		const group = cases.filter(x => x.group === 'fractional');
+		expect(group).toHaveLength(10);
+		for (const c of group) expect(run(c).pixels, c.id).toBe(0);
 	});
 
 	it('reproduces an enlargement of one axis (the other keeps its size) by the 1-D sharpen and the kernel table', () => {

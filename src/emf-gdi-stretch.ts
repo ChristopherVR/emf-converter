@@ -594,6 +594,7 @@ function halftoneReduceBoth(rect: Int32Array, sw: number, sh: number, dw: number
  * `sum(w * s) / sum`); factors above 5 use {@link halftoneEnlargeTaps}.
  */
 const FILTER_WEIGHTS: Record<number, number[][]> = {
+	1: [[5, 22, 5, 32]],
 	2: [[4, 12, 0, 16], [0, 12, 4, 16]],
 	3: [[6, 10, 0, 16], [1, 14, 1, 16], [0, 10, 6, 16]],
 	4: [[6, 10, 0, 16], [3, 12, 1, 16], [1, 12, 3, 16], [0, 10, 6, 16]],
@@ -670,13 +671,29 @@ function halftoneFilterOneAxis(rgb: Int32Array, w: number, h: number, W: number,
 	return out;
 }
 
+/**
+ * The runs of the enlargement by up to 5x: destination pixel `i` belongs to the source pixel
+ * {@link halftoneNearest} gives it, the destination pixels of one source pixel form a run, and the
+ * weights of a destination pixel are the row of {@link FILTER_WEIGHTS} for the length of its run
+ * and its place in it (a lone pixel gets the smoothing row of length 1, a pair the quarter-pixel
+ * rows of 2x, a run of three the rows of 3x, and so on). This is why a whole factor, 1.5x or
+ * 1.025x all draw their weights from the same five sets.
+ */
+function filterRuns(src: number, dst: number): Array<{ k: number; weights: number[] }> {
+	const k = Array.from({ length: dst }, (_, i) => halftoneNearest(i, src, dst));
+	const length = new Map<number, number>();
+	for (const v of k) length.set(v, (length.get(v) ?? 0) + 1);
+	const placed = new Map<number, number>();
+	return k.map(v => {
+		const p = placed.get(v) ?? 0;
+		placed.set(v, p + 1);
+		return { k: v, weights: FILTER_WEIGHTS[length.get(v)!][p] };
+	});
+}
+
 /** Whether {@link halftoneFilterEnlarge} reproduces an enlargement from `w` x `h` to `W` x `H`. */
 export function halftoneFilterSupported(w: number, h: number, W: number, H: number): boolean {
-	if (w <= 0 || h <= 0 || W < w || H < h || (W === w && H === h)) return false;
-	if (W === w || H === h) return true;
-	const whole = (src: number, dst: number): boolean => dst % src === 0 && dst / src <= 5;
-	if (whole(w, W) && whole(h, H)) return true;
-	return W > 5 * w || H > 5 * h;
+	return w > 0 && h > 0 && W >= w && H >= h && (W > w || H > h);
 }
 
 /**
@@ -812,12 +829,12 @@ export function halftoneFilterEnlarge(rgb: Int32Array, w: number, h: number, W: 
 			}
 		}
 	}
-	const sx = W / w;
-	const sy = H / h;
+	const xr = filterRuns(w, W);
+	const yr = filterRuns(h, H);
 	const middle = new Int32Array(w * 3);
 	for (let y = 0; y < H; y++) {
-		const near = Math.floor(y / sy) + 1;
-		const [a, b, c, total] = FILTER_WEIGHTS[sy][y % sy];
+		const near = yr[y].k + 1;
+		const [a, b, c, total] = yr[y].weights;
 		const before = (near - 1) * w * 3;
 		const here = near * w * 3;
 		const after = (near + 1) * w * 3;
@@ -825,8 +842,8 @@ export function halftoneFilterEnlarge(rgb: Int32Array, w: number, h: number, W: 
 			middle[i] = Math.floor((a * sharp[before + i] + b * sharp[here + i] + c * sharp[after + i] + total / 2) / total);
 		}
 		for (let x = 0; x < W; x++) {
-			const k = Math.floor(x / sx);
-			const [a2, b2, c2, total2] = FILTER_WEIGHTS[sx][x % sx];
+			const k = xr[x].k;
+			const [a2, b2, c2, total2] = xr[x].weights;
 			const left = Math.max(0, k - 1);
 			const right = Math.min(w - 1, k + 1);
 			for (let c3 = 0; c3 < 3; c3++) {

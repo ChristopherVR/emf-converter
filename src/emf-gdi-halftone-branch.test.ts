@@ -76,7 +76,7 @@ describe('the filtered 2x branch of stretchHalftone', () => {
 			expect([out.data[i * 4], out.data[i * 4 + 1], out.data[i * 4 + 2], out.data[i * 4 + 3]]).toEqual([expected[i * 3], expected[i * 3 + 1], expected[i * 3 + 2], 255]);
 		}
 	});
-	it('keeps replicating a source with few colours, a mirrored blit and a different ratio', () => {
+	it('keeps replicating a source with few colours and a reduction, and mirrors a filtered blit', () => {
 		const flat = { width: 64, height: 40, data: new Uint8ClampedArray(64 * 40 * 4).fill(200) };
 		const replicated = stretchHalftone(flat, 0, 0, 64, 40, 128, 80);
 		expect([...replicated.data.subarray(0, 4)]).toEqual([200, 200, 200, 255]);
@@ -84,14 +84,26 @@ describe('the filtered 2x branch of stretchHalftone', () => {
 		const filtered = stretchHalftone(src, 0, 0, 64, 40, 128, 80);
 		const mirrored = stretchHalftone(src, 0, 0, 64, 40, -128, 80);
 		expect(mirrored.data).not.toEqual(filtered.data);
-		// A 2.5x enlargement (a fractional ratio up to 5x) is still replicated: no destination
-		// pixel is a colour the source does not hold.
-		const fractional = stretchHalftone(src, 0, 0, 64, 40, 160, 100);
-		const colours = new Set<number>();
-		for (let i = 0; i < 64 * 40; i++) colours.add((src.data[i * 4] << 16) | (src.data[i * 4 + 1] << 8) | src.data[i * 4 + 2]);
-		for (let i = 0; i < 160 * 100; i++) {
-			expect(colours.has((fractional.data[i * 4] << 16) | (fractional.data[i * 4 + 1] << 8) | fractional.data[i * 4 + 2])).toBe(true);
+		for (let y = 0; y < 80; y++) for (let x = 0; x < 128; x++) {
+			expect(mirrored.data[(y * 128 + x) * 4 + 1]).toBe(filtered.data[(y * 128 + 127 - x) * 4 + 1]);
 		}
+		// Reductions and mixed enlarge-and-reduce stretches are outside the filtered engines.
+		expect(halftoneFilterSupported(64, 40, 32, 20)).toBe(false);
+		expect(halftoneFilterSupported(64, 40, 128, 20)).toBe(false);
+		expect(halftoneFilterSupported(64, 40, 64, 40)).toBe(false);
+	});
+	it('interpolates a 2.5x enlargement by runs: the weights follow the run each destination pixel is in', () => {
+		const src = ramp(64, 40);
+		const out = stretchHalftone(src, 0, 0, 64, 40, 160, 100);
+		const rgb = new Int32Array(64 * 40 * 3);
+		for (let i = 0; i < 64 * 40; i++) rgb.set([src.data[i * 4], src.data[i * 4 + 1], src.data[i * 4 + 2]], i * 3);
+		const expected = halftoneFilterEnlarge(rgb, 64, 40, 160, 100);
+		for (let i = 0; i < 160 * 100; i++) {
+			expect([out.data[i * 4], out.data[i * 4 + 1], out.data[i * 4 + 2]]).toEqual([expected[i * 3], expected[i * 3 + 1], expected[i * 3 + 2]]);
+		}
+		// A 3 x 2 run structure: 2.5x gives runs of 3 and 2 source pixels' worth of destination pixels, so the
+		// result is neither the replicated image nor the 2x or 3x result.
+		expect(halftoneFilterSupported(64, 40, 160, 100)).toBe(true);
 	});
 	it('interpolates a 3x enlargement with the sharpened 1/16 weights', () => {
 		const src = ramp(64, 40);
@@ -103,7 +115,6 @@ describe('the filtered 2x branch of stretchHalftone', () => {
 			expect([out.data[i * 4], out.data[i * 4 + 1], out.data[i * 4 + 2]]).toEqual([expected[i * 3], expected[i * 3 + 1], expected[i * 3 + 2]]);
 		}
 		expect(halftoneFilterSupported(64, 40, 192, 120)).toBe(true);
-		expect(halftoneFilterSupported(64, 40, 160, 100)).toBe(false);
 		expect(halftoneFilterSupported(64, 40, 352, 220)).toBe(true);
 	});
 });

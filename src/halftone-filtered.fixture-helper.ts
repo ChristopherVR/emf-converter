@@ -10,7 +10,7 @@
 
 export interface FilteredCase {
 	id: string;
-	group: 'whole' | 'large' | 'mirrored' | 'dithered' | 'oneaxis';
+	group: 'whole' | 'large' | 'mirrored' | 'dithered' | 'oneaxis' | 'fractional';
 	kind: number;
 	w: number;
 	h: number;
@@ -63,6 +63,9 @@ export function filteredCases(): FilteredCase[] {
 	}
 	cases.push(pair('dithered-7x-m3-f0', 'dithered', 0, W * 7, H * 7, 3 << 4));
 	for (const [dw, dh] of [[128, 40], [320, 40], [96, 40], [160, 40], [448, 40], [64, 80], [64, 120], [64, 400], [64, 41]]) cases.push(pair(`oneaxis-${dw}x${dh}`, 'oneaxis', 1, dw, dh));
+	for (const [dw, dh] of [[160, 100], [224, 140], [96, 60], [88, 55], [65, 41], [130, 110], [128, 41], [319, 200]]) cases.push(pair(`fractional-${dw}x${dh}`, 'fractional', 1, dw, dh));
+	for (const flags of [4, 8]) cases.push(pair(`fractional-160x100-f${flags}`, 'fractional', 1, 160, 100, flags));
+	for (const flags of [0, 8]) cases.push(pair(`dithered-160x100-m3-f${flags}`, 'dithered', 0, 160, 100, flags | (3 << 4)));
 	return cases;
 }
 
