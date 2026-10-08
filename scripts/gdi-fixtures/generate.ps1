@@ -737,6 +737,8 @@ if ($Which -eq 'nib-matrix-pen-probe') {
 if ($Which -eq 'rotated-pen-vector-probe') {
     Add-Type -Path (Join-Path $here 'RotatedPenVectorProbe.cs')
     [RotatedPenVectorProbe]::Run($outDir)
+    [RotatedPenVectorProbe]::RunSweep($outDir)
+    [RotatedPenVectorProbe]::RunNibs($outDir)
     Complete-Fixtures
     return
 }

@@ -69,7 +69,7 @@
  * @module gdi-raster-widen
  */
 
-import { flattenBezierPath, ellipseBeziers, GdiRasterPath, type GdiFigure } from './gdi-raster';
+import { flattenBezierPath, ellipseBeziers, ellipseBeziersBox, GdiRasterPath, type GdiFigure } from './gdi-raster';
 
 /** Cap style (`PS_ENDCAP_*`). */
 export type CapStyle = 'round' | 'square' | 'flat';
@@ -228,9 +228,23 @@ const matrixPenCache = new Map<string, Pt[]>();
 type Matrix = [number, number, number, number];
 
 /**
- * The pen polygon for a pen `width` logical FIX wide under the device matrix `m` (native WidenPath, nib probe): GDI's
- * logical circle, its Bezier points mapped to device FIX and rounded, then flattened; the second half is the reflection of
- * the first. A matrix that flips orientation mirrors the logical circle so the pen still runs counter-clockwise.
+ * Device FIX of one component of the pen's half-width vector: the exact image rounded to nearest with the tie moved down to a
+ * quarter (`floor(|v| + 0.75)`, sign kept). Measured on 476 native nibs read from the round caps of long segments (14
+ * rotations and scales, widths 7 to 40: `rotated-pen-nibs.json.gz`): a bias of 0.25 reproduces all 476, 0.20 and 0.30 only 433
+ * and 448 (the nearest components, at fractions 0.2499 and 0.2509, fall either side of it).
+ */
+function halfVectorComponent(v: number): number {
+	return Math.sign(v) * Math.floor(Math.abs(v) + 0.75);
+}
+
+/**
+ * The pen polygon for a pen `width` logical FIX wide under the device matrix `m` (native WidenPath, nib probe). GDI builds the
+ * pen as the ellipse of a box (`ellipseBeziersBox`, the path of an Ellipse under the same matrix) centred on the pen position,
+ * whose half edges are the images of the logical half width along each logical axis, `(m0, m1) * w / 2` and `(m2, m3) * w / 2`,
+ * each component rounded as {@link halfVectorComponent}; the first half is flattened and the second is its negation. This is
+ * exact for all 476 native nibs of widths 7 to 40 under rotations and scales (the round caps of a long segment show the
+ * vertices); mapping the logical circle's Bezier points to FIX and rounding them, as before, matched 30. A matrix that flips
+ * orientation mirrors the logical circle so the pen still runs counter-clockwise (no native capture of a flipped matrix).
  */
 export function penPolygonMatrix(width: number, m: Matrix): Pt[] {
 	const key = `${width},${m.join(',')}`;
@@ -246,16 +260,12 @@ export function penPolygonMatrix(width: number, m: Matrix): Pt[] {
 		matrixPenCache.set(key, digital);
 		return digital;
 	}
-	const r = Math.ceil(width / 2);
+	const h = width / 2;
 	const mirror = m[0] * m[3] - m[1] * m[2] < 0 ? -1 : 1;
-	const bez = ellipseBeziers(-r, -r, r, r);
-	const dev: number[] = [];
-	for (let i = 0; i < 14; i += 2) {
-		const x = bez[i];
-		const y = bez[i + 1] * mirror;
-		dev.push(Math.round(m[0] * x + m[2] * y), Math.round(m[1] * x + m[3] * y));
-	}
-	const f = flattenBezierPath(dev);
+	const hx = [halfVectorComponent(m[0] * h), halfVectorComponent(m[1] * h)];
+	const hy = [mirror * halfVectorComponent(m[2] * h), mirror * halfVectorComponent(m[3] * h)];
+	const box = ellipseBeziersBox({ ax: -hx[0] - hy[0], ay: -hx[1] - hy[1], exx: 2 * hx[0], exy: 2 * hx[1], eyx: 2 * hy[0], eyy: 2 * hy[1] });
+	const f = flattenBezierPath(box.slice(0, 14));
 	const half: Pt[] = [];
 	for (let i = 0; i + 1 < f.length; i += 2) {
 		half.push([f[i], f[i + 1]]);
@@ -358,9 +368,16 @@ function perpendicularVectors(width: number, dx0: number, dy0: number, height = 
 	const den = 2 * (bh - hB + (bh - hS));
 	const w = den === 0 ? 0 : (hB - hS) / den;
 	const x = D[0] + (B[0] - D[0]) * w, y = D[1] + (B[1] - D[1]) * w;
-	const signs = [dx === 0 ? 0 : Math.sign(dy), Math.sign(dx)];
-	const firstEdge = best === 0 && hP >= hN;
 	const num = hB - hS;
+	// The half-unit bias follows the sign of the interpolated coordinate itself (opposite in x and y); for a round pen that is the
+	// direction's sign (-dy in x, dx in y), but under a shear or an unequal scale the nib's support point can lie on the other side.
+	const sign = (c: number): number => Math.sign(den === 0 ? D[c] : D[c] * den + (B[c] - D[c]) * num);
+	const signs = matrixPen
+		? [sign(0) !== 0 ? -sign(0) : dx === 0 ? 0 : Math.sign(dy), sign(1) !== 0 ? sign(1) : Math.sign(dx)]
+		: [dx === 0 ? 0 : Math.sign(dy), Math.sign(dx)];
+	// Under a matrix the explicitly flattened first half of the nib takes the upper tie and its reflection the lower; an identity
+	// pen has only its vertex 0 there (and the edge back to it).
+	const firstEdge = matrixPen ? best < n / 2 : best === 0 && hP >= hN;
 	const rounded = [0, 1].map((c) => {
 		// floor((x + bias + 4) / 8) * 8 with x = D + (B - D) * num / den, exactly.
 		const bias2 = signs[c] + 2 * oddEdgeAdjustment(Math.abs(B[c] - D[c]) % 2 === 1, firstEdge);

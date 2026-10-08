@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-06T02:38:54.0274627Z",
+    "capturedAt":  "2026-10-08T09:53:26.7030979Z",
     "groups":  "rotated-pen-vector-probe",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -8,8 +8,8 @@
     "runnerImage":  null,
     "runnerImageVersion":  null,
     "screenDpi":  [
-                      96,
-                      96
+                      144,
+                      144
                   ],
     "libraries":  [
                       {
@@ -26,6 +26,11 @@
                           "name":  "win32u.dll",
                           "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
                           "sha256":  "9cd636e8a1b300e2f4b16f339d650eda71fa02b92b100e4b2f89ce7c04811767"
+                      },
+                      {
+                          "name":  "mscms.dll",
+                          "version":  "10.0.26100.1 (WinBuild.160101.0800)",
+                          "sha256":  "062d1ca19c5b7d076c11baa3fb41d23e3b05b37d3f5852a5d1fa14f86b95d528"
                       }
                   ],
     "fonts":  [
@@ -3381,6 +3386,14 @@
                   }
               ],
     "references":  [
+                       {
+                           "name":  "rotated-pen-nibs.json.gz",
+                           "sha256":  "659456702074486a8fa602890fc9a2ed936e619a9235abd6d7418787f7e17cbb"
+                       },
+                       {
+                           "name":  "rotated-pen-sweep.json.gz",
+                           "sha256":  "816753f0b77ec3748c606e9070b7c1457a4848a70c74c55f1409779dae30c532"
+                       },
                        {
                            "name":  "rotated-pen-vectors.json.gz",
                            "sha256":  "3b485fc7178157737c6999abaf037121f1423c75f8a1cdf9e85d5b44cd454c45"

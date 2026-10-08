@@ -1,9 +1,11 @@
 /**
  * Native `WidenPath` of a flat-capped solid pen under rotated and sheared world transforms (`rotated-pen-vector-probe`,
  * 6,432 single segments: six matrices, widths 4 to 24, 120 random and 14 special logical directions each). Each cap corner is
- * the pen's perpendicular on the half-pixel grid. 5,310 of the 6,432 outlines match native exactly; the rest are a half pixel
- * (8 FIX), twice in a few cases, off in one coordinate of both corners. The rounding of the interpolated tangent point does
- * not follow direction signs, edge parity, matrix or width, so it is not reproduced (see `docs/outstanding-work.md`).
+ * the pen's perpendicular on the half-pixel grid. All 6,432 outlines match native exactly (5,310 of them before round 6, 5,608 with
+ * the corrected nib alone): the rounding of the interpolated tangent point is the identity pen's, applied to the right nib
+ * (`penPolygonMatrix`: the ellipse of the half-width images, see `gdi-rotated-pen-nibs.fixture.test.ts`), with its half-unit
+ * bias taken from the sign of the interpolated coordinate and the odd-edge half unit from the half of the nib the support
+ * vertex lies in.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -42,7 +44,7 @@ function ours(c: NativeCase): number[] {
 	return widenPath(path, { width: c.w * 16, matrix: m, deviceNib: true, cap: 'flat', join: 'round', miterLimit: 10 })[0] ?? [];
 }
 
-it('matches 5,310 of the 6,432 native rotated-pen cap corners and never differs by more than a pixel', () => {
+it('matches all 6,432 native rotated-pen cap corners (5,310 before round 6)', () => {
 	expect(cases).toHaveLength(6432);
 	let exact = 0;
 	for (const c of cases) {
@@ -59,5 +61,5 @@ it('matches 5,310 of the 6,432 native rotated-pen cap corners and never differs 
 			expect(Math.abs(got[i] - native[i]), JSON.stringify({ ...c, points: undefined })).toBeLessThanOrEqual(16);
 		}
 	}
-	expect(exact).toBeGreaterThanOrEqual(5310);
+	expect(exact).toBe(6432);
 });

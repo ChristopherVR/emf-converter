@@ -88,4 +88,115 @@ public static class RotatedPenVectorProbe
                 zip.Write(bytes, 0, bytes.Length);
         } finally { DeleteDC(dc); }
     }
+    // One-degree sweep: long segments (flat, round and square capped) at every whole logical degree under the identity and two
+    // rotations, so the rounding of the perpendicular can be read as a function of the direction (round 6); "deg" -1 is the
+    // zero-length path of the same pen. Writes rotated-pen-sweep.json.gz.
+    static readonly float[] SweepMatrices = {
+        1f, 0f, 0f, 1f,
+        .8660254f, .5f, -.5f, .8660254f,
+        .7071068f, .7071068f, -.7071068f, .7071068f,
+    };
+
+    public static void RunSweep(string dir)
+    {
+        IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
+        if (dc == IntPtr.Zero || SetGraphicsMode(dc, 2) == 0) throw new Exception("CreateCompatibleDC/SetGraphicsMode failed");
+        var json = new StringBuilder("[");
+        try {
+            for (int m = 0; m < SweepMatrices.Length / 4; m++)
+            foreach (int width in new[] { 8, 16 })
+            foreach (int cap in new[] { 0x200, 0x0, 0x100 }) {
+                var matrix = new Matrix { a = SweepMatrices[m * 4], b = SweepMatrices[m * 4 + 1], c = SweepMatrices[m * 4 + 2], d = SweepMatrices[m * 4 + 3] };
+                if (!SetWorldTransform(dc, ref matrix)) throw new Exception("SetWorldTransform failed");
+                var brush = new Brush();
+                IntPtr pen = ExtCreatePen((uint)(0x10000 | cap), (uint)width, ref brush, 0, IntPtr.Zero);
+                if (pen == IntPtr.Zero) throw new Exception("ExtCreatePen failed");
+                IntPtr old = SelectObject(dc, pen);
+                try {
+                    for (int deg = -1; deg < 360; deg++) {
+                        // deg -1 is the zero-length nib of this pen.
+                        double a = deg * Math.PI / 180, len = 100;
+                        int dx = deg < 0 ? 0 : (int)Math.Round(Math.Cos(a) * len), dy = deg < 0 ? 0 : (int)Math.Round(Math.Sin(a) * len);
+                        var p = new[] { new Point { x = 150, y = 150 }, new Point { x = 150 + dx, y = 150 + dy } };
+                        if (!BeginPath(dc) || !Polyline(dc, p, 2) || !EndPath(dc) || !WidenPath(dc)) throw new Exception("WidenPath failed");
+                        var read = new Matrix { a = 1f / 16, d = 1f / 16 };
+                        SetWorldTransform(dc, ref read);
+                        int n = GetPath(dc, null, null, 0);
+                        var points = new Point[n]; var types = new byte[n];
+                        GetPath(dc, points, types, n);
+                        SetWorldTransform(dc, ref matrix);
+                        if (json.Length > 1) json.Append(',');
+                        json.Append("{\"m\":").Append(m).Append(",\"w\":").Append(width).Append(",\"cap\":").Append(cap).Append(",\"deg\":").Append(deg).Append(",\"dx\":").Append(dx).Append(",\"dy\":").Append(dy).Append(",\"points\":[");
+                        for (int i = 0; i < n; i++) {
+                            if (i > 0) json.Append(',');
+                            json.Append(points[i].x).Append(',').Append(points[i].y).Append(',').Append(types[i]);
+                        }
+                        json.Append("]}");
+                    }
+                } finally { SelectObject(dc, old); DeleteObject(pen); }
+            }
+            Directory.CreateDirectory(dir);
+            var bytes = Encoding.UTF8.GetBytes(json.Append(']').ToString());
+            using (var file = File.Create(Path.Combine(dir, "rotated-pen-sweep.json.gz")))
+            using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+                zip.Write(bytes, 0, bytes.Length);
+        } finally { DeleteDC(dc); }
+    }
+    // The pen polygon (nib) a round-capped, round-joined long segment shows, read from the cap vertices: four logical directions
+    // under rotations of the given angles (and scale) for widths 5 to 40 (round 6). Writes rotated-pen-nibs.json.gz.
+    public static void RunNibs(string dir)
+    {
+        IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
+        if (dc == IntPtr.Zero || SetGraphicsMode(dc, 2) == 0) throw new Exception("CreateCompatibleDC/SetGraphicsMode failed");
+        var json = new StringBuilder("[");
+        double[,] mats = { { 10, 1 }, { 15, 1 }, { 20, 1 }, { 30, 1 }, { 45, 1 }, { 60, 1 }, { 75, 1 }, { 100, 1 }, { 135, 1 }, { 200, 1 }, { 300, 1 }, { 30, 1.5 }, { 45, 2 }, { 20, 0.75 } };
+        try {
+            // Then general matrices (shears, unequal scales, a rotation with unequal scales, mirrors): a, b, c, d.
+            float[] gen = {
+                1f, 0f, .5f, 1f, 1f, .5f, 0f, 1f, 2f, 0f, 1f, 1f, 1.5f, -1.5f, 1f, 1f, 1.7320508f, 1f, -.5f, .8660254f,
+                2f, 0f, 0f, 1f, 1f, 0f, 0f, 3f, 1f, 0f, 0f, -1f, -1f, 0f, 0f, 1f, .8660254f, .5f, .5f, -.8660254f,
+            };
+            for (int m = 0; m < mats.GetLength(0) + gen.Length / 4; m++)
+            for (int width = 5; width <= 40; width++) {
+                int gi = m - mats.GetLength(0);
+                double rad = gi < 0 ? mats[m, 0] * Math.PI / 180 : 0, sc = gi < 0 ? mats[m, 1] : 0;
+                var matrix = gi < 0
+                    ? new Matrix { a = (float)(Math.Cos(rad) * sc), b = (float)(Math.Sin(rad) * sc), c = (float)(-Math.Sin(rad) * sc), d = (float)(Math.Cos(rad) * sc) }
+                    : new Matrix { a = gen[gi * 4], b = gen[gi * 4 + 1], c = gen[gi * 4 + 2], d = gen[gi * 4 + 3] };
+                if (!SetWorldTransform(dc, ref matrix)) throw new Exception("SetWorldTransform failed");
+                var brush = new Brush();
+                IntPtr pen = ExtCreatePen(0x10000, (uint)width, ref brush, 0, IntPtr.Zero);
+                if (pen == IntPtr.Zero) throw new Exception("ExtCreatePen failed");
+                IntPtr old = SelectObject(dc, pen);
+                try {
+                    for (int dir4 = 0; dir4 < 4; dir4++) {
+                        int dx = new[] { 40, 0, -40, 0 }[dir4], dy = new[] { 0, 40, 0, -40 }[dir4];
+                        var pts = new[] { new Point { x = 150, y = 150 }, new Point { x = 150 + dx, y = 150 + dy } };
+                        if (!BeginPath(dc) || !Polyline(dc, pts, 2) || !EndPath(dc) || !WidenPath(dc)) throw new Exception("WidenPath failed");
+                        var read = new Matrix { a = 1f / 16, d = 1f / 16 };
+                        SetWorldTransform(dc, ref read);
+                        int n = GetPath(dc, null, null, 0);
+                        var points = new Point[n]; var types = new byte[n];
+                        GetPath(dc, points, types, n);
+                        SetWorldTransform(dc, ref matrix);
+                        if (json.Length > 1) json.Append(',');
+                        json.Append("{\"deg\":").Append((gi < 0 ? mats[m, 0] : 1000 + gi).ToString(CultureInfo.InvariantCulture)).Append(",\"scale\":").Append(sc.ToString(CultureInfo.InvariantCulture))
+                            .Append(",\"a\":").Append(matrix.a.ToString("R", CultureInfo.InvariantCulture)).Append(",\"b\":").Append(matrix.b.ToString("R", CultureInfo.InvariantCulture))
+                            .Append(",\"c\":").Append(matrix.c.ToString("R", CultureInfo.InvariantCulture)).Append(",\"d\":").Append(matrix.d.ToString("R", CultureInfo.InvariantCulture))
+                            .Append(",\"w\":").Append(width).Append(",\"dx\":").Append(dx).Append(",\"dy\":").Append(dy).Append(",\"points\":[");
+                        for (int i = 0; i < n; i++) {
+                            if (i > 0) json.Append(',');
+                            json.Append(points[i].x).Append(',').Append(points[i].y).Append(',').Append(types[i]);
+                        }
+                        json.Append("]}");
+                    }
+                } finally { SelectObject(dc, old); DeleteObject(pen); }
+            }
+            Directory.CreateDirectory(dir);
+            var bytes = Encoding.UTF8.GetBytes(json.Append(']').ToString());
+            using (var file = File.Create(Path.Combine(dir, "rotated-pen-nibs.json.gz")))
+            using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+                zip.Write(bytes, 0, bytes.Length);
+        } finally { DeleteDC(dc); }
+    }
 }
