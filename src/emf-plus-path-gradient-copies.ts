@@ -24,7 +24,9 @@
  * for most of the edge and inside near its left end (row 24 of a 60 x 40 rectangle: columns
  * 34 to 38 inside, 39 to 63 outside), and slanted ties are 293 inside to 160 outside. Native's
  * edge arithmetic is not reproduced, so a tie takes the colour half way between the two
- * steps, which is within a level of either answer.
+ * steps, which is within a level of either answer. (Strict containment with a float32 scale
+ * `m * step + step / 2` reproduces all 116 ties of the whole-row captures and then only 40% of the
+ * vertical and 45% of the horizontal ties of the 14 rectangles in `path-gradient-ties.json.gz`.)
  *
  * @module emf-plus-path-gradient-copies
  */

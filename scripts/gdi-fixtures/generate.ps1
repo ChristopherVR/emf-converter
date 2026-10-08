@@ -163,6 +163,12 @@ if ($Which -eq 'path-gradient-focus-shapes') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-ties') {
+    Add-Type -Path (Join-Path $here 'PathGradientTieProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientTieProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'bicubic-copy') {
     Add-Type -Path (Join-Path $here 'BicubicCopyProbe.cs') -ReferencedAssemblies System.Drawing
     [BicubicCopyProbe]::Run($outDir)
