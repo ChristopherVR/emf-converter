@@ -416,6 +416,12 @@ if ($Which -eq 'redeye-independent') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'redeye-stages') {
+    Add-Type -Path (Join-Path $here 'RedEyeStageProbe.cs') -ReferencedAssemblies System.Drawing
+    [RedEyeStageProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'vertical-focus-line') {
     Add-Type -Path (Join-Path $here 'VerticalFocusLineProbe.cs') -ReferencedAssemblies System.Drawing
     [VerticalFocusLineProbe]::Run($outDir)

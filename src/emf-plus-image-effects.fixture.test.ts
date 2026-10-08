@@ -192,9 +192,9 @@ const TINT: EffectCase[] = [
  * and the red-ramp bands (a 256 x 64 gradient test image) are approximate.
  */
 const RED_EYE: EffectCase[] = [
-	bounded('redeye-left', 0, 0.00058), // 3.659% with the old fixed rule, 0.71% before the measured model, 12 pixels (0.057%) now
-	bounded('redeye-both', 0, 0.00472), // 6.860%, 1.49%, 99 pixels (0.472%) now
-	bounded('redeye-whole', 0, 0.0278), // 46.227%, 3.51%, 2.77%
+	bounded('redeye-left', 0, 0.00058), // 3.659% with the old fixed rule, 0.71% before the measured model, 12 pixels (0.057%) before the luma weights and now (areas holding red of luma 0 keep the previous centroid weights)
+	bounded('redeye-both', 0, 0.00325), // 6.860%, 1.49%, 99 pixels (0.472%) before the luma weights, 68 pixels (0.324%) now
+	bounded('redeye-whole', 0, 0.01811), // 46.227%, 3.51%, 2.77%, 380 pixels (1.81%) now
 ];
 
 describe('EMF+ image effects against GDI+-computed bitmaps', () => {
