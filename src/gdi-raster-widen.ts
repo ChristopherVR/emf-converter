@@ -36,10 +36,11 @@
  * - Geometric dash patterns cut the figure into pieces by arc length, each
  *   segment measured from its vector cut down to whole pixels (when one
  *   logical unit is one pixel: `wholePixelDashVectors`), the cut points
- *   rounded to 28.4 at the same fraction of the real segment; each piece is
+ *   rounded to 28.4 at the same fraction of the real segment (a float32 sum,
+ *   `cutCoordinate`); each piece is
  *   widened as an open figure with the directions of the path segments it
  *   lies on, and a square cap's extension is scaled like the segment under
- *   the cut (real over measured length). With round or
+ *   the cut (real over measured length; a float32 product, `scaledExtension`). With round or
  *   square caps the stock styles shorten every dash by the pen width.
  * - The first and last flattened segment of a Bezier take their draw
  *   vertices from the curve's end tangents (`GdiFigure.tangents`).
@@ -60,7 +61,7 @@
  * round caps and joins (every `CreatePen` pen) 3,000 of 3,000; square caps
  * with round joins, and flat or square caps with bevel or miter joins,
  * 99.3% to 99.5%; round caps with bevel or miter joins 97.5%; flat caps
- * with round joins 97.2%; 299 of 300 random dashed polylines. The residual
+ * with round joins 97.2%; 300 of 300 random dashed polylines (299 before the single-precision cuts and extensions). The residual
  * is GDI's inclusion of a pen vertex exactly at the end of a join or cap
  * arc (mostly for the flattened pens of 7 px and more), and the half-pixel
  * rounding of the perpendicular for 8 px pens (now a closed rule, `oddEdgeAdjustment`).
@@ -629,7 +630,7 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e0: Pt = scale === 1 || s.curveEnd ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined, false, !!this.opts.wholePixelDashVectors);
+			const e0: Pt = scale === 1 || s.curveEnd ? s.e : this.scaledExtension(s, scale);
 			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
@@ -637,6 +638,24 @@ class Outliner {
 			this.push(p, sv);
 			this.push(p, ev);
 		}
+	}
+
+	/**
+	 * The square-cap extension of a dash end that GDI scales by its real over whole-pixel length. At one logical unit per device pixel the
+	 * extension is the vector component times (half the width over the whole-pixel length), a float32 product of a float32 ratio, rounded
+	 * half away from zero; ties of the exact product (110.5, 3.5, 57.5, -62.5) fall where that single-precision value puts them.
+	 */
+	private scaledExtension(s: Seg, scale: number): Pt {
+		const o = this.opts;
+		if (o.wholePixelDashVectors && !o.matrix && !o.dashMetric && (o.height === undefined || o.height === o.width)) {
+			const length = norm(Math.floor(s.pe[0] / 16), Math.floor(s.pe[1] / 16)) * 16;
+			if (length > 0) {
+				const ratio = Math.fround(o.width / 2 / length);
+				const component = (v: number): number => Math.sign(v) * Math.floor(Math.fround(Math.abs(v) * ratio) + 0.5);
+				return [component(s.pe[0]), component(s.pe[1])];
+			}
+		}
+		return squareExtension(o.width, s.pe[0], s.pe[1], scale, o.height, o.deviceNib ? o.matrix : undefined, false, !!o.wholePixelDashVectors);
 	}
 
 	/**
@@ -858,6 +877,17 @@ interface DashPiece {
 }
 
 /**
+ * One coordinate of a dash cut: `x0` plus the offset `d * t / len` along the segment (`d` its vector component, `t` the distance
+ * walked, `len` its length). GDI adds the offset in single precision and rounds the sum half away from the segment's start: up when the
+ * component runs forward, down when it runs back (the cuts of 2,027 native dashed Beziers whose cut points sit within 6e-4 FIX of a tie).
+ */
+function cutCoordinate(x0: number, d: number, t: number, len: number): number {
+	const offset = Math.abs(d) * (t / len);
+	const v = Math.fround(x0 + (d < 0 ? -offset : offset));
+	return d < 0 ? Math.ceil(v - 0.5) : Math.floor(v + 0.5);
+}
+
+/**
  * Cuts a polyline into dash pieces of `dashes` (on, off, ...) FIX lengths
  * by exact arc length, the cut points rounded to 28.4. With round or
  * square caps (`shorten`, the pen width) GDI shortens every dash by the
@@ -917,7 +947,7 @@ function dashPieces(
 		let t = 0;
 		while (len - t > left || (left === 0 && on)) {
 			t += left;
-			const q: Pt = [Math.floor(x0 + (dir[0] * t) / len + 0.5), Math.floor(y0 + (dir[1] * t) / len + 0.5)];
+			const q: Pt = [cutCoordinate(x0, dir[0], t, len), cutCoordinate(y0, dir[1], t, len)];
 			if (on && cur) {
 				cur.pts.push(q);
 				cur.dirs.push(dir);
