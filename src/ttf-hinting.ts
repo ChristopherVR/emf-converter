@@ -1598,9 +1598,10 @@ export class HintedSize {
 					this.zp1.curY[p] - this.zp0.curY[gs.rp0],
 				);
 				let target = d;
-				if (this.ctCompat() && gs.gep0 !== 0 && gs.gep1 !== 0) {
-					// ClearType: a stroke-weight MSIRP (non-trivial outline
-					// distance) honours the CVT cut-in.
+				if (this.ctCompat() && this.ctDirection() && gs.gep0 !== 0 && gs.gep1 !== 0) {
+					// ClearType: along x a stroke-weight MSIRP (non-trivial
+					// outline distance) honours the CVT cut-in (1/16 of it);
+					// along y native moves the point by any distance.
 					const org = this.dualProjectOrus(
 						this.zp1.orusX[p] - this.zp0.orusX[gs.rp0],
 						this.zp1.orusY[p] - this.zp0.orusY[gs.rp0],
