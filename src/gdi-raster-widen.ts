@@ -696,6 +696,14 @@ class Outliner {
 				// Native WidenPath repeats this inner triangle. Filling hides
 				// the repetition; stroking the widened outline exposes it.
 				this.push(p, sb);
+				if (cap === 'flat' && Da !== Db && !(a.curveEnd && b.curveEnd)) {
+					// A flat cap also loops round the pen between the two sides, within a flattened cubic or at its end, when that wedge
+					// holds two pen vertices or more (native WidenPath of 2,484 dashed arcs and Beziers: a wedge of one vertex, and any
+					// wedge at the boundary of two cubics, is absent).
+					const before = this.pts.length;
+					this.wedge(p, rayB, rayA, false, false, this.extremeTail(side === 'L', Da, a));
+					if (this.pts.length - before < 2) this.pts.length = before;
+				}
 				this.push(p, sa);
 				this.pts.push([p[0], p[1]]);
 			}

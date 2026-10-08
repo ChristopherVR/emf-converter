@@ -44,6 +44,12 @@ if ($Which -eq 'illuminant-cubes') {
     [HalftoneColorProbe]::IlluminantCubes($destination)
     return
 }
+if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe') {
+    Add-Type -Path (Join-Path $here 'PathProbe.cs')
+    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'emf-roundrect-mode-probe') {
     Add-Type -Path (Join-Path $here 'RoundRectModeProbe.cs') -ReferencedAssemblies System.Drawing
     [RoundRectModeProbe]::Run($outDir)
