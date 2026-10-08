@@ -519,17 +519,19 @@ const TINT_FULL = 254;
  *   corrected pixel moves along a fixed direction by `a = x - rest`
  *   (`a = 0` when `rest >= x`): red falls by `a`, green and blue rise by
  *   `a * 5 / 16` (each rounded separately; red by `a * 11 / 16`).
- * - **Darkness** `D = G + 0.225 B`; its 30th and 70th percentiles over all of
- *   the area's pixels (red or not) differ by the **spread** `S`.
+ * - **Luma** `L = round((9 G + 2 B) / 11)`, an integer (red plays no part).
+ *   Its 30th and 70th percentiles over all of the area's pixels (red or not)
+ *   differ by the **spread** `S`. **Darkness** `D = G + 2/9 B` (not rounded)
+ *   feeds the falloff below.
  * - **Centre.** The centroid of the pixels' weights, over pixel centres:
- *   `x / D` for red pixels (`1 / 1.225` flat when `D < 1`), nothing for the
- *   rest, uncapped. An area processed after another (one that held red) is
- *   nudged: 0.81 times the previous area's final centroid, in image
- *   coordinates, is added to the weighted coordinate sums (this is why the
- *   second of two areas differs from the same area processed alone, and by
- *   how much depends on where the first one was). A centroid farther from
- *   the area's middle than `max(min(w, h) / 2, (w + h) / 6)` is discarded for
- *   the middle itself.
+ *   `x / L` for red pixels (1 flat when `L = 0`), nothing for the rest,
+ *   uncapped. An area processed after another (one that held red) is nudged:
+ *   the previous area's centroid, in image coordinates (before any fallback),
+ *   is added once to the weighted coordinate sums (the denominator is
+ *   unchanged), which is why the second of two areas differs from the same
+ *   area processed alone, and by how much depends on where the first one
+ *   was. A centroid farther from the area's middle than `(w + h) / 6` is
+ *   discarded for the middle itself.
  * - **Radius.** `radius = min(e, f)` where, with `ax`, `ay` the centre in image
  *   coordinates, `e` is the distance to the left or right edge (`cx - 0.5`,
  *   or `w - cx + 0.5` once `round(cx) > w / 2`) and `f` the other axis'
@@ -540,16 +542,24 @@ const TINT_FULL = 254;
  *   mean of `x` over a sector's counted pixels and `Dm` the mean of `D`.
  * - **Rest.** `rest = (1 - F) M` with `F = max(m (1 - u)^2, (1 - D / Dm)^2 / 2)`
  *   for `u = distance / radius`. The first term is `m = 1/4` for a uniform
- *   area and rises by quantised steps with the spread (`1/2` from `S = 31.5`,
- *   `0.661` from 50, `3/4` from 98.8); the second corrects pixels much darker
+ *   area and rises by quantised steps with the spread (`1/2` above `S = 25`,
+ *   `0.661` above 40, `3/4` above 80); the second corrects pixels much darker
  *   than their sector harder (pupils). The squared darkness term is symmetric
  *   about the sector mean, and is used only for `D / Dm < 2`; brighter
- *   pixels at or above twice that mean retain the radial term alone.
+ *   pixels at or above twice that mean retain the radial term alone. The one
+ *   brightest pixel of the area (its `L` strictly above every other pixel's)
+ *   whose `L` is at least 40 above the 70th percentile is a highlight and
+ *   gets `F = 1`.
+ * - **Pixels on an axis through the centre.** The centre pixel itself is in
+ *   the sector from 90 to 96 degrees, the pixels straight below and straight
+ *   left in the sectors before their edge (84 to 90, 174 to 180).
  *
- * Not reproduced: the exact fallback centre of the farthest-off areas, the
- * quantised small-denominator weights of near-black reds, and sector
- * assignment for pixels exactly on a sector edge when the centre is a
- * rounding error away from it.
+ * Not reproduced: the native output when the area holds red pixels with
+ * `L = 0` and no other spread information (it depends on the calls made
+ * before it, as the committed `redeye-stages` sequences show), the exact
+ * fallback centre of the farthest-off areas, and which sector the pixels on
+ * the four axes fall in when a symmetric scene puts the centre exactly on a
+ * pixel centre (the native choice follows rounding noise).
  */
 export function applyRedEyeCorrection(
 	src: Uint8ClampedArray,
@@ -566,16 +576,38 @@ export function applyRedEyeCorrection(
 }
 
 const RED_EYE_SECTORS = 60;
-const RED_EYE_BLUE_WEIGHT = 0.225;
-/** Centroid weight of a red pixel whose darkness is below 1 (almost no green or blue). */
-const RED_EYE_PURE_WEIGHT = 1 / (1 + RED_EYE_BLUE_WEIGHT);
+/** Sector of the pixel whose centre is the area's centre: the one spanning 90 to 96 degrees. */
+const RED_EYE_CENTRE_SECTOR = 15;
+/** Blue's share in the darkness `D = G + 2/9 B` of the falloff term. */
+const RED_EYE_BLUE_WEIGHT = 2 / 9;
+/** Centroid weight of a red pixel whose integer luma {@link redEyeLuma} is 0 (almost no green or blue). */
+const RED_EYE_PURE_WEIGHT = 1;
 /** Share of the previous area's centroid carried into the next area's coordinate sums. */
-const RED_EYE_CARRY = 0.81;
+const RED_EYE_CARRY = 1;
+
+/**
+ * The integer luma that weights the centroid: `round((9 G + 2 B) / 11)`.
+ * Measured by ordering pixels: a pixel `P` is compared with `Q` exactly by
+ * this value (0 disagreements in 46,966 `G`/`B` pairs), and a red pixel's
+ * centroid weight is its redness over it.
+ */
+function redEyeLuma(g: number, b: number): number {
+	return Math.floor((9 * g + 2 * b + 5) / 11);
+}
 /** Share of the removed redness that lands in green and blue each (the rest leaves red). */
 const RED_EYE_GREEN_SHARE = 5 / 16;
-/** Spreads of darkness (30th to 70th percentile) from which the falloff term steps up, and the strengths. */
-const RED_EYE_SPREAD_STEPS = [31.5, 50, 98.78] as const;
+/**
+ * Spreads of integer luma (30th to 70th percentile over the whole area) above which the radial
+ * strength steps up, and the strengths. Measured exactly with two-valued fields: a spread of 25
+ * still gives 1/4, 26 gives 1/2; 40 gives 1/2, 41 gives 0.661; 80 gives 0.661, 81 gives 3/4.
+ */
+const RED_EYE_SPREAD_STEPS = [25, 40, 80] as const;
 const RED_EYE_STRENGTHS = [0.25, 0.5, 0.661, 0.75] as const;
+/**
+ * A pixel that is the area's one brightest (integer luma strictly above every other pixel's) and at
+ * least 40 above the 70th percentile is a highlight (a catch-light) and is corrected completely.
+ */
+const RED_EYE_HIGHLIGHT_RISE = 40;
 
 function correctRedEyeArea(
 	out: Uint8ClampedArray,
@@ -594,6 +626,7 @@ function correctRedEyeArea(
 	}
 	const redness = new Float64Array(count);
 	const dark = new Float64Array(count);
+	const lumas = new Int32Array(count);
 	let sx = 0;
 	let sy = 0;
 	let sw = 0;
@@ -606,10 +639,12 @@ function correctRedEyeArea(
 			const k = y * w + x;
 			const d = g + RED_EYE_BLUE_WEIGHT * b;
 			dark[k] = d;
+			const luma = redEyeLuma(g, b);
+			lumas[k] = luma;
 			const v = r - Math.max(g, b);
 			if (v > 0) {
 				redness[k] = v;
-				const weight = d >= 1 ? v / d : RED_EYE_PURE_WEIGHT;
+				const weight = luma >= 1 ? v / luma : RED_EYE_PURE_WEIGHT;
 				sx += weight * (x + 0.5);
 				sy += weight * (y + 0.5);
 				sw += weight;
@@ -620,11 +655,13 @@ function correctRedEyeArea(
 		// Nothing red: untouched, and the next area is not influenced either.
 		return;
 	}
-	let cx = (sx + RED_EYE_CARRY * carry.x) / sw;
-	let cy = (sy + RED_EYE_CARRY * carry.y) / sw;
+	// Centroids of symmetric scenes land on exact half pixels; rounding noise would otherwise decide which
+	// sector a pixel exactly on a sector edge (or the centre pixel itself) falls in.
+	let cx = Math.round(((sx + RED_EYE_CARRY * carry.x) / sw) * 1e9) / 1e9;
+	let cy = Math.round(((sy + RED_EYE_CARRY * carry.y) / sw) * 1e9) / 1e9;
 	carry.x = x0 + cx;
 	carry.y = y0 + cy;
-	if (Math.hypot(cx - w / 2, cy - h / 2) >= Math.max(Math.min(w, h) / 2, (w + h) / 6)) {
+	if (Math.hypot(cx - w / 2, cy - h / 2) >= (w + h) / 6) {
 		cx = w / 2;
 		cy = h / 2;
 	}
@@ -637,11 +674,14 @@ function correctRedEyeArea(
 	if (!(radius > 0)) {
 		return;
 	}
-	// Strength of the falloff term: stepped by the spread of darkness over the whole area.
-	const sorted = Float64Array.from(dark).sort();
-	const spread = sorted[Math.floor(0.7 * count)] - sorted[Math.floor(0.3 * count)];
+	// Strength of the falloff term: stepped by the spread of integer luma over the whole area.
+	const sorted = Int32Array.from(lumas).sort();
+	const p70 = sorted[Math.floor(0.7 * count)];
+	const spread = p70 - sorted[Math.floor(0.3 * count)];
+	const brightest = sorted[count - 1];
+	const second = count > 1 ? sorted[count - 2] : -1;
 	let level = 0;
-	while (level < RED_EYE_SPREAD_STEPS.length && spread >= RED_EYE_SPREAD_STEPS[level]) {
+	while (level < RED_EYE_SPREAD_STEPS.length && spread > RED_EYE_SPREAD_STEPS[level]) {
 		level++;
 	}
 	const strength = RED_EYE_STRENGTHS[level];
@@ -662,7 +702,17 @@ function correctRedEyeArea(
 			if (angle < 0) {
 				angle += 360;
 			}
-			const s = Math.min(RED_EYE_SECTORS - 1, Math.floor(angle / 6));
+			// Pixels exactly on an axis: the centre pixel itself (a lone red pixel, or a centroid on a pixel
+			// centre) belongs to the sector at 90 degrees, not to the one at 0; those straight below and
+			// straight left of the centre join the sector before the edge (84 to 90 and 174 to 180 degrees).
+			let s = Math.min(RED_EYE_SECTORS - 1, Math.floor(angle / 6));
+			if (dx === 0 && dy === 0) {
+				s = RED_EYE_CENTRE_SECTOR;
+			} else if (dx === 0 && dy > 0) {
+				s = 14;
+			} else if (dy === 0 && dx < 0) {
+				s = 29;
+			}
 			sector[k] = s;
 			if (d < radius) {
 				sectorSum[s] += redness[k];
@@ -686,7 +736,8 @@ function correctRedEyeArea(
 			// Native concentric controls correct both sides of the mean, but stop
 			// using this darkness term at twice the sector mean.
 			const darknessFalloff = ratio < 2 ? 0.5 * (1 - ratio) ** 2 : 0;
-			const falloff = Math.max(strength * (1 - u) * (1 - u), darknessFalloff);
+			const highlight = lumas[k] === brightest && lumas[k] > second && lumas[k] - p70 >= RED_EYE_HIGHLIGHT_RISE;
+			const falloff = highlight ? 1 : Math.max(strength * (1 - u) * (1 - u), darknessFalloff);
 			const rest = (1 - falloff) * mean;
 			if (rest >= v) {
 				continue;
