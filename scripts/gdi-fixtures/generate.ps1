@@ -44,6 +44,14 @@ if ($Which -eq 'illuminant-cubes') {
     [HalftoneColorProbe]::IlluminantCubes($destination)
     return
 }
+if ($Which -eq 'emf-roundrect-mode-probe') {
+    Add-Type -Path (Join-Path $here 'RoundRectModeProbe.cs') -ReferencedAssemblies System.Drawing
+    [RoundRectModeProbe]::Run($outDir)
+    [RoundRectModeProbe]::Paths($outDir)
+    [RoundRectModeProbe]::PlayExisting($outDir, 'emfrec-path-widen')
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'miter-limit-probe') {
     Add-Type -Path (Join-Path $here 'MiterProbe.cs')
     [MiterProbe]::Run($outDir)
