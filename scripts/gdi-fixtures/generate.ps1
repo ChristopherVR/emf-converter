@@ -100,9 +100,9 @@ if ($Which -eq 'emf-roundrect-mode-probe') {
     Complete-Fixtures
     return
 }
-if ($Which -eq 'compat-playback-paths-probe') {
+if ($Which -eq 'compat-playback-paths-probe' -or $Which -eq 'compat-playback-shapes-probe' -or $Which -eq 'compat-playback-mirror-probe') {
     Add-Type -Path (Join-Path $here 'CompatPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
-    [CompatPlaybackProbe]::PathPlayback($outDir)
+    if ($Which -eq 'compat-playback-paths-probe') { [CompatPlaybackProbe]::PathPlayback($outDir) } elseif ($Which -eq 'compat-playback-mirror-probe') { [CompatPlaybackProbe]::RunMirrored($outDir); [CompatPlaybackProbe]::RectSweepMirrored($outDir) } else { [CompatPlaybackProbe]::PathPlaybackShapes($outDir) }
     Complete-Fixtures
     return
 }

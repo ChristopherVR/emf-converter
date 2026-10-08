@@ -715,7 +715,18 @@ export function flattenBezierPath(pts: ArrayLike<number>): number[] {
  * device coordinates). Clockwise corners round their half-height and vertical
  * controls up; compatible mode rounds the scaled corner endpoints to FIX.
  */
-export function roundRectCorners(l: number, t: number, r: number, b: number, cw: number, ch: number, compatible = false, clockwise = false): number[] {
+export function roundRectCorners(
+	l: number,
+	t: number,
+	r: number,
+	b: number,
+	cw: number,
+	ch: number,
+	compatible = false,
+	clockwise = false,
+	/** The horizontal controls round down (a shape on a map that mirrors x). */
+	floorH = false,
+): number[] {
 	const w = r - l;
 	const h = b - t;
 	let ew = Math.min(Math.abs(cw), w);
@@ -730,7 +741,7 @@ export function roundRectCorners(l: number, t: number, r: number, b: number, cw:
 	const topX = compatible ? Math.round(r - ew / 2) : Math.floor(r - ew / 2);
 	const hx = r - topX;
 	const verticalControl = clockwise ? Math.ceil(KAPPA * hy) : Math.floor(KAPPA * hy);
-	const horizontalControl = Math.ceil(KAPPA * hx);
+	const horizontalControl = floorH ? Math.floor(KAPPA * hx) : Math.ceil(KAPPA * hx);
 	const q = [r, t + hy, r, t + hy - verticalControl, r - hx + horizontalControl, t, topX, t];
 	const mx = (x: number) => l + r - x;
 	const my = (y: number) => t + b - y;
@@ -1039,6 +1050,8 @@ export function arcBeziers(
 	clockwise: boolean,
 	halfX = false,
 	framed = false,
+	/** The points of a map that mirrors x: built unmirrored (`xs` and `xe` in the unmirrored frame) and mirrored about the box's centre. */
+	mirrorX = false,
 ): number[] {
 	const w = r - l;
 	const h = b - t;
@@ -1063,12 +1076,20 @@ export function arcBeziers(
 	}
 	// The radius times the unit coordinate is a float32 product (GDI's arithmetic here is single precision); the centre is added to it exactly.
 	const axis = (r: number, c: number) => Math.fround(r * Math.fround(c));
-	const px = (u: number, v: number) => (clockwise && halfX ? Math.ceil(cx + axis(rx, u) + 0.5 - v) : Math.round(cx + axis(rx, u) + (halfX ? 1 + v : 0)));
+	const px = (u: number, v: number) =>
+		mirrorX
+			? // The mirrored circle sits on the same centre but its horizontal radius rounds down (native playback, 144 arcs under a mirrored x).
+				Math.round(cx - axis(Math.floor(w / 2), u))
+			: clockwise && halfX
+				? Math.ceil(cx + axis(rx, u) + 0.5 - v)
+				: Math.round(cx + axis(rx, u) + (halfX ? 1 + v : 0));
 	const py = (v: number) => Math.round(cy - axis(ry, v));
 	// A clockwise arc's whole quadrants round their vertical control
 	// distances up (measured: 449 of 452 quadrants), the mirror image of
 	// the counter-clockwise ellipse's rounding down.
-	const eb = axisBox(l, t, r, b);
+	// On a map that mirrors x the whole quadrants are the ellipse of the mirrored box (its horizontal controls round down), taken
+	// back to the unmirrored frame here and mirrored with everything else at the end.
+	const eb = mirrorX ? axisBox(r, t, l, b) : axisBox(l, t, r, b);
 	if (halfX) eb.halfX = true;
 	const E = ellipseBeziersBox(eb);
 	if (clockwise) {

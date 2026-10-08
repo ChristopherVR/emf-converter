@@ -394,12 +394,28 @@ function handleLineTo(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): 
  */
 function cosmeticRectangleBox(rCtx: EmfGdiReplayCtx, box: FixBox): FixBox {
 	const { state } = rCtx;
-	if (rCtx.inPath || state.penStyle === 5 || state.penStyle === 6 || box.exy !== 0 || box.eyx !== 0 || box.exx <= 0 || box.eyy <= 0 || !penIsCosmetic(rCtx)) {
+	if (rCtx.inPath || state.penStyle === 5 || state.penStyle === 6 || box.exy !== 0 || box.eyx !== 0 || box.exx === 0 || box.eyy === 0 || !penIsCosmetic(rCtx)) {
 		return box;
 	}
 	const ax = Math.ceil(box.ax / 16) * 16;
 	const ay = Math.ceil(box.ay / 16) * 16;
 	return { ...box, ax, ay, exx: Math.ceil((box.ax + box.exx) / 16) * 16 - ax, eyy: Math.ceil((box.ay + box.eyy) / 16) * 16 - ay };
+}
+
+/**
+ * The same axis-aligned box with its extents positive. A Rectangle that is drawn (not collected in a path bracket) is traversed in
+ * device space whichever way the map mirrors it: from the right-top corner towards the left (the right-bottom corner towards the left
+ * under `AD_CLOCKWISE`), which only a dotted or dashed outline shows (`compat-rects-m*-dot`, 12 sheets of 315 Rectangles each, all
+ * pixel-exact). `GetPath` of the same record is the mirror image of that (the path is built in logical space and mapped), and so is
+ * a RoundRect, drawn or not.
+ */
+function devicePositiveBox(box: FixBox): FixBox {
+	if (!isAxisBox(box) || (box.exx >= 0 && box.eyy >= 0)) {
+		return box;
+	}
+	const ax = box.exx < 0 ? box.ax + box.exx : box.ax;
+	const ay = box.eyy < 0 ? box.ay + box.eyy : box.ay;
+	return { ...box, ax, ay, exx: Math.abs(box.exx), eyy: Math.abs(box.eyy) };
 }
 
 function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number): boolean {
@@ -468,7 +484,7 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 					c.beginPath();
 					c.rect(x, y, w, h);
 				},
-				raster: () => rectRasterPath(box, clockwise),
+				raster: () => rectRasterPath(devicePositiveBox(box), clockwise),
 				rectangle: true,
 				fill: true,
 				stroke: true,
@@ -866,10 +882,22 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			const v = (y - t) / hl;
 			return [box.ax + box.exx * u + box.eyx * v, box.ay + box.exy * u + box.eyy * v];
 		};
+		// A map that mirrors an axis: GDI writes the box corners in device order, so the record of a mirrored map often stores a box
+		// (`l > r` or `t > b`) whose own orientation is already undone, and the direction it records is that of the DC that played
+		// it. The shape is Windows' logical one mapped point by point, which `arcRasterPath` rebuilds from the map's mirroring
+		// (the box's own signs mean nothing). A rotated or sheared map has no mirroring to name: the arc runs the other way on
+		// screen when its determinant is negative, which `arcRasterPath` applies from the box, so the map's is applied net of it.
+		const devM = gdiDeviceMatrix(rCtx);
+		const mapFlips = devM[0] * devM[3] - devM[1] * devM[2] < 0;
+		const axisMap = devM[1] === 0 && devM[2] === 0;
 		const rasterArgs = (immediate = false) => {
 			const box = inset ? framed : immediate && needsFill ? curvedFixBox(rCtx, l, t, r, b) : unframed;
+			const boxFlips = box.exx * box.eyy - box.exy * box.eyx < 0;
+			const mirror = axisMap && isAxisBox(box) ? { x: devM[0] < 0, y: devM[3] < 0 } : undefined;
 			return {
 				box,
+				mirror,
+				clockwise: mirror ? clockwise : clockwise !== (mapFlips !== boxFlips),
 				s: radialOnBox(box, startX, startY),
 				// Device FIX rounding can separate distinct radial points on the
 				// same logical ray. Preserve their proven endpoint identity.
@@ -883,7 +911,7 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			}
 			build(gdiPathRecorder(rCtx));
 			const a = rasterArgs();
-			arcRasterPath(a.box, a.s, a.e, clockwise, kind, a.from, rasterPathOf(rCtx));
+			arcRasterPath(a.box, a.s, a.e, a.clockwise, kind, a.from, rasterPathOf(rCtx), a.mirror);
 			if (needsFill) {
 				rasterPathOf(rCtx).closeFigure();
 			}
@@ -897,7 +925,7 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 				},
 				raster: () => {
 					const a = rasterArgs(true);
-					return arcRasterPath(a.box, a.s, a.e, clockwise, kind, a.from).path;
+					return arcRasterPath(a.box, a.s, a.e, a.clockwise, kind, a.from, undefined, a.mirror).path;
 				},
 				fill: needsFill,
 				stroke: true,
@@ -910,7 +938,7 @@ function handleArcFamily(rCtx: EmfGdiReplayCtx, recType: number, dataOff: number
 			// the next LineTo starts exactly there (inside a path the next segment
 			// continues from the unrounded end point).
 			const a = rasterArgs();
-			const end = arcRasterPath(a.box, a.s, a.e, clockwise, 'arc').end;
+			const end = arcRasterPath(a.box, a.s, a.e, a.clockwise, 'arc', undefined, undefined, a.mirror).end;
 			const dx = Math.floor(end[0] / 16);
 			const dy = Math.floor(end[1] / 16);
 			const inv = invertAffine(gdiDeviceMatrix(rCtx));
