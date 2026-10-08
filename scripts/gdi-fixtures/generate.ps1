@@ -110,6 +110,12 @@ if ($Which -eq 'text-recorded-advance') {
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-text-recorded-advance.json') -Groups $Which -Files $files
     return
 }
+if ($Which -eq 'text-playback-hinting') {
+    Add-Type -Path (Join-Path $here 'TextPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
+    [TextPlaybackProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'playback-extents') {
     Add-Type -Path (Join-Path $here 'PlaybackExtentProbe.cs') -ReferencedAssemblies System.Drawing
     $cases = Get-Content -LiteralPath (Join-Path $outDir 'playback-extents.json') -Raw | ConvertFrom-Json
