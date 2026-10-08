@@ -928,6 +928,9 @@ const HALFTONE_CASES: ParityCase[] = [
 	...['default', 'gamma', 'gamma-rgb', 'log', ...[1, 2, 3, 4, 5, 6, 7, 8].map(i => `illuminant-${i}`)].map(name => halftone(`emfrec-ca-control-${name}`)),
 	halftone('emfrec-ca-control-dib-adjusted'), // 0% (0.549% before the two-pass reduction)
 	halftone('emfrec-ca-control-dib'), // 0% (0.738% before the two-pass reduction)
+	// 256x16 four-band ramp under the log filter, StretchDIBits 2x: the source takes the filtered branch
+	// (halftoneBranch), which replicated it with a 15.61% beyond-8-level residual before.
+	halftone('emfrec-ca-control-log-ramp'),
 	halftone('emfrec-coloradjustment-off'), // measured 0% (1.048% before)
 	halftone('emfrec-coloradjustment'), // measured 0% (1.814% before the unrounded palette levels)
 	// Flat colours under a colour adjustment, showing where the dither pattern starts: mirrored

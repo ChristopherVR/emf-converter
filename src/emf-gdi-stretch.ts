@@ -14,6 +14,7 @@
  * @module emf-gdi-stretch
  */
 
+import { halftoneBranch } from './emf-gdi-halftone-branch';
 import { ditherQuantize, ditherThreshold, type HalftoneDither } from './emf-gdi-halftone-dither';
 
 /** GDI stretch modes (EMR_SETSTRETCHBLTMODE). */
@@ -585,6 +586,63 @@ function halftoneReduceBoth(rect: Int32Array, sw: number, sh: number, dw: number
 }
 
 /**
+ * The filtered branch of an exact 2x HALFTONE enlargement of both axes (what
+ * {@link halftoneBranch} selects for sources with enough colours): the source
+ * is sharpened ({@link halftoneSharpen}'s kernel) and every destination pixel
+ * interpolates the sharpened samples 3/4 : 1/4 along each axis, vertical
+ * first with the intermediate rounded half up. Vertically the source is
+ * extended by a replicated row above and below *before* sharpening, so the
+ * outer destination rows interpolate between the sharpened edge row and that
+ * extension row sharpened against replicated neighbours; horizontally the
+ * edge column is simply replicated after sharpening. Pixel-exact for every one
+ * of the 80 native 2x captures that took this branch (`halftone-boundary`,
+ * `halftone-selection`, `halftone-arrangement`, all colour adjustments and
+ * both APIs).
+ *
+ * @param rgb RGB triples, `w` x `h`; unchanged.
+ * @returns RGB triples, `2w` x `2h`.
+ */
+export function halftoneFilterDouble(rgb: Int32Array, w: number, h: number): Int32Array {
+	const rows = h + 2;
+	const sharp = new Int32Array(w * rows * 3);
+	const at = (x: number, y: number, c: number): number => {
+		const yy = Math.max(1, Math.min(h, y)) - 1;
+		return rgb[(yy * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
+	};
+	for (let y = 0; y < rows; y++) {
+		for (let x = 0; x < w; x++) {
+			for (let c = 0; c < 3; c++) {
+				const v = at(x, y, c);
+				const sum = at(x - 1, y, c) + at(x + 1, y, c) + at(x, y - 1, c) + at(x, y + 1, c);
+				const out = v + Math.floor((4 * v - sum) / 8);
+				sharp[(y * w + x) * 3 + c] = out < 0 ? 0 : out > 255 ? 255 : out;
+			}
+		}
+	}
+	const W = w * 2;
+	const H = h * 2;
+	const out = new Int32Array(W * H * 3);
+	const middle = new Int32Array(w * 3);
+	for (let y = 0; y < H; y++) {
+		// Destination row y sits 1/4 pixel before (even) or after (odd) source row y >> 1.
+		const near = (y >> 1) + 1;
+		const far = (y & 1) === 0 ? near - 1 : near + 1;
+		for (let i = 0; i < w * 3; i++) {
+			middle[i] = Math.floor((3 * sharp[near * w * 3 + i] + sharp[far * w * 3 + i] + 2) / 4);
+		}
+		for (let x = 0; x < W; x++) {
+			const k = x >> 1;
+			const other = (x & 1) === 0 ? k - 1 : k + 1;
+			const second = other < 0 ? 0 : other >= w ? w - 1 : other;
+			for (let c = 0; c < 3; c++) {
+				out[(y * W + x) * 3 + c] = Math.floor((3 * middle[k * 3 + c] + middle[second * 3 + c] + 2) / 4);
+			}
+		}
+	}
+	return out;
+}
+
+/**
  * HALFTONE stretch, with the same argument conventions as
  * {@link stretchGdi}. Reproduces Windows' halftone engine on 32bpp output
  * (`emfrec-halftone-*` fixtures):
@@ -681,6 +739,21 @@ export function stretchHalftone(
 	// sampling path.
 	const nativeMixed = mixed && (!adjust || adjustAfterSampling || dithered)
 		&& ((W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW));
+	// An exact 2x enlargement of both axes whose source takes the filtered branch (see
+	// halftoneBranch) is sharpened and interpolated instead of replicated. Mirrored
+	// blits and combined colour adjustments are not covered by the native evidence.
+	if (enlarging && W === 2 * SW && H === 2 * SH && !flipX && !flipY && (!adjust || adjustAfterSampling)
+		&& halftoneBranch(rect, SW, SH) === 'filter') {
+		const filtered = halftoneFilterDouble(rect, SW, SH);
+		if (adjust) adjust(filtered);
+		for (let i = 0, o = 0; i < W * H; i++, o += 3) {
+			data[i * 4] = filtered[o];
+			data[i * 4 + 1] = filtered[o + 1];
+			data[i * 4 + 2] = filtered[o + 2];
+			data[i * 4 + 3] = 255;
+		}
+		return { width: W, height: H, data };
+	}
 	if ((enlarging || nearestMixed) && !directDib && !pairRows && !pairColumns) {
 		halftoneDespeckle(rect, SW, SH);
 	}
