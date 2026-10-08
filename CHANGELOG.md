@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.17.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.17.0) - 2026-10-08
+
+### Features
+
+- **cmyk:** Place inks on the grid by the profile input curve, refit the ICM table ([23e721c](https://github.com/ChristopherVR/emf-converter/commit/23e721c764f40335fd5db1d5f1e077fe41fae330))
+
+### Other
+
+- Merge origin/main into the CMYK input-curve worktree ([fb57be9](https://github.com/ChristopherVR/emf-converter/commit/fb57be9dd564c598396fb674419e59770bd70a35))
+
+### Documentation
+
+- Soften the node claim in the CMYK open-work paragraph ([2ae0372](https://github.com/ChristopherVR/emf-converter/commit/2ae0372d8451be07f60c440996630291f7985bc5))
+- Update the measured test count after the CMYK round ([aba148f](https://github.com/ChristopherVR/emf-converter/commit/aba148f5690f01f23d7da290ef1f1ad7a1db8d1c))
+
 ## [4.16.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.16.0) - 2026-10-08
 
 ### Features
