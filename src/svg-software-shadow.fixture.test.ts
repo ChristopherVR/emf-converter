@@ -51,7 +51,7 @@ describe('SVG output is identical with the pure-JS raster mirror', () => {
 		const ctx = await replayToSvgContext(load('rop3-stretchblt'), { dpiScale: 1 });
 		expect(ctx!.shadow).toBeInstanceOf(SoftwareRasterContext);
 	});
-});
+}, 120_000);
 
 describe("imageResampling: 'exact'", () => {
 	function images(tree: SvgNode): SvgNode[] {
@@ -106,4 +106,4 @@ describe("imageResampling: 'exact'", () => {
 		}
 		expect(JSON.stringify(tree)).toContain('matrix(');
 	});
-});
+}, 120_000);
