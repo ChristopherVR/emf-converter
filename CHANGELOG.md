@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.15.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.2) - 2026-10-08
+
+### Bug Fixes
+
+- **emf:** Play RoundRect records the same in every graphics mode ([456e91b](https://github.com/ChristopherVR/emf-converter/commit/456e91bf9834d53f2b9a8d106faab8da90655392))
+- **gdi:** Round the scaled cap cut away from zero and widen at the pen's FIX width ([05c11bd](https://github.com/ChristopherVR/emf-converter/commit/05c11bd9467080909c238a343300c1c8f4ecab86))
+- **gdi:** Loop flat caps round the pen between a curve's inner sides; isolate samples 206 and 117 ([5c35d85](https://github.com/ChristopherVR/emf-converter/commit/5c35d85fae1a026813fd8ac9a8af0c7ce81b22f9))
+
+### Other
+
+- Merge origin/main into worktree-agent-a2631764e45a78b7a ([a4b1428](https://github.com/ChristopherVR/emf-converter/commit/a4b1428e1a2a61372c67c17c9b8b9f56b79a535d))
+
+### Documentation
+
+- Update the measured test count after the pen and RoundRect playback round ([038819d](https://github.com/ChristopherVR/emf-converter/commit/038819d8d97abe467a0a3999a19333b89be0bf53))
+
 ## [4.15.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.1) - 2026-10-08
 
 ### Documentation
