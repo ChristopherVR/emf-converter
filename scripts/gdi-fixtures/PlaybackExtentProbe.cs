@@ -113,4 +113,40 @@ public static class PlaybackExtentProbe
         }
         return true;
     }
+
+    /// <summary>
+    /// Plays one case into a temporary surface (as Capture) and reports "ink,x0,y0,x1,y1,overlapMismatch": the non-white RGB pixel
+    /// count and its device bounds (surface coordinates plus the origin), and how many RGB pixels of the original reference PNG
+    /// the playback does not reproduce (0 means the original is a valid clipped capture of it). The temporary PNG is deleted.
+    /// </summary>
+    public static string Survey(string dir, string name, int width, int height, int originX, int originY, bool plus)
+    {
+        string temporary = Path.Combine(dir, name + ".survey.png");
+        Capture(dir, name, width, height, originX, originY, plus, false, false, ".survey.png");
+        try {
+            int ink = 0, x0 = int.MaxValue, y0 = int.MaxValue, x1 = int.MinValue, y1 = int.MinValue, mismatch = 0;
+            using (var native = new Bitmap(temporary))
+            using (var original = new Bitmap(Path.Combine(dir, name + ".png"))) {
+                int[] n = Pixels(native), o = Pixels(original);
+                for (int y = 0; y < native.Height; y++)
+                    for (int x = 0; x < native.Width; x++) {
+                        int p = n[y * native.Width + x] & 0xFFFFFF;
+                        if (p != 0xFFFFFF) { ink++; x0 = Math.Min(x0, x); x1 = Math.Max(x1, x); y0 = Math.Min(y0, y); y1 = Math.Max(y1, y); }
+                        int dx = x + originX, dy = y + originY;
+                        if (dx >= 0 && dy >= 0 && dx < original.Width && dy < original.Height && (o[dy * original.Width + dx] & 0xFFFFFF) != p) mismatch++;
+                    }
+            }
+            if (ink == 0) return "0,0,0,0,0," + mismatch;
+            return string.Format("{0},{1},{2},{3},{4},{5}", ink, x0 + originX, y0 + originY, x1 + originX, y1 + originY, mismatch);
+        } finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+    static int[] Pixels(Bitmap bitmap)
+    {
+        var data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        try {
+            var result = new int[bitmap.Width * bitmap.Height];
+            Marshal.Copy(data.Scan0, result, 0, result.Length);
+            return result;
+        } finally { bitmap.UnlockBits(data); }
+    }
 }
