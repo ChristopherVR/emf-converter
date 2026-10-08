@@ -69,6 +69,7 @@
  * @module emf-plus-image-resample
  */
 
+import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
 import type { DeferredImageResample, ImageResampleKernel, TransformMatrix } from './emf-types';
 
@@ -149,6 +150,28 @@ function snapToDeviceGrid(spec: DeferredImageResample): TransformMatrix {
 	];
 	const [ox, oy] = map(spec.srcX, spec.srcY);
 	const [a, b, c, d] = m;
+	return [a, b, c, d, ox - a * spec.srcX - c * spec.srcY, oy - b * spec.srcX - d * spec.srcY];
+}
+
+/**
+ * A rotated or sheared high-quality draw's matrix with only the first destination corner snapped to 1/16 pixel
+ * and the other two corners left where they are, so the edge vectors (and with them the scale and the rotation)
+ * change by the snap. Against 16 native rotated and sheared draws this leaves 704 pixels more than one level off,
+ * where keeping the matrix and moving the origin leaves 2,682, snapping all three corners 1,141, and snapping to
+ * 1/8 or 1/32 pixel 1,021 and 3,080 (`hq-wrap.json.gz`, draws without attributes).
+ */
+function snapOriginKeepCorners(spec: DeferredImageResample): TransformMatrix {
+	const m = spec.toDevice;
+	const map = (u: number, v: number): [number, number] => [m[0] * u + m[2] * v + m[4], m[1] * u + m[3] * v + m[5]];
+	const [rx, ry] = map(spec.srcX, spec.srcY);
+	const ox = Math.round(rx * SUBPIXEL_GRID) / SUBPIXEL_GRID;
+	const oy = Math.round(ry * SUBPIXEL_GRID) / SUBPIXEL_GRID;
+	const [ux, uy] = map(spec.srcX + spec.srcW, spec.srcY);
+	const [vx, vy] = map(spec.srcX, spec.srcY + spec.srcH);
+	const a = (ux - ox) / spec.srcW;
+	const b = (uy - oy) / spec.srcW;
+	const c = (vx - ox) / spec.srcH;
+	const d = (vy - oy) / spec.srcH;
 	return [a, b, c, d, ox - a * spec.srcX - c * spec.srcY, oy - b * spec.srcX - d * spec.srcY];
 }
 
@@ -477,6 +500,11 @@ export function resampleImage(
 		}
 		return resampleImage(grown, width + 1, height, { ...spec, rightHalo: undefined }, surface);
 	}
+	if (spec.wrap === 'clamp' && ((spec.clampArgb ?? 0) >>> 24) === 0 && (spec.kernel === 'hq-bicubic' || spec.kernel === 'hq-bilinear')) {
+		// WrapMode Clamp to a transparent colour draws exactly as no attributes do (native high-quality draws, all
+		// shapes: 0 pixels differ).
+		return resampleImage(rgba, width, height, { ...spec, wrap: undefined, clampArgb: undefined }, surface, options);
+	}
 	if (spec.kernel === 'nearest' && !spec.wrap) {
 		return resampleNearest(rgba, width, height, spec, surface);
 	}
@@ -488,6 +516,9 @@ export function resampleImage(
 		m = [m[0], 0, 0, m[3], m[4], m[5]];
 	}
 	const axisAligned = m[1] === 0 && m[2] === 0;
+	if (hq && !axisAligned && !keepOrigin) {
+		m = snapOriginKeepCorners(spec);
+	}
 	// Native DrawImage's axis-aligned Bicubic path uses integer colour
 	// intermediates, and so does the plain Bicubic pass of a rotated
 	// high-quality draw (`plainRotated`). A directly requested rotated or
@@ -510,23 +541,10 @@ export function resampleImage(
 		const extentU = Math.hypot(m[0], m[1]) * spec.srcW;
 		const extentV = Math.hypot(m[2], m[3]) * spec.srcH;
 		const near = nearSourceExtent(extentU, spec.srcW) || nearSourceExtent(extentV, spec.srcH);
-		if (!spec.wrap) {
-			return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel, near);
-		} else if (near) {
-			kernel = kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear';
-			plainRotated = true;
-		} else {
-			farFade = true;
-			if (spec.halfPixelOffset) {
-				const lu = Math.hypot(m[0], m[1]);
-				const lv = Math.hypot(m[2], m[3]);
-				shiftX = (0.5 * m[0]) / lu + (0.5 * m[2]) / lv;
-				shiftY = (0.5 * m[1]) / lu + (0.5 * m[3]) / lv;
-			}
-		}
+		return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel, near);
 	}
 	const integerBicubic = kernel === 'bicubic' && (axisAligned || plainRotated);
-	if (hq && axisAligned && !spec.wrap && !premultSource) {
+	if (hq && axisAligned && !premultSource) {
 		const phased = resampleHqAxisAligned(rgba, width, height, spec, surface, m, premultOut);
 		if (phased !== undefined) {
 			return phased;
@@ -718,24 +736,92 @@ export function resampleImage(
 const HQ_PHASES = 128;
 
 /**
- * An axis-aligned HighQualityBilinear/HighQualityBicubic draw whose two axes
- * are each scaled by one or more, as GDI+ computes it (measured from native
- * impulse and noise draws, `hq-axis`, `hq-axis-noise`, `hq-arithmetic`):
+ * The 16.16 step per destination pixel of an axis-aligned high-quality draw scaled by `scale`: the rounded
+ * reciprocal. A reciprocal within about 0.004 below a half (1.37 is 47836.496) rounds either way in native
+ * draws, and which way depends on the draw's height (47836 at heights 8 to 64, 47837 at 336): a float32
+ * rounding of the matrix inverse that the width alone does not fix. The plain rounding is kept.
+ */
+function hqStep(scale: number): number {
+	return Math.round(65536 / scale);
+}
+
+/** The tent's running integral at `u = j / 128` kernel units, over 65536 (`512 j - 2 j^2` on `|j| < 128`). */
+function hqTentCdf(j: number): number {
+	if (j <= -128) {
+		return -32768;
+	}
+	if (j >= 128) {
+		return 32768;
+	}
+	return j < 0 ? -(512 * -j - 2 * j * j) : 512 * j - 2 * j * j;
+}
+
+interface HqTaps {
+	first: number;
+	weights: number[];
+}
+
+/**
+ * The taps of a reduced axis (scale below one) of a high-quality draw, from the native noise captures. Each
+ * texel edge `e` (relative to the source origin) lands in destination space at `s' (e - P)`, where `s' = 65536 /
+ * step` and `P = (k step + offset) / 65536` is the position of destination pixel `k`; that offset, in 1/128
+ * destination pixel, is rounded down, and a texel's weight is the difference of the kernel's running integral at
+ * its two edges' rounded offsets: the cubic's measured half-grid table ({@link hqCubicCdf}), the tent's exact
+ * integral at whole grid points. All 9,012 noise values of the sweep from 0.9x to 0.25x match, except two tent
+ * values at 0.4x where an offset falls exactly on the end of the kernel.
+ *
+ * `originBins` is the source origin in 1/128 texel (a whole number).
+ */
+function hqReductionTaps(cubic: boolean, scale: number, step: number, position: (k: number) => number, origin: number, from: number, to: number): HqTaps[] {
+	const taps: HqTaps[] = [];
+	const s = Math.fround(scale);
+	const radius = (cubic ? 2 : 1) * (step / 65536) + 1;
+	for (let k = from; k <= to; k++) {
+		const p = position(k);
+		const centre = origin + p / 65536;
+		const first = Math.ceil(centre - radius);
+		const last = Math.floor(centre + radius);
+		const weights: number[] = [];
+		let prev = Number.NaN;
+		for (let t = first; t <= last + 1; t++) {
+			// 128 u at texel edge t - 1/2, u = s (e - origin - P) in destination pixels.
+			const q = 128 * s * (t - 0.5 - origin - p / 65536);
+			const edge = Math.floor(q);
+			const cdf = cubic ? hqCubicCdf(edge) : hqTentCdf(edge);
+			if (t > first) {
+				weights.push((cdf - prev) / 65536);
+			}
+			prev = cdf;
+		}
+		taps.push({ first, weights });
+	}
+	return taps;
+}
+
+/**
+ * An axis-aligned HighQualityBilinear/HighQualityBicubic draw, as GDI+ computes
+ * it (measured from native impulse and noise draws: `hq-axis`, `hq-axis-noise`,
+ * `hq-arithmetic`, `hq-independent`, `hq-cubic-weights`, `hq-phases`):
  *
  * - Each axis steps through the source in 16.16 fixed point, `S = round(65536 /
  *   scale)` per destination pixel, from the first covered pixel; the position is
  *   `P = k S + offset`, where the offset is the distance from the destination
- *   edge to the first covered pixel (`1 - d` of the fraction `d` along y) and
- *   mirrored along x (`d`, the long-known x mirror), zero for an integral edge.
- * - The weights depend only on the phase `floor((P - 1) / 512)`, 1/128 of a
- *   texel: the kernel's integral over each texel box at the phase's centre
- *   `(phase + 1/2) / 128` for the cubic, at `(phase + 1) / 128` for the tent.
+ *   edge to the first covered pixel (`1 - d` of the fraction `d` along x, `d` along
+ *   y; `d` follows the unsnapped edge), zero for an integral edge.
+ * - An upscaled axis (scale of one or more): the weights depend only on the
+ *   phase `floor((P - 1) / 512)`, 1/128 of a texel: for the cubic, the measured
+ *   integer table of {@link hqCubicBinWeights}; for the tent, the kernel's
+ *   integral at `(phase + 1) / 128`.
+ * - A reduced axis: see {@link hqReductionTaps}.
+ * - A mirrored x axis (negative scale) steps backwards from the far end, `P =
+ *   (covered pixels + d - k) S`, plus a few units that grow with the source width,
+ *   through the same rules in the source's own direction.
  * - The horizontal pass runs first and is rounded to 8 bits (colours
  *   premultiplied, alpha limited to 255 and colours to alpha) before the
  *   vertical pass, which is rounded the same way.
  *
- * Returns `undefined` when the draw is not of this kind (a reduction on
- * either axis, a mirror, or a complete unit copy): the caller keeps its
+ * Returns `undefined` when the draw is not of this kind (a mirrored unit axis, a
+ * complete unit copy, a half-pixel offset under a mirror): the caller keeps its
  * general path. A tap outside the bitmap is transparent, one inside it but
  * outside the source rectangle reads the bitmap.
  */
@@ -749,19 +835,29 @@ function resampleHqAxisAligned(
 	premultOut: boolean,
 ): ResampledBlock | null | undefined {
 	const kernel = spec.kernel;
-	const scaleU = m[0];
+	const mirrorU = m[0] < 0;
+	const scaleU = Math.abs(m[0]);
 	const scaleV = m[3];
-	if (!(scaleU >= 1 && scaleV >= 1) || spec.rightHalo) {
+	if (!(scaleU > 0 && scaleV > 0) || spec.rightHalo) {
 		return undefined;
 	}
 	const integral = (v: number): boolean => Math.abs(v - Math.round(v)) < 1e-9;
-	if (scaleU === 1 && scaleV === 1 && integral(m[4]) && integral(m[5])) {
+	if (scaleU === 1 && scaleV === 1 && !mirrorU && integral(m[4]) && integral(m[5])) {
+		return undefined;
+	}
+	// A mirrored unit axis keeps the general path (open: a DrawImage rectangle with a negative width copies it
+	// exactly, DrawImagePoints with reversed points filters it, and the converter cannot tell the two apart).
+	if (mirrorU && scaleU === 1) {
 		return undefined;
 	}
 	const shift = spec.halfPixelOffset ? 0.5 : 0;
-	const left = m[0] * spec.srcX + m[4] - shift;
+	const edge0 = m[0] * spec.srcX + m[4] - shift;
+	const edge1 = edge0 + m[0] * spec.srcW;
+	// A mirrored draw snaps its left edge (the far end of the source rectangle) to the 1/16 grid, not the right one.
+	const rawLeft = spec.toDevice[0] * (spec.srcX + spec.srcW) + spec.toDevice[4] - shift;
+	const left = mirrorU ? Math.round(rawLeft * SUBPIXEL_GRID) / SUBPIXEL_GRID : Math.min(edge0, edge1);
 	const top = m[3] * spec.srcY + m[5] - shift;
-	const right = left + m[0] * spec.srcW;
+	const right = mirrorU ? left + scaleU * spec.srcW : Math.max(edge0, edge1);
 	const bottom = top + m[3] * spec.srcH;
 	const xFirst = Math.ceil(left - COVERAGE_NUDGE_X);
 	const xLast = Math.ceil(right - COVERAGE_NUDGE_X) - 1;
@@ -781,11 +877,20 @@ function resampleHqAxisAligned(
 	}
 	const cubic = kernel === 'hq-bicubic';
 	const bin = cubic ? 0.5 : 1;
-	const stepU = Math.round(65536 / scaleU);
-	const stepV = Math.round(65536 / scaleV);
-	const dx = Math.max(0, xFirst - left);
+	const stepU = hqStep(scaleU);
+	const stepV = hqStep(scaleV);
+	const rawLeftEdge = mirrorU ? rawLeft : spec.toDevice[0] * spec.srcX + spec.toDevice[4] - shift;
+	// The phase offset follows the unsnapped edge (a 3.4 origin steps from 0.6, not from the snapped 0.625).
+	const dxRaw = xFirst - rawLeftEdge;
+	const dx = dxRaw < 1e-5 ? 0 : dxRaw;
 	const dy = Math.max(0, yFirst - top);
-	const offsetU = dx > 1e-9 ? Math.round((1 - dx) * stepU) : 0;
+	if (mirrorU && (spec.halfPixelOffset || !integral(spec.srcX) || !integral(spec.srcW))) {
+		return undefined;
+	}
+	// A mirrored draw reads the flipped source from its far end: pixel k sits at the flipped position
+	// (source width - one texel) - (covered pixels - k) steps.
+	const mirroredPixels = xLast - xFirst + 1 + dx;
+	const offsetU = !mirrorU && dx > 1e-9 ? Math.round((1 - dx) * stepU) : 0;
 	const offsetV = dy > 1e-9 ? Math.round(dy * stepV) : 0;
 	const filterU = axisFilter(kernel, scaleU, false);
 	const filterV = axisFilter(kernel, scaleV, false);
@@ -793,10 +898,31 @@ function resampleHqAxisAligned(
 		first: number;
 		weights: number[];
 	}
-	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number): Taps[] => {
+	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number, scale: number, mirror = false): Taps[] => {
 		const taps: Taps[] = [];
+		// A mirrored draw steps backwards from the far end: pixel k sits at (covered pixels + fraction - k) steps.
+		// The far end of the source is a few units off in native draws, growing with the source width (3 at 512 texels, 0 at 13)
+		// and absent for a power-of-two step (a scale of 2, 0.5 or 4 computes exactly).
+		const farBias = (step & (step - 1)) === 0 ? 0 : Math.round(spec.srcW / 170);
+		const position = (k: number): number => (mirror ? Math.round((mirroredPixels - k) * step) + farBias : k * step + offset);
+		// The measured integer table applies when the source origin is a whole number of phase bins.
+		const originBins = origin * HQ_PHASES;
+		const wholeBins = Math.abs(originBins - Math.round(originBins)) < 1e-6;
+		if (scale < 1 && wholeBins) {
+			return hqReductionTaps(cubic, scale, step, position, origin, from, to);
+		}
+		const tabulated = cubic && wholeBins;
 		for (let k = from; k <= to; k++) {
-			const phase = Math.floor((k * step + offset - 1) / (65536 / HQ_PHASES));
+			const phase = Math.floor((position(k) - 1) / (65536 / HQ_PHASES));
+			if (tabulated) {
+				const total = Math.round(originBins) + phase;
+				const bins = hqCubicBinWeights(((total % HQ_PHASES) + HQ_PHASES) % HQ_PHASES);
+				taps.push({
+					first: Math.floor(total / HQ_PHASES) + bins.first,
+					weights: bins.weights.map((w) => w / 65536),
+				});
+				continue;
+			}
 			const c = origin + (phase + bin) / HQ_PHASES;
 			const first = Math.ceil(c - filter.radius);
 			const last = Math.floor(c + filter.radius);
@@ -808,8 +934,8 @@ function resampleHqAxisAligned(
 		}
 		return taps;
 	};
-	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst);
-	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst);
+	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst, scaleU, mirrorU);
+	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst, scaleV);
 	// Source rows the vertical pass reads (rows outside the bitmap are transparent).
 	let rowMin = Infinity;
 	let rowMax = -Infinity;
@@ -817,13 +943,29 @@ function resampleHqAxisAligned(
 		rowMin = Math.min(rowMin, t.first);
 		rowMax = Math.max(rowMax, t.first + t.weights.length - 1);
 	}
-	rowMin = Math.max(0, rowMin);
-	rowMax = Math.min(height - 1, rowMax);
+	// Under an ImageAttributes WrapMode the taps beyond the bitmap wrap (or read the clamp colour) instead of fading out.
+	const c = spec.clampArgb ?? 0;
+	const edge: EdgeMode | null = spec.wrap
+		? {
+				wrap: spec.wrap,
+				clamp: [(c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff, (c >>> 24) & 0xff],
+				mirrorX: spec.wrap === 'tile-flip-x' || spec.wrap === 'tile-flip-xy',
+				mirrorY: spec.wrap === 'tile-flip-y' || spec.wrap === 'tile-flip-xy',
+			}
+		: null;
+	if (!edge) {
+		rowMin = Math.max(0, rowMin);
+		rowMax = Math.min(height - 1, rowMax);
+	}
 	const rows = Math.max(0, rowMax - rowMin + 1);
 	// Horizontal pass: premultiplied, rounded to 8 bits, limited to the alpha.
 	const inter = new Uint8Array(rows * w * 4);
 	for (let r = 0; r < rows; r++) {
-		const srcRow = (rowMin + r) * width;
+		const rowTexel = edge ? wrapTap(rowMin + r, 0, height, edge.mirrorY, edge) : rowMin + r;
+		if (rowTexel === OUTSIDE_TRANSPARENT) {
+			continue;
+		}
+		const srcRow = rowTexel * width;
 		for (let i = 0; i < w; i++) {
 			const t = colTaps[i];
 			let pr = 0;
@@ -831,19 +973,30 @@ function resampleHqAxisAligned(
 			let pb = 0;
 			let pa = 0;
 			for (let q = 0; q < t.weights.length; q++) {
-				const tx = t.first + q;
-				if (tx < 0 || tx >= width) {
+				let tx = t.first + q;
+				let px: ArrayLike<number> = rgba;
+				let o = 0;
+				if (edge) {
+					tx = wrapTap(tx, 0, width, edge.mirrorX, edge);
+					if (tx === OUTSIDE_TRANSPARENT) {
+						continue;
+					}
+				} else if (tx < 0 || tx >= width) {
 					continue;
 				}
-				const o = (srcRow + tx) * 4;
-				const a = rgba[o + 3];
+				if (tx === OUTSIDE_CLAMP || rowTexel === OUTSIDE_CLAMP) {
+					px = edge?.clamp ?? [0, 0, 0, 0];
+				} else {
+					o = (srcRow + tx) * 4;
+				}
+				const a = px[o + 3];
 				if (a === 0) {
 					continue;
 				}
 				const wq = t.weights[q];
-				pr += wq * Math.round((rgba[o] * a) / 255);
-				pg += wq * Math.round((rgba[o + 1] * a) / 255);
-				pb += wq * Math.round((rgba[o + 2] * a) / 255);
+				pr += wq * Math.round((px[o] * a) / 255);
+				pg += wq * Math.round((px[o + 1] * a) / 255);
+				pb += wq * Math.round((px[o + 2] * a) / 255);
 				pa += wq * a;
 			}
 			const alpha = Math.min(255, Math.max(0, Math.round(pa)));
@@ -903,7 +1056,9 @@ function resampleRotatedTwoStage(
 	// within a pixel of the source length, the source itself) in a transparent
 	// border wide enough for the plain kernels' taps, so the pixels the
 	// destination polygon covers just outside the image's own edge read their fade.
-	const pad = 2;
+	// Under a WrapMode the plain kernel's overhang wraps within the intermediate (or the source), so no transparent border
+	// (a Clamp to a transparent colour is no WrapMode at all: native draws it exactly as without attributes).
+	const pad = spec.wrap ? 0 : 2;
 	let img: Uint8ClampedArray;
 	let pw: number;
 	let ph: number;
@@ -945,7 +1100,7 @@ function resampleRotatedTwoStage(
 		const pre = resampleImage(rgba, width, height, {
 			srcX: spec.srcX, srcY: spec.srcY, srcW: spec.srcW, srcH: spec.srcH,
 			toDevice: [kx, 0, 0, ky, -spec.srcX * kx, -spec.srcY * ky],
-			kernel, halfPixelOffset: false,
+			kernel, halfPixelOffset: false, wrap: spec.wrap, clampArgb: spec.clampArgb,
 		}, { w: W, h: H }, { premultOut: true });
 		if (!pre) {
 			return null;
@@ -989,7 +1144,7 @@ function resampleRotatedTwoStage(
 	const block = resampleImage(img, pw, ph, {
 		srcX: 0, srcY: 0, srcW: pw, srcH: ph,
 		toDevice: [a, b, c, d, ex - a * pad - c * pad, ey - b * pad - d * pad],
-		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false,
+		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false, wrap: spec.wrap, clampArgb: spec.clampArgb,
 	}, surface, { plainRotated: true, keepOrigin: true, premultSource: true });
 	if (!block) {
 		return block;
