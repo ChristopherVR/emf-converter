@@ -478,6 +478,11 @@ export function resampleImage(
 		}
 		return resampleImage(grown, width + 1, height, { ...spec, rightHalo: undefined }, surface);
 	}
+	if (spec.wrap === 'clamp' && ((spec.clampArgb ?? 0) >>> 24) === 0 && (spec.kernel === 'hq-bicubic' || spec.kernel === 'hq-bilinear')) {
+		// WrapMode Clamp to a transparent colour draws exactly as no attributes do (native high-quality draws, all
+		// shapes: 0 pixels differ).
+		return resampleImage(rgba, width, height, { ...spec, wrap: undefined, clampArgb: undefined }, surface, options);
+	}
 	if (spec.kernel === 'nearest' && !spec.wrap) {
 		return resampleNearest(rgba, width, height, spec, surface);
 	}
@@ -511,23 +516,10 @@ export function resampleImage(
 		const extentU = Math.hypot(m[0], m[1]) * spec.srcW;
 		const extentV = Math.hypot(m[2], m[3]) * spec.srcH;
 		const near = nearSourceExtent(extentU, spec.srcW) || nearSourceExtent(extentV, spec.srcH);
-		if (!spec.wrap) {
-			return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel, near);
-		} else if (near) {
-			kernel = kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear';
-			plainRotated = true;
-		} else {
-			farFade = true;
-			if (spec.halfPixelOffset) {
-				const lu = Math.hypot(m[0], m[1]);
-				const lv = Math.hypot(m[2], m[3]);
-				shiftX = (0.5 * m[0]) / lu + (0.5 * m[2]) / lv;
-				shiftY = (0.5 * m[1]) / lu + (0.5 * m[3]) / lv;
-			}
-		}
+		return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel, near);
 	}
 	const integerBicubic = kernel === 'bicubic' && (axisAligned || plainRotated);
-	if (hq && axisAligned && !spec.wrap && !premultSource) {
+	if (hq && axisAligned && !premultSource) {
 		const phased = resampleHqAxisAligned(rgba, width, height, spec, surface, m, premultOut);
 		if (phased !== undefined) {
 			return phased;
@@ -926,13 +918,29 @@ function resampleHqAxisAligned(
 		rowMin = Math.min(rowMin, t.first);
 		rowMax = Math.max(rowMax, t.first + t.weights.length - 1);
 	}
-	rowMin = Math.max(0, rowMin);
-	rowMax = Math.min(height - 1, rowMax);
+	// Under an ImageAttributes WrapMode the taps beyond the bitmap wrap (or read the clamp colour) instead of fading out.
+	const c = spec.clampArgb ?? 0;
+	const edge: EdgeMode | null = spec.wrap
+		? {
+				wrap: spec.wrap,
+				clamp: [(c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff, (c >>> 24) & 0xff],
+				mirrorX: spec.wrap === 'tile-flip-x' || spec.wrap === 'tile-flip-xy',
+				mirrorY: spec.wrap === 'tile-flip-y' || spec.wrap === 'tile-flip-xy',
+			}
+		: null;
+	if (!edge) {
+		rowMin = Math.max(0, rowMin);
+		rowMax = Math.min(height - 1, rowMax);
+	}
 	const rows = Math.max(0, rowMax - rowMin + 1);
 	// Horizontal pass: premultiplied, rounded to 8 bits, limited to the alpha.
 	const inter = new Uint8Array(rows * w * 4);
 	for (let r = 0; r < rows; r++) {
-		const srcRow = (rowMin + r) * width;
+		const rowTexel = edge ? wrapTap(rowMin + r, 0, height, edge.mirrorY, edge) : rowMin + r;
+		if (rowTexel === OUTSIDE_TRANSPARENT) {
+			continue;
+		}
+		const srcRow = rowTexel * width;
 		for (let i = 0; i < w; i++) {
 			const t = colTaps[i];
 			let pr = 0;
@@ -940,19 +948,30 @@ function resampleHqAxisAligned(
 			let pb = 0;
 			let pa = 0;
 			for (let q = 0; q < t.weights.length; q++) {
-				const tx = t.first + q;
-				if (tx < 0 || tx >= width) {
+				let tx = t.first + q;
+				let px: ArrayLike<number> = rgba;
+				let o = 0;
+				if (edge) {
+					tx = wrapTap(tx, 0, width, edge.mirrorX, edge);
+					if (tx === OUTSIDE_TRANSPARENT) {
+						continue;
+					}
+				} else if (tx < 0 || tx >= width) {
 					continue;
 				}
-				const o = (srcRow + tx) * 4;
-				const a = rgba[o + 3];
+				if (tx === OUTSIDE_CLAMP || rowTexel === OUTSIDE_CLAMP) {
+					px = edge?.clamp ?? [0, 0, 0, 0];
+				} else {
+					o = (srcRow + tx) * 4;
+				}
+				const a = px[o + 3];
 				if (a === 0) {
 					continue;
 				}
 				const wq = t.weights[q];
-				pr += wq * Math.round((rgba[o] * a) / 255);
-				pg += wq * Math.round((rgba[o + 1] * a) / 255);
-				pb += wq * Math.round((rgba[o + 2] * a) / 255);
+				pr += wq * Math.round((px[o] * a) / 255);
+				pg += wq * Math.round((px[o + 1] * a) / 255);
+				pb += wq * Math.round((px[o + 2] * a) / 255);
 				pa += wq * a;
 			}
 			const alpha = Math.min(255, Math.max(0, Math.round(pa)));
@@ -1012,7 +1031,9 @@ function resampleRotatedTwoStage(
 	// within a pixel of the source length, the source itself) in a transparent
 	// border wide enough for the plain kernels' taps, so the pixels the
 	// destination polygon covers just outside the image's own edge read their fade.
-	const pad = 2;
+	// Under a WrapMode the plain kernel's overhang wraps within the intermediate (or the source), so no transparent border
+	// (a Clamp to a transparent colour is no WrapMode at all: native draws it exactly as without attributes).
+	const pad = spec.wrap ? 0 : 2;
 	let img: Uint8ClampedArray;
 	let pw: number;
 	let ph: number;
@@ -1054,7 +1075,7 @@ function resampleRotatedTwoStage(
 		const pre = resampleImage(rgba, width, height, {
 			srcX: spec.srcX, srcY: spec.srcY, srcW: spec.srcW, srcH: spec.srcH,
 			toDevice: [kx, 0, 0, ky, -spec.srcX * kx, -spec.srcY * ky],
-			kernel, halfPixelOffset: false,
+			kernel, halfPixelOffset: false, wrap: spec.wrap, clampArgb: spec.clampArgb,
 		}, { w: W, h: H }, { premultOut: true });
 		if (!pre) {
 			return null;
@@ -1098,7 +1119,7 @@ function resampleRotatedTwoStage(
 	const block = resampleImage(img, pw, ph, {
 		srcX: 0, srcY: 0, srcW: pw, srcH: ph,
 		toDevice: [a, b, c, d, ex - a * pad - c * pad, ey - b * pad - d * pad],
-		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false,
+		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false, wrap: spec.wrap, clampArgb: spec.clampArgb,
 	}, surface, { plainRotated: true, keepOrigin: true, premultSource: true });
 	if (!block) {
 		return block;

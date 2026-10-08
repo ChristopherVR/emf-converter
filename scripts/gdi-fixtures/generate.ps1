@@ -233,6 +233,12 @@ if ($Which -eq 'hq-phases') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'hq-wrap') {
+    Add-Type -Path (Join-Path $here 'HighQualityWrapProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityWrapProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'hq-reductions') {
     Add-Type -Path (Join-Path $here 'HighQualityReductionProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityReductionProbe]::Run($outDir)
