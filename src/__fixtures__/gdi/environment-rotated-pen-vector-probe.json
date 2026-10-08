@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T09:53:26.7030979Z",
+    "capturedAt":  "2026-10-08T10:18:07.3117785Z",
     "groups":  "rotated-pen-vector-probe",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -3386,6 +3386,10 @@
                   }
               ],
     "references":  [
+                       {
+                           "name":  "rotated-pen-miters.json.gz",
+                           "sha256":  "34d9086eb506439eed58fe6a3489198ed893c120ee9e9e49a5aeab0fa67b1576"
+                       },
                        {
                            "name":  "rotated-pen-nibs.json.gz",
                            "sha256":  "659456702074486a8fa602890fc9a2ed936e619a9235abd6d7418787f7e17cbb"

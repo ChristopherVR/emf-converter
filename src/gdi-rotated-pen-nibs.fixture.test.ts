@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { expect, it } from 'vitest';
 import { fixturePath } from './__fixtures__/gdi-parity-harness';
-import { GdiRasterPath } from './gdi-raster';
+import { GdiRasterPath, fillPolygonSpans, type SpanList } from './gdi-raster';
 import { penPolygonMatrix, widenPath } from './gdi-raster-widen';
 
 type Matrix = [number, number, number, number];
@@ -84,4 +84,45 @@ it('matches every flat, round and square capped segment of the one-degree sweeps
 	}
 	const all = Object.values(exact).reduce((s, v) => s + v, 0);
 	expect({ all, total, keys: Object.keys(exact).length }).toEqual({ all: 6480, total: 6480, keys: 9 });
+});
+
+function pixels(spans: SpanList): Set<number> {
+	const set = new Set<number>();
+	for (let k = 0; k < spans.length * 3; k += 3) for (let x = spans.data[k + 1]; x < spans.data[k + 2]; x++) set.add(spans.data[k] * 4096 + x);
+	return set;
+}
+
+it('decides the miter limit of 1,920 native corners under rotations (and one with unequal scales) in logical units: all 1,920 pixel-identical, 1,865 vertex for vertex (137 and 7,112 pixels wrong with the device-pixel test)', () => {
+	const matrices: Matrix[] = ([[0.8660254, 0.5, -0.5, 0.8660254], [0.7071068, 0.7071068, -0.7071068, 0.7071068], [0.9659258, -0.258819, 0.258819, 0.9659258], [1.7320508, 1, -0.5, 0.8660254]] as const).map((r) => r.map(Math.fround) as Matrix);
+	const cases = read('rotated-pen-miters.json.gz');
+	let exactVertices = 0;
+	let pixelDiff = 0;
+	let mitred = 0;
+	for (const c of cases) {
+		const m = matrices[c.m];
+		const path = new GdiRasterPath();
+		for (let i = 0; i < 3; i++) {
+			const x = c.p[2 * i];
+			const y = c.p[2 * i + 1];
+			const dx = Math.round((m[0] * x + m[2] * y) * 16);
+			const dy = Math.round((m[1] * x + m[3] * y) * 16);
+			if (i === 0) path.moveTo(dx, dy);
+			else path.lineTo(dx, dy);
+		}
+		const got = widenPath(path, { width: c.w * 16, matrix: m, deviceNib: true, cap: 'flat', join: 'miter', miterLimit: c.limit, dashes: null });
+		const native: number[][] = [];
+		for (let i = 0; i < c.points.length; i += 3) {
+			if (c.points[i + 2] === 6) native.push([]);
+			native[native.length - 1].push(c.points[i], c.points[i + 1]);
+		}
+		if (JSON.stringify(got) === JSON.stringify(native)) exactVertices++;
+		// The other 55 (corners of 160 to 175 degrees under three matrices) repeat the inner vertex once in native, a zero-area spike.
+		const a = pixels(fillPolygonSpans(got, true));
+		const b = pixels(fillPolygonSpans(native, true));
+		for (const v of a) if (!b.has(v)) pixelDiff++;
+		for (const v of b) if (!a.has(v)) pixelDiff++;
+		if (native[0].length === 12) mitred++;
+	}
+	expect({ total: cases.length, exactVertices, pixelDiff }).toEqual({ total: 1920, exactVertices: 1865, pixelDiff: 0 });
+	expect(mitred).toBeGreaterThan(0);
 });

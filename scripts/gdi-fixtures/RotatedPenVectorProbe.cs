@@ -24,6 +24,7 @@ public static class RotatedPenVectorProbe
     [DllImport("gdi32.dll")] static extern bool Polyline(IntPtr dc, Point[] points, int count);
     [DllImport("gdi32.dll")] static extern bool WidenPath(IntPtr dc);
     [DllImport("gdi32.dll")] static extern int GetPath(IntPtr dc, [Out] Point[] points, [Out] byte[] types, int count);
+    [DllImport("gdi32.dll")] static extern bool SetMiterLimit(IntPtr dc, float limit, IntPtr old);
 
     // a, b, c, d of the world transform (x' = a x + c y, y' = b x + d y).
     static readonly float[] Matrices = {
@@ -195,6 +196,58 @@ public static class RotatedPenVectorProbe
             Directory.CreateDirectory(dir);
             var bytes = Encoding.UTF8.GetBytes(json.Append(']').ToString());
             using (var file = File.Create(Path.Combine(dir, "rotated-pen-nibs.json.gz")))
+            using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+                zip.Write(bytes, 0, bytes.Length);
+        } finally { DeleteDC(dc); }
+    }
+
+    // Miter joins under matrices (round 6): an open corner of every 5 degrees from 20 to 175 (arms of 40 logical units), flat caps,
+    // miter limits 1.2 to 5, widths 6, 10 and 16, under three rotations and a rotation with unequal scales. Which corners GDI
+    // mitres and which it bevels tells how the miter limit is tested. Writes rotated-pen-miters.json.gz.
+    public static void RunMiters(string dir)
+    {
+        IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
+        if (dc == IntPtr.Zero || SetGraphicsMode(dc, 2) == 0) throw new Exception("CreateCompatibleDC/SetGraphicsMode failed");
+        var json = new StringBuilder("[");
+        float[] mats = { .8660254f, .5f, -.5f, .8660254f, .7071068f, .7071068f, -.7071068f, .7071068f, .9659258f, -.258819f, .258819f, .9659258f, 1.7320508f, 1f, -.5f, .8660254f };
+        try {
+            for (int m = 0; m < mats.Length / 4; m++)
+            foreach (int width in new[] { 6, 10, 16 })
+            foreach (float limit in new[] { 1.2f, 1.5f, 2f, 3f, 5f }) {
+                var matrix = new Matrix { a = mats[m * 4], b = mats[m * 4 + 1], c = mats[m * 4 + 2], d = mats[m * 4 + 3] };
+                if (!SetWorldTransform(dc, ref matrix)) throw new Exception("SetWorldTransform failed");
+                SetMiterLimit(dc, limit, IntPtr.Zero);
+                var brush = new Brush();
+                IntPtr pen = ExtCreatePen((uint)(0x10000 | 0x200 | 0x2000), (uint)width, ref brush, 0, IntPtr.Zero);
+                if (pen == IntPtr.Zero) throw new Exception("ExtCreatePen failed");
+                IntPtr old = SelectObject(dc, pen);
+                try {
+                    for (int angle = 20; angle <= 175; angle += 5) {
+                        double turn = (180 - angle) * Math.PI / 180;
+                        int x1 = 100 + 40, y1 = 100;
+                        int x2 = x1 + (int)Math.Round(40 * Math.Cos(turn)), y2 = y1 + (int)Math.Round(40 * Math.Sin(turn));
+                        var p = new[] { new Point { x = 100, y = 100 }, new Point { x = x1, y = y1 }, new Point { x = x2, y = y2 } };
+                        if (!BeginPath(dc) || !Polyline(dc, p, 3) || !EndPath(dc) || !WidenPath(dc)) throw new Exception("WidenPath failed");
+                        var read = new Matrix { a = 1f / 16, d = 1f / 16 };
+                        SetWorldTransform(dc, ref read);
+                        int n = GetPath(dc, null, null, 0);
+                        var points = new Point[n]; var types = new byte[n];
+                        GetPath(dc, points, types, n);
+                        SetWorldTransform(dc, ref matrix);
+                        if (json.Length > 1) json.Append(',');
+                        json.Append("{\"m\":").Append(m).Append(",\"w\":").Append(width).Append(",\"limit\":").Append(limit.ToString(CultureInfo.InvariantCulture)).Append(",\"angle\":").Append(angle)
+                            .Append(",\"p\":[").Append(100).Append(',').Append(100).Append(',').Append(x1).Append(',').Append(y1).Append(',').Append(x2).Append(',').Append(y2).Append("],\"points\":[");
+                        for (int i = 0; i < n; i++) {
+                            if (i > 0) json.Append(',');
+                            json.Append(points[i].x).Append(',').Append(points[i].y).Append(',').Append(types[i]);
+                        }
+                        json.Append("]}");
+                    }
+                } finally { SelectObject(dc, old); DeleteObject(pen); }
+            }
+            Directory.CreateDirectory(dir);
+            var bytes = Encoding.UTF8.GetBytes(json.Append(']').ToString());
+            using (var file = File.Create(Path.Combine(dir, "rotated-pen-miters.json.gz")))
             using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
                 zip.Write(bytes, 0, bytes.Length);
         } finally { DeleteDC(dc); }

@@ -734,7 +734,7 @@ class Outliner {
 					}
 				}
 			} else if (join === 'miter') {
-				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit, side, this.opts.height);
+				const m = miterPoint(sa, [a.dx, a.dy], sb, [b.dx, b.dy], width, miterLimit, side, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined);
 				if (m) {
 					this.push(p, m);
 				}
@@ -1123,7 +1123,7 @@ export function widenPath(path: GdiRasterPath, opts: WidenOptions): number[][] {
  * `sa + t * da` and `sb + u * db` meet, or `null` when the miter would be
  * longer than `limit` half widths (GDI then bevels).
  */
-function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number, side: 'L' | 'R', height = width): Pt | null {
+function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number, side: 'L' | 'R', height = width, matrix?: Matrix): Pt | null {
 	const den = da[0] * db[1] - da[1] * db[0];
 	if (den === 0) {
 		return null;
@@ -1139,6 +1139,16 @@ function miterPoint(sa: Pt, da: Pt, sb: Pt, db: Pt, width: number, limit: number
 	// components upward. The right side tests the negated vector, which
 	// rounds its components downward. Emitted vertices retain FIX precision.
 	const pixel = side === 'L' ? Math.ceil : Math.floor;
+	if (matrix) {
+		// Under a general matrix the tip's offset is converted back to logical units and rounded to the nearest whole unit on both
+		// sides, and the logical width is the reference (1,920 native corners under rotations and a rotation with unequal scales
+		// and all 288 of the join sheet are decided exactly; the device-pixel test above, ceil on the left and floor on the right,
+		// decided 137 and 18 wrongly).
+		const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+		const lx = (matrix[3] * x - matrix[2] * y) / det;
+		const ly = (-matrix[1] * x + matrix[0] * y) / det;
+		return Math.hypot(Math.round(lx / 16), Math.round(ly / 16)) > (limit * width) / 32 ? null : [x, y];
+	}
 	const yDistance = height === width ? pixel(y / 16) : pixel(y / 16) * width / height;
 	if (Math.hypot(pixel(x / 16), yDistance) > (limit * width) / 32) {
 		return null;

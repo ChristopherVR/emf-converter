@@ -739,6 +739,7 @@ if ($Which -eq 'rotated-pen-vector-probe') {
     [RotatedPenVectorProbe]::Run($outDir)
     [RotatedPenVectorProbe]::RunSweep($outDir)
     [RotatedPenVectorProbe]::RunNibs($outDir)
+    [RotatedPenVectorProbe]::RunMiters($outDir)
     Complete-Fixtures
     return
 }

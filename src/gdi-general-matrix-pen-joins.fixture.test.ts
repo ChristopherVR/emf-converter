@@ -44,16 +44,7 @@ const SOURCES = [
 	[[10, 10], [60, 20], [20, 50]],
 ];
 /** Exact outlines and differing pixels per matrix, summed over its 36 outlines. */
-const EXPECTED: Record<number, { exact: number; pixels: number }> = {
-	0: { exact: 34, pixels: 26 },
-	1: { exact: 35, pixels: 16 },
-	2: { exact: 30, pixels: 103 },
-	3: { exact: 36, pixels: 0 },
-	4: { exact: 36, pixels: 0 },
-	5: { exact: 33, pixels: 55 },
-	6: { exact: 36, pixels: 0 },
-	7: { exact: 30, pixels: 124 },
-};
+const EXPECTED: Record<number, { exact: number; pixels: number }> = Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((m) => [m, { exact: 36, pixels: 0 }]));
 
 function pixels(spans: SpanList): Set<number> {
 	const set = new Set<number>();
@@ -69,7 +60,7 @@ function nativePolygons(points: number[]): number[][] {
 	return out;
 }
 
-it('widens bevel and miter joins under a general matrix in device space: 270 of 288 native outlines exact, 324 differing pixels (221 and 2,055 before round 6)', () => {
+it('widens bevel and miter joins under a general matrix in device space: all 288 native outlines exact (270 and 324 differing pixels with the nib alone, 221 and 2,055 before round 6)', () => {
 	expect(cases).toHaveLength(288);
 	const got: Record<number, { exact: number; pixels: number }> = {};
 	for (const c of cases) {
