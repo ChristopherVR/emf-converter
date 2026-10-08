@@ -35,7 +35,7 @@
 #   bicubic-arithmetic, bicubic-independent, wide-pen-axis-probe,
 #   wide-pen-axis-directions, dashed-pen-axis-probe, general-matrix-pen-probe,
 #   nib-matrix-pen-probe, rotated-pen-vector-probe, bezier-flatten,
-#   illuminant-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
+#   illuminant-cubes, chroma-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
 #   image-effect-narrow-blur, image-effect-hue, image-effect-tint,
@@ -78,6 +78,13 @@ function Complete-Fixtures {
     }
     $name = 'environment-' + ($Which -replace '[^a-zA-Z0-9-]', '-') + '.json'
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $Directory $name) -Groups $Which -Files $files
+}
+if ($Which -eq 'chroma-cubes') {
+    if (!$TablesDir) { throw 'Pass a temporary output directory for the cubes' }
+    Add-Type -Path (Join-Path $here 'HalftoneColorProbe.cs')
+    $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $TablesDir)).Path
+    [HalftoneColorProbe]::ChromaCubes($destination)
+    return
 }
 if ($Which -eq 'illuminant-cubes') {
     if (!$TablesDir) { throw 'Pass a temporary output directory for the cubes' }

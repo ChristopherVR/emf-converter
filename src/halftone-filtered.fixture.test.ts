@@ -16,16 +16,10 @@ interface Capture {
 const capture: Capture = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/halftone-filtered.json.gz', import.meta.url))).toString());
 const cases = filteredCases();
 
-// Residuals of the dithered (combined colour adjustment) cases: [pixels, channel values, largest error].
-// Every other case is pinned exact. The remainder is the colour-adjustment residual the replicated branch
-// has as well (the chroma stage, at most two levels) plus the mirrored vertical phase.
-const dithered: Record<string, [number, number, number]> = {
-	'dithered-2x-m3-f0': [35, 35, 2], 'dithered-2x-m3-f4': [35, 35, 2], 'dithered-2x-m3-f8': [53, 53, 2],
-	'dithered-3x-m3-f0': [86, 86, 2], 'dithered-3x-m3-f8': [112, 112, 2],
-	'dithered-2x-m4-f0': [35, 35, 2], 'dithered-2x-m4-f8': [52, 52, 2],
-	'dithered-7x-m3-f0': [573, 573, 2],
-	'dithered-160x100-m3-f0': [69, 69, 2], 'dithered-160x100-m3-f8': [87, 87, 2],
-};
+// The dithered (combined colour adjustment) cases are pinned exact as well: the 0.1% to 0.4% residual they kept (50 to 573
+// values of 7,680 to 141,120) was the chroma stage's tie-breaking (`emf-gdi-chroma-tie-data.ts`, 201 of the 98,304 channel
+// values of the colorfulness +40 cube) plus the one-level residual of the outermost destination rows
+// (`ditherFilteredSource`: the edge rows are replicated twice and dithered).
 
 function run(c: (typeof cases)[number]): { pixels: number; values: number; maximum: number } {
 	const rgb = filteredSource(c.kind, c.w, c.h);
@@ -95,11 +89,7 @@ describe('native HALFTONE filtered enlargements', () => {
 
 	it('dithers and maps the source (and its extension rows) before filtering under a combined colour adjustment', () => {
 		for (const c of cases.filter(x => x.group === 'dithered')) {
-			const { pixels, values, maximum } = run(c);
-			const [p, v, m] = dithered[c.id];
-			expect(pixels, c.id).toBeLessThanOrEqual(p);
-			expect(values, c.id).toBeLessThanOrEqual(v);
-			expect(maximum, c.id).toBeLessThanOrEqual(m);
+			expect(run(c), c.id).toEqual({ pixels: 0, values: 0, maximum: 0 });
 		}
 	});
 
