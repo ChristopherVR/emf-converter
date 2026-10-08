@@ -1067,7 +1067,9 @@ export function arcBeziers(
 	let a1 = angle(xe, ye);
 	// The two radials less than 3 degrees apart as angles in [0, 2 pi) (not across the 0 axis, and not the same radial
 	// twice, which is a whole ellipse) make a small arc, whichever way it runs.
-	const small = a1 !== a0 && Math.abs(a1 - a0) <= SMALL_SWEEP;
+	// A clockwise arc is the y mirror image of a counter-clockwise one: its radials are compared as mirrored angles (a radial on the 0 axis stays at 0).
+	const mirrored = (a: number): number => (clockwise ? (2 * Math.PI - a) % (2 * Math.PI) : a);
+	const small = a1 !== a0 && Math.abs(mirrored(a1) - mirrored(a0)) <= SMALL_SWEEP;
 	const s = clockwise ? -1 : 1;
 	if (s > 0) {
 		while (a1 <= a0) a1 += 2 * Math.PI;
