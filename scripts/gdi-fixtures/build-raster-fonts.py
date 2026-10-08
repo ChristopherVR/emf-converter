@@ -9,6 +9,7 @@ The font is a generated test input, CC0 1.0.
 """
 import math
 import random
+from array import array
 from pathlib import Path
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
@@ -40,9 +41,12 @@ def polygons():
     return out
 
 
-def build(directory, scan_type=None):
+def build(directory, scan_type=None, variant=None):
     """The polygon font. With `scan_type` the font also carries a `prep` program that turns dropout control on
-    at every size (SCANCTRL 0x1ff) and selects that SCANTYPE, the way stock fonts do."""
+    at every size (SCANCTRL 0x1ff) and selects that SCANTYPE, the way stock fonts do. A `variant` adds the least
+    hinting machinery that could change how the rasterizer treats a font that never runs SCANCTRL: declared
+    stack and zone sizes ('stack'), a one-instruction program in every glyph ('glyphprog'), a `cvt ` table
+    ('cvt') or a `prep` that does nothing ('prep')."""
     fb = FontBuilder(2048, isTTF=True)
     order = ['.notdef'] + ['p%d' % i for i in range(COUNT)]
     fb.setupGlyphOrder(order)
@@ -56,12 +60,17 @@ def build(directory, scan_type=None):
         for p in pts[1:]:
             pen.lineTo(p)
         pen.closePath()
-        glyphs[name] = pen.glyph()
+        glyph = pen.glyph()
+        if variant == 'glyphprog':
+            program = Program()
+            program.fromBytecode([0x00])  # SVTCA[y]
+            glyph.program = program
+        glyphs[name] = glyph
         metrics[name] = (2048, min(p[0] for p in pts))
     fb.setupGlyf(glyphs)
     fb.setupHorizontalMetrics(metrics)
     fb.setupHorizontalHeader(ascent=1600, descent=-448)
-    family = 'Parity Raster Polygons' + ('' if scan_type is None else ' ST%d' % scan_type)
+    family = 'Parity Raster Polygons' + ('' if scan_type is None else ' ST%d' % scan_type) + ('' if variant is None else ' V' + variant)
     fb.setupNameTable({'familyName': family, 'styleName': 'Regular',
                        'uniqueFontIdentifier': family + ' 1', 'fullName': family,
                        'psName': family.replace(' ', ''), 'version': 'Version 1.0',
@@ -76,8 +85,25 @@ def build(directory, scan_type=None):
         prep.program.fromBytecode([0xB8, 0x01, 0xFF, 0x85, 0xB0, scan_type, 0x8D])
         fb.font['prep'] = prep
         fb.font['maxp'].maxStackElements = 8
+    if variant == 'stack':
+        fb.font['maxp'].maxStackElements = 16
+        fb.font['maxp'].maxZones = 2
+    if variant == 'glyphprog':
+        fb.font['maxp'].maxZones = 2
+        fb.font['maxp'].maxStackElements = 8
+    if variant == 'cvt':
+        cvt = newTable('cvt ')
+        cvt.values = array('h', [52])
+        fb.font['cvt '] = cvt
+    if variant == 'prep':
+        prep = newTable('prep')
+        prep.program = Program()
+        prep.program.fromBytecode([0xB0, 0x00, 0x21])  # PUSHB[0] 0; POP
+        fb.font['prep'] = prep
+        fb.font['maxp'].maxStackElements = 8
     fb.font['head'].created = fb.font['head'].modified = 3500000000
-    fb.save(directory / ('raster-polygons.ttf' if scan_type is None else 'raster-polygons-st%d.ttf' % scan_type))
+    name = 'raster-polygons' + ('' if scan_type is None else '-st%d' % scan_type) + ('' if variant is None else '-' + variant)
+    fb.save(directory / (name + '.ttf'))
 
 
 def bar_shapes():
@@ -132,4 +158,6 @@ if __name__ == '__main__':
     build(destination)
     for scan_type in (0, 1, 4, 5):
         build(destination, scan_type)
+    for variant in ('stack', 'glyphprog', 'cvt', 'prep'):
+        build(destination, None, variant)
     build_bars(destination)

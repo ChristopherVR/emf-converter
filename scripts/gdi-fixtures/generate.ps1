@@ -138,6 +138,14 @@ if ($Which -eq 'text-raster-mono') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'text-raster-variants') {
+    Add-Type -Path (Join-Path $here 'RasterMonoProbe.cs')
+    [RasterMonoProbe]::Variants($outDir)
+    Add-Type -Path (Join-Path $here 'RasterPolygonProbe.cs') -ReferencedAssemblies System.Drawing
+    [RasterPolygonProbe]::Variants($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'text-raster-bars') {
     Add-Type -Path (Join-Path $here 'RasterPolygonProbe.cs') -ReferencedAssemblies System.Drawing
     [RasterPolygonProbe]::Bars($outDir)

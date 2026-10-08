@@ -45,6 +45,23 @@ public static class RasterMonoProbe
         }
     }
 
+    /// <summary>GDI monochrome and GGO_GRAY4 bitmaps of the polygon fonts that add one piece of hinting machinery
+    /// each (stack sizes, a glyph program, a cvt table, an empty prep) but never run SCANCTRL.</summary>
+    public static void Variants(string dir)
+    {
+        using (var file = File.Create(Path.Combine(dir, "text-raster-variants.json.gz")))
+        using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+        using (var writer = new StreamWriter(zip, new UTF8Encoding(false)))
+        {
+            writer.Write("[");
+            bool first = true;
+            int[] ppems = { 8, 12, 16, 20, 24, 28, 32, 33, 36 };
+            foreach (string variant in new[] { "stack", "glyphprog", "cvt", "prep" })
+                first = Capture(writer, first, dir, "raster-polygons-" + variant + ".ttf", "Parity Raster Polygons V" + variant, 256, variant, ppems, ppems);
+            writer.Write("]");
+        }
+    }
+
     static bool Capture(StreamWriter writer, bool first, string dir, string fontFile, string family, int count, string tag, int[] monoPpems, int[] grayPpems)
     {
         string path = Path.Combine(dir, fontFile);

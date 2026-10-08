@@ -40,6 +40,14 @@ public static class RasterPolygonProbe
             Capture(dir, "raster-polygons-st" + st + ".ttf", "Parity Raster Polygons ST" + st, 256, ppems, "text-raster-polygons-st" + st + ".json.gz", new[] { 4 });
     }
 
+    /// <summary>The polygon fonts that add one piece of hinting machinery each (see build-raster-fonts.py).</summary>
+    public static void Variants(string dir)
+    {
+        int[] ppems = { 8, 12, 16, 20, 24, 28, 32, 33, 36 };
+        foreach (string variant in new[] { "stack", "glyphprog", "cvt", "prep" })
+            Capture(dir, "raster-polygons-" + variant + ".ttf", "Parity Raster Polygons V" + variant, 256, ppems, "text-raster-polygons-" + variant + ".json.gz", new[] { 3, 4 });
+    }
+
     public static void Bars(string dir)
     {
         Capture(dir, "raster-bars.ttf", "Parity Raster Bars", 272, new[] { 32 }, "text-raster-bars.json.gz", new[] { 3, 4 });

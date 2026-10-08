@@ -44,8 +44,8 @@
 
 import { parseRasterFontFile, type RasterFace } from './fnt-font';
 import { parseFontFile, type TtfFont } from './ttf-font';
-import { HintedSize, type HintedGlyph } from './ttf-hinting';
-import { dropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
+import { DEFAULT_DROPOUT_PPEM, HintedSize, type HintedGlyph } from './ttf-hinting';
+import { dropoutMode, grayDropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
 
 /** Raw bytes of a `.ttf` or `.ttc` file. */
 export type FontSource = ArrayBuffer | ArrayBufferView;
@@ -612,11 +612,11 @@ export class RealizedFont implements GdiRealizedFont {
 		}
 		let bitmap: GlyphBitmap | null;
 		if (this.mode === 'mono') {
-			bitmap = rasterizeMono(o, dropoutMode(src.scanControl, src.scanType));
+			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType));
 		} else if (this.mode === 'cleartype') {
 			bitmap = rasterizeClearType(o, this.gdiPlus);
 		} else {
-			bitmap = rasterizeGray(o);
+			bitmap = rasterizeGray(o, src.scanSet ? grayDropoutMode(src.scanControl, src.scanType) : 2);
 		}
 		if (bitmap && this.syntheticBold) {
 			bitmap = embolden(bitmap, this.mode === 'mono' ? 1 : 16);
