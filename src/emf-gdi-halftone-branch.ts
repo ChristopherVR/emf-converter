@@ -24,13 +24,21 @@
  *   (replicated) once the colours counted so far plus one row of pixels for
  *   every duplicate row (a row whose colours were all seen in earlier rows)
  *   plus the next row reaches `n - 2305 + limit`.
- * - A rectangle with exactly `rows` rows needs 289 + floor(o / 8) colours, but
- *   its give-up rule is not the one above, so it is reported as unknown.
+ * - A rectangle with exactly `rows` rows takes the filtered branch at
+ *   `289 + floor(o / 8)` colours, or at 20 colours with more than 2,304 pixels in
+ *   colour-introducing rows, but it gives up much sooner: as soon as the colours
+ *   counted plus one row of pixels for every duplicate row (no extra row) reach
+ *   `limit - 1`, and neither condition filters afterwards. So a single duplicate
+ *   row before the last colours that are needed already costs the verdict when
+ *   the rows are wide, while rows that each add only a few colours (2 or 5 per
+ *   row of a 100 x 24 image) never reach the budget and filter at the last row.
  *
  * Every constant reproduces the native sweeps committed with the probe (see
- * `halftone-boundary.fixture.test.ts` for the counts and for what stays
- * unexplained). The scale factor was only varied over whole factors 2 to 4
- * (no change), so non-integer stretches are outside the evidence.
+ * `halftone-boundary.fixture.test.ts` for the counts), and the exact-`rows`
+ * rule was then confirmed on 4,500 further random sources of that height
+ * (1,151 filtered) that were not used to find it. The scale factor was only
+ * varied over whole factors 2 to 4 (no change), so non-integer stretches are
+ * outside the evidence.
  */
 
 /** Distinct-colour identity used by the engine's count (see the module comment). */
@@ -38,7 +46,7 @@ export function halftoneColorKey(r: number, g: number, b: number): number {
 	return b === r ? 0x1000000 | ((b >> 2) << 8) | (g >> 2) : b | (g << 8) | (r << 16);
 }
 
-export type HalftoneBranch = 'replicate' | 'filter' | 'unknown';
+export type HalftoneBranch = 'replicate' | 'filter';
 
 /**
  * @param rgb RGB triples of the source rectangle, row-major.
@@ -60,8 +68,9 @@ export function halftoneBranch(rgb: ArrayLike<number>, w: number, h: number): Ha
 	}
 	const rows = Math.floor(2304 / w) + 1;
 	if (h < rows) return 'replicate';
-	if (h === rows) return 'unknown';
-	const limit = 145 + Math.floor((rows * w - 2304) / 16);
+	// Exactly `rows` rows: twice the colour limit, but the scan gives up as soon as colours plus duplicate rows reach it.
+	const exact = h === rows;
+	const limit = exact ? 289 + Math.floor((rows * w - 2304) / 8) : 145 + Math.floor((rows * w - 2304) / 16);
 	let colors = 0;
 	let duplicateRows = 0;
 	let coloredPixels = 0;
@@ -79,8 +88,8 @@ export function halftoneBranch(rgb: ArrayLike<number>, w: number, h: number): Ha
 		if (!gaveUp && colors >= limit) return 'filter';
 		if (added === 0) duplicateRows++;
 		else coloredPixels += w;
-		if (colors >= 20 && coloredPixels > 2304) return 'filter';
-		if (colors + (duplicateRows + 1) * w >= n - 2305 + limit) gaveUp = true;
+		if (colors >= 20 && coloredPixels > 2304 && !(exact && gaveUp)) return 'filter';
+		if (exact ? colors + duplicateRows * w >= limit - 1 : colors + (duplicateRows + 1) * w >= n - 2305 + limit) gaveUp = true;
 	}
 	return 'replicate';
 }

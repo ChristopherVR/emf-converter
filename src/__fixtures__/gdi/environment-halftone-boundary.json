@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T02:59:13.4211305Z",
+    "capturedAt":  "2026-10-08T04:05:29.2416483Z",
     "groups":  "halftone-boundary",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -3388,7 +3388,7 @@
     "references":  [
                        {
                            "name":  "halftone-boundary.json.gz",
-                           "sha256":  "46572da5f93255535f4149aa0a110775da43b8f4c5f12f5ddfb88a46f3a31bbf"
+                           "sha256":  "f0906da1fe60852a0b0ddef73e1beaf1515d058c2658dfceae7f6415f300605b"
                        }
                    ]
 }

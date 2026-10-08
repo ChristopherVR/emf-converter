@@ -23,7 +23,7 @@ const toInts = (rgb: Uint8Array): Int32Array => Int32Array.from(rgb);
 // is not uniform), 'R' when it replicated. The expected counts are what the committed capture holds.
 const SWEEPS = [
 	{ images: 6468, filtered: 4527 }, { images: 3356, filtered: 1994 }, { images: 3927, filtered: 1821 }, { images: 827, filtered: 249 },
-	{ images: 1734, filtered: 672 }, { images: 2169, filtered: 939 }, { images: 40, filtered: 21 }, { images: 1876, filtered: 687 }, { images: 8, filtered: 4 }, { images: 3000, filtered: 2255 },
+	{ images: 1734, filtered: 672 }, { images: 2169, filtered: 939 }, { images: 40, filtered: 21 }, { images: 1876, filtered: 687 }, { images: 8, filtered: 4 }, { images: 3000, filtered: 2255 }, { images: 4500, filtered: 1151 }, { images: 1858, filtered: 243 },
 ];
 
 describe('native HALFTONE enlargement branch boundary sweeps', () => {
@@ -41,21 +41,19 @@ describe('native HALFTONE enlargement branch boundary sweeps', () => {
 		});
 	});
 
-	it('predicts every swept image the rule covers (23,405 native labels; the rule gives no verdict for the 2,408 whose height is exactly the least row count past 2,304 pixels)', () => {
-		let verdicts = 0, unknown = 0;
+	it('predicts every swept image (29,763 native labels, 2,408 of them with a height exactly the least row count past 2,304 pixels, and 4,500 of that height drawn after the rule for it was found)', () => {
+		let verdicts = 0;
 		groups.forEach((group, g) => {
 			const labels = capture.groups[g].labels;
 			const wrong: number[] = [];
 			group.images.forEach((image, i) => {
 				const verdict = halftoneBranch(toInts(image.rgb()), image.w, image.h);
-				if (verdict === 'unknown') { unknown++; return; }
 				verdicts++;
 				if ((verdict === 'filter') !== (labels[i] === 'F')) wrong.push(i);
 			});
 			expect(wrong, group.name).toEqual([]);
 		});
-		expect(verdicts + unknown).toBe(23405);
-		expect(unknown).toBe(2408);
+		expect(verdicts).toBe(29763);
 	});
 
 	it('takes the verdict from the source rectangle alone, counted from the bottom row for StretchDIBits', () => {
@@ -154,41 +152,22 @@ describe('every native 2x capture of the older HALFTONE probes', () => {
 });
 
 describe('the images whose height is exactly the least row count past 2,304 pixels', () => {
-	// The colour limit there is 289 + floor(o / 8) (about twice the 145 + floor(o / 16) of taller images) and the
-	// give-up rule of taller images is close but not exact, so halftoneBranch reports them as unknown. This is the
-	// best model found, kept to show how close it comes.
-	function atRowLimit(rgb: Int32Array, w: number, h: number): boolean {
-		const rows = Math.floor(2304 / w) + 1;
-		const limit = 289 + Math.floor((rows * w - 2304) / 8);
-		const seen = new Set<number>();
-		let colors = 0, duplicates = 0, coloredPixels = 0, gaveUp = false;
-		for (let y = 0; y < h; y++) {
-			let added = 0;
-			for (let x = 0; x < w; x++) {
-				const i = (y * w + x) * 3;
-				const key = halftoneColorKey(rgb[i], rgb[i + 1], rgb[i + 2]);
-				if (!seen.has(key)) { seen.add(key); added++; }
-			}
-			colors += added;
-			if (!gaveUp && colors >= limit) return true;
-			if (added === 0) duplicates++; else coloredPixels += w;
-			if (colors >= 20 && coloredPixels > 2304) return true;
-			if (colors + (duplicates + 1) * w >= w * h - 2305 + limit) gaveUp = true;
-		}
-		return false;
-	}
-	it('are predicted by a nearly right model, which fails on 25 of 2,408', () => {
+	// The colour limit there is 289 + floor(o / 8), twice that of taller images, and the scan gives up as soon as the
+	// colours plus one row of pixels for every duplicate row reach limit - 1 (not n - 2305 + limit with the next row
+	// added, which is what taller images follow).
+	it('are all predicted, including 2,408 older sweep sources and 4,500 later random ones', () => {
 		const groups = boundaryGroups();
-		let total = 0, right = 0;
+		let total = 0, filtered = 0;
 		groups.forEach((group, g) => {
 			group.images.forEach((image, i) => {
-				const rgb = toInts(image.rgb());
-				if (halftoneBranch(rgb, image.w, image.h) !== 'unknown') return;
+				if (image.h !== Math.floor(2304 / image.w) + 1 || image.w * image.h <= 2304 || image.w * image.h > 16384) return;
 				total++;
-				if (atRowLimit(rgb, image.w, image.h) === (capture.groups[g].labels[i] === 'F')) right++;
+				const label = capture.groups[g].labels[i] === 'F';
+				if (label) filtered++;
+				expect(halftoneBranch(toInts(image.rgb()), image.w, image.h) === 'filter', `${group.name} #${i}`).toBe(label);
 			});
 		});
-		expect(total).toBe(2408);
-		expect(total - right).toBe(25);
+		expect(total).toBe(8766);
+		expect(filtered).toBeGreaterThan(1500);
 	});
 });

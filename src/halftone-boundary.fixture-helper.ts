@@ -282,9 +282,76 @@ function colourIdentityGroups(): BoundaryGroup[] {
 	return [{ name: 'colour identity pairs', description: 'a column of 143 colours (the first set to a) and black with the colour b at pixel 143: it filters exactly when b is a 144th distinct colour, which tells whether a and b are one colour to the count', images }];
 }
 
+/**
+ * Random sources whose height is exactly the least row count past 2,304 pixels, 31 widths from 40 to 2,304.
+ * Each row introduces a random number of fresh colours at random positions (five distributions: a few per
+ * row, half the rows duplicates, rare wide bursts, a wide start then few, many small), the other pixels
+ * repeat colours seen before. Drawn after the exact-height rule was found, to test it (see halftoneBranch).
+ */
+function exactRowGroups(): BoundaryGroup[] {
+	const widths = [40, 48, 50, 60, 64, 70, 80, 90, 100, 120, 128, 150, 160, 180, 200, 230, 256, 300, 350, 400, 480, 500, 600, 700, 800, 1000, 1152, 1200, 1500, 2000, 2304];
+	const images: BoundaryImage[] = [];
+	for (const [seed, count] of [[1, 1500], [7, 3000]]) {
+		const next = lcg(seed);
+		while (images.length < (seed === 1 ? 0 : 1500) + count) {
+			const w = widths[Math.floor(next() * widths.length)];
+			const h = Math.floor(2304 / w) + 1;
+			const mode = Math.floor(next() * 5);
+			const counts: number[] = [];
+			let budget = 0;
+			for (let r = 0; r < h; r++) {
+				let c: number;
+				if (mode === 0) c = Math.floor(next() * 3);
+				else if (mode === 1) c = next() < 0.5 ? 0 : Math.floor(next() * 12);
+				else if (mode === 2) c = next() < 0.8 ? 0 : Math.floor(next() * w);
+				else if (mode === 3) c = r < 1 + Math.floor(next() * 3) ? Math.floor(next() * w) : (next() < 0.7 ? 0 : Math.floor(next() * 30));
+				else c = Math.floor(next() * Math.min(w, 400 / h * 2));
+				c = Math.min(c, w);
+				counts.push(c);
+				budget += c;
+			}
+			if (budget + 1 > colourPool().length) continue;
+			// Draw the pixel positions now, so the image stays deterministic however late rgb() is called.
+			const ids = new Int32Array(w * h);
+			let fresh = 1;
+			for (let r = 0; r < h; r++) {
+				const seen = fresh;
+				const positions = new Set<number>();
+				while (positions.size < counts[r]) positions.add(Math.floor(next() * w));
+				for (let x = 0; x < w; x++) ids[r * w + x] = positions.has(x) ? fresh++ : Math.floor(next() * (r === 0 && seen === 1 ? 1 : seen));
+			}
+			images.push(fromIds(w, h, () => Uint16Array.from(ids)));
+		}
+	}
+	return [{ name: 'exactly the least row count: random sources', description: '4,500 random sources of height rows(w): fresh colours per row from five distributions, duplicate rows, bursts; found the exact-height rule on the older sweeps first', images }];
+}
+
+/**
+ * The structured sweep that exposed the duplicate-row budget at the exact height: row 0 holds `a` fresh
+ * colours (the rest black), then `d` black rows, then one row of all-fresh colours, then black rows to
+ * the end. Widths 200, 220, 250 and 300 (12, 11, 10 and 8 rows), `a` from the least that lets the fresh
+ * row reach the colour limit, every third value.
+ */
+function burstAfterDuplicatesGroups(): BoundaryGroup[] {
+	const images: BoundaryImage[] = [];
+	for (const w of [200, 220, 250, 300]) {
+		const rows = Math.floor(2304 / w) + 1;
+		const limit = 289 + Math.floor((rows * w - 2304) / 8);
+		for (let d = 0; d <= rows - 3; d++) for (let a = Math.max(0, limit - 1 - w); a < w; a += 3) {
+			images.push(fromIds(w, rows, () => {
+				const ids = new Uint16Array(w * rows);
+				for (let x = 0; x < a; x++) ids[x] = 1 + x;
+				for (let x = 0; x < w; x++) ids[(d + 1) * w + x] = a + 1 + x;
+				return ids;
+			}));
+		}
+	}
+	return [{ name: 'exactly the least row count: a fresh row after duplicate rows', description: 'row 0 with a fresh colours, d black rows, one all-fresh row: filters only for d = 0 (and for a = 0 at w = 300 up to a = 298)', images }];
+}
+
 /** All sweeps, in the order their labels are stored. */
 export function boundaryGroups(): BoundaryGroup[] {
-	return [...blockSweeps(), ...samplingGroups(), ...denseGroups(), ...fewRowGroups(), ...oneDimensionalGroups(), ...naturalGroups(), ...swapGroups(), ...colourIdentityGroups()];
+	return [...blockSweeps(), ...samplingGroups(), ...denseGroups(), ...fewRowGroups(), ...oneDimensionalGroups(), ...naturalGroups(), ...swapGroups(), ...colourIdentityGroups(), ...exactRowGroups(), ...burstAfterDuplicatesGroups()];
 }
 
 /** A source rectangle inside a larger bitmap, stretched 2x by StretchBlt or StretchDIBits. */

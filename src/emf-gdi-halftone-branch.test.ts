@@ -41,9 +41,18 @@ describe('halftoneBranch', () => {
 		expect(halftoneBranch(late(6), 256, 16)).toBe('filter');
 		expect(halftoneBranch(late(7), 256, 16)).toBe('replicate');
 	});
-	it('reports no verdict when the height is exactly the least row count past 2,304 pixels', () => {
-		expect(halftoneBranch(image(64, 37, (x, y) => distinct(y * 64 + x)), 64, 37)).toBe('unknown');
+	it('applies the exact-height rule when the height is the least row count past 2,304 pixels', () => {
+		// 64 x 37: 297 colours filter; 64 x 36 is below 2,304 + 1 pixels.
+		expect(halftoneBranch(image(64, 37, (x, y) => distinct(y * 64 + x)), 64, 37)).toBe('filter');
 		expect(halftoneBranch(image(64, 36, (x, y) => distinct(y * 64 + x)), 64, 36)).toBe('replicate');
+		// 100 x 24 with a hundred fresh colours in every row gives up after three rows (300 >= 300) before the 301st colour...
+		expect(halftoneBranch(image(100, 24, (x, y) => distinct(y * 100 + x)), 100, 24)).toBe('replicate');
+		// ...while a few fresh colours per row never use the budget and the 20-colour rule filters at the last row.
+		expect(halftoneBranch(image(100, 24, (x, y) => distinct(y * 2 + (x % 2))), 100, 24)).toBe('filter');
+		// One duplicate row before the colours that are needed already gives up: 200 x 12, 200 + 101 colours.
+		const burst = (duplicates: number) => image(200, 12, (x, y) => (y === 0 ? distinct(x) : y <= duplicates ? distinct(x) : y === duplicates + 1 ? [(x * 3 + 2) & 255, 200, 19] : distinct(x)));
+		expect(halftoneBranch(burst(0), 200, 12)).toBe('filter');
+		expect(halftoneBranch(burst(1), 200, 12)).toBe('replicate');
 	});
 	it('identifies colours of equal red and blue by blue and green >> 2', () => {
 		expect(halftoneColorKey(40, 60, 40)).toBe(halftoneColorKey(43, 63, 43));
