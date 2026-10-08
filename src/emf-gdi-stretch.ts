@@ -1126,7 +1126,7 @@ export function stretchHalftone(
 	// Enlarging rows while reducing columns, Windows sharpens the last row against a
 	// further row that is the last source row replicated and dithered like any other
 	// (pattern row SH), not against the last row itself.
-	const extendRow = ditherAtSource && nativeMixed && W < SW && H > SH && !flipY;
+	const extendRow = ditherAtSource && nativeMixed && W < SW && H > SH;
 	if (extendRow) {
 		const bigger = new Int32Array((SH + 1) * SW * 3);
 		bigger.set(rect);
@@ -1138,7 +1138,7 @@ export function stretchHalftone(
 		// shifted by the extra rows the stretch adds (H - SH), so a source row j
 		// sits at pattern row H - 1 - j.
 		ditherPixels(rect, SW, extendRow ? SH + 1 : SH, dither!, false, false, undefined,
-			flipY ? Int32Array.from({ length: SH }, (_, j) => H - 1 - j) : undefined);
+			flipY ? Int32Array.from({ length: extendRow ? SH + 1 : SH }, (_, j) => H - 1 - j) : undefined);
 	}
 	if (adjust && !adjustAfterSampling && (!dithered || ditherAtSource)) {
 		adjust(rect);

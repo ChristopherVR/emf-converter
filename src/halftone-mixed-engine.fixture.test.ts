@@ -65,11 +65,13 @@ describe('native mixed enlarge-and-reduce engine and despeckle bands', () => {
 	});
 
 	it('pins both axes under a dithered colorfulness adjustment (mixed stretches dither the source from the equal-area line up)', () => {
-		// 96 mixed, enlarged and reduced stretches with every mirroring: 94 exact; the other three are 119 and 208 values off.
-		// Before the area rule picked the dither stage, the mixed ones were 32% to 45% of their values wrong by up to 200 levels;
-		// before the chroma ties only 5 of the 96 were exact (0.25% of the channel values off, 3,199 in all).
-		expect(groups['dithered-mode3']).toEqual({ count: 48, exact: 46, values: 119, maximum: 3 });
-		expect(groups['dithered-mode4']).toEqual({ count: 48, exact: 47, values: 208, maximum: 4 });
+		// 96 mixed, enlarged and reduced stretches with every mirroring, all exact. Before the area rule picked the dither stage, the
+		// mixed ones were 32% to 45% of their values wrong by up to 200 levels; before the chroma ties of `emf-gdi-chroma-tie-data.ts`
+		// only 5 of the 96 were exact (0.25% of the channel values off, 3,199 in all); a vertically mirrored enlargement with a reduced
+		// width (45 x 21 to 25 x 74 and two more, 327 values off by up to four levels) lacked the further dithered row below the source,
+		// which sits at pattern row H - 1 - SH when mirrored.
+		expect(groups['dithered-mode3']).toEqual({ count: 48, exact: 48, values: 0, maximum: 0 });
+		expect(groups['dithered-mode4']).toEqual({ count: 48, exact: 48, values: 0, maximum: 0 });
 	});
 });
 
