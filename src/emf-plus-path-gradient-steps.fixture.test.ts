@@ -111,7 +111,7 @@ describe('path-gradient step quantisation', () => {
 	// hundredth of a level of a rounding boundary; the over-one rows are the same
 	// half-way ties in rectangles so small that one step is several levels.
 	const pinned: Record<string, [number, number, number]> = {
-		rows: [25492, 25568, 0],
+		rows: [25568, 25568, 0],
 		'image 0 plain': [32000, 32000, 0],
 		'image 0 world2': [32000, 32000, 0],
 		'image 0 world0.5': [16000, 16000, 0],
