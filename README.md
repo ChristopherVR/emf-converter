@@ -127,8 +127,8 @@ const png = await convertMetafileToDataUrl(buffer, { fonts });
 - Fonts are realised the way GDI's font mapper does it (face substitutes, pitch/family fallback, weight choice, cell vs em height, `lfWidth` stretching), with GDI's metrics, advances, underline and strike-out.
 - Glyphs are grid-fitted by the font's own TrueType instructions (including Windows' ClearType rules), scan-converted with dropout control, and placed on GDI's integer grid honouring Dx arrays, `ETO_*` flags and every `TA_*` alignment.
 - Non-antialiased, grayscale or ClearType rendering is chosen from the font's quality; `fontSmoothing` sets what `DEFAULT_QUALITY` means (Windows' default is ClearType).
-- Raster faces (MS Sans Serif, MS Serif, Courier, Small Fonts, System, Terminal, Fixedsys, Helv, Tms Rmn) are drawn from their bitmaps with GDI's size choice and stretching.
-- Rotated text uses GDI's rounded font matrix; EMF+ `DrawString` honours the text rendering hint, string-format tracking and margins, and texture/gradient brushes.
+- Raster faces (MS Sans Serif, MS Serif, Courier, Small Fonts, System, Terminal, Fixedsys, Helv, Tms Rmn) are drawn from their bitmaps with GDI's size choice and stretching (up to 8 vertically, 5 horizontally). The size depends on the faces supplied: pass `8514sys.fon` and `8514fix.fon` along with `vgasys.fon` and `vgafix.fon` to get the System and Fixedsys sizes a 120 dpi or larger session draws.
+- Rotated text uses GDI's rounded font matrix. Text from a compatible-mode metafile replays the recorded Dx array but not the slight horizontal stretch (about 1.0006) Windows playback applies, which re-grid-fits a few Segoe UI heights. EMF+ `DrawString` honours the text rendering hint, string-format tracking and margins, and texture/gradient brushes.
 
 Without `fonts`, text is drawn by the host's canvas font engine (supply `fontFamilyMap` to remap Windows face names). SVG output always keeps text as `<text>`; with `fonts` it carries GDI's exact per-glyph positions.
 
@@ -189,7 +189,7 @@ See [How it works](docs/how-it-works.md) for the pipeline, the Windows-parity de
 
 ## Limitations
 
-Everything is measured against output painted by Windows itself, and a few areas still differ from it: some image effects, text with ClearType and EMF+ antialiasing, nonuniform wide-pen nibs, and rotated bicubic `DrawImage` sampling. Metric WMF map modes assume a 96 dpi device unless you pass `wmfReferenceDpi`.
+Everything is measured against output painted by Windows itself, and a few areas still differ from it: some image effects, text with ClearType and EMF+ antialiasing, rotated wide-pen nibs, diagonal glyph hinting, the last 0.26% of CMYK JPEG values, and rotated high-quality `DrawImage` sampling (within one level). Metric WMF map modes assume a 96 dpi device unless you pass `wmfReferenceDpi`.
 
 See [Limitations](docs/limitations.md) for the details and [Outstanding work](docs/outstanding-work.md) for what is still open.
 

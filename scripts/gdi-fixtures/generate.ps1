@@ -39,7 +39,15 @@
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
 #   image-effect-narrow-blur, image-effect-hue, image-effect-tint,
-#   image-effect-tables, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-translate16
+#   image-effect-tables, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-translate16,
+#   dash-cut-tie-probe, scaled-dash-cap-probe, curve-end-reversal-probe,
+#   tiny-final-segment-probe, text-raster-variants, text-raster-mapper,
+#   text-playback-hinting, text-signed-diagonal-hinting,
+#   text-signed-diagonal-coverage, path-gradient-slopes, path-gradient-fills,
+#   path-gradient-tips, path-gradient-corners, path-gradient-focus-ties,
+#   path-gradient-large, path-gradient-edges, path-gradient-focus-small,
+#   path-gradient-tiles, hq-phases, hq-wrap, hq-reductions, hq-cubic-weights,
+#   redeye-stages, redeye-sequence (internal), halftone-transitions
 #
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s

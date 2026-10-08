@@ -99,8 +99,8 @@ With `fonts`:
 - Fonts are selected like the GDI font mapper does: face substitutes, pitch and family fallback, weight selection, cell and em height, and `lfWidth` stretching. Metrics, advances, underline and strike-out follow GDI.
 - Glyphs are hinted with the font's TrueType instructions (including the Windows ClearType rules), scan-converted with dropout control, and placed on GDI's integer grid. Dx arrays, `ETO_*` flags and `TA_*` alignment are applied.
 - Non-antialiased, grayscale or ClearType rendering is chosen from the font quality. `fontSmoothing` sets what `DEFAULT_QUALITY` renders as. The Windows default is ClearType.
-- Raster faces (MS Sans Serif, MS Serif, Courier, Small Fonts, System, Terminal, Fixedsys, Helv, Tms Rmn) are drawn from their bitmaps.
-- Rotated text uses GDI's rounded font matrix. EMF+ `DrawString` applies the text rendering hint, string format tracking and margins, and texture and gradient brushes.
+- Raster faces (MS Sans Serif, MS Serif, Courier, Small Fonts, System, Terminal, Fixedsys, Helv, Tms Rmn) are drawn from their bitmaps, stretched by up to 8 vertically and 5 horizontally as GDI does. The size chosen depends on the faces supplied: at 120 dpi and above Windows serves System and Fixedsys from `8514sys.fon` and `8514fix.fon`, so pass those along with `vgasys.fon` and `vgafix.fon` to get the sizes a larger-dpi session draws.
+- Rotated text uses GDI's rounded font matrix. Text recorded in a compatible-mode metafile keeps the recorded Dx array, which is what Windows plays back, but is drawn without the slight horizontal stretch (about 1.0006) that Windows playback applies; a few Segoe UI heights grid-fit differently under that stretch, so those lines can differ from a Windows playback by a stem width (see [Limitations](./limitations.md#text)). EMF+ `DrawString` applies the text rendering hint, string format tracking and margins, and texture and gradient brushes.
 
 Without `fonts`, text is drawn by the canvas font engine of the host. Use `fontFamilyMap` to map Windows face names to fonts that are available locally:
 
