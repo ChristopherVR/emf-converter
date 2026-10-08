@@ -45,13 +45,20 @@ const faceKey = (c: Capture): string => `${c.face}${['', ' bold', ' italic', ' b
  * becoming exact is an improvement to record here; one that stops being exact is a regression.
  */
 const EXACT_BITS =
-	'fQWmmb4Bg0TfoMm/b87013dt+uirM/n3HRv8+6dN/n0HBLr/1vf/f3+76W/51f/3/7///+7//9//vf/ff3/9+79P/5/f3//77/dn//X///77+7///f7//+z9v3m+eRQuM/2Khw2fn0vHp9HB5nbD8veAZbzfFzp8u6Nd7s/HjLfXksd/L9aDHyDk4MYz4CngGdAR8Ay4CHgGVCQ4AyoSnAAUAU+AiuTnUGXxc4iy4B1AWegWqS96DsQ3PIksEp5ABAlPIIKEJxBBwhOIIuEJBFX4FCLofBhhND4FGBq/Qp3ld6HCUjvwY2N/oDDwBxAIiBoIBOgLRALSAAITNyKRiS+BQMA3QGCBSKCQ8R1AUDAAACxwGEQGf18ue7+vhvnflsv67+Pl8Zfk+Pj7cfX9/Tm8/sZdfn//Dou/5Zfn32bLo6+1Qf33z/r+q3d5/327Pv6eHG5/Hwyvvz/H39+H4+vvy+Hn1/fy/Pt+/P/9P6793l/uf1uO2b8vh6zfFkv+78kh+XfB0vh7evn+5bpa//5f/3//pn2+bdcmX/LrvufvVev37fr723b5+q29fv++X+//b6/vv9/X79/769/v7nX7v9b4+9t68Pxdv17/9lI1';
+	'/b32/b51+3XfjP2/f878139v/+yvs//3HZv/++ft//035Lr/1vf/f3+76W/51f/3/7///+7//9//vf/ff3/9+79P/5/f3//77/dn//X///77+7///f7//+z9v3m+eXx+c/3utz+f/3/Xp/3P7n7X//eAb7/fl399u+Nd7s/nrLfXktd/L96/HyDk9MYz9u/hGfv38Iz9e3jG/jU4Y+8enrB+BU/Yv+fn+n//c9u/553v/+tW/e97zu+3PImtHp7ARg9PYoeHJ7HDw5OY4+FJrHX4NDb6fDhrPD4NHR6//5/n9/nDU3v+Y2P/9Xb31zvvi96P9+v7zbrTeee/tyaRu2+/W/03fWyPyL/W/91j9zNgge95+MTOf/9/e///rvv//vv+//P/+7/8/v3//ff//7/9/8ff/3//j9v/5b/v/2b/p6+1Uf//3///r/9/////f/7fPe//P13//3/v/9/v9/////fv3/fy/ft++v//f+7933/u//v//////6//fv////1//X/b//h7///+5/5b////////9n3+bf8mf/L/vvfvX+v////73///+q/9f/+//+//b//v/9//7//7/9//7n/7v9b/+9/69/xd/1//9/I1';
 
 const EXACT_BY_FACE: Record<string, number> = {
-	'Arial': 239, 'Arial bold': 328, 'Arial italic': 211,
-	'Times New Roman': 147, 'Times New Roman bold': 146, 'Times New Roman italic': 112,
-	'Tahoma': 251, 'Tahoma bold': 274, 'Segoe UI': 254, 'Segoe UI bold': 285,
+	'Arial': 288, 'Arial bold': 328, 'Arial italic': 264,
+	'Times New Roman': 254, 'Times New Roman bold': 208, 'Times New Roman italic': 250,
+	'Tahoma': 317, 'Tahoma bold': 330, 'Segoe UI': 325, 'Segoe UI bold': 326,
 };
+
+/**
+ * Captures that were exact before ClearType used the font's dropout control and are not now: our geometry has a thin tail
+ * end there that native's does not, and the dropout rule keeps the sample the old rendering happened to lack. The rule
+ * gains 643 captures; these two are the price (see docs/outstanding-work.md, "ClearType dropout control").
+ */
+const KNOWN_LOSSES = ['Arial 11px g', 'Tahoma bold 18px y'];
 
 describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles', () => {
 	const fonts = new GdiFontCollection(windowsFonts() ?? []);
@@ -76,7 +83,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles'
 			byFace[faceKey(captures[i])] = (byFace[faceKey(captures[i])] ?? 0) + (exact[i] ? 1 : 0);
 		}
 		expect(byFace).toEqual(EXACT_BY_FACE);
-		expect(exact.filter(Boolean)).toHaveLength(2247);
+		expect(exact.filter(Boolean)).toHaveLength(2890);
 	});
 
 	it('loses no exact capture and gains none unrecorded', () => {
@@ -91,5 +98,10 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles'
 		}
 		expect(lost).toEqual([]);
 		expect(unrecorded).toEqual([]);
+	});
+
+	it('records the two captures the dropout rule gave up', () => {
+		const names = new Map(captures.map((c, i) => [`${faceKey(c)} ${c.size}px ${String.fromCharCode(c.code)}`, exact[i]]));
+		for (const name of KNOWN_LOSSES) expect(names.get(name), name).toBe(false);
 	});
 });

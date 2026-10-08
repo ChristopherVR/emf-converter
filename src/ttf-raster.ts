@@ -739,7 +739,7 @@ interface PixelBox {
  * every pixel whose centre lies in the outline's control box, as GDI's
  * glyph black box does, unless `fixedBox` pins it.
  */
-export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox): GlyphBitmap | null {
+export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true): GlyphBitmap | null {
 	const box = fixedBox ?? monoBox(o);
 	if (!box) {
 		return null;
@@ -798,10 +798,10 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox):
 							break;
 						case 1:
 						case 5:
-							if (left.next === right && left.height <= 0 && !(left.flags & OVERSHOOT_TOP && x2 - x1 >= r.half)) {
+							if (left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= r.half)) {
 								return;
 							}
-							if (right.next === left && left.start === y && !(left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= r.half)) {
+							if (right.next === left && left.start === y && !(stubOvershoot && left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= r.half)) {
 								return;
 							}
 							pxl = mode === 1 ? e2 : r.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
@@ -859,10 +859,10 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox):
 								break;
 							case 1:
 							case 5:
-								if (left.next === right && left.height <= 0 && !(left.flags & OVERSHOOT_TOP && x2 - x1 >= h.half)) {
+								if (left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= h.half)) {
 									return;
 								}
-								if (right.next === left && left.start === col && !(left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= h.half)) {
+								if (right.next === left && left.start === col && !(stubOvershoot && left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= h.half)) {
 									return;
 								}
 								pxl = mode === 1 ? e2 : h.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
@@ -895,9 +895,11 @@ const GRAY_OVERSAMPLE = 4;
  * Scan-converts `o` at `kx` x `ky` samples per pixel (centre rule, no
  * dropout control) on a grid aligned with the pixel grid. `box` is the
  * pixel box (floor/ceil of the control box) and `hi` the 1-bit sample
- * bitmap covering it, `kx * width` by `ky * height`.
+ * bitmap covering it, `kx * width` by `ky * height`. `dropout` is the
+ * scan converter's dropout mode (2 = none); `stubOvershoot` keeps the
+ * FreeType exemption that stops a tall overshoot from counting as a stub.
  */
-export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0): { box: PixelBox; hi: GlyphBitmap } | null {
+export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true): { box: PixelBox; hi: GlyphBitmap } | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -926,7 +928,7 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0): 
 		onCurve: o.onCurve,
 		endPts: o.endPts,
 	};
-	const hi = rasterizeMono(big, 2, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky });
+	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot);
 	return hi ? { box, hi } : null;
 }
 
