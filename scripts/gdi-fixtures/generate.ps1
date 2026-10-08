@@ -245,6 +245,12 @@ if ($Which -eq 'path-gradient-fills') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-tips') {
+    Add-Type -Path (Join-Path $here 'PathGradientTipProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientTipProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-edges') {
     Add-Type -Path (Join-Path $here 'PathGradientEdgeProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientEdgeProbe]::Run($outDir)
