@@ -278,6 +278,12 @@ export interface HintEnvironment {
 	compatibleWidths?: boolean;
 	/** Symmetric (vertically smoothed) ClearType: GETINFO bit 15. */
 	symmetricSmoothing?: boolean;
+	/**
+	 * Report the glyph as stretched to GETINFO (selector bit 2 -> result bit 9) and SCANCTRL although the x and y
+	 * scales are equal: Windows plays a recording's text through a horizontal world-transform stretch, which fonts
+	 * such as Segoe UI answer by switching grid-fitting off while the outline keeps the unstretched scale.
+	 */
+	reportStretched?: boolean;
 }
 
 /** One grid-fitted glyph, ready for scan conversion. */
@@ -1852,10 +1858,10 @@ export class HintedSize {
 				}
 				if (v & 0x100 && this.ppem <= a) gs.scanControl = true;
 				if (v & 0x200 && this.env.rotated) gs.scanControl = true;
-				if (v & 0x400 && this.stretched) gs.scanControl = true;
+				if (v & 0x400 && (this.stretched || this.env.reportStretched)) gs.scanControl = true;
 				if (v & 0x800 && this.ppem > a) gs.scanControl = false;
 				if (v & 0x1000 && this.env.rotated) gs.scanControl = false;
-				if (v & 0x2000 && this.stretched) gs.scanControl = false;
+				if (v & 0x2000 && (this.stretched || this.env.reportStretched)) gs.scanControl = false;
 				return true;
 			}
 			case 0x86:
@@ -1868,7 +1874,7 @@ export class HintedSize {
 				let k = 0;
 				if (sel & 1) k = this.env.version;
 				if (sel & 2 && this.env.rotated) k |= 1 << 8;
-				if (sel & 4 && this.stretched) k |= 1 << 9;
+				if (sel & 4 && (this.stretched || this.env.reportStretched)) k |= 1 << 9;
 				if (sel & 32 && this.env.grayscale) k |= 1 << 12;
 				if (sel & 64 && this.env.clearType) k |= 1 << 13;
 				if (sel & 128 && this.env.clearType && this.env.compatibleWidths !== false) k |= 1 << 14;
