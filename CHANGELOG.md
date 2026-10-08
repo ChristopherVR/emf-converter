@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.15.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.1) - 2026-10-08
+
+### Documentation
+
+- Update the measured test count after the text regeneration round ([9d399ea](https://github.com/ChristopherVR/emf-converter/commit/9d399eab2e57e4f2fc1d5b9250324a4086ae6759))
+
+### Testing
+
+- Regenerate the nine clipped text references and pin why seven stay unchanged ([7f59ba5](https://github.com/ChristopherVR/emf-converter/commit/7f59ba51141dbb896625acb435e9c21448391da4))
+
 ## [4.15.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.15.0) - 2026-10-08
 
 ### Features
