@@ -61,7 +61,7 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 		return image;
 	}
 
-	it('text-real-glyphs: 2,492 of 31,584 captures differ between the 06:21 and 07:35 UTC runs; per-product matches 1,519 of the later images, combined 766, and the earlier run matches combined 55 times and per-product never', () => {
+	it('text-real-glyphs: 2,492 of 31,584 captures differ between the 06:21 and 07:35 UTC runs; per-product matches 1,541 of the later images, combined 775, and the earlier run matches combined 57 times and per-product never', () => {
 		const states = json('text-native-states.json.gz');
 		expect(states.total).toBe(31584);
 		expect(states.differing).toHaveLength(2492);
@@ -82,7 +82,7 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 				});
 			}
 		}
-		expect(matches).toEqual({ 'combined A-0621Z': 55, 'combined B-0735Z': 766, 'perProduct B-0735Z': 1519 });
+		expect(matches).toEqual({ 'combined A-0621Z': 57, 'combined B-0735Z': 775, 'perProduct B-0735Z': 1541 });
 	});
 
 	it('text-coverage: 606 of 3,328 committed captures differ from a fresh capture; per-product matches 350 of the fresh images, combined 128, and the committed ones 64 and 94', () => {

@@ -16,8 +16,9 @@ import { gdiTextCoverage } from './gdi-text-render';
  *  - A font that never runs SCANCTRL is scan-converted with simple dropout control up to 32 ppem and with none
  *    above (GDI monochrome bitmaps, `text-raster-mono.json.gz`): shipped for the monochrome rasterizer.
  *  - GDI's grayscale bitmaps (`GGO_GRAY4_BITMAP`) and GDI+ AntiAlias text apply the font's scan control to the 4x4
- *    oversampled outline. SCANTYPE 0 and 4 are shipped; 1 and 5 (the stub-excluding types, which stock fonts
- *    use) are not, because the stub rule is unknown: the counts for them below are pinned as they are today.
+ *    oversampled outline. SCANTYPE 0 and 4 and, since round 6, 1 and 5 (the stub-excluding types, which stock
+ *    fonts use; FreeType's stub rule without its overshoot exemption) are shipped: 3,106 and 3,147 of 4,096
+ *    bitmaps at 8 to 32 ppem for the two stub types, 2,344 before.
  *  - GDI+ AntiAliasGridFit on a font without a `gasp` table draws GDI's monochrome bitmap from 9 to 17 ppem, and
  *    both defaults hold in grayscale too; they are not shipped (see the pinned gap below).
  */
@@ -169,7 +170,7 @@ describe('GDI monochrome bitmaps of polygon fonts with hinting machinery that ne
 describe('GDI grayscale bitmaps of the private polygon fonts (GetGlyphOutline GGO_GRAY4_BITMAP)', () => {
 	// polygons has no SCANCTRL: GDI draws simple dropouts up to 32 ppem (3,852 of 4,096 would match), the engine none yet.
 	const expected: Record<string, [number, number]> = {
-		polygons: [517, 1019], st0: [3852, 967], st4: [3747, 945], st1: [2344, 579], st5: [2344, 579],
+		polygons: [517, 1019], st0: [3852, 967], st4: [3747, 945], st1: [3106, 778], st5: [3147, 782],
 	};
 	it.each(Object.keys(expected))('%s', (set) => {
 		expect(gdiExact(set, 5, true)).toEqual([expected[set][0], 4096]);
@@ -209,7 +210,7 @@ describe('GDI+ DrawDriverString images of the private polygon fonts', () => {
 		expect(plusExact('polygons', 3, true)).toEqual([227, 4096]);
 		expect(plusExact('polygons', 3, false)).toEqual([1019, 1024]);
 	});
-	it.each([['st0', 3709, 940], ['st4', 3712, 937], ['st1', 2344, 579], ['st5', 2344, 579]] as const)('AntiAlias, SCANTYPE %s', (set, small, large) => {
+	it.each([['st0', 3709, 940], ['st4', 3712, 937], ['st1', 3106, 778], ['st5', 3147, 782]] as const)('AntiAlias, SCANTYPE %s', (set, small, large) => {
 		expect(plusExact(set, 4, true)).toEqual([small, 4096]);
 		expect(plusExact(set, 4, false)).toEqual([large, 1024]);
 	});

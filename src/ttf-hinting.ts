@@ -824,13 +824,20 @@ export class HintedSize {
 
 	/**
 	 * Backward-compatible ClearType reads storage 22 (TypeMan Talk
-	 * DStroke/IStroke), 24 (spacing functions) and 8 (VacuFormRound) as 0
-	 * inside the functions whose signatures Microsoft documents, which
-	 * bypasses them.
+	 * DStroke/IStroke) and 24 (spacing functions) as 0 inside the functions
+	 * whose signatures Microsoft documents, which bypasses them, and storage
+	 * 8 (VacuFormRound) as 0 wherever it is read: the Monotype fonts store
+	 * there whether the size is small (`MPPEM <= limit`) and, when it is,
+	 * run a block of corner-squaring ALIGNRP and SHPIX calls after the IUPs
+	 * that native ClearType never runs (Arial and Times New Roman bowls at
+	 * 9 to 17 ppem; 2,247 to 2,369 of 3,720 size-sheet captures exact).
 	 */
 	private ctBypassStorage(i: number): boolean {
 		if (!this.ctCompat() || (i !== 22 && i !== 24 && i !== 8)) {
 			return false;
+		}
+		if (i === 8) {
+			return true;
 		}
 		const frame = this.callFrames[this.callFrames.length - 1];
 		if (!frame) {
@@ -842,10 +849,7 @@ export class HintedSize {
 		if (i === 22) {
 			return at([0xb0, 22, 0x43, 0x58]);
 		}
-		if (i === 24) {
-			return at([0x01, 0xb0, 24, 0x43, 0x58]) || at([0x01, 0x18, 0xb0, 24, 0x43, 0x58]);
-		}
-		return at([0x45, 0x23, 0x46, 0x60, 0x20, 0xb0, 38]);
+		return at([0x01, 0xb0, 24, 0x43, 0x58]) || at([0x01, 0x18, 0xb0, 24, 0x43, 0x58]);
 	}
 
 	/** True when the projection vector points (mostly) along x, ClearType's direction. */
@@ -1594,9 +1598,10 @@ export class HintedSize {
 					this.zp1.curY[p] - this.zp0.curY[gs.rp0],
 				);
 				let target = d;
-				if (this.ctCompat() && gs.gep0 !== 0 && gs.gep1 !== 0) {
-					// ClearType: a stroke-weight MSIRP (non-trivial outline
-					// distance) honours the CVT cut-in.
+				if (this.ctCompat() && this.ctDirection() && gs.gep0 !== 0 && gs.gep1 !== 0) {
+					// ClearType: along x a stroke-weight MSIRP (non-trivial
+					// outline distance) honours the CVT cut-in (1/16 of it);
+					// along y native moves the point by any distance.
 					const org = this.dualProjectOrus(
 						this.zp1.orusX[p] - this.zp0.orusX[gs.rp0],
 						this.zp1.orusY[p] - this.zp0.orusY[gs.rp0],
