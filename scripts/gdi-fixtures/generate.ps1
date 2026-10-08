@@ -143,6 +143,7 @@ if ($Which -eq 'text-recorded-advance') {
 if ($Which -eq 'text-raster-mapper') {
     Add-Type -Path (Join-Path $here 'RasterMapperProbe.cs') -ReferencedAssemblies System.Drawing
     [RasterMapperProbe]::Run($outDir)
+    [RasterMapperProbe]::Wide($outDir)
     Complete-Fixtures
     return
 }

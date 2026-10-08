@@ -8,6 +8,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -34,6 +35,47 @@ public static class RasterMapperProbe
         GetTextMetricsW(dc, out t);
         return "\"tmHeight\":" + t.tmHeight + ",\"tmAscent\":" + t.tmAscent + ",\"tmInternalLeading\":" + t.tmInternalLeading + ",\"tmAveCharWidth\":" + t.tmAveCharWidth
             + ",\"tmMaxCharWidth\":" + t.tmMaxCharWidth + ",\"aspectX\":" + t.tmDigitizedAspectX + ",\"aspectY\":" + t.tmDigitizedAspectY + ",\"tmWeight\":" + t.tmWeight;
+    }
+
+    /**
+     * Held-out and weight rows for the mapper fit: lfHeight -130..-61 and 61..130 at weight 400 for the seven raster
+     * families, and weight 700 for -60..60. Output: raster-mapper-wide.json.gz (rows carry weight).
+     */
+    public static void Wide(string dir)
+    {
+        string[] faces = { "MS Sans Serif", "MS Serif", "Courier", "Small Fonts", "System", "Terminal", "Fixedsys" };
+        IntPtr screen = GetDC(IntPtr.Zero);
+        IntPtr dc = CreateCompatibleDC(screen);
+        var json = new StringBuilder("{\"logPixelsX\":");
+        json.Append(GetDeviceCaps(screen, 88)).Append(",\"rows\":[");
+        bool first = true;
+        foreach (string face in faces)
+        {
+            for (int weight = 400; weight <= 700; weight += 300)
+            for (int h = -130; h <= 130; h++)
+            {
+                if (h == 0) continue;
+                bool inner = Math.Abs(h) <= 60;
+                if (weight == 400 && inner) continue;
+                if (weight == 700 && !inner) continue;
+                var lf = new LogFont { h = h, weight = weight, cs = 1, face = face, q = 3 };
+                IntPtr font = CreateFontIndirectW(ref lf);
+                IntPtr old = SelectObject(dc, font);
+                if (!first) json.Append(',');
+                first = false;
+                json.Append("{\"face\":\"").Append(face).Append("\",\"weight\":").Append(weight).Append(",\"height\":").Append(h).Append(',').Append(Metrics(dc)).Append('}');
+                SelectObject(dc, old); DeleteObject(font);
+            }
+        }
+        json.Append("]}");
+        DeleteDC(dc);
+        ReleaseDC(IntPtr.Zero, screen);
+        using (var file = File.Create(Path.Combine(dir, "raster-mapper-wide.json.gz")))
+        using (var gz = new GZipStream(file, CompressionLevel.Optimal))
+        {
+            var bytes = new UTF8Encoding(false).GetBytes(json.ToString());
+            gz.Write(bytes, 0, bytes.Length);
+        }
     }
 
     public static void Run(string dir)
