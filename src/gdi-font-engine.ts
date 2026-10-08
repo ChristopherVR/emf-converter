@@ -622,7 +622,7 @@ export class RealizedFont implements GdiRealizedFont {
 		if (this.mode === 'mono') {
 			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType));
 		} else if (this.mode === 'cleartype') {
-			bitmap = rasterizeClearType(o, this.gdiPlus);
+			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined);
 		} else {
 			bitmap = rasterizeGray(o, src.scanSet ? grayDropoutMode(src.scanControl, src.scanType) : 2);
 		}
@@ -995,6 +995,28 @@ export function resolvePpem(font: TtfFont, height: number): number {
 /** ClearType's horizontal oversampling: 2 samples per subpixel, 6 per pixel. */
 const CLEARTYPE_OVERSAMPLE = 6;
 
+/** How far a ClearType sample row is widened before filtering: samples to the left and to the right. */
+interface ClearTypeSpread {
+	left: number;
+	right: number;
+}
+
+/**
+ * GDI+ ClearType draws the system Courier New wider than its outline. Every sample row is widened by
+ * one sample on the left and two on the right (one on the right for the bold faces) before the 3-tap
+ * filter, and a lone half-subpixel's leak into the neighbouring pixel is dropped
+ * (`text-cleartype-courier.json.gz`: straight-edged glyphs are exact at every size, phase and style
+ * measured). The behaviour follows the family name, not the font file: a private copy of `cour.ttf`
+ * renamed to anything else renders unwidened, and the same file under its own name is widened. Other
+ * faces, and GDI's own ClearType, are not widened (the latter is unmeasured for Courier New).
+ */
+function clearTypeSpread(ttf: TtfFont): ClearTypeSpread | undefined {
+	if (ttf.family.toLowerCase() !== 'courier new') {
+		return undefined;
+	}
+	return { left: 1, right: ttf.weightClass >= 600 ? 1 : 2 };
+}
+
 /**
  * ClearType rasterisation as GDI does it: the outline is sampled at 6x
  * horizontally (2 samples per R/G/B subpixel, one row per pixel), each
@@ -1003,8 +1025,9 @@ const CLEARTYPE_OVERSAMPLE = 6;
  * Fitted to the edge profiles of `textx-arial-cleartype` (an Arial stem at
  * 72 px reproduces to within 1 level per channel). GDI+ truncates the
  * coverage instead of rounding it (native baseline-controlled captures).
+ * A `spread` widens every sample row first (see `clearTypeSpread`).
  */
-function rasterizeClearType(o: Outline, truncate = false): GlyphBitmap | null {
+function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpread): GlyphBitmap | null {
 	const S = CLEARTYPE_OVERSAMPLE / 3;
 	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, 1, 1);
 	if (!r) {
@@ -1020,12 +1043,25 @@ function rasterizeClearType(o: Outline, truncate = false): GlyphBitmap | null {
 		sub.fill(0);
 		const row = y * hi.width;
 		for (let x = 0; x < hi.width; x++) {
-			if (hi.data[row + x]) {
+			let on = hi.data[row + x] !== 0;
+			if (spread && !on) {
+				// The sample is on when any sample from `right` before it to `left` after it is.
+				for (let k = x - spread.right; k <= x + spread.left && !on; k++) {
+					on = k >= 0 && k < hi.width && hi.data[row + k] !== 0;
+				}
+			}
+			if (on) {
 				sub[Math.floor(x / S)] += 1;
 			}
 		}
 		for (let j = 0; j < n; j++) {
-			const acc = (j > 0 ? sub[j - 1] : 0) + sub[j] + (j + 1 < n ? sub[j + 1] : 0);
+			const before = j > 0 ? sub[j - 1] : 0;
+			const after = j + 1 < n ? sub[j + 1] : 0;
+			let acc = before + sub[j] + after;
+			// A lone sample's one-sixth leak into the next pixel is not drawn (see `clearTypeSpread`).
+			if (spread && acc === 1 && sub[j] === 0 && ((j % 3 === 0 && before === 1) || ((j + 1) % 3 === 0 && after === 1))) {
+				acc = 0;
+			}
 			data[y * n + j] = (truncate ? Math.floor : Math.round)((255 * acc) / (3 * S));
 		}
 	}
