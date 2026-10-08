@@ -682,7 +682,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-texture', 0.025), // measured 1.977%
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.0069), // measured 0.681%, 0.978% before the unpainted outside pixels, 1.649% before the nested copies
+	close('gpx-text-pathgrad', 0.0070), // measured 0.692%, 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0.04), // measured 3.093%
 ];

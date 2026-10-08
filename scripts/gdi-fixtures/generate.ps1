@@ -251,6 +251,18 @@ if ($Which -eq 'path-gradient-tips') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-corners') {
+    Add-Type -Path (Join-Path $here 'PathGradientCornerProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientCornerProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'path-gradient-focus-ties') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusTieProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusTieProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-edges') {
     Add-Type -Path (Join-Path $here 'PathGradientEdgeProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientEdgeProbe]::Run($outDir)

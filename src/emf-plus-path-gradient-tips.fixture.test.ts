@@ -8,10 +8,11 @@ import { pathGradientSampler } from './emf-plus-exact-fill';
  * triangle whose apex sits at every 1/16 pixel offset in x and y (256 clamped captures, `tc-`) and in x only (16 tiled
  * captures whose bounds stay on whole pixels, `tt-`), and an ellipse shifted by every 1/16 offset (256 clamped captures,
  * `ec-`, and one tiled, `et-`). The pixel on an apex or an extreme point, and the flat edge pixels beside it, are unpainted
- * by native when the nested copies' scan conversion leaves them outside the boundary: none of the 528 captures has a pixel
+ * by native when the nested copies' scan conversion leaves them outside the boundary: none of the 529 captures has a pixel
  * we paint and native does not, or the reverse (the smooth ratio painted 2 in the tiled ellipse and 5 over the tiled triangles before; the clamped captures never had any).
- * What differs is one step on slanted-edge ties (rows two above the base of the triangle, the apex rows offset 0 and 1/16),
- * the class `emf-plus-path-gradient-copies.ts` documents as open.
+ * Every pixel of every capture is exact: the pixels that were one step off (110 of 185,646 clamped triangle pixels, 216 of
+ * 27,666 tiled triangle pixels and 31 of 316,689 clamped ellipse pixels, all slanted-edge ties) follow the float32 rule of
+ * `floatCopyIndex`.
  */
 interface Capture { name: string; w: number; h: number; center: [number, number]; points: [number, number][]; ra: string }
 const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/path-gradient-tips.json.gz', import.meta.url))).toString());
@@ -52,9 +53,9 @@ for (const c of captures) {
 
 /** [captures, native pixels, differing pixels (ceiling), unpainted (ceiling), extra (ceiling)]. */
 const EXPECTED: Record<string, [number, number, number, number, number]> = {
-	tc: [256, 185646, 110, 0, 0],
-	tt: [16, 27666, 216, 0, 0],
-	ec: [256, 316689, 31, 0, 0],
+	tc: [256, 185646, 0, 0, 0],
+	tt: [16, 27666, 0, 0, 0],
+	ec: [256, 316689, 0, 0, 0],
 	et: [1, 2904, 0, 0, 0],
 };
 
