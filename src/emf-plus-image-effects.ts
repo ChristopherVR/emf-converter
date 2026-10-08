@@ -551,8 +551,10 @@ const TINT_FULL = 254;
  *   whose `L` is at least 40 above the 70th percentile is a highlight and
  *   gets `F = 1`.
  * - **Pixels on an axis through the centre.** The centre pixel itself is in
- *   the sector from 90 to 96 degrees, the pixels straight below and straight
- *   left in the sectors before their edge (84 to 90, 174 to 180).
+ *   the sector from 90 to 96 degrees (a lone red pixel is the centre; this
+ *   fits 2,105 of 2,110 lone pixels inside the fallback circle, in nine area
+ *   shapes and offsets; the sector at 0 misses 322 of them, the one at 270
+ *   575).
  *
  * Not reproduced: the native output when the area holds red pixels with
  * `L = 0` and no other spread information (it depends on the calls made
@@ -702,17 +704,9 @@ function correctRedEyeArea(
 			if (angle < 0) {
 				angle += 360;
 			}
-			// Pixels exactly on an axis: the centre pixel itself (a lone red pixel, or a centroid on a pixel
-			// centre) belongs to the sector at 90 degrees, not to the one at 0; those straight below and
-			// straight left of the centre join the sector before the edge (84 to 90 and 174 to 180 degrees).
-			let s = Math.min(RED_EYE_SECTORS - 1, Math.floor(angle / 6));
-			if (dx === 0 && dy === 0) {
-				s = RED_EYE_CENTRE_SECTOR;
-			} else if (dx === 0 && dy > 0) {
-				s = 14;
-			} else if (dy === 0 && dx < 0) {
-				s = 29;
-			}
+			// The pixel exactly at the centre (a lone red pixel, or a centroid on a pixel centre) belongs to
+			// the sector at 90 degrees, not to the one at 0.
+			const s = dx === 0 && dy === 0 ? RED_EYE_CENTRE_SECTOR : Math.min(RED_EYE_SECTORS - 1, Math.floor(angle / 6));
 			sector[k] = s;
 			if (d < radius) {
 				sectorSum[s] += redness[k];
