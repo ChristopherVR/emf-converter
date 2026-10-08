@@ -5,18 +5,37 @@
  * deterministic, so the capture stores the SHA-256 of each native output (and the bytes of the few cases that
  * are not reproduced) and the test regenerates the sources.
  */
+import { colorAdjustRgb, DEFAULT_COLOR_ADJUSTMENT, splitColorAdjustment } from './emf-gdi-color-adjust';
+import { ditherStartX, ditherStartY } from './emf-gdi-halftone-dither';
+import { stretchHalftone } from './emf-gdi-stretch';
+
+/** Our HALFTONE stretch of a case's source, with the mirroring and colour adjustment its probe flags select (RGBA bytes). */
+export function renderMixedCase(c: MixedCase, rgb: Uint8Array): Uint8ClampedArray {
+	const data = new Uint8ClampedArray(c.w * c.h * 4);
+	for (let p = 0; p < c.w * c.h; p++) data.set([rgb[p * 3], rgb[p * 3 + 1], rgb[p * 3 + 2], 255], p * 4);
+	const mode = (c.flags >> 4) & 7;
+	const gamma = mode === 2 || mode === 4 ? 15000 : 10000;
+	const split = mode ? splitColorAdjustment({ ...DEFAULT_COLOR_ADJUSTMENT, colorfulness: mode >= 3 ? 40 : 0, redGamma: gamma, greenGamma: gamma, blueGamma: gamma }) : undefined;
+	const palette = split?.palette, curves = split?.curves;
+	return stretchHalftone({ width: c.w, height: c.h, data }, 0, 0, c.w, c.h, c.flags & 4 ? -c.dw : c.dw, c.flags & 8 ? -c.dh : c.dh,
+		palette ? v => colorAdjustRgb(v, palette) : curves ? v => colorAdjustRgb(v, curves) : undefined, !palette && !!curves, false,
+		palette ? { startX: ditherStartX(0, 0), startY: ditherStartY(0, 0) } : undefined,
+		palette && curves ? v => colorAdjustRgb(v, curves) : undefined).data;
+}
 
 export type SourceKind = 'check' | 'k3' | 'k27' | 'k100' | 'noise' | 'smooth';
 
 export interface MixedCase {
 	id: string;
-	group: 'grid' | 'cap' | 'area' | 'band' | 'random' | 'reduce';
+	group: 'grid' | 'cap' | 'area' | 'band' | 'random' | 'reduce' | 'oneaxis';
 	kind: SourceKind;
 	seed: number;
 	w: number;
 	h: number;
 	dw: number;
 	dh: number;
+	/** The probe's flags: bit 2 / bit 3 mirror the destination, bits 4-6 select a colour adjustment (2 gamma 1.5, 3 colorfulness +40, 4 colorfulness +40 with gamma 1.5). */
+	flags: number;
 }
 
 /** The linear congruential generator every source seeds explicitly. */
@@ -60,8 +79,8 @@ export function mixedSource(kind: SourceKind, w: number, h: number, seed: number
 export function mixedEngineCases(): MixedCase[] {
 	const cases: MixedCase[] = [];
 	let seed = 1;
-	const add = (group: MixedCase['group'], kind: SourceKind, w: number, h: number, dw: number, dh: number): void => {
-		cases.push({ id: `${group}-${cases.length}-${kind}-${w}x${h}-${dw}x${dh}`, group, kind, seed: seed++, w, h, dw, dh });
+	const add = (group: MixedCase['group'], kind: SourceKind, w: number, h: number, dw: number, dh: number, flags = 0): void => {
+		cases.push({ id: `${group}-${cases.length}-${kind}-${w}x${h}-${dw}x${dh}${flags ? `-f${flags}` : ''}`, group, kind, seed: seed++, w, h, dw, dh, flags });
 	};
 	// Engine grids: a source of 4,096 pixels and one of 1,600, four palettes, the enlarged axis against the shrinking one.
 	for (const size of [64, 40]) for (const kind of ['k3', 'k27', 'k100', 'noise'] as SourceKind[]) {
@@ -139,5 +158,26 @@ export function mixedEngineCases(): MixedCase[] {
 		add('reduce', (['check', 'k3', 'k27'] as SourceKind[])[Math.floor(reduceRnd() * 3)], w, h, dw, dh);
 		made++;
 	}
+	// One axis reduced while the other keeps its size: 150 plain (all kinds, the three size bands, the four mirrorings),
+	// 24 under a gamma curve and 48 under a dithered colorfulness adjustment (with and without the gamma), reducing and enlarging.
+	const axisRnd = lcg(31337);
+	const axisSize = (band: string): [number, number] => {
+		for (;;) {
+			const w = 6 + Math.floor(axisRnd() * (band === 'l' ? 220 : 120)), h = 6 + Math.floor(axisRnd() * (band === 'l' ? 220 : 120)), n = w * h;
+			if ((band === 's' && n <= 2304) || (band === 'm' && n > 2304 && n <= 16384) || (band === 'l' && n > 16384 && n < 40000)) return [w, h];
+		}
+	};
+	const allKinds: SourceKind[] = ['check', 'k3', 'k27', 'k100', 'noise', 'smooth'];
+	const mirrors = [0, 4, 8, 12];
+	const oneAxis = (band: string, kinds: SourceKind[], flags: number, enlarge: boolean): void => {
+		const [w, h] = axisSize(band);
+		const factor = enlarge ? 1.2 + axisRnd() * 2.8 : 0.3 + axisRnd() * 0.69;
+		const vertical = axisRnd() < 0.5;
+		const dw = vertical ? w : Math.max(1, Math.round(w * factor)), dh = vertical ? Math.max(1, Math.round(h * factor)) : h;
+		add('oneaxis', kinds[Math.floor(axisRnd() * kinds.length)], w, h, dw, dh, flags);
+	};
+	for (let i = 0; i < 150; i++) oneAxis(['s', 'm', 'l'][i % 3], allKinds, mirrors[Math.floor(axisRnd() * 4)], false);
+	for (let i = 0; i < 24; i++) oneAxis(['s', 'm', 'l'][i % 3], ['noise', 'smooth', 'k100'], mirrors[i % 4] | (2 << 4), i % 2 === 0);
+	for (let i = 0; i < 48; i++) oneAxis(['s', 'm', 'l'][i % 3], ['noise', 'smooth', 'k100'], mirrors[Math.floor(axisRnd() * 4)] | ((3 + (i >> 1) % 2) << 4), i % 2 === 0);
 	return cases;
 }

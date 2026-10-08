@@ -16,8 +16,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-import { stretchHalftone } from '../../src/emf-gdi-stretch';
-import { mixedEngineCases, mixedSource } from '../../src/halftone-mixed-engine.fixture-helper';
+import { mixedEngineCases, mixedSource, renderMixedCase } from '../../src/halftone-mixed-engine.fixture-helper';
 
 const here = resolve(import.meta.dir, '.');
 const output = resolve(here, '../../src/__fixtures__/gdi');
@@ -32,7 +31,7 @@ function inputFile(indices: number[]): Buffer {
 	for (const i of indices) {
 		const c = cases[i];
 		const h = Buffer.alloc(36);
-		[c.w, c.h, 0, 0, c.w, c.h, c.dw, c.dh, 0].forEach((v, k) => h.writeInt32LE(v, k * 4));
+		[c.w, c.h, 0, 0, c.w, c.h, c.dw, c.dh, c.flags].forEach((v, k) => h.writeInt32LE(v, k * 4));
 		const bgra = new Uint8Array(c.w * c.h * 4);
 		for (let p = 0; p < c.w * c.h; p++) bgra.set([sources[i][p * 3 + 2], sources[i][p * 3 + 1], sources[i][p * 3], 255], p * 4);
 		parts.push(h, Buffer.from(bgra));
@@ -70,9 +69,7 @@ let exact = 0;
 const captured = {
 	version: 1,
 	cases: cases.map((c, i) => {
-		const data = new Uint8ClampedArray(c.w * c.h * 4);
-		for (let p = 0; p < c.w * c.h; p++) data.set([sources[i][p * 3], sources[i][p * 3 + 1], sources[i][p * 3 + 2], 255], p * 4);
-		const ours = stretchHalftone({ width: c.w, height: c.h, data }, 0, 0, c.w, c.h, c.dw, c.dh).data;
+		const ours = renderMixedCase(c, sources[i]);
 		let bad = 0;
 		for (let k = 0; k < c.dw * c.dh; k++) for (let ch = 0; ch < 3; ch++) if (ours[k * 4 + ch] !== natives[i][k * 3 + ch]) bad++;
 		if (bad === 0) exact++;

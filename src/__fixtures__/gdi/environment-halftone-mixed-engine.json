@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T07:24:48.3090114Z",
+    "capturedAt":  "2026-10-08T07:43:12.8430563Z",
     "groups":  "halftone-mixed-engine",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -3388,7 +3388,7 @@
     "references":  [
                        {
                            "name":  "halftone-mixed-engine.json.gz",
-                           "sha256":  "f47742a1a23174658801284f64baa7ebd48666151d6ed27ad0b6bd8c7095288a"
+                           "sha256":  "3d87fc491cd3e89f2ca76887ac954e812221b1c727133215a5a63b0732da9255"
                        }
                    ]
 }

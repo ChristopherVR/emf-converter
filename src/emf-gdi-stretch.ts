@@ -565,6 +565,45 @@ function halftoneReduceBoth(rect: Int32Array, sw: number, sh: number, dw: number
 }
 
 /**
+ * HALFTONE reduction of one axis while the other keeps its size: the shrinking axis is reduced with
+ * {@link halftoneReduceTaps} (unrounded), then sharpened along that axis only with
+ * `floor(v + (2v - l - r) / 4)` (edge pixels standing in for missing neighbours, clamped to 0..255).
+ * Reproduces native random-noise captures of 4 size pairs in both orientations exactly.
+ */
+function halftoneReduceOneAxis(rect: Int32Array, sw: number, sh: number, dw: number, dh: number, flipX: boolean, flipY: boolean): Int32Array {
+	const vertical = dh < sh;
+	const taps = vertical ? halftoneReduceTaps(sh, dh, flipY) : halftoneReduceTaps(sw, dw, flipX);
+	// A mirrored axis that keeps its size is only reversed.
+	const reduced = new Float64Array(dw * dh * 3);
+	for (let y = 0; y < dh; y++) {
+		for (let x = 0; x < dw; x++) {
+			const run = vertical ? taps[y] : taps[x];
+			const keep = vertical ? (flipX ? dw - 1 - x : x) : (flipY ? dh - 1 - y : y);
+			let total = 0;
+			for (const [, w] of run) total += w;
+			for (let c = 0; c < 3; c++) {
+				let sum = 0;
+				for (const [k, w] of run) sum += rect[((vertical ? k : keep) * sw + (vertical ? keep : k)) * 3 + c] * w;
+				reduced[(y * dw + x) * 3 + c] = sum / total;
+			}
+		}
+	}
+	const out = new Int32Array(dw * dh * 3);
+	const at = (x: number, y: number, c: number): number =>
+		reduced[(Math.max(0, Math.min(dh - 1, y)) * dw + Math.max(0, Math.min(dw - 1, x))) * 3 + c];
+	for (let y = 0; y < dh; y++) {
+		for (let x = 0; x < dw; x++) {
+			for (let c = 0; c < 3; c++) {
+				const v = at(x, y, c);
+				const sum = vertical ? at(x, y - 1, c) + at(x, y + 1, c) : at(x - 1, y, c) + at(x + 1, y, c);
+				out[(y * dw + x) * 3 + c] = Math.max(0, Math.min(255, Math.floor(v + (2 * v - sum) / 4)));
+			}
+		}
+	}
+	return out;
+}
+
+/**
  * Interpolation weights of the filtered enlargement by a whole factor of 2 to 5
  * (one row per destination phase: the weights of the source samples before,
  * at and after the destination pixel's source pixel, then their sum). Recovered
@@ -622,12 +661,15 @@ function filterAxisTaps(src: number, dst: number): Array<Array<[number, number]>
  * 2x, 3x, 5x, 7x, 10x and fractional ratios from 1.025x up (the kernel formula of {@link enlargeKernel}
  * is a share off only at boundaries within 0.002 of a whole share).
  */
-function halftoneFilterOneAxis(rgb: Int32Array, w: number, h: number, W: number, H: number): Int32Array {
+function halftoneFilterOneAxis(rgb: Int32Array, w: number, h: number, W: number, H: number, below?: Int32Array): Int32Array {
 	const horizontal = W > w;
 	const n = horizontal ? w : h;
 	const sharp = new Int32Array(rgb.length);
+	// `below`, when given (a dithered vertical enlargement), is one further row that the last row is sharpened against.
 	const at = (x: number, y: number, c: number): number =>
-		rgb[(Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
+		y >= h && below
+			? below[Math.max(0, Math.min(w - 1, x)) * 3 + c]
+			: rgb[(Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			for (let c = 0; c < 3; c++) {
@@ -743,7 +785,7 @@ function ditherFilteredSource(rect: Int32Array, SW: number, SH: number, W: numbe
  * @returns RGB triples, `W` x `H`.
  */
 export function halftoneFilterEnlarge(rgb: Int32Array, w: number, h: number, W: number, H: number, extended?: Int32Array): Int32Array {
-	if (W === w || H === h) return halftoneFilterOneAxis(rgb, w, h, W, H);
+	if (W === w || H === h) return halftoneFilterOneAxis(rgb, w, h, W, H, extended && extended.length === (h + 1) * w * 3 ? extended.subarray(h * w * 3) : undefined);
 	const clamp = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
 	const general = W > 5 * w || H > 5 * h;
 	const out = new Int32Array(W * H * 3);
@@ -980,18 +1022,64 @@ export function stretchHalftone(
 	const nearestMixed = mixedPlain && engine === 'nearest'
 		&& ((W < SW && W * 2 > SW) || (H < SH && H * 2 > SH));
 	const nativeMixed = mixedPlain && engine !== 'nearest';
+	// The despeckle is a step of the replicated branch for sources of up to 2,304 pixels and of more than
+	// 16,384; between them the scan of the source (halftoneBranch) hands over without it (native
+	// captures of checker-dense sources: 2,304 and 16,392 pixels despeckled, 2,305 to 16,384 not).
+	const despeckles = SW * SH <= 2304 || SW * SH > 16384;
+	// A reduction (of both axes, or of one) despeckles first when no axis loses 1.5 source pixels per destination
+	// pixel (the reduction by 2x of the checker fixtures does not) and the source takes the replicated branch.
+	const oneAxisReduce = (W < SW && H === SH) || (H < SH && W === SW);
+	const reduceDespeckle = (reducing || oneAxisReduce) && despeckles && !directDib
+		&& !(W < SW && 3 * W + 2 <= 2 * SW) && !(H < SH && 3 * H + 2 <= 2 * SH)
+		&& (SW * SH <= 2304 || halftoneBranch(rect, SW, SH) === 'replicate');
+	// Reducing one axis while the other keeps its size (no colour adjustment, or one applied to the result).
+	if (oneAxisReduce && (!adjust || adjustAfterSampling || dithered)) {
+		if (reduceDespeckle) halftoneDespeckle(rect, SW, SH);
+		const reduced = halftoneReduceOneAxis(rect, SW, SH, W, H, flipX, flipY);
+		if (dithered) {
+			// A combined adjustment dithers and maps the finished reduction at destination coordinates.
+			ditherPixels(reduced, W, H, dither!, false, false);
+			adjust!(reduced);
+			if (curves) curves(reduced);
+		} else if (adjust) adjust(reduced);
+		for (let i = 0, o = 0; i < W * H; i++, o += 3) {
+			data[i * 4] = reduced[o];
+			data[i * 4 + 1] = reduced[o + 1];
+			data[i * 4 + 2] = reduced[o + 2];
+			data[i * 4 + 3] = 255;
+		}
+		return { width: W, height: H, data };
+	}
 	// An enlargement of both axes by whole factors up to 5, or by more than 5x on either axis, whose
 	// source takes the filtered branch (see halftoneBranch) is sharpened and interpolated instead of
 	// replicated (see halftoneFilterEnlarge). A mirrored blit is the mirror image of the unmirrored
 	// one; a combined colour adjustment dithers and maps the source first (see emf-gdi-halftone-dither).
-	if (enlarging && halftoneFilterSupported(SW, SH, W, H) && (!adjust || adjustAfterSampling || (dithered && W !== SW && H !== SH))
+	if (enlarging && halftoneFilterSupported(SW, SH, W, H) && (!adjust || adjustAfterSampling || dithered)
 		&& halftoneBranch(rect, SW, SH) === 'filter') {
 		let extended: Int32Array | undefined;
+		let source = rect;
 		if (dithered) {
-			extended = ditherFilteredSource(rect, SW, SH, W, H, dither!, flipY);
-			adjust!(extended);
+			if (W === SW || H === SH) {
+				// One axis kept: the source is dithered at its own coordinates and mapped. Enlarged vertically,
+				// the last row is sharpened against one further row (the last row replicated and dithered at the next pattern row).
+				if (H > SH) {
+					extended = new Int32Array((SH + 1) * SW * 3);
+					extended.set(rect);
+					extended.set(rect.subarray((SH - 1) * SW * 3), SH * SW * 3);
+					ditherPixels(extended, SW, SH + 1, dither!, false, false, undefined, Int32Array.from({ length: SH + 1 }, (_, j) => (flipY ? H - 1 - j : j)));
+					adjust!(extended);
+					source = extended.subarray(0, SW * SH * 3);
+				} else {
+					source = rect.slice();
+					ditherPixels(source, SW, SH, dither!, false, false, undefined, Int32Array.from({ length: SH }, (_, j) => (flipY ? H - 1 - j : j)));
+					adjust!(source);
+				}
+			} else {
+				extended = ditherFilteredSource(rect, SW, SH, W, H, dither!, flipY);
+				adjust!(extended);
+			}
 		}
-		const filtered = halftoneFilterEnlarge(rect, SW, SH, W, H, extended);
+		const filtered = halftoneFilterEnlarge(source, SW, SH, W, H, extended);
 		if (flipX || flipY) {
 			const mirror = filtered.slice();
 			for (let y = 0; y < H; y++) {
@@ -1011,15 +1099,7 @@ export function stretchHalftone(
 		}
 		return { width: W, height: H, data };
 	}
-	// The despeckle is a step of the replicated branch for sources of up to 2,304 pixels and of more than
-	// 16,384; between them the scan of the source (halftoneBranch) hands over without it (native
-	// captures of checker-dense sources: 2,304 and 16,392 pixels despeckled, 2,305 to 16,384 not).
-	const despeckles = SW * SH <= 2304 || SW * SH > 16384;
-	// A reduction of both axes despeckles first when neither axis loses 1.5 source pixels per destination pixel
-	// (the reduction by 2x of the checker fixtures does not) and the source takes the replicated branch.
-	const reduceDespeckle = reducing && !(W < SW && 3 * W + 2 <= 2 * SW) && !(H < SH && 3 * H + 2 <= 2 * SH)
-		&& (SW * SH <= 2304 || halftoneBranch(rect, SW, SH) === 'replicate');
-	if ((enlarging || reduceDespeckle || nearestMixed || engine === 'despeckled') && despeckles && !directDib && !pairRows && !pairColumns) {
+	if (((enlarging || nearestMixed || engine === 'despeckled') && despeckles || (reducing && reduceDespeckle)) && !directDib && !pairRows && !pairColumns) {
 		halftoneDespeckle(rect, SW, SH);
 	}
 	// A combined adjustment quantises the source to 32 levels with an ordered
