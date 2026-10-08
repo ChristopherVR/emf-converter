@@ -435,7 +435,10 @@ export function squareExtension(
 			if (l === 0) return [0, 0];
 		}
 		const q = ((width / 2) * scale) / l;
-		return [Math.floor((matrix[0] * lx + matrix[2] * ly) * q + 0.5), Math.floor((matrix[1] * lx + matrix[3] * ly) * q + 0.5)];
+		// Ties round away from zero once the vector is cut to whole units (two swept arcs under a 30 degree rotation end on -81.5
+		// and -82.5 FIX and native extends them to -82 and -83).
+		const round = symmetric ? (v: number) => Math.sign(v) * Math.floor(Math.abs(v) + 0.5) : (v: number) => Math.floor(v + 0.5);
+		return [round((matrix[0] * lx + matrix[2] * ly) * q), round((matrix[1] * lx + matrix[3] * ly) * q)];
 	}
 	const [ax, ay] = typeof logicalScale === 'number' ? [logicalScale, logicalScale] : logicalScale;
 	const r = (width / 2) * scale;
