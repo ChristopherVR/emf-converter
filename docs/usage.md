@@ -34,7 +34,7 @@ const svgUrl = await convertMetafileToSvgDataUrl(buffer);
 // "data:image/svg+xml;base64,PHN2ZyB4bWxucz0i..."
 ```
 
-Paths, text, gradients, clipping and pattern brushes are written as SVG elements. Bitmaps are embedded as `<image>` elements; PNG, JPEG, GIF and WebP data is embedded as-is without re-encoding.
+Paths, text, gradients, clipping and pattern brushes are written as SVG elements. Bitmaps are embedded as `<image>` elements; PNG, JPEG, GIF and WebP data is embedded as-is without re-encoding. Two kinds of JPEG are not: arithmetic-coded and CMYK/YCCK files, which SVG renderers decode differently from Windows (or not at all), are decoded by the bundled decoder (which reproduces the Windows result) and embedded as pixels; a 12-bit JPEG is refused as Windows refuses it ("Unsupported JPEG data precision 12"), so nothing is drawn for it.
 
 Raster operations that read the destination (the 256 ROP3 codes, bitwise ROP2 modes, and pattern brushes drawn through ROP2) are computed against a hidden raster copy of the drawing. The changed pixels are embedded as image patches. The resulting SVG is the same with or without a canvas backend.
 
@@ -109,6 +109,8 @@ const png = await convertMetafileToDataUrl(buffer, { fontFamilyMap: { calibri: '
 ```
 
 SVG output always keeps text as `<text>` elements. With `fonts`, the elements carry the per-glyph positions computed by the GDI text engine.
+
+ANSI text records are decoded by the LOGFONT charset, with or without `fonts`: Windows-1252 for ANSI and default, Macintosh, Shift-JIS, Hangul, GB2312, Big5, the Windows Greek, Turkish, Vietnamese, Hebrew, Arabic, Baltic, Cyrillic, Thai and Central European pages, Johab, OEM (code page 437) and Symbol. Code pages the host's `TextDecoder` does not provide fall back to Windows-1252.
 
 ## How it works
 

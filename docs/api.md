@@ -127,6 +127,8 @@ Color space, ICM, OpenGL, escape and font driver records are read and ignored, a
 
 All records in MS-EMFPLUS, with 32-bit, compressed 16-bit and relative point data, and all object types: solid, hatch, texture and gradient brushes; pens with caps, joins, dash styles, dash caps, compound lines and custom line caps; paths, regions, bitmap and metafile images, fonts, string formats and image attributes.
 
+Bitmap images may be PNG, BMP, GIF, TIFF or JPEG. JPEG is decoded the way Windows decodes it, including arithmetic-coded and CMYK/YCCK files (also inside a TIFF) without a canvas backend; a 12-bit JPEG is refused as Windows refuses it, and nothing is drawn for it. ANSI text records use the LOGFONT charset, including Macintosh.
+
 Where GDI+ behaves differently from the MS-EMFPLUS specification (relative points, `StrokeFillPath`, `SetTSGraphics`, `SetTSClip`), the converter follows GDI+.
 
 ### WMF

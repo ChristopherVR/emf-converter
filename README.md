@@ -72,7 +72,7 @@ const svgUrl = await convertMetafileToSvgDataUrl(buffer);
 // => "data:image/svg+xml;base64,PHN2ZyB4bWxucz0i..."  (drop straight into <img src>)
 ```
 
-Paths, text, gradients, clipping and pattern brushes stay vectors; bitmaps are embedded as `<image>` elements (PNG/JPEG/GIF/WebP bytes verbatim, never re-encoded). Raster operations that read the destination (all 256 ROP3 codes, bitwise ROP2, pattern brushes through ROP2) are evaluated exactly against a hidden raster mirror and embedded as image patches holding only the pixels they change, so the SVG is the same with or without a canvas backend.
+Paths, text, gradients, clipping and pattern brushes stay vectors; bitmaps are embedded as `<image>` elements (PNG/JPEG/GIF/WebP bytes verbatim, never re-encoded; arithmetic-coded and CMYK/YCCK JPEG are decoded by the bundled Windows-matching decoder and embedded as pixels, and a 12-bit JPEG draws nothing, as in Windows). Raster operations that read the destination (all 256 ROP3 codes, bitwise ROP2, pattern brushes through ROP2) are evaluated exactly against a hidden raster mirror and embedded as image patches holding only the pixels they change, so the SVG is the same with or without a canvas backend.
 
 ### Rendering in React (JSX / TSX)
 
