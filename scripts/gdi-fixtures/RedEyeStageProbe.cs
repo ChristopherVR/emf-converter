@@ -83,6 +83,49 @@ public static class RedEyeStageProbe {
    foreach(var tok in seq.Split(' ')){byte[] p=tok=="S120"?Pair(24,40,160):tok=="S30"?Pair(24,40,70):tok=="grey"?reset(24):tok=="uniform"?Grey(24,24,120,40,40):Grey(24,24,200,0,0);c.Steps.Add(Mk(24,24,p,new[]{0,0,24,24}));}all.Add(c);}
   return all;
  }
+ // Runs ONE sequence of calls in this process and returns one JSON object per step (source and output as base64). A spec is
+ // ';'-separated tokens, each a whole-image area: R<n> pure red n x n (200,0,0); G<n> grey (128,128,128); U<n> uniform (120,40,40);
+ // P<n>:<lo>:<hi> the checker field of the stage probe; T<n>:<g> a pure-red field with a lone pixel of green g at the centre.
+ // The driver (redeye-state in generate.ps1) starts a fresh process per spec to separate in-process history from anything persistent.
+ public static string RunSequence(string spec){
+  using(var init=new Bitmap(1,1)){
+  var sb=new StringBuilder("[");bool first=true;
+  foreach(var tok in spec.Split(';')){
+   char k=tok[0];var parts=tok.Substring(1).Split(':');int n=int.Parse(parts[0]);int W=n,H=n;byte[] p;
+   if(k=='R')p=Grey(n,n,200,0,0);else if(k=='G')p=Grey(n,n,128,128,128);else if(k=='U')p=Grey(n,n,120,40,40);
+   else if(k=='P')p=Pair(n,int.Parse(parts[1]),int.Parse(parts[2]));
+   else if(k=='T'){p=Grey(n,n,200,0,0);int g=int.Parse(parts[1]);Put(p,n,n/2,n/2,g+100,g,g);}
+   else if(k=='Z'){ // the independent probe's noise field (pattern 3) with <parts[1]> pixels, chosen by a fixed shuffle, replaced by pure red (luma 0)
+    int kz=int.Parse(parts[1]);int blue=parts.Length>2?int.Parse(parts[2]):0;p=Grey(n,n,0,0,0);
+    for(int y=0;y<n;y++)for(int x=0;x<n;x++)Put(p,n,x,y,(x*17+y*31)%156+100,(x*3+y*5)%64,blue);
+    var sh=Shuffled(n*n,777);for(int q=0;q<kz;q++){int pix=sh[q];Put(p,n,pix%n,pix/n,200,0,0);}}
+   else if(k=='I'){ // the independent probe's scene <size>:<pattern>:<blue> (RedEyeCorrectionProbe, not held out), alone in a fresh process
+    int pattern=int.Parse(parts[1]);int blue=int.Parse(parts[2]);int size=n;p=Grey(n,n,0,0,0);
+    for(int y=0;y<n;y++)for(int x=0;x<n;x++){int r=200,g=blue,b=blue;double d=Math.Sqrt((x+.5-n/2.0)*(x+.5-n/2.0)+(y+.5-n/2.0)*(y+.5-n/2.0));
+     if((pattern==1&&d<size/6.0)||(pattern==4&&d<size*.3)||(pattern==5&&d<size*.4)){r=100;g=0;b=blue;}
+     if(pattern==2){g=x<n/2?blue:40;b=blue;}
+     if(pattern==3){r=(x*17+y*31)%156+100;g=(x*3+y*5)%64;b=blue;}
+     Put(p,n,x,y,r,g,b);}}
+   else if(k=='Y'){ // Y<size>:<pattern>:<blue>:<x>:<y>: the independent scene with one faint red pixel (blue+1, blue, blue) at x,y, nudging a symmetric centroid
+    int pattern=int.Parse(parts[1]);int blue=int.Parse(parts[2]);int size=n;p=Grey(n,n,0,0,0);
+    for(int y=0;y<n;y++)for(int x=0;x<n;x++){int r=200,g=blue,b=blue;double d=Math.Sqrt((x+.5-n/2.0)*(x+.5-n/2.0)+(y+.5-n/2.0)*(y+.5-n/2.0));
+     if((pattern==1&&d<size/6.0)||(pattern==4&&d<size*.3)||(pattern==5&&d<size*.4)){r=100;g=0;b=blue;}
+     if(pattern==2){g=x<n/2?blue:40;b=blue;}
+     Put(p,n,x,y,r,g,b);}
+    Put(p,n,int.Parse(parts[3]),int.Parse(parts[4]),blue+1,blue,blue);}
+   else if(k=='F'){ // F<w>:<h>:<lo>:<hi>:<x>:<y>: grey, no redness. Inside the disc of radius min(w,h)/2 the field is lo, outside hi (the luma spread
+    // sets the strength; the disc around the lone red pixel is uniform, so its sector has no darkness term). One red pixel (lo+127, lo, lo) at x,y.
+    W=n;H=int.Parse(parts[1]);int lo=int.Parse(parts[2]),hi=int.Parse(parts[3]),px=int.Parse(parts[4]),py=int.Parse(parts[5]);p=Grey(W,H,0,0,0);
+    double rad=Math.Min(W,H)/2.0;
+    for(int y=0;y<H;y++)for(int x=0;x<W;x++){int g=Math.Sqrt((x+.5-W/2.0)*(x+.5-W/2.0)+(y+.5-H/2.0)*(y+.5-H/2.0))<rad?lo:hi;Put(p,W,x,y,g,g,g);}
+    Put(p,W,px,py,lo+127,lo,lo);}
+   else throw new Exception("token "+tok);
+   var s=Mk(W,H,p,new[]{0,0,W,H});Apply(s);
+   if(!first)sb.Append(',');first=false;
+   sb.Append("{\"token\":\""+tok+"\",\"width\":"+W+",\"height\":"+H+",\"source\":\""+Convert.ToBase64String(s.Src)+"\",\"output\":\""+Convert.ToBase64String(s.Out)+"\"}");
+  }
+  sb.Append(']');return sb.ToString();}
+ }
  public static void Run(string dir){
   Directory.CreateDirectory(dir);var cases=Build();using(var init=new Bitmap(1,1)){var sb=new StringBuilder("[");bool first=true;
   foreach(var c in cases){foreach(var s in c.Steps)Apply(s);
