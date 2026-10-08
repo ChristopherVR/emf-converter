@@ -742,7 +742,7 @@ export class GdiFontCollection {
 	 * heights for a negative lfHeight and cell heights for a positive one.
 	 * The cost model is fitted to GetTextMetrics over lfHeight -60..60 for
 	 * MS Sans Serif, MS Serif, Courier, Small Fonts, System and Terminal
-	 * (98% exact): 150 per pixel too small; 290 plus 350 per pixel too big;
+	 * (98% exact): 150 per pixel too small; 290 plus 340 per pixel too big;
 	 * a stretch cost by factor (120, 150, 250, 250 for 2x..5x) plus 100 per
 	 * extra factor divided by the face's character height (small faces
 	 * stretch less readily); ties go to the smaller stretch, then to the
@@ -766,7 +766,7 @@ export class GdiFontCollection {
 			for (let n = 1; n <= 5; n++) {
 				const d = unit * n - target;
 				const cost =
-					(d < 0 ? -d * 150 : d > 0 ? 290 + d * 350 : 0) +
+					(d < 0 ? -d * 150 : d > 0 ? 290 + d * 340 : 0) +
 					RASTER_STRETCH_COST[n] +
 					(n > 1 ? (100 * (n - 1)) / unitOf(f) : 0) +
 					(Math.abs(f.weight - weight) * 3) / 10 +

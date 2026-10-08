@@ -481,7 +481,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-courier-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-fon-courier-styles', 'wmf', 0.0044), // measured 0.350%
-	fontCase('textx-fon-fixedsys', 'emf', 0.0208), // measured 1.664%
+	fontCase('textx-fon-fixedsys', 'emf', 0), // measured 0.000% (1.664% before the too-big raster stretch cost became 340 per pixel: the -33 line)
 	fontCase('textx-fon-fixedsys-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-fon-helv', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-helv-cell', 'wmf', 0), // measured 0.000%

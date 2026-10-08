@@ -12,14 +12,16 @@
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
 # playback of the recorded metafile.
-param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '', [switch]$PlaybackOpen, [string]$OutDir = '')
+param([string]$Which = 'all', [string]$TablesDir = '', [string]$PlaybackCase = '', [switch]$PlaybackOpen, [string]$OutDir = '', [switch]$DpiUnaware)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # GetDeviceCaps and enhanced-metafile headers must use the same physical
 # coordinates. A DPI-virtualised PowerShell otherwise records a larger frame
 # and PlayEnhMetaFile silently scales its reference bitmap on scaled displays.
 Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class GdiFixtureDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
-[GdiFixtureDpi]::SetProcessDPIAware() | Out-Null
+# -DpiUnaware keeps the process DPI-virtualised (96 dpi, a 3840 x 2160 display at 150% reports 2560 x 1440), the environment the
+# oldest text references were captured in; the raster-face mapper chooses its sizes by the device dpi.
+if (-not $DpiUnaware) { [GdiFixtureDpi]::SetProcessDPIAware() | Out-Null }
 $out = if ($OutDir) { $OutDir } else { Join-Path $here '..\..\src\__fixtures__\gdi' }
 $outDir = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $out)).Path
 $generationStarted = [DateTime]::UtcNow
@@ -108,6 +110,12 @@ if ($Which -eq 'text-recorded-advance') {
     $names = 'textx-arial-q0-default', 'textx-arial-q1-draft', 'textx-arial-q2-proof', 'textx-arial-cleartype', 'textx-arial-ctnatural', 'textx-segoeui-cell-mono'
     $files = @(Join-Path $outDir 'text-recorded-advance.json') + @($names | ForEach-Object { Join-Path $outDir ($_ + '.emf'); Join-Path $outDir ($_ + '.png') })
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-text-recorded-advance.json') -Groups $Which -Files $files
+    return
+}
+if ($Which -eq 'text-raster-mapper') {
+    Add-Type -Path (Join-Path $here 'RasterMapperProbe.cs') -ReferencedAssemblies System.Drawing
+    [RasterMapperProbe]::Run($outDir)
+    Complete-Fixtures
     return
 }
 if ($Which -eq 'text-playback-hinting') {
