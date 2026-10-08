@@ -17,7 +17,7 @@
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, arc-small-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-coverage,
-#   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-shpix, text-iup,
+#   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-shpix, text-iup, text-alignrp,
 #   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
 #   text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
@@ -71,7 +71,7 @@ function Complete-Fixtures {
         $_.LastWriteTimeUtc -ge $generationStarted -and $_.Name -notlike 'environment-*.json'
     } | ForEach-Object { $_.FullName })
     # Private diagnostic fonts are capture inputs even when they were not regenerated.
-    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } elseif ($Which -like 'text-opcode*') { 'opcode-*.ttf' } elseif ($Which -like 'text-vector-stage*') { 'vector-stage-*.ttf' } elseif ($Which -eq 'text-shpix') { 'shpix-*.ttf' } elseif ($Which -eq 'text-iup') { 'iup-*.ttf' } else { $null }
+    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } elseif ($Which -like 'text-opcode*') { 'opcode-*.ttf' } elseif ($Which -like 'text-vector-stage*') { 'vector-stage-*.ttf' } elseif ($Which -eq 'text-shpix') { 'shpix-*.ttf' } elseif ($Which -eq 'text-iup') { 'iup-*.ttf' } elseif ($Which -eq 'text-alignrp') { 'alignrp-*.ttf' } else { $null }
     if ($fontFilter) {
         $files += @(Get-ChildItem -LiteralPath $Directory -File -Filter $fontFilter | ForEach-Object { $_.FullName })
         $files = @($files | Sort-Object -Unique)
@@ -186,6 +186,12 @@ if ($Which -eq 'text-coverage' -or $Which -eq 'text-cleartype-coverage') {
 if ($Which -eq 'text-iup') {
     Add-Type -Path (Join-Path $here 'TextIupProbe.cs') -ReferencedAssemblies System.Drawing
     [TextIupProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-alignrp') {
+    Add-Type -Path (Join-Path $here 'TextAlignrpProbe.cs') -ReferencedAssemblies System.Drawing
+    [TextAlignrpProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
