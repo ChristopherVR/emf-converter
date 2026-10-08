@@ -96,4 +96,49 @@ public static class NibMatrixPenProbe
                 zip.Write(bytes, 0, bytes.Length);
         } finally { DeleteDC(dc); }
     }
+
+    /**
+     * The nib (a zero-length polyline widened) of a geometric pen at every whole degree of a pure rotation, 0 to 359, for widths 12, 24 and 40:
+     * `nib-angle-sweep.json.gz` (`a`, `b` as the single-precision matrix the call used, and the outline at native FIX precision).
+     */
+    public static void RunAngles(string dir)
+    {
+        IntPtr dc = CreateCompatibleDC(IntPtr.Zero);
+        if (dc == IntPtr.Zero || SetGraphicsMode(dc, 2) == 0) throw new Exception("CreateCompatibleDC/SetGraphicsMode failed");
+        var json = new StringBuilder("[");
+        try {
+            foreach (int width in new[] { 12, 24, 40 })
+            for (int deg = 0; deg < 360; deg++) {
+                double r = deg * Math.PI / 180;
+                var matrix = new Matrix { a = (float)Math.Cos(r), b = (float)Math.Sin(r), c = -(float)Math.Sin(r), d = (float)Math.Cos(r) };
+                if (!SetWorldTransform(dc, ref matrix)) throw new Exception("SetWorldTransform failed");
+                var brush = new Brush();
+                IntPtr pen = ExtCreatePen(0x10000, (uint)width, ref brush, 0, null);
+                if (pen == IntPtr.Zero) throw new Exception("ExtCreatePen failed");
+                IntPtr old = SelectObject(dc, pen);
+                try {
+                    var source = Source(0);
+                    if (!BeginPath(dc) || !Polyline(dc, source, source.Length) || !EndPath(dc) || !WidenPath(dc))
+                        throw new Exception("WidenPath failed");
+                    var read = new Matrix { a = 1f / 16, d = 1f / 16 };
+                    if (!SetWorldTransform(dc, ref read)) throw new Exception("SetWorldTransform failed");
+                    int n = GetPath(dc, null, null, 0);
+                    var points = new Point[n]; var types = new byte[n];
+                    if (GetPath(dc, points, types, n) != n) throw new Exception("GetPath failed");
+                    if (json.Length > 1) json.Append(',');
+                    json.Append("{\"w\":").Append(width).Append(",\"deg\":").Append(deg)
+                        .Append(",\"a\":").Append(matrix.a.ToString("R", CultureInfo.InvariantCulture)).Append(",\"b\":").Append(matrix.b.ToString("R", CultureInfo.InvariantCulture)).Append(",\"points\":[");
+                    for (int i = 0; i < n; i++) {
+                        if (i > 0) json.Append(',');
+                        json.Append(points[i].x).Append(',').Append(points[i].y).Append(',').Append(types[i]);
+                    }
+                    json.Append("]}");
+                } finally { SelectObject(dc, old); DeleteObject(pen); }
+            }
+            var bytes = Encoding.UTF8.GetBytes(json.Append(']').ToString());
+            using (var file = File.Create(Path.Combine(dir, "nib-angle-sweep.json.gz")))
+            using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+                zip.Write(bytes, 0, bytes.Length);
+        } finally { DeleteDC(dc); }
+    }
 }

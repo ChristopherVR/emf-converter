@@ -502,6 +502,7 @@ if ($Which -eq 'general-matrix-pen-probe') {
 if ($Which -eq 'nib-matrix-pen-probe') {
     Add-Type -Path (Join-Path $here 'NibMatrixPenProbe.cs')
     [NibMatrixPenProbe]::Run($outDir)
+    [NibMatrixPenProbe]::RunAngles($outDir)
     Complete-Fixtures
     return
 }
