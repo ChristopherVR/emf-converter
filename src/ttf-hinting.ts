@@ -830,7 +830,7 @@ export class HintedSize {
 	 * there whether the size is small (`MPPEM <= limit`) and, when it is,
 	 * run a block of corner-squaring ALIGNRP and SHPIX calls after the IUPs
 	 * that native ClearType never runs (Arial and Times New Roman bowls at
-	 * 9 to 17 ppem; 2,890 to 3,059 of 3,720 size-sheet captures exact).
+	 * 9 to 17 ppem; 2,247 to 2,369 of 3,720 size-sheet captures exact).
 	 */
 	private ctBypassStorage(i: number): boolean {
 		if (!this.ctCompat() || (i !== 22 && i !== 24 && i !== 8)) {

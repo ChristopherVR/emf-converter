@@ -622,11 +622,7 @@ export class RealizedFont implements GdiRealizedFont {
 		if (this.mode === 'mono') {
 			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType));
 		} else if (this.mode === 'cleartype') {
-			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
-			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
-			// never runs SCANCTRL gets none (the private diagonal, opcode and vector fonts pin that).
-			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
-			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout);
+			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined);
 		} else {
 			bitmap = rasterizeGray(o, src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2);
 		}
@@ -1029,12 +1025,11 @@ function clearTypeSpread(ttf: TtfFont): ClearTypeSpread | undefined {
  * Fitted to the edge profiles of `textx-arial-cleartype` (an Arial stem at
  * 72 px reproduces to within 1 level per channel). GDI+ truncates the
  * coverage instead of rounding it (native baseline-controlled captures).
- * A `spread` widens every sample row first (see `clearTypeSpread`); `dropout` is the scan converter's dropout mode.
+ * A `spread` widens every sample row first (see `clearTypeSpread`).
  */
-function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpread, dropout = 2): GlyphBitmap | null {
+function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpread): GlyphBitmap | null {
 	const S = CLEARTYPE_OVERSAMPLE / 3;
-	// The stub rule has no overshoot exception here: native excludes the stubs it exempts (13 of 13 determined cases).
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, 1, 1, dropout, false);
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, 1, 1);
 	if (!r) {
 		return null;
 	}
