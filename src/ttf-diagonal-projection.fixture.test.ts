@@ -90,7 +90,8 @@ describe.skipIf(!windowsFonts())('the per-product projection candidate against r
 			return c.face === 'Segoe UI' || (c.face === 'Times New Roman' && 'IvSy028'.includes(char)) || (c.size === 40 && 'IgaS0148'.includes(char)) || (c.size === 16 && (c.hint === 3 ? char !== 'y' : 'Igay048'.includes(char)));
 		});
 		expect(closedCoverage).toHaveLength(2400);
-		expect(baseline[0].filter(Boolean).length).toBe(2400);
+		// 2,464 = the 2,400 closed controls + 64 that the ClearType-era y DELTAP rule closed (Arial 16 `S` and `1` under AntiAlias, 32 each).
+		expect(baseline[0].filter(Boolean).length).toBe(2464);
 		expect(baseline[1].filter(Boolean).length).toBe(1280);
 		expect(baseline[2].filter(Boolean).length).toBe(1280);
 	});

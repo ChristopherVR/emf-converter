@@ -459,7 +459,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
 	fontCase('textx-arial-aa', 'emf', 0.0016), // measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-arial-cleartype', 'emf', 0.0471), // measured 4.706%, 5.163% before the size-specific SHPIX tweaks
+	fontCase('textx-arial-cleartype', 'emf', 0.0470), // measured 4.693%, 5.163% before the size-specific SHPIX and DELTAP rules
 	fontCase('textx-arial-ctnatural', 'emf', 0.1856), // measured 14.847%
 	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
 	fontCase('textx-arial-q0-default', 'emf', 0.0646), // measured 5.163%
@@ -503,9 +503,9 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-opaque-aa', 'emf', 0.0004), // measured 0.001%
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
-	fontCase('textx-plus-antialias', 'emf', 0.0321), // nearest-quarter grayscale origins; remaining glyph hinting
-	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0255), // measured 2.547%; GDI+ hinting and shades
-	fontCase('textx-plus-cleartype', 'emf', 0.0972), // measured 9.714%, 10.216% before the size-specific SHPIX tweaks; decorations retained
+	fontCase('textx-plus-antialias', 'emf', 0.0316), // nearest-quarter grayscale origins; remaining glyph hinting; measured 3.157%, 3.210% before the y DELTAP rule
+	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0253), // measured 2.527%, 2.547% before the y DELTAP rule; GDI+ hinting and shades
+	fontCase('textx-plus-cleartype', 'emf', 0.0970), // measured 9.694%, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
 	fontCase('textx-plus-singlebit', 'emf', 0.0245), // measured 1.960%
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
@@ -514,7 +514,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-rotalign-world', 'emf', 0.0068), // measured 0.537%
 	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
 	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
-	fontCase('textx-segoeui-cleartype', 'emf', 0.0404), // measured 4.035%
+	fontCase('textx-segoeui-cleartype', 'emf', 0.0370), // measured 3.694%, 4.041% before the y DELTAP rule
 	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
 	fontCase('textx-tahoma-aa', 'emf', 0.0013), // measured 0.092%

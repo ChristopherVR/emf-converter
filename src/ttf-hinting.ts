@@ -358,6 +358,8 @@ export class HintedSize {
 	private callFrames: Array<{ def: FuncDef }> = [];
 	/** The glyph program being run belongs to a composite glyph. */
 	private inComposite = false;
+	/** IUP[y] has run in the current glyph program. */
+	private iupy = false;
 	private count = 0;
 
 	constructor(font: TtfFont, ppemX: number, ppemY: number, env: HintEnvironment, hinting = true) {
@@ -681,6 +683,7 @@ export class HintedSize {
 		this.pts = zone;
 		this.zp0 = this.zp1 = this.zp2 = zone;
 		this.stack = [];
+		this.iupy = false;
 		this.computeFuncs();
 		try {
 			this.execute(instructions);
@@ -2224,6 +2227,7 @@ export class HintedSize {
 	}
 
 	private insIUP(xAxis: number): void {
+		if (!xAxis) this.iupy = true;
 		const z = this.pts;
 		const mask = xAxis ? TOUCH_X : TOUCH_Y;
 		const orgs = xAxis ? z.orgX : z.orgY;
@@ -2361,8 +2365,11 @@ export class HintedSize {
 				if (s >= 0) s++;
 				s *= 1 << (6 - this.gs.deltaShift);
 				// Backward-compatible ClearType skips DELTAPs except on points
-				// already touched in the non-ClearType (y) direction.
-				if (this.ctCompat() && !(this.gs.fvx === 0 && (this.zp0.tags[a] & TOUCH_Y) !== 0)) {
+				// already touched in the non-ClearType (y) direction, and, measured
+				// against private fonts (`iup-a.ttf`), also once IUP[y] has run
+				// (IUP[x] alone does not stop them; SHPIX, MSIRP and the other
+				// moves are not stopped by either).
+				if (this.ctCompat() && (this.iupy || !(this.gs.fvx === 0 && (this.zp0.tags[a] & TOUCH_Y) !== 0))) {
 					continue;
 				}
 				this.move(this.zp0, a, s);

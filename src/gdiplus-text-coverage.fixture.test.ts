@@ -39,7 +39,7 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled ClearType glyphs', ()
 			const char = String.fromCharCode(c.code);
 			const closed = c.face === 'Segoe UI' && !'ak4'.includes(char) ||
 				c.face === 'Times New Roman' && 'IS4'.includes(char) ||
-				c.size === 16 && 'v02Ig84'.includes(char) || c.size === 40 && 'I4'.includes(char);
+				c.size === 16 && 'v02Ig841'.includes(char) || c.size === 40 && 'I4'.includes(char);
 			if (!closed) continue;
 			const font = fonts.realize({ face: c.face, height: -c.size, width: 0, weight: c.style & 1 ? 700 : 400,
 				italic: !!(c.style & 2), charSet: 1, pitchAndFamily: 0, quality: 6, gdiPlus: true })!;
@@ -55,7 +55,7 @@ describe.skipIf(!windowsFonts())('GDI+ baseline-controlled ClearType glyphs', ()
 			expect(Buffer.from(rgba).equals(Buffer.from(c.rgba, 'base64')), JSON.stringify({ ...c, rgba: undefined })).toBe(true);
 			compared++;
 		}
-		expect(compared).toBe(1216);
+		expect(compared).toBe(1248);
 	});
 });
 
