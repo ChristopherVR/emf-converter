@@ -247,11 +247,11 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 		}
 		expect(totals['uniform no focus']).toBeGreaterThanOrEqual(318577); // 282949 before
 		expect(totals['uniform isotropic focus']).toBeGreaterThanOrEqual(318583); // 292048 before
-		// Anisotropic focus and varying surrounds keep the smooth ratio.
+		// Anisotropic focus keeps the smooth ratio; varying surrounds are Gouraud fan triangles (246132, 246030 and 245704 before).
 		expect(totals['uniform anisotropic focus']).toBeGreaterThanOrEqual(289797);
-		expect(totals['varying no focus']).toBeGreaterThanOrEqual(246132);
-		expect(totals['varying isotropic focus']).toBeGreaterThanOrEqual(246030);
-		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(245704);
+		expect(totals['varying no focus']).toBeGreaterThanOrEqual(319926);
+		expect(totals['varying isotropic focus']).toBeGreaterThanOrEqual(319913);
+		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(319600);
 	});
 
 	it('keeps the focus contours exact to the step when the focus is isotropic', () => {
