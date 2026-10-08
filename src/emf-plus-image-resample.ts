@@ -153,6 +153,28 @@ function snapToDeviceGrid(spec: DeferredImageResample): TransformMatrix {
 	return [a, b, c, d, ox - a * spec.srcX - c * spec.srcY, oy - b * spec.srcX - d * spec.srcY];
 }
 
+/**
+ * A rotated or sheared high-quality draw's matrix with only the first destination corner snapped to 1/16 pixel
+ * and the other two corners left where they are, so the edge vectors (and with them the scale and the rotation)
+ * change by the snap. Against 16 native rotated and sheared draws this leaves 704 pixels more than one level off,
+ * where keeping the matrix and moving the origin leaves 2,682, snapping all three corners 1,141, and snapping to
+ * 1/8 or 1/32 pixel 1,021 and 3,080 (`hq-wrap.json.gz`, draws without attributes).
+ */
+function snapOriginKeepCorners(spec: DeferredImageResample): TransformMatrix {
+	const m = spec.toDevice;
+	const map = (u: number, v: number): [number, number] => [m[0] * u + m[2] * v + m[4], m[1] * u + m[3] * v + m[5]];
+	const [rx, ry] = map(spec.srcX, spec.srcY);
+	const ox = Math.round(rx * SUBPIXEL_GRID) / SUBPIXEL_GRID;
+	const oy = Math.round(ry * SUBPIXEL_GRID) / SUBPIXEL_GRID;
+	const [ux, uy] = map(spec.srcX + spec.srcW, spec.srcY);
+	const [vx, vy] = map(spec.srcX, spec.srcY + spec.srcH);
+	const a = (ux - ox) / spec.srcW;
+	const b = (uy - oy) / spec.srcW;
+	const c = (vx - ox) / spec.srcH;
+	const d = (vy - oy) / spec.srcH;
+	return [a, b, c, d, ox - a * spec.srcX - c * spec.srcY, oy - b * spec.srcX - d * spec.srcY];
+}
+
 /** A block of device pixels produced by {@link resampleImage}. */
 export interface ResampledBlock {
 	x: number;
@@ -494,6 +516,9 @@ export function resampleImage(
 		m = [m[0], 0, 0, m[3], m[4], m[5]];
 	}
 	const axisAligned = m[1] === 0 && m[2] === 0;
+	if (hq && !axisAligned && !keepOrigin) {
+		m = snapOriginKeepCorners(spec);
+	}
 	// Native DrawImage's axis-aligned Bicubic path uses integer colour
 	// intermediates, and so does the plain Bicubic pass of a rotated
 	// high-quality draw (`plainRotated`). A directly requested rotated or

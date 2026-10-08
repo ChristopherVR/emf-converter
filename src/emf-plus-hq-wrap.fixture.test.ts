@@ -115,6 +115,17 @@ describe('high-quality draws under an ImageAttributes WrapMode (native captures)
 		expect(ring).toBe(24523);
 	});
 
+	it('snaps only the first destination corner of a rotated draw to 1/16 pixel', () => {
+		// The unwrapped rotated and sheared draws (16): the converter snaps the first corner and leaves the other two,
+		// which moves the edge vectors; snapping all three corners to 1/16 puts more pixels off.
+		const rotated = captures.filter((c) => c.wrap === 0 && (c.deg !== 0 || c.shear !== 0));
+		expect(rotated).toHaveLength(16);
+		const count = (round: (v: number) => number): number => rotated.reduce((n, c) => n + compare({ ...c, p: c.p.map(round) }, 1).px, 0);
+		const asRecorded = count((v) => v);
+		const allThree = count((v) => Math.round(v * 16) / 16);
+		expect([asRecorded, allThree]).toEqual([704, 1141]);
+	});
+
 	it('pins the converter against every capture (pixels more than 3 levels off, per wrap mode and shape)', () => {
 		const tally: Record<string, number> = {};
 		for (const c of captures) {
@@ -125,20 +136,20 @@ describe('high-quality draws under an ImageAttributes WrapMode (native captures)
 		// The unwrapped rotated and sheared draws carry their own residue (the pre-scale and plain-kernel arithmetic is not
 		// exact for every shape); the wrapped ones add the unmodelled far-edge ring on top.
 		expect(tally).toEqual({
-			'none / 25 deg 1.55x1.55': 6,
-			'clamp transparent / 25 deg 1.55x1.55': 6,
-			'clamp red / 25 deg 1.55x1.55': 247,
+			'none / 25 deg 1.55x1.55': 4,
+			'clamp transparent / 25 deg 1.55x1.55': 4,
+			'clamp red / 25 deg 1.55x1.55': 252,
 			'tile / 25 deg 1.55x1.55': 230,
-			'flip x / 25 deg 1.55x1.55': 228,
-			'flip y / 25 deg 1.55x1.55': 232,
+			'flip x / 25 deg 1.55x1.55': 230,
+			'flip y / 25 deg 1.55x1.55': 230,
 			'flip xy / 25 deg 1.55x1.55': 232,
-			'none / 45 deg 1.55x1.55': 34,
-			'clamp transparent / 45 deg 1.55x1.55': 34,
-			'clamp red / 45 deg 1.55x1.55': 347,
-			'tile / 45 deg 1.55x1.55': 317,
-			'flip x / 45 deg 1.55x1.55': 313,
-			'flip y / 45 deg 1.55x1.55': 317,
-			'flip xy / 45 deg 1.55x1.55': 313,
+			'none / 45 deg 1.55x1.55': 4,
+			'clamp transparent / 45 deg 1.55x1.55': 4,
+			'clamp red / 45 deg 1.55x1.55': 326,
+			'tile / 45 deg 1.55x1.55': 298,
+			'flip x / 45 deg 1.55x1.55': 294,
+			'flip y / 45 deg 1.55x1.55': 300,
+			'flip xy / 45 deg 1.55x1.55': 296,
 			'none / 0 deg 1.55x1.55': 0,
 			'clamp transparent / 0 deg 1.55x1.55': 0,
 			'clamp red / 0 deg 1.55x1.55': 0,
@@ -160,20 +171,20 @@ describe('high-quality draws under an ImageAttributes WrapMode (native captures)
 			'flip x / 0 deg 0.625x0.625': 0,
 			'flip y / 0 deg 0.625x0.625': 0,
 			'flip xy / 0 deg 0.625x0.625': 0,
-			'none / 25 deg 2.35x1.55': 76,
-			'clamp transparent / 25 deg 2.35x1.55': 76,
-			'clamp red / 25 deg 2.35x1.55': 354,
-			'tile / 25 deg 2.35x1.55': 325,
-			'flip x / 25 deg 2.35x1.55': 323,
-			'flip y / 25 deg 2.35x1.55': 331,
-			'flip xy / 25 deg 2.35x1.55': 330,
-			'none / 0 deg 1.55x1.55 sheared': 126,
-			'clamp transparent / 0 deg 1.55x1.55 sheared': 126,
-			'clamp red / 0 deg 1.55x1.55 sheared': 318,
-			'tile / 0 deg 1.55x1.55 sheared': 306,
-			'flip x / 0 deg 1.55x1.55 sheared': 302,
-			'flip y / 0 deg 1.55x1.55 sheared': 304,
-			'flip xy / 0 deg 1.55x1.55 sheared': 301,
+			'none / 25 deg 2.35x1.55': 8,
+			'clamp transparent / 25 deg 2.35x1.55': 8,
+			'clamp red / 25 deg 2.35x1.55': 313,
+			'tile / 25 deg 2.35x1.55': 290,
+			'flip x / 25 deg 2.35x1.55': 286,
+			'flip y / 25 deg 2.35x1.55': 294,
+			'flip xy / 25 deg 2.35x1.55': 288,
+			'none / 0 deg 1.55x1.55 sheared': 15,
+			'clamp transparent / 0 deg 1.55x1.55 sheared': 15,
+			'clamp red / 0 deg 1.55x1.55 sheared': 257,
+			'tile / 0 deg 1.55x1.55 sheared': 247,
+			'flip x / 0 deg 1.55x1.55 sheared': 245,
+			'flip y / 0 deg 1.55x1.55 sheared': 247,
+			'flip xy / 0 deg 1.55x1.55 sheared': 246,
 		});
 	});
 });
