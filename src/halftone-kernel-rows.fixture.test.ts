@@ -9,6 +9,10 @@ import { KERNEL_ROW_PAIRS } from './halftone-kernel-rows.fixture-helper';
  * fractional or whole factor in a mixed enlarge-and-reduce stretch, measured for 78 source/destination length pairs
  * (`generate-halftone-kernel-rows.ts`). They fixed the closed form of the enlargement kernel behind
  * `halftoneEnlargeTaps` (two power laws, exponents 1/sqrt 2 and sqrt 2, meeting at a jump at half a pixel).
+ * Round 6: of the 110 tie rows and the 7 interior misses, the tie rows (halves of exactly 4096 shares, so the weights cannot be
+ * solved from outputs) and `29 -> 46 @ 19` are not converter defects (`halftone-kernel-ties.fixture.test.ts` checks the raw native
+ * output); the six other misses are real and are pinned in `halftone-kernel-sides.fixture.test.ts` with the labelled
+ * near-boundary rows around them.
  */
 interface Capture { pairs: { n: number; N: number; rows: { x: number; w: [number, number][] }[] }[] }
 const capture: Capture = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/halftone-kernel-rows.json.gz', import.meta.url))).toString());

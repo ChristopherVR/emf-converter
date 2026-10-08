@@ -57,17 +57,21 @@ describe('native mixed enlarge-and-reduce engine and despeckle bands', () => {
 	it('pins one axis reduced or enlarged under a gamma curve and under a dithered colour adjustment', () => {
 		// Gamma 1.5 (applied to the result): two enlargements by about 3x are 9 and 15 values off (two levels at most).
 		expect(groups['oneaxis-mode2']).toEqual({ count: 24, exact: 22, values: 24, maximum: 2 });
-		// Colorfulness +40 (dithered, with and without the gamma): the colour-adjustment residual of the replicated branch,
-		// 0.19% of the channel values, two or three levels at most.
-		expect(groups['oneaxis-mode3']).toEqual({ count: 24, exact: 2, values: 2314, maximum: 2 });
-		expect(groups['oneaxis-mode4']).toEqual({ count: 24, exact: 2, values: 2649, maximum: 3 });
+		// Colorfulness +40 (dithered, with and without the gamma): exact but for the values of two and one stretches (one level).
+		// Before the measured chroma ties of `emf-gdi-chroma-tie-data.ts` only two stretches of each were exact (2,314 and 2,649
+		// values off, 0.19% of the channel values: the chroma stage's tie-breaking).
+		expect(groups['oneaxis-mode3']).toEqual({ count: 24, exact: 22, values: 24, maximum: 1 });
+		expect(groups['oneaxis-mode4']).toEqual({ count: 24, exact: 23, values: 4, maximum: 1 });
 	});
 
 	it('pins both axes under a dithered colorfulness adjustment (mixed stretches dither the source from the equal-area line up)', () => {
-		// 96 mixed, enlarged and reduced stretches with every mirroring: 0.25% of the channel values, four levels at most.
-		// Before the area rule picked the dither stage, the mixed ones were 32% to 45% of their values wrong by up to 200 levels.
-		expect(groups['dithered-mode3']).toEqual({ count: 48, exact: 1, values: 1939, maximum: 3 });
-		expect(groups['dithered-mode4']).toEqual({ count: 48, exact: 4, values: 1542, maximum: 4 });
+		// 96 mixed, enlarged and reduced stretches with every mirroring, all exact. Before the area rule picked the dither stage, the
+		// mixed ones were 32% to 45% of their values wrong by up to 200 levels; before the chroma ties of `emf-gdi-chroma-tie-data.ts`
+		// only 5 of the 96 were exact (0.25% of the channel values off, 3,199 in all); a vertically mirrored enlargement with a reduced
+		// width (45 x 21 to 25 x 74 and two more, 327 values off by up to four levels) lacked the further dithered row below the source,
+		// which sits at pattern row H - 1 - SH when mirrored.
+		expect(groups['dithered-mode3']).toEqual({ count: 48, exact: 48, values: 0, maximum: 0 });
+		expect(groups['dithered-mode4']).toEqual({ count: 48, exact: 48, values: 0, maximum: 0 });
 	});
 });
 

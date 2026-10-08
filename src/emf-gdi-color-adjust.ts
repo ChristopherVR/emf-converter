@@ -47,6 +47,7 @@
  * @module emf-gdi-color-adjust
  */
 
+import { CHROMA_TIE_FLIPS } from './emf-gdi-chroma-tie-data';
 import { ILLUMINANT_CUBE_DATA } from './emf-gdi-illuminant-data';
 import { inflateZlibSync } from './png-decoder';
 import type { GdiColorAdjustment } from './emf-types';
@@ -321,11 +322,51 @@ function adjustChroma(r: number, g: number, b: number, scale: number, angle: num
 	return out;
 }
 
+const chromaTieTables = new Map<string, Int8Array | null>();
+
+/**
+ * The measured one-level corrections of the chroma stage for a colorfulness / tint setting without an
+ * illuminant, indexed `(cubeIndex * 3 + channel)`, or `null` when the setting was not measured (see
+ * {@link CHROMA_TIE_FLIPS}).
+ */
+function chromaTieTable(ca: GdiColorAdjustment): Int8Array | null {
+	if (ca.illuminant !== 0 && ca.illuminant !== 6) return null;
+	const key = `${ca.colorfulness},${ca.redGreenTint}`;
+	let table = chromaTieTables.get(key);
+	if (table === undefined) {
+		const flips = CHROMA_TIE_FLIPS[key];
+		table = null;
+		if (flips) {
+			table = new Int8Array(32768 * 3);
+			for (const f of flips) table[f >> 1] = f & 1 ? 1 : -1;
+		}
+		chromaTieTables.set(key, table);
+	}
+	return table;
+}
+
+/** The palette index (0..31) of a channel value, or -1 when it is not a palette entry. */
+function paletteEntry(v: number): number {
+	const n = Math.round((v * 31) / 255);
+	return PALETTE[n] === v ? n : -1;
+}
+
+/** The cube index `(r * 32 + g) * 32 + b` of a palette colour, or -1 when a channel is not a palette entry. */
+function tieIndex(c: readonly number[]): number {
+	const r = paletteEntry(c[0]);
+	const g = paletteEntry(c[1]);
+	const b = paletteEntry(c[2]);
+	return r < 0 || g < 0 || b < 0 ? -1 : (r * 32 + g) * 32 + b;
+}
+
 /**
  * Builds the per-pixel mapping for `ca` (see the module doc for the
  * stages). Returns packed `0xRRGGBB` for packed `0xRRGGBB`.
+ *
+ * `options.chromaTies` (default true) applies the measured one-level corrections of the chroma stage to
+ * palette colours of the settings in {@link CHROMA_TIE_FLIPS}; the generator of that table turns it off.
  */
-export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => number {
+export function colorAdjustmentMapper(ca: GdiColorAdjustment, options?: { chromaTies?: boolean }): (rgb: number) => number {
 	const illuminant = illuminantCube(ca.illuminant);
 	const matrix = ILLUMINANT_MATRICES[ca.illuminant];
 	const gammas = [ca.redGamma / 10000, ca.greenGamma / 10000, ca.blueGamma / 10000];
@@ -338,6 +379,7 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 	const angle = (TINT_RADIANS * ca.redGreenTint) / 100;
 	const log = (ca.flags & CA_LOG_FILTER) !== 0;
 	const negative = (ca.flags & CA_NEGATIVE) !== 0;
+	const ties = chroma && options?.chromaTies !== false ? chromaTieTable(ca) : null;
 	const curve = (value: number, channel: number): number => {
 		// The stages run in this order: gamma, reference black / white,
 		// contrast, brightness, log curve, negative.
@@ -361,6 +403,7 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 		if (chroma) {
 			// The chroma stage reads the palette level unrounded (255 n / 31),
 			// not the rounded 8-bit entry the curve stages see.
+			const tie = ties ? tieIndex(c) : -1;
 			c = c.map(exactPaletteLevel) as [number, number, number];
 			if (matrix) {
 				// The illuminant's unclamped output feeds the chroma stage.
@@ -369,6 +412,7 @@ export function colorAdjustmentMapper(ca: GdiColorAdjustment): (rgb: number) => 
 			}
 			c = adjustChroma(c[0], c[1], c[2], scale, angle);
 			c = c.map(roundHalfUp) as [number, number, number];
+			if (ties && tie >= 0) c = c.map((v, k) => v + ties[tie * 3 + k]) as [number, number, number];
 		} else if (illuminant) {
 			const mapped = lookupIlluminant(illuminant, c[0] / 255, c[1] / 255, c[2] / 255);
 			c = [mapped[0] * 255, mapped[1] * 255, mapped[2] * 255];

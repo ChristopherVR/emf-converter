@@ -121,4 +121,18 @@ public static class HalftoneColorProbe
 		foreach (int illuminant in new[] { 1, 2, 3, 4, 5, 7, 8 })
 			Cube(Path.Combine(dir, "illuminant-cube-" + illuminant + ".bin"), Adjustment(0, illuminant, 10000, 10000, 10000, 0, 10000, 0, 0, 0, 0));
 	}
+
+	/// <summary>The colorfulness / tint settings whose cubes back <c>src/emf-gdi-chroma-tie-data.ts</c>.</summary>
+	public static readonly int[][] ChromaSettings = new[] {
+		new[] { 40, 0 }, new[] { 40, 20 }, new[] { 50, 20 }, new[] { -40, 0 }, new[] { 100, 0 }, new[] { -100, 0 }, new[] { 20, 0 }, new[] { 70, 0 },
+		new[] { 0, 30 }, new[] { 0, -50 }, new[] { 0, 60 },
+	};
+
+	/// <summary>Captures the cube of every <see cref="ChromaSettings"/> entry into <paramref name="dir"/> as <c>chroma-cube-COLORFULNESS-TINT.bin</c>.</summary>
+	public static void ChromaCubes(string dir)
+	{
+		Directory.CreateDirectory(dir);
+		foreach (var setting in ChromaSettings)
+			Cube(Path.Combine(dir, "chroma-cube-" + setting[0] + "-" + setting[1] + ".bin"), Adjustment(0, 0, 10000, 10000, 10000, 0, 10000, 0, 0, setting[0], setting[1]));
+	}
 }
