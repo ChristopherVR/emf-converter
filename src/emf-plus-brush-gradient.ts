@@ -13,7 +13,8 @@
  *   the boundary polygon's surround colours to the centre colour, shaped by
  *   the boundary itself (not a circle). Clamp paints the boundary and
  *   independently scaled focus contours; the tile modes repeat the boundary's
- *   bounding box.
+ *   bounding box. GDI+ draws it as nested copies of the boundary, so the ratio
+ *   is rounded to one of `pathGradientQuantum` steps (see there).
  *
  * Both are rasterised once into a brush-space tile at device resolution and
  * installed as a `CanvasPattern` whose matrix is the full brush transform,
@@ -108,6 +109,88 @@ function lerpUniformPathArgb(a: number, b: number, t: number): number {
 	return ((alpha << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
 }
 
+/**
+ * Number of distance steps GDI+ quantises a path gradient's centre-to-boundary
+ * ratio into: `ceil(2 * hypot(w, h))` for the `w` x `h` device-space bounding box
+ * of the boundary, which is `4 * L` rounded up for the half diagonal `L` (so the
+ * ratio moves in quarter-pixel steps along the longest possible ray). Measured
+ * on rectangle path gradients of every size (a row through the centre is
+ * `round(255 * k / N)` for the step count `k`); the same count reproduces
+ * triangles and ellipses. It is the device-space bounds: a 2x world or brush
+ * scale doubles the step count.
+ *
+ * `matrix` maps the boundary's brush space to device pixels.
+ */
+export function pathGradientQuantum(
+	boundary: ReadonlyArray<{ x: number; y: number }>,
+	matrix: TransformMatrix = IDENTITY,
+): number {
+	let x0 = Infinity;
+	let y0 = Infinity;
+	let x1 = -Infinity;
+	let y1 = -Infinity;
+	for (const p of boundary) {
+		const x = matrix[0] * p.x + matrix[2] * p.y + matrix[4];
+		const y = matrix[1] * p.x + matrix[3] * p.y + matrix[5];
+		x0 = Math.min(x0, x);
+		y0 = Math.min(y0, y);
+		x1 = Math.max(x1, x);
+		y1 = Math.max(y1, y);
+	}
+	const steps = Math.ceil(2 * Math.hypot(x1 - x0, y1 - y0));
+	return Number.isFinite(steps) && steps > 0 ? steps : 0;
+}
+
+/** A ratio within this of an exact half step counts as a tie (float noise of the geometry). */
+const TIE_EPSILON = 1e-7;
+
+/**
+ * The path-gradient colour at share `t` of the centre colour (0 boundary,
+ * 1 centre) once GDI+ has quantised the ratio into `quantum` steps.
+ *
+ * GDI+ paints a path gradient as `quantum` nested copies of the boundary,
+ * each a step smaller and a step closer to the centre colour, so a pixel
+ * takes the colour of the innermost copy that holds it and the ratio rounds
+ * to a whole step. A pixel in the outer half counts steps from the boundary and
+ * one in the inner half from the centre, each interpolating from its own end (the
+ * two halves round differently); the premultiplied channels and alpha are
+ * interpolated together and rounded half up.
+ *
+ * A ratio exactly half way between two steps lies on a copy's edge, and which
+ * side native paints it depends on that edge's float arithmetic (the same
+ * geometry traversed in the opposite vertex order flips about half of them), so
+ * the tie keeps the unquantised ratio, which is within a level of either answer.
+ */
+function quantisedPathArgb(surround: number, centre: number, t: number, quantum: number): number {
+	const scaled = t * quantum;
+	const tie = Math.abs(scaled - Math.floor(scaled) - 0.5) < TIE_EPSILON;
+	const k = tie ? scaled : Math.floor(scaled + 0.5);
+	const fromBoundary = t < 0.5;
+	const w = (fromBoundary ? k : quantum - k) / quantum;
+	const aS = (surround >>> 24) & 0xff;
+	const aC = (centre >>> 24) & 0xff;
+	const mix = (s: number, c: number): number => (fromBoundary ? s + (c - s) * w : c + (s - c) * w);
+	const alpha = Math.floor(mix(aS, aC) + 0.5);
+	if (alpha <= 0) return 0;
+	const ch = (shift: number): number => {
+		const p = Math.floor(mix(((surround >>> shift) & 0xff) * aS / 255, ((centre >>> shift) & 0xff) * aC / 255) + 0.5);
+		return Math.min(255, Math.max(0, Math.round(p * 255 / alpha)));
+	};
+	return ((alpha << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
+}
+
+/**
+ * The position (0 boundary, 1 centre) once rounded to a whole step of `quantum`
+ * (see {@link quantisedPathArgb}); a Blend or InterpolationColors curve is read at
+ * this position, so a custom curve steps exactly as the plain ramp does. An exact
+ * half step keeps its unquantised position.
+ */
+function quantisedPosition(pos: number, quantum: number): number {
+	const scaled = pos * quantum;
+	const tie = Math.abs(scaled - Math.floor(scaled) - 0.5) < TIE_EPSILON;
+	return (tie ? scaled : Math.floor(scaled + 0.5)) / quantum;
+}
+
 /** Piecewise-linear lookup of `ys` at `x` over ascending `xs` (clamped at both ends). */
 function piecewise(xs: readonly number[], ys: readonly number[], x: number): number {
 	const n = Math.min(xs.length, ys.length);
@@ -166,11 +249,15 @@ export function pathGradientColorAt(
 	// Scanline coverage may nudge x, but a collapsed focus line keeps the
 	// original sample location. Direct callers already supply that location.
 	focusPoint?: { x: number; y: number },
+	// Distance steps GDI+ quantises the ratio into (see pathGradientQuantum).
+	quantum?: number,
 ): number | null {
 	const { center, boundary, boundaryArgb } = shape;
 	const n = boundary.length;
 	const px = x - center.x;
 	const py = y - center.y;
+	const ux = (focusPoint?.x ?? x) - center.x;
+	const uy = (focusPoint?.y ?? y) - center.y;
 	let found = -1;
 	let bestS = 0;
 	let bestU = 0;
@@ -193,8 +280,11 @@ export function pathGradientColorAt(
 		}
 		// Later triangles paint over earlier ones, as GDI+ fills them in order.
 		found = i;
-		bestS = Math.max(0, alpha);
-		bestU = alpha > 0 ? Math.min(1, Math.max(0, beta / alpha)) : 0;
+		// The quantised ratio is taken at the unnudged sample location.
+		const alphaU = quantum ? (ux * ey - uy * ex) / det : alpha;
+		const betaU = quantum ? (ax * uy - ay * ux) / det : beta;
+		bestS = Math.max(0, alphaU);
+		bestU = alphaU > 0 ? Math.min(1, Math.max(0, betaU / alphaU)) : 0;
 	}
 	let s = found < 0 ? Infinity : bestS;
 	if (shape.focus) {
@@ -282,7 +372,8 @@ export function pathGradientColorAt(
 		}
 	}
 	if (found < 0 || !Number.isFinite(s)) return null;
-	const pos = 1 - s;
+	const exactPos = 1 - s;
+	const pos = quantum && quantum > 0 ? quantisedPosition(exactPos, quantum) : exactPos;
 	if (shape.preset && shape.preset.positions.length > 0) {
 		const { positions, argb } = shape.preset;
 		if (pos <= positions[0]) {
@@ -301,8 +392,11 @@ export function pathGradientColorAt(
 	const surround = lerpArgb(c0, c1, bestU);
 	const factor = shape.blend ? piecewise(shape.blend.positions, shape.blend.factors, pos) : pos;
 	const t = Math.min(1, Math.max(0, factor));
+	if (quantum && quantum > 0 && !shape.blend && boundaryArgb.every((color) => color === boundaryArgb[0])) {
+		return quantisedPathArgb(surround, shape.centerArgb, Math.min(1, Math.max(0, exactPos)), quantum);
+	}
 	// Independent native alpha captures confirm the uniform-surround path.
-	// Varying surrounds have a separate strip/color interpolation mechanism.
+	// Varying surrounds follow a different, still unmodelled interpolation.
 	return (surround >>> 24) !== (shape.centerArgb >>> 24) && boundaryArgb.every((color) => color === boundaryArgb[0])
 		? lerpUniformPathArgb(surround, shape.centerArgb, t)
 		: lerpArgb(surround, shape.centerArgb, t);
