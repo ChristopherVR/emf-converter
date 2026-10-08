@@ -44,11 +44,45 @@ describe('nested copies of a uniform path gradient', () => {
 		for (let x = 20; x < 80; x += 7) expect(copiesStepAt(a, x, 30)).toBe(copiesStepAt(b, x, 30));
 	});
 
-	it('puts a pixel exactly on a copy edge half way between the two steps', () => {
-		// Copy 72 of a 60 x 40 rectangle about (47, 33) has its top edge on row 24 exactly.
-		const symmetric = shapeOf([[20, 15], [80, 15], [80, 55], [20, 55]], [47, 33]);
-		const g = prepareCopies(symmetric, IDENTITY, 145)!;
-		expect(copiesStepAt(g, 50, 24)).toBe(72.5);
+	describe('a pixel exactly on a copy edge', () => {
+		// A 4 x 20 rectangle drawn clockwise about (7, 15) has 41 copies; copy 20 (half scale) has its right edge on column 8.
+		const tall = shapeOf([[5, 5], [9, 5], [9, 25], [5, 25]], [7, 15]);
+		const g = prepareCopies(tall, IDENTITY, 41)!;
+		const inside = 41 - 20;
+		const outside = 41 - 21;
+
+		it('is outside when it reads the exact coordinate and the ratio is a binary fraction, inside when not', () => {
+			// Tie ratio 41 / 82 = 1/2 is exact in fixed point: the pixels of column 8 level with the centre are outside.
+			expect(copiesStepAt(g, 8, 15)).toBe(outside);
+			// The 12 x 22 rectangle has 51 copies; copy 42 is at scale 85 / 102 = 5/6 (not a binary fraction), so column 11 is inside.
+			const wide = shapeOf([[0, 0], [12, 0], [12, 22], [0, 22]], [6, 11]);
+			expect(pathGradientQuantum(wide.boundary, IDENTITY)).toBe(51);
+			const w = prepareCopies(wide, IDENTITY, 51)!;
+			expect(copiesStepAt(w, 11, 11)).toBe(51 - 42);
+		});
+
+		it('is inside above the centre and outside below it on an edge directed down, past the 45 degree line', () => {
+			for (let y = 11; y <= 14; y++) expect(copiesStepAt(g, 8, y)).toBe(inside);
+			for (let y = 15; y <= 19; y++) expect(copiesStepAt(g, 8, y)).toBe(outside);
+		});
+
+		it('follows the winding: the same rectangle counter-clockwise has the inside half on its left edge', () => {
+			const reversed = shapeOf([[5, 5], [5, 25], [9, 25], [9, 5]], [7, 15]);
+			const r = prepareCopies(reversed, IDENTITY, 41)!;
+			for (let y = 11; y <= 14; y++) expect(copiesStepAt(r, 6, y)).toBe(inside);
+			for (let y = 11; y <= 14; y++) expect(copiesStepAt(r, 8, y)).toBe(outside);
+		});
+	});
+
+	it('treats the edge column of a fully focused axis as inside every copy that holds the next column', () => {
+		// FocusScale x = 1: every copy keeps the boundary's left and right edges, so the left edge column (a tie of every
+		// copy at once, decided by the span rule: left edge in) takes the step of its neighbour on every row.
+		const focused = shapeOf([[50, 35], [150, 35], [150, 85], [50, 85]], [100, 60], [1, 0.25]);
+		const n = pathGradientQuantum(focused.boundary, IDENTITY);
+		const g = prepareCopies(focused, IDENTITY, n)!;
+		for (let y = 36; y < 85; y++) expect(copiesStepAt(g, 50, y)).toBe(copiesStepAt(g, 51, y));
+		// The right edge column is outside the boundary (right edge out).
+		expect(copiesStepAt(g, 150, 60)).toBeNull();
 	});
 
 	it('scales each axis by its own focus', () => {
