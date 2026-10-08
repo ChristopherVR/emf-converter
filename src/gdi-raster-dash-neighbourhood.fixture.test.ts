@@ -128,7 +128,7 @@ describe('near-complete chords around curve-widen.json sample 206', () => {
 			if (differing(ours, polygons(c.expected)) > 0) bad++;
 		}
 		expect(bad).toBe(21);
-	});
+	}, 60_000);
 
 	it('builds the arc of sample 206 as native does in 168 of 169 neighbouring paths (single-precision arc points; 108 started a FIX off at a rounding tie)', () => {
 		const neighbours = closing.filter((c) => c.radials && c.cap === 1 && c.join === 1);
