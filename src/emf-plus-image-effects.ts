@@ -607,9 +607,12 @@ const RED_EYE_SPREAD_STEPS = [25, 40, 80] as const;
 const RED_EYE_STRENGTHS = [0.25, 0.5, 0.661, 0.75] as const;
 /**
  * A pixel that is the area's one brightest (integer luma strictly above every other pixel's) and at
- * least 40 above the 70th percentile is a highlight (a catch-light) and is corrected completely.
+ * least 40 above the 70th percentile is a highlight (a catch-light). It is corrected completely and
+ * its surroundings are pulled in as well: no pixel keeps more than {@link RED_EYE_HIGHLIGHT_REST}
+ * levels of redness per squared pixel of distance from it.
  */
 const RED_EYE_HIGHLIGHT_RISE = 40;
+const RED_EYE_HIGHLIGHT_REST = 5;
 
 function correctRedEyeArea(
 	out: Uint8ClampedArray,
@@ -682,6 +685,11 @@ function correctRedEyeArea(
 	const spread = p70 - sorted[Math.floor(0.3 * count)];
 	const brightest = sorted[count - 1];
 	const second = count > 1 ? sorted[count - 2] : -1;
+	// The highlight (if any): the one pixel whose luma is strictly the area's largest and at least 40 above the 70th percentile.
+	let highlight = -1;
+	if (brightest > second && brightest - p70 >= RED_EYE_HIGHLIGHT_RISE) {
+		highlight = lumas.indexOf(brightest);
+	}
 	let level = 0;
 	while (level < RED_EYE_SPREAD_STEPS.length && spread > RED_EYE_SPREAD_STEPS[level]) {
 		level++;
@@ -730,9 +738,14 @@ function correctRedEyeArea(
 			// Native concentric controls correct both sides of the mean, but stop
 			// using this darkness term at twice the sector mean.
 			const darknessFalloff = ratio < 2 ? 0.5 * (1 - ratio) ** 2 : 0;
-			const highlight = lumas[k] === brightest && lumas[k] > second && lumas[k] - p70 >= RED_EYE_HIGHLIGHT_RISE;
-			const falloff = highlight ? 1 : Math.max(strength * (1 - u) * (1 - u), darknessFalloff);
-			const rest = (1 - falloff) * mean;
+			const falloff = Math.max(strength * (1 - u) * (1 - u), darknessFalloff);
+			let rest = (1 - falloff) * mean;
+			if (highlight >= 0) {
+				// A highlight leaves at most 5 levels of redness per squared pixel of distance from it.
+				const hdx = x - (highlight % w);
+				const hdy = y - Math.floor(highlight / w);
+				rest = Math.min(rest, RED_EYE_HIGHLIGHT_REST * (hdx * hdx + hdy * hdy));
+			}
 			if (rest >= v) {
 				continue;
 			}
