@@ -40,10 +40,10 @@ function ours(fonts: GdiFontCollection, c: Capture): Uint8Array {
 
 /** Which captures (in file order, one bit each, least significant bit first) are pixel-exact today. */
 const EXACT_BITS =
-	'9FciHP5rQQ5vMAiFNwCEw1sAzOEtgAbwDgBx+P+/vx8AAAZvASinJyCV0lPQQOEpaaf0/39+AAD8gJ4CFopP39LXp27h49OXcPWpW77a1ClefToQHj51CV9//s/vR2fRu3/z+P9/Yz30zz/c++8f0v7/3x9gnsLkf+7hZ/+nELMtU7/p+zweZEKeL7wj7hdfmecLW4ZDgR/4DwTMe67Y46hdemb0DD8xEpKeCWlLwA8ECBi1R6kBUMK4fj/9b/tf//b0D+996Ae5YVTDfB/u8Spb50j3B/4AAQUQoddFifnbooXvHVXTtbRIoTEA/AX+DiiM+OAYZw==';
+	'9FcuHP5rR05vMEqlN6CF01tQzOktwAbwDjBx+P+/vx9cBEZvQSunJyCV0lPQQOEpaaf0/39+AAD8gJ4CFsr//9P/9+7h9//XcP2/e77e1zne/z8YXv93Df9//v//R+fRu3/z+P9/Yz30zz/c++8f0v7/3x9gnsLkf+7hZ/+nELMtU7/p+zweZEKeL7wj7hdfmecLW4ZDgR/4DwTMe67Y46hdemb0DD8xEpKeCWlLwA8ECBi1R6kBUMK4fj/9b/tf//b0D+996Ae5YVTDfB/u8Spb50j3B/4AAQUQoddFifnbooXvHVXTtbRIoTEA/AX+DiiM+OAYZw==';
 
 const STYLES = ['regular', 'bold', 'italic', 'bold italic'];
-const EXACT_BY_STYLE: Record<string, number> = { regular: 215, bold: 320, italic: 242, 'bold italic': 266 };
+const EXACT_BY_STYLE: Record<string, number> = { regular: 242, bold: 364, italic: 242, 'bold italic': 266 };
 
 describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier New', () => {
 	const fonts = new GdiFontCollection(windowsFonts() ?? []);
@@ -67,7 +67,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 			byStyle[key] = (byStyle[key] ?? 0) + (exact[i] ? 1 : 0);
 		}
 		expect(byStyle).toEqual(EXACT_BY_STYLE);
-		expect(exact.filter(Boolean)).toHaveLength(1043);
+		expect(exact.filter(Boolean)).toHaveLength(1114);
 	});
 
 	// Straight-edged glyphs (E H I L T 7) are exact at nearly every size and phase of the regular and bold faces (237 of 248) but for a few

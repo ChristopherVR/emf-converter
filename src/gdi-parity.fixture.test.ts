@@ -459,7 +459,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
 	fontCase('textx-arial-aa', 'emf', 0.0016), // measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-arial-cleartype', 'emf', 0.0465), // measured 4.648%, 4.693% before the ClearType dropout control, 5.163% before the size-specific SHPIX and DELTAP rules
+	fontCase('textx-arial-cleartype', 'emf', 0.0450), // measured 4.491%, 4.648% before the storage 8 rule, 4.693% before the ClearType dropout control, 5.163% before the size-specific SHPIX and DELTAP rules
 	fontCase('textx-arial-ctnatural', 'emf', 0.1856), // measured 14.847%
 	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
 	fontCase('textx-arial-q0-default', 'emf', 0.0646), // measured 5.163%
@@ -503,9 +503,9 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-opaque-aa', 'emf', 0.0004), // measured 0.001%
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
-	fontCase('textx-plus-antialias', 'emf', 0.0316), // nearest-quarter grayscale origins; remaining glyph hinting; measured 3.157%, 3.210% before the y DELTAP rule
+	fontCase('textx-plus-antialias', 'emf', 0.0274), // nearest-quarter grayscale origins; remaining glyph hinting; measured 2.734%, 3.157% before the storage 8 rule, 3.210% before the y DELTAP rule
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0253), // measured 2.527%, 2.547% before the y DELTAP rule; GDI+ hinting and shades
-	fontCase('textx-plus-cleartype', 'emf', 0.0959), // measured 9.581%, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
+	fontCase('textx-plus-cleartype', 'emf', 0.0924), // measured 9.236%, 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
 	fontCase('textx-plus-singlebit', 'emf', 0.0195), // measured 1.941% (1.960% before the instruction budget was reset per program)
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
