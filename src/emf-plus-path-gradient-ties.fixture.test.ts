@@ -6,12 +6,10 @@ import { pathGradientSampler } from './emf-plus-exact-fill';
 /**
  * Pixels exactly on the edge of a nested copy of a uniform path gradient (`PathGradientTieProbe.cs`: integer-sized
  * rectangles and diamonds centred on a pixel, so a copy at half scale has an edge on a pixel row, column or
- * diagonal). Native decides them by float arithmetic that is not reproduced: a rectangle's top-edge tie row is
- * inside the copy for a short run of columns near the left end and outside for the rest at half scale and mostly
- * inside at scales 0.1, 0.3, 0.7 and 0.9; the same ties on the bottom edge are outside at half scale; the 45-degree edge
- * of a diamond is inside for the first 14 pixels from the top vertex on one side and outside for the next 16, and
- * irregular on the other three. The sampler gives such a pixel the colour half way between the two steps, so
- * all but 142 of the 61,924 pixels are within a level (none beyond two) and the exact count is what a rule would add.
+ * diagonal). `emf-plus-path-gradient-copies.ts` decides them with the rule measured on `path-gradient-edges.json.gz`
+ * (see `emf-plus-path-gradient-edges.fixture.test.ts`): 46,861 of the 46,868 rectangle pixels and 15,050 of the 15,056
+ * diamond pixels are exact (46,082 and 14,804 with the half-way colour the sampler gave them before), and no pixel
+ * is more than a level off on a rectangle or two on a diamond.
  */
 interface Capture {
 	name: string;
@@ -62,8 +60,8 @@ for (const c of captures) {
 
 /** [images, native pixels, exact pixels (floor), pixels within one level (floor), unpainted ceiling, max error ceiling]. */
 const EXPECTED: Record<string, [number, number, number, number, number, number]> = {
-	rect: [14, 46868, 46082, 46758, 0, 2],
-	diamond: [7, 15056, 14804, 15024, 0, 2],
+	rect: [14, 46868, 46861, 46868, 0, 1],
+	diamond: [7, 15056, 15050, 15050, 0, 2],
 };
 
 describe('pixels exactly on a copy edge', () => {

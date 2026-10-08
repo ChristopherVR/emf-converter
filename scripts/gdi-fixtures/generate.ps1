@@ -191,6 +191,12 @@ if ($Which -eq 'path-gradient-ties') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-edges') {
+    Add-Type -Path (Join-Path $here 'PathGradientEdgeProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientEdgeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'bicubic-copy') {
     Add-Type -Path (Join-Path $here 'BicubicCopyProbe.cs') -ReferencedAssemblies System.Drawing
     [BicubicCopyProbe]::Run($outDir)

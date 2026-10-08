@@ -19,14 +19,24 @@
  * fractional geometry are reproduced to the level, where the smooth ratio rounds about 9% of them
  * the wrong way. An isotropic focus scales each copy by `f + (1 - f) (m + 1/2) / N`.
  *
- * A pixel exactly on a copy's edge (the integer-sized shapes of the earlier captures have them)
- * is not decided by one rule: horizontal top and bottom ties of a rectangle fall outside the copy
- * for most of the edge and inside near its left end (row 24 of a 60 x 40 rectangle: columns
- * 34 to 38 inside, 39 to 63 outside), and slanted ties are 293 inside to 160 outside. Native's
- * edge arithmetic is not reproduced, so a tie takes the colour half way between the two
- * steps, which is within a level of either answer. (Strict containment with a float32 scale
- * `m * step + step / 2` reproduces all 116 ties of the whole-row captures and then only 40% of the
- * vertical and 45% of the horizontal ties of the 14 rectangles in `path-gradient-ties.json.gz`.)
+ * A pixel exactly on a copy's edge is decided by `tieSide`, from the single-edge captures in
+ * `path-gradient-edges.json.gz` (`PathGradientEdgeProbe.cs`: 176,222 of 176,400 pixels of the clockwise
+ * sweep are exact, where the half-way colour gave 164,684). It is not a float32 edge test (that fits the
+ * 116 ties of the whole-row captures and 40 to 45% of the rectangle ties of `path-gradient-ties.json.gz`):
+ * - The ratio of the tie is `(2q + 1) / (2N)`. Native holds the ratio in binary fixed point, and the copy
+ *   index is its product with `N` rounded half up, so a ratio that is a binary fraction (the odd part of
+ *   `N` divides `2q + 1`) puts the pixel outside copy `q` and any other ratio, truncated, inside it. This is
+ *   exact for every pixel that reads the exact coordinate of its edge (an x-major pixel on a vertical edge, a
+ *   y-major one on a horizontal edge): none of 38,872 such ties differs.
+ * - A pixel that reads the other coordinate goes through its position along the edge. On an edge directed to
+ *   the right or straight down the half before the centre's foot is inside unless that position (a fraction
+ *   of the copy's edge from its first vertex) is a binary fraction, and the half after it is outside; any
+ *   other edge follows the first rule. The winding matters (a counter-clockwise rectangle mirrors a clockwise
+ *   one), the first vertex does not, and translation by whole pixels changes nothing. The same holds for 45
+ *   degree edges and for the same-axis pixels of other slopes; the other pixels of a slanted edge keep the
+ *   colour half way between the two steps, which is within a level of either answer.
+ * Left open: about a tenth of the along-the-edge pixels of an edge directed up or left (the decision there follows
+ * something finer, and clusters at a copy's vertex rows) and the other pixels of slanted edges.
  *
  * @module emf-plus-path-gradient-copies
  */
@@ -87,6 +97,69 @@ export function prepareCopies(shape: EmfPlusPathGradientShape, full: TransformMa
 	return { cx, cy, vx, vy, steps, focus, anisotropic };
 }
 
+/**
+ * Whether a pixel exactly on the edge of copy `q` is inside it (`true`), outside (`false`), or not decided by
+ * a measured rule (`null`). See the header.
+ */
+function tieSide(g: CopiesGradient, edge: number, dx: number, dy: number, q: number): boolean | null {
+	const n = g.vx.length;
+	const ex = g.vx[(edge + 1) % n] - g.vx[edge];
+	const ey = g.vy[(edge + 1) % n] - g.vy[edge];
+	if (ex === 0 && ey === 0) return null;
+	const adx = Math.abs(dx);
+	const ady = Math.abs(dy);
+	let odd = g.steps;
+	while (odd % 2 === 0) odd /= 2;
+	// The ratio (2q + 1) / (2N) of the tie in lowest terms is a binary fraction (exact in fixed point) when the odd part
+	// of N divides 2q + 1; native then puts the pixel outside the copy and otherwise inside (the truncated ratio falls short).
+	const fractional = (2 * q + 1) % odd !== 0;
+	// The axis the edge runs along most and the axis the pixel lies along most from the centre. An axis-aligned edge has
+	// one exact coordinate, which a pixel along the other axis reads; on a slanted edge neither coordinate is exact.
+	const axisAligned = ex === 0 || ey === 0;
+	const alike = axisAligned
+		? (ex === 0 ? adx <= ady : ady <= adx)
+		: Math.abs(ex) === Math.abs(ey) || (Math.abs(ex) > Math.abs(ey)) === (adx > ady);
+	if (!alike) return axisAligned ? fractional : null;
+	// Otherwise the ratio goes through the inexact coordinate. An edge directed to the right, or straight down, puts the
+	// part of it before the centre's foot inside; any other edge keeps the binary-fraction rule.
+	const forward = ex > 0 || (ex === 0 && ey > 0);
+	if (!forward) return fractional;
+	if (dx * ex + dy * ey < 0) return fractional || !edgeParameterIsBinary(g, edge, dx, dy, q);
+	return fractional && adx === ady;
+}
+
+function gcd(a: number, b: number): number {
+	while (b) [a, b] = [b, a % b];
+	return a;
+}
+
+/**
+ * Whether the pixel's position along the edge of copy `q`, as a fraction of the edge from its first vertex, is a binary
+ * fraction (a power-of-two denominator in lowest terms). Native walks that parameter in fixed point: a fraction that
+ * is not exact falls short, which puts a tie before the centre's foot inside, and one that is exact leaves it outside.
+ */
+function edgeParameterIsBinary(g: CopiesGradient, edge: number, dx: number, dy: number, q: number): boolean {
+	const n = g.vx.length;
+	const k = 16;
+	const ex = Math.round((g.vx[(edge + 1) % n] - g.vx[edge]) * k);
+	const ey = Math.round((g.vy[(edge + 1) % n] - g.vy[edge]) * k);
+	const ax = Math.round((g.vx[edge] - g.cx) * k);
+	const ay = Math.round((g.vy[edge] - g.cy) * k);
+	// Copy q is the edge scaled by S / D about the centre: u = (P - A S / D) / (E S / D) with P the pixel's and A the
+	// first vertex's projection on the edge vector and E its squared length.
+	const S = 2 * q + 1;
+	const D = 2 * g.steps;
+	const P = Math.round(dx * k) * ex + Math.round(dy * k) * ey;
+	const A = ax * ex + ay * ey;
+	const numerator = P * D - A * S;
+	const denominator = (ex * ex + ey * ey) * S;
+	if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator)) return false;
+	if (numerator === 0) return true;
+	let d = Math.abs(denominator / gcd(Math.abs(numerator), Math.abs(denominator)));
+	while (d % 2 === 0) d /= 2;
+	return d === 1;
+}
+
 /** Whether device pixel (`px`, `py`) lies in the polygon scaled by `scale` about the centre. */
 function insideCopy(g: CopiesGradient, scale: number, px: number, py: number): boolean {
 	const n = g.vx.length;
@@ -115,6 +188,7 @@ function insideCopy(g: CopiesGradient, scale: number, px: number, py: number): b
 export function copiesStepAt(g: CopiesGradient, px: number, py: number, nudge = 0): number | null {
 	const n = g.vx.length;
 	let s = -1;
+	let edge = -1;
 	const dx = px - g.cx;
 	const dy = py - g.cy;
 	for (let i = 0; i < n; i++) {
@@ -128,6 +202,7 @@ export function copiesStepAt(g: CopiesGradient, px: number, py: number, nudge = 
 		const beta = (ax * dy - ay * dx) / det;
 		if (alpha < -1e-9 || beta < -1e-9 || beta > alpha + 1e-9 || alpha > 1 + 1e-9) continue;
 		s = alpha;
+		edge = i;
 	}
 	if (g.anisotropic) {
 		// Independent focus scales: the strip solver gives the ratio (already focus-adjusted). On or outside the
@@ -146,8 +221,11 @@ export function copiesStepAt(g: CopiesGradient, px: number, py: number, nudge = 
 	// holding it is the smallest m at least q.
 	const q = s <= f ? 0 : ((s - f) / (1 - f)) * g.steps - 0.5;
 	if (q > 0 && Math.abs(q - Math.round(q)) < (g.anisotropic ? STRIP_TIE : TIE)) {
+		const tie = Math.round(q);
+		const decided = edge >= 0 && !g.anisotropic && f === 0 ? tieSide(g, edge, dx, dy, tie) : null;
+		if (decided !== null) return g.steps - tie - (decided ? 0 : 1);
 		// Exactly on copy `round(q)`'s edge: half way between the two steps (see the header).
-		return g.steps - Math.round(q) - 0.5;
+		return g.steps - tie - 0.5;
 	}
 	const m = Math.max(0, Math.ceil(q));
 	// The outermost ring is the boundary itself: a pixel on its right or bottom edge is not painted.
