@@ -35,20 +35,26 @@
  *   x mirrored: an x origin at `n + f` samples as if placed at `n + 1 - f`
  *   (confirmed at scales from 0.32 to 1.5 and offsets 0.1 to 2.3). A
  *   fractional y origin is used as given, rounded to 1/16 pixel; mirroring it
- *   too left errors of up to 96 levels against native draws.
+ *   too left errors of up to 96 levels against native draws. An axis-aligned
+ *   draw that is scaled up (or unscaled) on both axes follows GDI+'s fixed-point
+ *   phase arithmetic exactly for the tent and to 1% of values for the cubic,
+ *   see {@link resampleHqAxisAligned}; a reduction keeps the float model
+ *   above.
  *
- * - Rotated or sheared high-quality draws (a 3-point destination) differ
- *   from the axis-aligned ones, measured against native draws of solid,
- *   noise, impulse and bordered images over angles 5 to 70 degrees and
- *   scales 0.4 to 6. If either source axis is unscaled, meaning its device
- *   length rounded up is within one pixel of the source length (20 texels
- *   at scales from 0.905 to 1.05), GDI+ point-samples with the plain
- *   Bicubic (`a = -0.5`) or Bilinear kernel instead. Otherwise the
- *   area-integrated kernel above applies, and under PixelOffsetMode
- *   Half/HighQuality the whole image sits half a device pixel further along
- *   each of its own axes (the sample grid is not the pixel-centre grid
- *   there), while under None the alpha near the far (right and bottom)
- *   source edges falls to exactly zero at the edge (see {@link fadeAt}).
+ * - Rotated or sheared high-quality draws (a 3-point destination) are two
+ *   draws, measured against native `DrawImage` output (`hq-rotated`): the source
+ *   is first scaled, axis-aligned with the kernel above, to the whole number of
+ *   device pixels the destination edges span (each length rounded up), into an
+ *   8-bit premultiplied intermediate; that bitmap is then drawn with the plain
+ *   Bicubic (`a = -0.5`, integer arithmetic) or Bilinear kernel at about unit
+ *   scale. If either edge's rounded-up length is within one pixel of the source
+ *   length the first step is skipped and the plain kernel samples the source.
+ *   The destination parallelogram is filled by the aliased fill rule, and the
+ *   intermediate's overhang fades out through the second kernel's transparent
+ *   taps, which is what the earlier far-edge fade table approximated. Under
+ *   PixelOffsetMode Half/HighQuality the second pass's grid moves by -0.5 device
+ *   pixels and +0.5 intermediate texels. A quad whose edges are axis-aligned to
+ *   within 5e-4 draws as an axis-aligned one. See {@link resampleRotatedTwoStage}.
  *
  * A texel outside the bitmap counts as transparent (GDI+'s default clamp
  * for `DrawImage`), so the kernel's overhang fades an edge out; a texel
@@ -503,11 +509,12 @@ export function resampleImage(
 		// A rotated or sheared high-quality draw (see the module doc).
 		const extentU = Math.hypot(m[0], m[1]) * spec.srcW;
 		const extentV = Math.hypot(m[2], m[3]) * spec.srcH;
-		if (nearSourceExtent(extentU, spec.srcW) || nearSourceExtent(extentV, spec.srcH)) {
+		const near = nearSourceExtent(extentU, spec.srcW) || nearSourceExtent(extentV, spec.srcH);
+		if (!spec.wrap) {
+			return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel, near);
+		} else if (near) {
 			kernel = kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear';
 			plainRotated = true;
-		} else if (!spec.wrap) {
-			return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel);
 		} else {
 			farFade = true;
 			if (spec.halfPixelOffset) {
@@ -786,7 +793,7 @@ function resampleHqAxisAligned(
 		first: number;
 		weights: number[];
 	}
-	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number, base: number): Taps[] => {
+	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number): Taps[] => {
 		const taps: Taps[] = [];
 		for (let k = from; k <= to; k++) {
 			const phase = Math.floor((k * step + offset - 1) / (65536 / HQ_PHASES));
@@ -799,11 +806,10 @@ function resampleHqAxisAligned(
 			}
 			taps.push({ first, weights });
 		}
-		void base;
 		return taps;
 	};
-	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst, 0);
-	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst, 0);
+	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst);
+	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst);
 	// Source rows the vertical pass reads (rows outside the bitmap are transparent).
 	let rowMin = Infinity;
 	let rowMax = -Infinity;
@@ -891,65 +897,98 @@ function resampleRotatedTwoStage(
 	surface: { w: number; h: number },
 	m: TransformMatrix,
 	kernel: ImageResampleKernel,
+	near: boolean,
 ): ResampledBlock | null {
-	const W = ceilExtent(Math.hypot(m[0], m[1]) * spec.srcW);
-	const H = ceilExtent(Math.hypot(m[2], m[3]) * spec.srcH);
-	const kx = W / spec.srcW;
-	const ky = H / spec.srcH;
-	// Stage 1: the source rectangle scaled to W x H with the axis-aligned
-	// high-quality kernel (the rectangle's own corner at the intermediate's
-	// origin; a Half-mode rectangle arrives already shifted by the recorder).
-	const pre = resampleImage(rgba, width, height, {
-		srcX: spec.srcX, srcY: spec.srcY, srcW: spec.srcW, srcH: spec.srcH,
-		toDevice: [kx, 0, 0, ky, -spec.srcX * kx, -spec.srcY * ky],
-		kernel, halfPixelOffset: false,
-	}, { w: W, h: H }, { premultOut: true });
-	if (!pre) {
-		return null;
-	}
-	if (!pre.premultiplied) {
-		// A reduction takes the general path, which returns straight colours.
-		for (let i = 0; i < pre.rgba.length; i += 4) {
-			const al = pre.rgba[i + 3];
-			pre.rgba[i] = Math.round((pre.rgba[i] * al) / 255);
-			pre.rgba[i + 1] = Math.round((pre.rgba[i + 1] * al) / 255);
-			pre.rgba[i + 2] = Math.round((pre.rgba[i + 2] * al) / 255);
-		}
-	}
-	// The intermediate sits in a transparent border wide enough for the
-	// plain kernels' taps, so the pixels the destination polygon covers just
-	// outside the intermediate's own edge read their fade.
+	// The pass the second kernel draws: the intermediate (or, when an edge is
+	// within a pixel of the source length, the source itself) in a transparent
+	// border wide enough for the plain kernels' taps, so the pixels the
+	// destination polygon covers just outside the image's own edge read their fade.
 	const pad = 2;
-	const pw = W + 2 * pad;
-	const ph = H + 2 * pad;
-	const img = new Uint8ClampedArray(pw * ph * 4);
-	for (let y = 0; y < pre.h; y++) {
-		for (let x = 0; x < pre.w; x++) {
-			const dx = x + pre.x;
-			const dy = y + pre.y;
-			if (dx < W && dy < H) {
-				img.set(pre.rgba.subarray((y * pre.w + x) * 4, (y * pre.w + x) * 4 + 4), ((dy + pad) * pw + dx + pad) * 4);
+	let img: Uint8ClampedArray;
+	let pw: number;
+	let ph: number;
+	// Device position of the image's texel (0, 0) and the device step of a texel along each axis.
+	let a: number;
+	let b: number;
+	let c: number;
+	let d: number;
+	let ex: number;
+	let ey: number;
+	const half = spec.halfPixelOffset;
+	if (near) {
+		// Plain kernel straight from the source: texel (i, j) is source coordinate (i, j).
+		pw = width + 2 * pad;
+		ph = height + 2 * pad;
+		img = new Uint8ClampedArray(pw * ph * 4);
+		for (let y = 0; y < height; y++) {
+			for (let x = 0; x < width; x++) {
+				const s = (y * width + x) * 4;
+				const al = rgba[s + 3];
+				const o = ((y + pad) * pw + x + pad) * 4;
+				img[o] = Math.round((rgba[s] * al) / 255);
+				img[o + 1] = Math.round((rgba[s + 1] * al) / 255);
+				img[o + 2] = Math.round((rgba[s + 2] * al) / 255);
+				img[o + 3] = al;
 			}
 		}
+		[a, b, c, d] = m;
+		ex = m[4] - (half ? 0.5 : 0);
+		ey = m[5] - (half ? 0.5 : 0);
+	} else {
+		const W = ceilExtent(Math.hypot(m[0], m[1]) * spec.srcW);
+		const H = ceilExtent(Math.hypot(m[2], m[3]) * spec.srcH);
+		const kx = W / spec.srcW;
+		const ky = H / spec.srcH;
+		// Stage 1: the source rectangle scaled to W x H with the axis-aligned
+		// high-quality kernel (the rectangle's own corner at the intermediate's
+		// origin; a Half-mode rectangle arrives already shifted by the recorder).
+		const pre = resampleImage(rgba, width, height, {
+			srcX: spec.srcX, srcY: spec.srcY, srcW: spec.srcW, srcH: spec.srcH,
+			toDevice: [kx, 0, 0, ky, -spec.srcX * kx, -spec.srcY * ky],
+			kernel, halfPixelOffset: false,
+		}, { w: W, h: H }, { premultOut: true });
+		if (!pre) {
+			return null;
+		}
+		if (!pre.premultiplied) {
+			// A reduction takes the general path, which returns straight colours.
+			for (let i = 0; i < pre.rgba.length; i += 4) {
+				const al = pre.rgba[i + 3];
+				pre.rgba[i] = Math.round((pre.rgba[i] * al) / 255);
+				pre.rgba[i + 1] = Math.round((pre.rgba[i + 1] * al) / 255);
+				pre.rgba[i + 2] = Math.round((pre.rgba[i + 2] * al) / 255);
+			}
+		}
+		pw = W + 2 * pad;
+		ph = H + 2 * pad;
+		img = new Uint8ClampedArray(pw * ph * 4);
+		for (let y = 0; y < pre.h; y++) {
+			for (let x = 0; x < pre.w; x++) {
+				const dx = x + pre.x;
+				const dy = y + pre.y;
+				if (dx < W && dy < H) {
+					img.set(pre.rgba.subarray((y * pre.w + x) * 4, (y * pre.w + x) * 4 + 4), ((dy + pad) * pw + dx + pad) * 4);
+				}
+			}
+		}
+		a = m[0] / kx;
+		b = m[1] / kx;
+		c = m[2] / ky;
+		d = m[3] / ky;
+		// Stage 2: the plain Bicubic or Bilinear kernel at about unit scale. A
+		// None-mode pixel is the point (x, y); a Half-mode pixel is the point at its
+		// centre and the intermediate's texels sit half a texel further along each
+		// of its own axes, which moves the sample grid by -0.5 device pixels and by
+		// +0.5 intermediate texels (not device pixels: the intermediate is not
+		// exactly one pixel per texel when the length is not whole).
+		const ox = m[0] * spec.srcX + m[2] * spec.srcY + m[4];
+		const oy = m[1] * spec.srcX + m[3] * spec.srcY + m[5];
+		ex = half ? ox - 0.5 + 0.5 * (a + c) : ox;
+		ey = half ? oy - 0.5 + 0.5 * (b + d) : oy;
 	}
-	const ex = m[0] * spec.srcX + m[2] * spec.srcY + m[4];
-	const ey = m[1] * spec.srcX + m[3] * spec.srcY + m[5];
-	const a = m[0] / kx;
-	const b = m[1] / kx;
-	const c = m[2] / ky;
-	const d = m[3] / ky;
-	// Stage 2: the plain Bicubic or Bilinear kernel at about unit scale. A
-	// None-mode pixel is the point (x, y); a Half-mode pixel is the point at its
-	// centre and the intermediate's texels sit half a texel further along each
-	// of its own axes, which moves the sample grid by -0.5 device pixels and by
-	// +0.5 intermediate texels (not device pixels: the intermediate is not
-	// exactly one pixel per texel when the length is not whole).
-	const half = spec.halfPixelOffset;
-	const e2x = half ? ex - 0.5 + 0.5 * (a + c) : ex;
-	const e2y = half ? ey - 0.5 + 0.5 * (b + d) : ey;
 	const block = resampleImage(img, pw, ph, {
 		srcX: 0, srcY: 0, srcW: pw, srcH: ph,
-		toDevice: [a, b, c, d, e2x - a * pad - c * pad, e2y - b * pad - d * pad],
+		toDevice: [a, b, c, d, ex - a * pad - c * pad, ey - b * pad - d * pad],
 		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false,
 	}, surface, { plainRotated: true, keepOrigin: true, premultSource: true });
 	if (!block) {

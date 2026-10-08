@@ -571,9 +571,11 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 		'rotated-bilinear',
 	].map((m) => close(`gpx-image-${m}`, 0)),
 	exact('gpx-image-bicubic'),
-	// A rotated HighQualityBicubic draw: the far edges fade to zero at the
-	// edge (see `fadeAt`); two edge pixels remain over 8 levels.
-	close('gpx-image-rotated-highqualitybicubic', 0.00015), // measured 0.013% (0.142% before)
+	// A rotated HighQualityBicubic draw: a pre-scale to the device length, then
+	// a plain integer Bicubic pass (`resampleRotatedTwoStage`). Every channel is
+	// within one level; 10 pixels (0.064%) are one level off at zero tolerance
+	// (before: 2,911 pixels, 18.5%, up to 10 levels off).
+	levelExact('gpx-image-rotated-highqualitybicubic'),
 ];
 
 /**
