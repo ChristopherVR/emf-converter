@@ -17,7 +17,9 @@
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
-#   text-cleartype-coverage, text-cleartype-sizes, text-shpix, text-iup, text-origin-phases, text-origin-vertical-phases,
+#   text-cleartype-coverage, text-cleartype-sizes, text-shpix, text-iup,
+#   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
+#   text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
 #   text-opcode-hinting, text-opcode-coverage, text-vector-stage-hinting,
 #   text-vector-stage-coverage, text-signed-diagonal, path-gradient-steps,
@@ -25,6 +27,7 @@
 #   path-gradient-ties, path-gradient-colors, path-gradient-focus,
 #   focus-contours, redeye-independent, vertical-focus-line, playback-extents,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
+#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
 #   halftone-kernel, halftone-arrangement, halftone-selection, halftone-boundary,
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
@@ -122,6 +125,38 @@ if ($Which -eq 'text-origin-phases' -or $Which -eq 'text-origin-vertical-phases'
 if ($Which -eq 'text-drawstring-placement') {
     Add-Type -Path (Join-Path $here 'DrawStringPlacementProbe.cs') -ReferencedAssemblies System.Drawing
     [DrawStringPlacementProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-polygons') {
+    Add-Type -Path (Join-Path $here 'RasterPolygonProbe.cs') -ReferencedAssemblies System.Drawing
+    [RasterPolygonProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-mono') {
+    Add-Type -Path (Join-Path $here 'RasterMonoProbe.cs')
+    [RasterMonoProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-variants') {
+    Add-Type -Path (Join-Path $here 'RasterMonoProbe.cs')
+    [RasterMonoProbe]::Variants($outDir)
+    Add-Type -Path (Join-Path $here 'RasterPolygonProbe.cs') -ReferencedAssemblies System.Drawing
+    [RasterPolygonProbe]::Variants($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-bars') {
+    Add-Type -Path (Join-Path $here 'RasterPolygonProbe.cs') -ReferencedAssemblies System.Drawing
+    [RasterPolygonProbe]::Bars($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-real-glyphs') {
+    Add-Type -Path (Join-Path $here 'RealGlyphCoverageProbe.cs') -ReferencedAssemblies System.Drawing
+    [RealGlyphCoverageProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
@@ -308,6 +343,36 @@ if ($Which -eq 'hq-axis') {
 if ($Which -eq 'hq-phases') {
     Add-Type -Path (Join-Path $here 'HighQualityPhaseProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityPhaseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-crop-impulse') {
+    Add-Type -Path (Join-Path $here 'HighQualityCropImpulseProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityCropImpulseProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-crop-alpha') {
+    Add-Type -Path (Join-Path $here 'HighQualityCropAlphaProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityCropAlphaProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-crop-height') {
+    Add-Type -Path (Join-Path $here 'HighQualityCropHeightProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityCropHeightProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-half-length') {
+    Add-Type -Path (Join-Path $here 'HighQualityHalfLengthProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityHalfLengthProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'bicubic-boundary') {
+    Add-Type -Path (Join-Path $here 'BicubicBoundaryProbe.cs') -ReferencedAssemblies System.Drawing
+    [BicubicBoundaryProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

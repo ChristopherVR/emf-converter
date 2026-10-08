@@ -854,6 +854,12 @@ export interface DeferredImageResample {
 	/** True under `PixelOffsetMode` Half/HighQuality (pixel centres), false under None/Default. */
 	halfPixelOffset: boolean;
 	/**
+	 * True when the draw is an `EmfPlusDrawImagePoints` record (a matrix inferred from three destination points
+	 * in float32), false for `EmfPlusDrawImage` (a destination rectangle). The two differ for a mirrored
+	 * unit-scale axis (see `mirroredUnitBias` in `emf-plus-image-resample.ts`).
+	 */
+	pointsForm?: boolean;
+	/**
 	 * The draw's `ImageAttributes` WrapMode: a kernel tap outside the bitmap
 	 * wraps within it (Tile/TileFlipX/Y/XY) or reads `clampArgb` (Clamp),
 	 * as measured on the `gpx-image-attr-*` fixtures. Absent: a tap outside

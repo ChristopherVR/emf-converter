@@ -506,7 +506,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-plus-antialias', 'emf', 0.0316), // nearest-quarter grayscale origins; remaining glyph hinting; measured 3.157%, 3.210% before the y DELTAP rule
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0253), // measured 2.527%, 2.547% before the y DELTAP rule; GDI+ hinting and shades
 	fontCase('textx-plus-cleartype', 'emf', 0.0970), // measured 9.694%, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
-	fontCase('textx-plus-singlebit', 'emf', 0.0245), // measured 1.960%
+	fontCase('textx-plus-singlebit', 'emf', 0.0195), // measured 1.941% (1.960% before the instruction budget was reset per program)
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-rotalign-esc', 'emf', 0.0064), // measured 0.511%

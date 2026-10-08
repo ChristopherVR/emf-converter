@@ -198,6 +198,8 @@ interface GraphicsState {
 	deltaShift: number;
 	instructControl: number;
 	scanControl: boolean;
+	/** A SCANCTRL instruction ran: otherwise the rasterizer's own default decides dropout control. */
+	scanSet: boolean;
 	scanType: number;
 	gep0: number;
 	gep1: number;
@@ -229,6 +231,7 @@ function defaultGS(): GraphicsState {
 		deltaShift: 3,
 		instructControl: 0,
 		scanControl: false,
+		scanSet: false,
 		scanType: 0,
 		gep0: 1,
 		gep1: 1,
@@ -295,8 +298,10 @@ export interface HintedGlyph {
 	advance: number;
 	/** Linearly scaled (unhinted) advance width (26.6). */
 	linearAdvance: number;
-	/** SCANCTRL outcome: whether dropout control is on for this glyph. */
+	/** SCANCTRL outcome: whether dropout control is on for this glyph (meaningful when `scanSet`). */
 	scanControl: boolean;
+	/** Whether a SCANCTRL instruction ran; without one the rasterizer's default applies ({@link DEFAULT_DROPOUT_PPEM}). */
+	scanSet: boolean;
 	/** SCANTYPE mode. */
 	scanType: number;
 }
@@ -314,6 +319,13 @@ const SIZE_TWEAK_BODIES: readonly number[][] = [
 	// MPPEM EQ IF SHPIX ELSE POP POP EIF
 	[0x4b, 0x54, 0x58, 0x38, 0x1b, 0x21, 0x21, 0x59],
 ];
+
+/**
+ * Without a SCANCTRL instruction GDI scan-converts with simple dropout control up to this ppem and with none above
+ * it (a program-free private font, GetGlyphOutline GGO_BITMAP: 4,079 of 4,096 bitmaps at 8 to 32 ppem match simple
+ * dropouts and 1,024 of 1,024 at 33 to 40 ppem match none; `text-raster-mono.json.gz`).
+ */
+export const DEFAULT_DROPOUT_PPEM = 32;
 
 /**
  * A font realised at one ppem: runs `fpgm` and `prep` once, then hints
@@ -433,8 +445,8 @@ export class HintedSize {
 	}
 
 	/** The scan-conversion mode prep left, used when a glyph program doesn't set its own. */
-	get defaultScan(): { scanControl: boolean; scanType: number } {
-		return { scanControl: this.gs0.scanControl, scanType: this.gs0.scanType };
+	get defaultScan(): { scanControl: boolean; scanSet: boolean; scanType: number } {
+		return { scanControl: this.gs0.scanControl, scanSet: this.gs0.scanSet, scanType: this.gs0.scanType };
 	}
 
 	// -----------------------------------------------------------------------
@@ -464,6 +476,7 @@ export class HintedSize {
 			advance: pp2x - pp1x,
 			linearAdvance: mulFix(advance, this.xScale),
 			scanControl: res.scanControl,
+			scanSet: res.scanSet,
 			scanType: res.scanType,
 		};
 	}
@@ -476,7 +489,7 @@ export class HintedSize {
 	private loadRecursive(
 		g: number,
 		depth: number,
-	): { zone: Zone; scanControl: boolean; scanType: number } {
+	): { zone: Zone; scanControl: boolean; scanSet: boolean; scanType: number } {
 		const font = this.font;
 		const glyph = depth < 8 ? font.loadGlyph(g) : null;
 		const { advance, lsb } = font.hMetrics(g);
@@ -536,7 +549,7 @@ export class HintedSize {
 		let lastScan = scan;
 		for (const comp of glyph.components) {
 			const sub = this.loadRecursive(comp.glyphIndex, depth + 1);
-			lastScan = { scanControl: sub.scanControl, scanType: sub.scanType };
+			lastScan = { scanControl: sub.scanControl, scanSet: sub.scanSet, scanType: sub.scanType };
 			const z = sub.zone;
 			const m = z.n - 4;
 			// Component transform (scale/2x2) applies to the scaled points.
@@ -663,7 +676,7 @@ export class HintedSize {
 		zone: Zone,
 		instructions: Uint8Array,
 		roundPhantoms = true,
-	): { zone: Zone; scanControl: boolean; scanType: number } {
+	): { zone: Zone; scanControl: boolean; scanSet: boolean; scanType: number } {
 		const n = zone.n;
 		if (this.hinting && roundPhantoms) {
 			// ClearType rounds the horizontal phantoms on its 1/16-pixel grid.
@@ -690,7 +703,7 @@ export class HintedSize {
 		} catch {
 			// Keep the partially hinted outline.
 		}
-		return { zone, scanControl: this.gs.scanControl, scanType: this.gs.scanType };
+		return { zone, scanControl: this.gs.scanControl, scanSet: this.gs.scanSet, scanType: this.gs.scanType };
 	}
 
 	// -----------------------------------------------------------------------
@@ -1058,6 +1071,10 @@ export class HintedSize {
 		}
 		const calls: Frame[] = [];
 		this.callFrames = calls;
+		// The instruction budget guards one program (FreeType resets it per execution). It used to accumulate over
+		// the size's lifetime, so once a size had run about a million instructions every later glyph aborted at
+		// its first instruction and kept its unhinted outline.
+		this.count = 0;
 		let ip = 0;
 		let cur = code;
 		while (true) {
@@ -1883,6 +1900,7 @@ export class HintedSize {
 				// SCANCTRL
 				const v = this.pop();
 				const a = v & 0xff;
+				gs.scanSet = true;
 				if (a === 0xff) {
 					gs.scanControl = true;
 					return true;

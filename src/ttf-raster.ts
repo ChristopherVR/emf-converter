@@ -93,6 +93,22 @@ export function dropoutMode(scanControl: boolean, scanType: number): number {
 	}
 }
 
+/**
+ * Dropout mode of the 4x4 grayscale oversampling. GDI's grayscale bitmaps (`GGO_GRAY4_BITMAP`, and GDI+ AntiAlias
+ * text, which draws the same bitmaps) apply the font's own scan control to the oversampled outline: simple dropouts
+ * with stubs (SCANTYPE 0) and smart dropouts with stubs (4) are modelled, 94 % and 92 % of the private polygon
+ * bitmaps exactly (`ttf-gray-dropout.fixture.test.ts`; Georgia, which selects 4, goes from 942 to 1,041 exact
+ * AntiAliasGridFit glyphs of 1,128 and from 476 to 733 AntiAlias ones). The stub-excluding types (1 and 5, which
+ * most stock fonts select) are left without dropout control: their stub rule is not known (see
+ * docs/outstanding-work.md), and modelling it as the monochrome rasterizer does loses exact real-font captures.
+ * Only a font that runs SCANCTRL gets dropouts here; the rasterizer's default for one that does not is not applied
+ * to grayscale because it exceeds committed per-case ceilings of the diagonal-hinting coverage tests.
+ */
+export function grayDropoutMode(scanControl: boolean, scanType: number): number {
+	const mode = dropoutMode(scanControl, scanType);
+	return mode === 0 || mode === 4 ? mode : 2;
+}
+
 class Raster {
 	private readonly precBits: number;
 	private readonly prec: number;
@@ -920,7 +936,7 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0): 
  * centre rule and no dropout control, and every 4x4 block of samples is
  * counted, giving a coverage of 0..16 per pixel (`data`).
  */
-export function rasterizeGray(o: Outline): GlyphBitmap | null {
+export function rasterizeGray(o: Outline, dropout = 2): GlyphBitmap | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -950,7 +966,7 @@ export function rasterizeGray(o: Outline): GlyphBitmap | null {
 		onCurve: o.onCurve,
 		endPts: o.endPts,
 	};
-	const hi = rasterizeMono(big, 2, { xMin: box.xMin * k, xMax: box.xMax * k, yMin: box.yMin * k, yMax: box.yMax * k });
+	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * k, xMax: box.xMax * k, yMin: box.yMin * k, yMax: box.yMax * k });
 	if (!hi) {
 		return null;
 	}
