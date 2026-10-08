@@ -74,6 +74,17 @@ describe('nested copies of a uniform path gradient', () => {
 		});
 	});
 
+	it('treats the edge column of a fully focused axis as inside every copy that holds the next column', () => {
+		// FocusScale x = 1: every copy keeps the boundary's left and right edges, so the left edge column (a tie of every
+		// copy at once, decided by the span rule: left edge in) takes the step of its neighbour on every row.
+		const focused = shapeOf([[50, 35], [150, 35], [150, 85], [50, 85]], [100, 60], [1, 0.25]);
+		const n = pathGradientQuantum(focused.boundary, IDENTITY);
+		const g = prepareCopies(focused, IDENTITY, n)!;
+		for (let y = 36; y < 85; y++) expect(copiesStepAt(g, 50, y)).toBe(copiesStepAt(g, 51, y));
+		// The right edge column is outside the boundary (right edge out).
+		expect(copiesStepAt(g, 150, 60)).toBeNull();
+	});
+
 	it('scales each axis by its own focus', () => {
 		const focused = shapeOf([[50, 35], [150, 35], [150, 85], [50, 85]], [100, 60], [0.75, 0.25]);
 		const n = pathGradientQuantum(focused.boundary, IDENTITY);

@@ -197,6 +197,12 @@ if ($Which -eq 'path-gradient-edges') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-focus-small') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusSmallProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusSmallProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'bicubic-copy') {
     Add-Type -Path (Join-Path $here 'BicubicCopyProbe.cs') -ReferencedAssemblies System.Drawing
     [BicubicCopyProbe]::Run($outDir)

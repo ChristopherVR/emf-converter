@@ -38,6 +38,13 @@
  * Left open: about a tenth of the along-the-edge pixels of an edge directed up or left (the decision there follows
  * something finer, and clusters at a copy's vertex rows) and the other pixels of slanted edges.
  *
+ * An isotropic focus scales each copy about the centre the same way and uses the same rules (with a focus, the noisy
+ * edges that are not axis-aligned stay undecided). Independent focus scales (`anisotropicTieStep`): each copy is the
+ * boundary scaled per axis about the centre point, so a pixel on a vertical or horizontal edge of it follows the same
+ * rules; a pixel on a fully focused axis's edge is a tie of every copy at once and takes the innermost copy whose other
+ * extent holds it (the span rule: left and top edges in, right and bottom out); a pixel near an edge but not on it is
+ * decided by the scaled boundary's own span rule.
+ *
  * @module emf-plus-path-gradient-copies
  */
 
@@ -64,6 +71,10 @@ const fix = (v: number): number => Math.floor(v * 16 + 0.5) / 16;
 const TIE = 1e-6;
 /** The strip solver of an anisotropic focus lands within about 0.002 of a step of native's edge, so that close is a tie too. */
 const STRIP_TIE = 0.005;
+/** Within this many steps of a whole one the scaled copy's own geometry decides which side a pixel not on an edge is (76 of 76 right below 0.0005 in the focus-shape captures, 8 of 626 wrong from there to 0.005). */
+const CONTAINMENT_TIE = 0.0005;
+/** A pixel this close (in pixels) to a slanted edge of a scaled copy counts as on it (the exact tie of rational scales lands within a few millionths). */
+const SLANTED_NEAR = 5e-6;
 const CEIL_EPSILON = 1e-9;
 
 /**
@@ -101,7 +112,7 @@ export function prepareCopies(shape: EmfPlusPathGradientShape, full: TransformMa
  * Whether a pixel exactly on the edge of copy `q` is inside it (`true`), outside (`false`), or not decided by
  * a measured rule (`null`). See the header.
  */
-function tieSide(g: CopiesGradient, edge: number, dx: number, dy: number, q: number): boolean | null {
+function tieSide(g: CopiesGradient, edge: number, dx: number, dy: number, q: number, focus = 0): boolean | null {
 	const n = g.vx.length;
 	const ex = g.vx[(edge + 1) % n] - g.vx[edge];
 	const ey = g.vy[(edge + 1) % n] - g.vy[edge];
@@ -123,7 +134,9 @@ function tieSide(g: CopiesGradient, edge: number, dx: number, dy: number, q: num
 	// Otherwise the ratio goes through the inexact coordinate. An edge directed to the right, or straight down, puts the
 	// part of it before the centre's foot inside; any other edge keeps the binary-fraction rule.
 	const forward = ex > 0 || (ex === 0 && ey > 0);
-	if (!forward) return fractional;
+	// With a focus the noisy edges (those directed up or left, about a tenth of them on the other side) are left undecided
+	// unless axis-aligned: one pixel of the 360 colour and alpha controls is two levels off with them.
+	if (!forward) return focus > 0 && !axisAligned ? null : fractional;
 	if (dx * ex + dy * ey < 0) return fractional || !edgeParameterIsBinary(g, edge, dx, dy, q);
 	return fractional && adx === ady;
 }
@@ -161,15 +174,15 @@ function edgeParameterIsBinary(g: CopiesGradient, edge: number, dx: number, dy: 
 }
 
 /** Whether device pixel (`px`, `py`) lies in the polygon scaled by `scale` about the centre. */
-function insideCopy(g: CopiesGradient, scale: number, px: number, py: number): boolean {
+function insideCopy(g: CopiesGradient, scale: number, px: number, py: number, scaleY = scale): boolean {
 	const n = g.vx.length;
 	let xl = Infinity;
 	let xr = -Infinity;
 	let ax = g.cx + (g.vx[n - 1] - g.cx) * scale;
-	let ay = g.cy + (g.vy[n - 1] - g.cy) * scale;
+	let ay = g.cy + (g.vy[n - 1] - g.cy) * scaleY;
 	for (let i = 0; i < n; i++) {
 		const bx = g.cx + (g.vx[i] - g.cx) * scale;
-		const by = g.cy + (g.vy[i] - g.cy) * scale;
+		const by = g.cy + (g.vy[i] - g.cy) * scaleY;
 		if ((ay <= py && by > py) || (by <= py && ay > py)) {
 			const x = ax + ((py - ay) / (by - ay)) * (bx - ax);
 			if (x < xl) xl = x;
@@ -179,6 +192,105 @@ function insideCopy(g: CopiesGradient, scale: number, px: number, py: number): b
 		ay = by;
 	}
 	return xl !== Infinity && px >= Math.ceil(xl - CEIL_EPSILON) && px < Math.ceil(xr - CEIL_EPSILON);
+}
+
+/** The edge of the boundary scaled by (`scaleX`, `scaleY`) that a pixel lies on, and whether that edge is vertical, horizontal or slanted. */
+interface EdgeHit {
+	kind: 'vertical' | 'horizontal' | 'slanted';
+	edge: number;
+}
+
+/**
+ * Which edge of the boundary scaled by (`scaleX`, `scaleY`) about the centre pixel (`px`, `py`) lies on, or `null` for none.
+ * The row of a vertex counts as a slanted edge: the scan converter's vertex handling, not the span rule, decides it.
+ */
+function edgeAt(g: CopiesGradient, scaleX: number, scaleY: number, px: number, py: number): EdgeHit | null {
+	const n = g.vx.length;
+	const near = 1e-6;
+	let hit: EdgeHit | null = null;
+	let vertexRow = false;
+	for (let i = 0; i < n; i++) {
+		const j = (i + 1) % n;
+		const ax = g.cx + (g.vx[i] - g.cx) * scaleX;
+		const ay = g.cy + (g.vy[i] - g.cy) * scaleY;
+		const bx = g.cx + (g.vx[j] - g.cx) * scaleX;
+		const by = g.cy + (g.vy[j] - g.cy) * scaleY;
+		if (Math.abs(ax - bx) < near && Math.abs(px - ax) < near && py >= Math.min(ay, by) - near && py <= Math.max(ay, by) + near) return { kind: 'vertical', edge: i };
+		if (Math.abs(ay - by) < near && Math.abs(py - ay) < near && px >= Math.min(ax, bx) - near && px <= Math.max(ax, bx) + near) return { kind: 'horizontal', edge: i };
+		if (Math.abs(ay - py) < near) vertexRow = true;
+		const length = Math.hypot(bx - ax, by - ay);
+		if (length < near) continue;
+		const across = ((px - ax) * (by - ay) - (py - ay) * (bx - ax)) / length;
+		const along = ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / (length * length);
+		if (Math.abs(across) < SLANTED_NEAR && along >= -near && along <= 1 + near) hit = { kind: 'slanted', edge: i };
+	}
+	return hit ?? (vertexRow ? { kind: 'slanted', edge: -1 } : null);
+}
+
+/**
+ * A pixel on a vertical (horizontal) edge of the boundary whose axis has focus scale 1: every copy shares that edge, so
+ * the pixel is a tie of every copy at once and takes the innermost copy whose other extent holds it, the span rule
+ * deciding the edge itself (`undefined` for any other pixel).
+ */
+function focusedEdgeStep(g: CopiesGradient, px: number, py: number): number | null | undefined {
+	const focus = g.anisotropic!.focus!;
+	const full = 1 - 1e-9;
+	if (focus.x < full && focus.y < full) return undefined;
+	const n = g.vx.length;
+	let onEdge = false;
+	for (let i = 0; i < n && !onEdge; i++) {
+		const j = (i + 1) % n;
+		const near = 1e-6;
+		if (focus.x >= full && Math.abs(g.vx[i] - g.vx[j]) < near && Math.abs(px - g.vx[i]) < near && py >= Math.min(g.vy[i], g.vy[j]) - near && py <= Math.max(g.vy[i], g.vy[j]) + near) onEdge = true;
+		if (focus.y >= full && Math.abs(g.vy[i] - g.vy[j]) < near && Math.abs(py - g.vy[i]) < near && px >= Math.min(g.vx[i], g.vx[j]) - near && px <= Math.max(g.vx[i], g.vx[j]) + near) onEdge = true;
+	}
+	if (!onEdge) return undefined;
+	const fx = Math.min(1, Math.max(0, focus.x));
+	const fy = Math.min(1, Math.max(0, focus.y));
+	for (let m = 0; m <= g.steps; m++) {
+		const along = m === g.steps ? 1 : (m + 0.5) / g.steps;
+		if (insideCopy(g, fx + (1 - fx) * along, px, py, fy + (1 - fy) * along)) return g.steps - m;
+	}
+	return null;
+}
+
+/**
+ * The step of a pixel at ratio `q` (a copy index) within a tie of copy `tie` when the focus scales differ per axis. Copy
+ * `tie` is the boundary scaled per axis about the centre. A pixel that lies on a vertical or horizontal edge of it reads
+ * the same rules as the uniform copies: the binary-fraction rule when it reads the exact coordinate of its edge, and along
+ * the edge an edge directed right or straight down is inside before the centre's foot unless the position along it is a
+ * binary fraction (the pixel then takes the span rule's side if the edge is directed the other way). A pixel on a slanted
+ * edge is a coin flip and keeps the half-way colour; one only near an edge (the strip solver is good to a few thousandths of
+ * a step) is inside when the scaled boundary holds it.
+ */
+function anisotropicTieStep(g: CopiesGradient, q: number, tie: number, dx: number, dy: number, px: number, py: number): number {
+	const focus = g.anisotropic!.focus!;
+	const along = (tie + 0.5) / g.steps;
+	const fx = Math.min(1, Math.max(0, focus.x));
+	const fy = Math.min(1, Math.max(0, focus.y));
+	const scaleX = fx + (1 - fx) * along;
+	const scaleY = fy + (1 - fy) * along;
+	const hit = edgeAt(g, scaleX, scaleY, px, py);
+	const half = g.steps - tie - 0.5;
+	if (hit?.kind === 'slanted') return half;
+	if (hit === null && Math.abs(q - tie) >= CONTAINMENT_TIE) return half;
+	if (hit === null) return g.steps - tie - (insideCopy(g, scaleX, px, py, scaleY) ? 0 : 1);
+	let odd = g.steps;
+	while (odd % 2 === 0) odd /= 2;
+	const fractional = (2 * tie + 1) % odd !== 0;
+	const vertical = hit.kind === 'vertical';
+	if (vertical ? Math.abs(dx) > Math.abs(dy) : Math.abs(dy) > Math.abs(dx)) return g.steps - tie - (fractional ? 0 : 1);
+	const n = g.vx.length;
+	const ex = g.vx[(hit.edge + 1) % n] - g.vx[hit.edge];
+	const ey = g.vy[(hit.edge + 1) % n] - g.vy[hit.edge];
+	if (!(ex > 0 || (ex === 0 && ey > 0))) return g.steps - tie - (fractional ? 0 : 1);
+	if (dx * ex + dy * ey >= 0) return g.steps - tie - (fractional && Math.abs(dx) === Math.abs(dy) ? 0 : 1);
+	const ax = g.cx + (g.vx[hit.edge] - g.cx) * scaleX;
+	const ay = g.cy + (g.vy[hit.edge] - g.cy) * scaleY;
+	const u = vertical ? (py - ay) / (ey * scaleY) : (px - ax) / (ex * scaleX);
+	const scaled = u * 2 ** 24;
+	const binary = Math.abs(scaled - Math.round(scaled)) < 1e-4;
+	return g.steps - tie - (fractional || !binary ? 0 : 1);
 }
 
 /**
@@ -210,6 +322,8 @@ export function copiesStepAt(g: CopiesGradient, px: number, py: number, nudge = 
 		// step (one pixel of the focus-contour captures is black where the strips say half way), so those
 		// pixels keep the unquantised ratio.
 		const edge = s > 1 - 1e-9;
+		const column = focusedEdgeStep(g, px, py);
+		if (column !== undefined) return column;
 		const ratio = pathGradientRatio(g.anisotropic, px + nudge, py, { x: px, y: py });
 		if (ratio === null) return null;
 		if (edge) return Math.max(0, g.steps * (1 - ratio));
@@ -222,7 +336,8 @@ export function copiesStepAt(g: CopiesGradient, px: number, py: number, nudge = 
 	const q = s <= f ? 0 : ((s - f) / (1 - f)) * g.steps - 0.5;
 	if (q > 0 && Math.abs(q - Math.round(q)) < (g.anisotropic ? STRIP_TIE : TIE)) {
 		const tie = Math.round(q);
-		const decided = edge >= 0 && !g.anisotropic && f === 0 ? tieSide(g, edge, dx, dy, tie) : null;
+		if (g.anisotropic) return anisotropicTieStep(g, q, tie, dx, dy, px, py);
+		const decided = edge >= 0 ? tieSide(g, edge, dx, dy, tie, f) : null;
 		if (decided !== null) return g.steps - tie - (decided ? 0 : 1);
 		// Exactly on copy `round(q)`'s edge: half way between the two steps (see the header).
 		return g.steps - tie - 0.5;

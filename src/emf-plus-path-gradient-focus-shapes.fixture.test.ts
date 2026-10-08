@@ -61,15 +61,18 @@ for (const c of captures) {
 
 /** [images, native pixels, exact pixels (floor), pixels within one level (floor), unpainted ceiling, max error ceiling]. */
 const EXPECTED: Record<string, [number, number, number, number, number, number]> = {
-	// Not exact: the pixels of a fully focused axis (focus 1) on the shape's edge, a tie between two steps, within a level.
-	rect: [10, 50000, 49966, 50000, 0, 1],
-	rectoff: [10, 50000, 49964, 50000, 0, 1],
-	// Not exact: the half-way colour of ties on a copy's edge, within a level.
-	diamond: [10, 32000, 31661, 32000, 0, 1],
-	// Beyond a level: 26 pixels where the strip solver's colour and native's differ by more than a step (not diagnosed further).
-	tri: [10, 37556, 37409, 37530, 0, 242],
-	// Beyond a level or unpainted: 80 more of the same kind (72 of them unpainted).
-	rnd: [40, 56654, 56220, 56574, 72, 246],
+	// Exact: the pixels of a fully focused axis (focus 1) on the shape's edge are ties of every copy at once and the span
+	// rule of the scan converter decides them (49,966 and 49,964 exact before).
+	rect: [10, 50000, 50000, 50000, 0, 0],
+	rectoff: [10, 50000, 50000, 50000, 0, 0],
+	// Not exact: the half-way colour of ties on a slanted copy edge, within a level (31,661 exact before; the pixels only
+	// near an edge, and those on a vertical or horizontal edge, follow the scaled copy's own span rule).
+	diamond: [10, 32000, 31689, 32000, 0, 1],
+	// Beyond a level: 26 pixels where the strip solver's colour and native's differ by more than a step (not diagnosed
+	// further; 37,409 exact before).
+	tri: [10, 37556, 37413, 37530, 0, 242],
+	// Beyond a level or unpainted: 80 more of the same kind (72 of them unpainted); 56,220 exact before.
+	rnd: [40, 56654, 56254, 56574, 72, 246],
 };
 
 describe('independent focus scales as nested copies', () => {
