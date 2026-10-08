@@ -86,8 +86,8 @@ for (const c of captures) {
 /**
  * [images, native pixels, exact pixels (floor), pixels within one level (floor), max error ceiling].
  * Before the fan-triangle model the same groups were exact on 29% (rgb), 22% (shape), 52% (redonly),
- * 0.8% (rand), 0.08% (randa), 1.0% (randr) and 0.2 to 0.6% (randt) of their native pixels. `randf`
- * (focus scales) still takes the previous path and is pinned at its old count.
+ * 0.8% (rand), 0.08% (randa), 0.5% (randf, focus scales), 1.0% (randr) and 0.2 to 0.6% (randt) of
+ * their native pixels. Native ignores FocusScales when the surrounds differ per vertex.
  */
 const EXPECTED: Record<string, [number, number, number, number, number]> = {
 	rgb: [4, 33632, 33536, 33632, 1],
@@ -99,7 +99,7 @@ const EXPECTED: Record<string, [number, number, number, number, number]> = {
 	small: [2, 408, 390, 408, 1],
 	rand: [120, 44454, 43911, 44454, 1],
 	randa: [60, 20463, 20321, 20463, 1],
-	randf: [40, 14766, 73, 190, 175],
+	randf: [40, 14766, 14577, 14766, 1],
 	randr: [30, 7815, 7551, 7719, 24],
 	randt_0: [10, 1686, 1644, 1686, 1],
 	randt_1: [10, 1061, 1032, 1061, 1],

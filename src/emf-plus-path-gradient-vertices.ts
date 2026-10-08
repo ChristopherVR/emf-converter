@@ -62,16 +62,14 @@ function premultiplied(argb: number): [number, number, number, number] {
 }
 
 /**
- * Device-space geometry of a non-uniform path gradient with no (or a zero)
- * focus, Blend or preset curve, or `null` when the previous model has to
+ * Device-space geometry of a non-uniform path gradient with no Blend or preset
+ * curve (FocusScales change nothing here: native ignores them for per-vertex
+ * surrounds, 14,577 of 14,766 pixels of 40 captures with scales exact), or `null` when the previous model has to
  * answer. `full` maps brush space to device pixels.
  */
 export function prepareVertexGradient(shape: EmfPlusPathGradientShape, full: TransformMatrix): VertexGradient | null {
 	const n = shape.boundary.length;
 	if (n < 3 || shape.preset || shape.blend || shape.boundaryArgb.length < n) {
-		return null;
-	}
-	if (shape.focus && (shape.focus.x > 0 || shape.focus.y > 0)) {
 		return null;
 	}
 	if (shape.boundaryArgb.every((color) => color === shape.boundaryArgb[0])) {
