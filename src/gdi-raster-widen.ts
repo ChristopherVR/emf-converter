@@ -876,6 +876,11 @@ interface DashPiece {
 	endScale: number;
 }
 
+/** `v` (logical FIX) rounded to the nearest whole logical unit, ties away from zero. */
+function nearestUnit(v: number): number {
+	return Math.sign(v) * Math.floor((Math.abs(v) + 8) / 16) * 16;
+}
+
 /**
  * One coordinate of a dash cut: `x0` plus the offset `d * t / len` along the segment (`d` its vector component, `t` the distance
  * walked, `len` its length). GDI adds the offset in single precision and rounds the sum half away from the segment's start: up when the
@@ -934,7 +939,7 @@ function dashPieces(
 		// infinity), then places the cut at the same fraction of the real
 		// segment. Lines on whole pixels lose nothing; the odd-FIX segments of a
 		// flattened curve come out up to a pixel short or long.
-		const len = metric || matrix ? real : wholePixelVectors ? norm(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : norm(dir[0], dir[1]);
+		const len = metric ? norm(nearestUnit(dir[0] / metric[0]), nearestUnit(dir[1] / metric[1])) : matrix ? real : wholePixelVectors ? norm(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : norm(dir[0], dir[1]);
 		if (len === 0) {
 			if (on && cur) {
 				cur.pts.push(P[i + 1]);
