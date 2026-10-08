@@ -444,6 +444,40 @@ if ($Which -eq 'redeye-independent') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'redeye-sequence') {
+    # Internal: one sequence of red-eye calls in THIS process (spec in -PlaybackCase), JSON on stdout.
+    Add-Type -Path (Join-Path $here 'RedEyeStageProbe.cs') -ReferencedAssemblies System.Drawing
+    [RedEyeStageProbe]::RunSequence($PlaybackCase)
+    return
+}
+if ($Which -eq 'redeye-state') {
+    # Runs each call sequence in fresh processes (the child is this script in redeye-sequence mode) to separate in-process
+    # history from anything that persists between processes. Writes redeye-state.json.gz: { spec, runs: [ [step...] ... ] }.
+    $specs = @(
+        'R24', 'R12', 'R20', 'R48', 'T24:60', 'G24;R24', 'R24;R24', 'R24;R24;R24',
+        'P24:40:160;R24', 'R24;P24:40:160;R24', 'P24:40:160;G24;R24', 'P24:40:160;R24;R24', 'P24:40:160;U24;R24',
+        'P24:40:70;R24', 'P24:40:90;R24', 'P24:40:105;R24', 'P24:40:125;R24',
+        'P8:40:160;R24', 'P16:40:160;R24', 'P20:40:160;R24', 'P24:40:160;R12', 'P24:40:160;R20', 'P24:40:160;R48', 'P48:40:160;R24',
+        'P24:40:160;T24:60', 'P24:40:160;P24:40:40;R24', 'P24:40:160', 'R24;P24:40:160', 'P24:40:160;P24:40:70', 'P24:40:70;P24:40:160'
+    )
+    $repeats = 6
+    $self = $MyInvocation.MyCommand.Path
+    $records = New-Object System.Collections.Generic.List[string]
+    foreach ($spec in $specs) {
+        $runs = New-Object System.Collections.Generic.List[string]
+        for ($i = 0; $i -lt $repeats; $i++) {
+            $text = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $self redeye-sequence -PlaybackCase $spec 2>&1 | Out-String
+            $runs.Add($text.Trim())
+        }
+        $records.Add('{"spec":' + (ConvertTo-Json $spec) + ',"runs":[' + ($runs -join ',') + ']}')
+    }
+    $bytes = [Text.Encoding]::UTF8.GetBytes('[' + ($records -join ',') + ']')
+    $f = [IO.File]::Create((Join-Path $outDir 'redeye-state.json.gz'))
+    $z = New-Object IO.Compression.GZipStream($f, [IO.Compression.CompressionMode]::Compress)
+    $z.Write($bytes, 0, $bytes.Length); $z.Dispose(); $f.Dispose()
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'redeye-stages') {
     Add-Type -Path (Join-Path $here 'RedEyeStageProbe.cs') -ReferencedAssemblies System.Drawing
     [RedEyeStageProbe]::Run($outDir)

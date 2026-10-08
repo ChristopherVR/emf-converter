@@ -83,6 +83,25 @@ public static class RedEyeStageProbe {
    foreach(var tok in seq.Split(' ')){byte[] p=tok=="S120"?Pair(24,40,160):tok=="S30"?Pair(24,40,70):tok=="grey"?reset(24):tok=="uniform"?Grey(24,24,120,40,40):Grey(24,24,200,0,0);c.Steps.Add(Mk(24,24,p,new[]{0,0,24,24}));}all.Add(c);}
   return all;
  }
+ // Runs ONE sequence of calls in this process and returns one JSON object per step (source and output as base64). A spec is
+ // ';'-separated tokens, each a whole-image area: R<n> pure red n x n (200,0,0); G<n> grey (128,128,128); U<n> uniform (120,40,40);
+ // P<n>:<lo>:<hi> the checker field of the stage probe; T<n>:<g> a pure-red field with a lone pixel of green g at the centre.
+ // The driver (redeye-state in generate.ps1) starts a fresh process per spec to separate in-process history from anything persistent.
+ public static string RunSequence(string spec){
+  using(var init=new Bitmap(1,1)){
+  var sb=new StringBuilder("[");bool first=true;
+  foreach(var tok in spec.Split(';')){
+   char k=tok[0];var parts=tok.Substring(1).Split(':');int n=int.Parse(parts[0]);byte[] p;
+   if(k=='R')p=Grey(n,n,200,0,0);else if(k=='G')p=Grey(n,n,128,128,128);else if(k=='U')p=Grey(n,n,120,40,40);
+   else if(k=='P')p=Pair(n,int.Parse(parts[1]),int.Parse(parts[2]));
+   else if(k=='T'){p=Grey(n,n,200,0,0);int g=int.Parse(parts[1]);Put(p,n,n/2,n/2,g+100,g,g);}
+   else throw new Exception("token "+tok);
+   var s=Mk(n,n,p,new[]{0,0,n,n});Apply(s);
+   if(!first)sb.Append(',');first=false;
+   sb.Append("{\"token\":\""+tok+"\",\"width\":"+n+",\"height\":"+n+",\"source\":\""+Convert.ToBase64String(s.Src)+"\",\"output\":\""+Convert.ToBase64String(s.Out)+"\"}");
+  }
+  sb.Append(']');return sb.ToString();}
+ }
  public static void Run(string dir){
   Directory.CreateDirectory(dir);var cases=Build();using(var init=new Bitmap(1,1)){var sb=new StringBuilder("[");bool first=true;
   foreach(var c in cases){foreach(var s in c.Steps)Apply(s);
