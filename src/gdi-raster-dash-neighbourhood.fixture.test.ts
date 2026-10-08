@@ -17,9 +17,9 @@
  *   or an evaluation order that was tried.
  * - Sample 206 (a chord of 356.6 degrees, bevel join, one pixel): the native `GetPath` of that chord widens exactly (5,820 of 5,841
  *   captures fill identically, the 21 others have a closing line under 8 FIX), so the pixel is in our arc geometry: the start point of
- *   the arc sits at y = 3627.49993 FIX, a rounding tie the converter resolves down and native up. Evaluating the arc points in
- *   float32 resolves this one (168 of the 169 neighbouring paths) and breaks two of the 900 counter-clockwise arcs and 13 (or 5, with
- *   the cheaper variant) of the 182 exact points on the large circles.
+ *   the arc sits at y = 3627.49993 FIX, a rounding tie the converter resolved down and native up. Round 4 resolved it: the arc points are single precision (float32 nodes,
+ *   float32 radius times unit coordinate; see `polygonTrig` and `arcBeziers`), 168 of the 169 neighbouring paths now equal native and the
+ *   whole-path counts of the 900 arcs did not drop (an all-float32 evaluation had cost two of them and 5 to 13 large-circle points).
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -128,7 +128,7 @@ describe('near-complete chords around curve-widen.json sample 206', () => {
 		expect(bad).toBe(21);
 	});
 
-	it('builds the arc of sample 206 one FIX from native at its start (a rounding tie), in 108 of 169 neighbouring paths', () => {
+	it('builds the arc of sample 206 as native does in 168 of 169 neighbouring paths (single-precision arc points; 108 started a FIX off at a rounding tie)', () => {
 		const neighbours = closing.filter((c) => c.radials && c.cap === 1 && c.join === 1);
 		expect(neighbours).toHaveLength(169);
 		let equal = 0;
@@ -147,6 +147,6 @@ describe('near-complete chords around curve-widen.json sample 206', () => {
 			if (differs.length === 0) equal++;
 			else if (differs.length === 1 && differs[0] === 1 && native[1] - ours[1] === 1) startOnly++;
 		}
-		expect({ equal, startOnly }).toEqual({ equal: 60, startOnly: 108 });
+		expect({ equal, startOnly }).toEqual({ equal: 168, startOnly: 0 });
 	});
 });

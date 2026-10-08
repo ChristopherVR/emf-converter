@@ -60,11 +60,11 @@ function score(arcs: NativeArc[], clockwise: (c: NativeArc) => boolean): { exact
 }
 
 describe('native Arc, Chord and Pie paths (GM_COMPATIBLE)', () => {
-	it('matches GetPath for the counter-clockwise captures: 898 of 900 exact, the rest one FIX off', () => {
+	it('matches GetPath for the counter-clockwise captures: all 900 exact', () => {
 		expect(nativeArcs).toHaveLength(900);
 		const { exact, largest } = score(nativeArcs, () => false);
-		// Measured: 898 exact (before: 662, with 234 one FIX off and 4 up to 5 FIX off), 2 one FIX off.
-		expect(exact).toBeGreaterThanOrEqual(898);
+		// Measured: 900 exact (898 before the single-precision arc points; 662 before that, with 234 one FIX off and 4 up to 5 FIX off).
+		expect(exact).toBeGreaterThanOrEqual(900);
 		expect(largest).toBeLessThanOrEqual(1);
 	});
 
@@ -79,8 +79,8 @@ describe('native Arc, Chord and Pie paths (GM_COMPATIBLE)', () => {
 		const arcs = preciseArcs as NativeArc[];
 		expect(arcs.length).toBeGreaterThanOrEqual(250);
 		const { exact, largest } = score(arcs, (c) => c.clockwise === true);
-		// Measured: 182 of 260 exact and none more than 3 FIX off (the radials are whole pixels 8 million away).
-		expect(exact).toBeGreaterThanOrEqual(170);
+		// Measured: 187 of 260 exact (182 before the single-precision arc points) and none more than 3 FIX off (the radials are whole pixels 8 million away).
+		expect(exact).toBeGreaterThanOrEqual(187);
 		expect(largest).toBeLessThanOrEqual(3);
 	});
 });
@@ -105,13 +105,14 @@ describe('the angle and trigonometry model behind GDI arcs', () => {
 		expect(approximateArcAngle(-0.5, 0.2)).toBeCloseTo(Math.PI - approximateArcAngle(0.5, 0.2), 12);
 	});
 
-	it('puts the points on a regular 128-gon, linear in the angle', () => {
+	it('puts the points on a regular 128-gon, linear in the angle, from a single-precision table', () => {
 		const [c0, s0] = polygonTrig((2 * Math.PI * 5) / 128);
-		expect(c0).toBeCloseTo(Math.cos((2 * Math.PI * 5) / 128), 12);
-		expect(s0).toBeCloseTo(Math.sin((2 * Math.PI * 5) / 128), 12);
+		// The nodes are float32 (the arc points of 3,581 captures need that: 972 start points of sample 206's neighbourhood sat on a tie).
+		expect(c0).toBeCloseTo(Math.cos((2 * Math.PI * 5) / 128), 7);
+		expect(s0).toBeCloseTo(Math.sin((2 * Math.PI * 5) / 128), 7);
 		// Half way between two vertices the point is on the chord: inside the circle by 1 - cos(pi / 128).
 		const [cm, sm] = polygonTrig((2 * Math.PI * 5.5) / 128);
-		expect(Math.hypot(cm, sm)).toBeCloseTo(Math.cos(Math.PI / 128), 12);
+		expect(Math.hypot(cm, sm)).toBeCloseTo(Math.cos(Math.PI / 128), 7);
 		// Whole quarter turns are exact.
 		expect(polygonTrig(Math.PI / 2)).toEqual([0, 1]);
 		expect(polygonTrig(Math.PI)).toEqual([-1, 0]);
