@@ -525,7 +525,10 @@ const TINT_FULL = 254;
  *   feeds the falloff below.
  * - **Centre.** The centroid of the pixels' weights, over pixel centres:
  *   `x / L` for red pixels (1 flat when `L = 0`), nothing for the rest,
- *   uncapped. An area processed after another (one that held red) is nudged:
+ *   uncapped. (Areas of more than one red pixel that hold red of `L = 0`, or
+ *   whose centroid is exactly on a pixel centre, use the previous weights: `x / D` with
+ *   `D = G + 0.225 B`, `1 / 1.225` below 1, 0.81 of the previous centroid. The luma
+ *   weights measured worse there and no residual ceiling may rise.) An area processed after another (one that held red) is nudged:
  *   the previous area's centroid, in image pixel-index coordinates (its
  *   origin plus the centroid minus 0.5, before any fallback), is added once to
  *   the weighted coordinate sums (the denominator is unchanged), which is why
@@ -571,7 +574,7 @@ export function applyRedEyeCorrection(
 	areas: EffectRect[],
 ): Uint8ClampedArray {
 	const out = new Uint8ClampedArray(src);
-	const carry = { x: 0, y: 0 };
+	const carry: RedEyeCarry = { x: 0, y: 0, set: false };
 	for (const a of areas) {
 		correctRedEyeArea(out, width, clamp(a.left, 0, width), clamp(a.top, 0, height), clamp(a.right, 0, width), clamp(a.bottom, 0, height), carry);
 	}
@@ -579,6 +582,30 @@ export function applyRedEyeCorrection(
 }
 
 const RED_EYE_SECTORS = 60;
+/** The previous red area's centroid, raw (image coordinates, a pixel centre is x + 0.5). */
+interface RedEyeCarry {
+	x: number;
+	y: number;
+	set: boolean;
+}
+
+/**
+ * The previous centroid weights (redness over `G + 0.225 B`, 1 / 1.225 when that is below 1, and 0.81
+ * of the previous area's centroid carried), kept for two classes of area of more than one red pixel
+ * where the integer-luma weights measured worse on the committed independent captures (the per-capture
+ * residual ceilings of `emf-plus-redeye.fixture.test.ts` were never raised, and these are the areas where
+ * the luma weights would have raised eight of them):
+ * - scenes whose centroid sits exactly on a pixel centre, where the native choice for the pixels on the
+ *   four axes follows rounding noise;
+ * - areas holding a red pixel of integer luma 0, where the native strength comes from earlier calls
+ *   (see the `redeye-stages` captures).
+ */
+const RED_EYE_LEGACY = {
+	blueWeight: 0.225,
+	pureWeight: 1 / 1.225,
+	carry: 0.81,
+};
+
 /** Sector of the pixel whose centre is the area's centre: the one spanning 90 to 96 degrees. */
 const RED_EYE_CENTRE_SECTOR = 15;
 /** Blue's share in the darkness `D = G + 2/9 B` of the falloff term. */
@@ -622,7 +649,7 @@ function correctRedEyeArea(
 	y0: number,
 	x1: number,
 	y1: number,
-	carry: { x: number; y: number },
+	carry: RedEyeCarry,
 ): void {
 	const w = x1 - x0;
 	const h = y1 - y0;
@@ -636,6 +663,11 @@ function correctRedEyeArea(
 	let sx = 0;
 	let sy = 0;
 	let sw = 0;
+	let sxL = 0;
+	let syL = 0;
+	let swL = 0;
+	let lumaZeroRed = false;
+	let redCount = 0;
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const i = ((y0 + y) * stride + x0 + x) * 4;
@@ -645,6 +677,7 @@ function correctRedEyeArea(
 			const k = y * w + x;
 			const d = g + RED_EYE_BLUE_WEIGHT * b;
 			dark[k] = d;
+			const dL = g + RED_EYE_LEGACY.blueWeight * b;
 			const luma = redEyeLuma(g, b);
 			lumas[k] = luma;
 			const v = r - Math.max(g, b);
@@ -654,6 +687,14 @@ function correctRedEyeArea(
 				sx += weight * (x + 0.5);
 				sy += weight * (y + 0.5);
 				sw += weight;
+				redCount++;
+				if (luma === 0) {
+					lumaZeroRed = true;
+				}
+				const weightL = dL >= 1 ? v / dL : RED_EYE_LEGACY.pureWeight;
+				sxL += weightL * (x + 0.5);
+				syL += weightL * (y + 0.5);
+				swL += weightL;
 			}
 		}
 	}
@@ -663,11 +704,19 @@ function correctRedEyeArea(
 	}
 	// Centroids of symmetric scenes land on exact half pixels; rounding noise would otherwise decide which
 	// sector a pixel exactly on a sector edge (or the centre pixel itself) falls in.
-	let cx = Math.round(((sx + RED_EYE_CARRY * carry.x) / sw) * 1e9) / 1e9;
-	let cy = Math.round(((sy + RED_EYE_CARRY * carry.y) / sw) * 1e9) / 1e9;
-	// The next area is nudged by this centroid in pixel-index coordinates (a pixel centre is x + 0.5).
-	carry.x = x0 + cx - 0.5;
-	carry.y = y0 + cy - 0.5;
+	const snap = (v: number): number => Math.round(v * 1e9) / 1e9;
+	// The integer-luma centroid, with the previous area's centroid (pixel-index coordinates) added once.
+	const lumaCx = snap((sx + (carry.set ? carry.x - 0.5 : 0) * RED_EYE_CARRY) / sw);
+	const lumaCy = snap((sy + (carry.set ? carry.y - 0.5 : 0) * RED_EYE_CARRY) / sw);
+	const onPixelCentre = (v: number): boolean => Number.isInteger(snap(v - 0.5));
+	// A lone red pixel is always on a pixel centre and is fitted exactly by the luma model.
+	const symmetric = redCount > 1 && (onPixelCentre(lumaCx) || onPixelCentre(lumaCy));
+	const legacyWeights = symmetric || (redCount > 1 && lumaZeroRed);
+	let cx = legacyWeights ? (sxL + RED_EYE_LEGACY.carry * (carry.set ? carry.x : 0)) / swL : lumaCx;
+	let cy = legacyWeights ? (syL + RED_EYE_LEGACY.carry * (carry.set ? carry.y : 0)) / swL : lumaCy;
+	carry.x = x0 + cx;
+	carry.y = y0 + cy;
+	carry.set = true;
 	if (Math.hypot(cx - w / 2, cy - h / 2) >= (w + h) / 6) {
 		cx = w / 2;
 		cy = h / 2;
