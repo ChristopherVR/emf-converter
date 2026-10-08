@@ -79,7 +79,7 @@ describe('native WidenPath of dashed wide pens on curves', () => {
 		expect(summary(0, true)).toEqual({ differing: 0, total: 0 });
 	});
 
-	it('keeps flat and square caps within one pixel of the native outlines', () => {
+	it('is exact for flat and square caps', () => {
 		// Flat: 1 of 100 differs by 1 pixel (before: 5 by 24; a dash that starts or ends on a flattened vertex keeps a zero-length piece along the
 		// segment it was cut from, which native joins). Square: 1 of 100 by 1 pixel (a cut point one FIX away; before: 2 by 5, the second an
 		// exact rounding tie that Math.hypot put either side of x.5 depending on the engine, now Math.sqrt of the exact sum of squares).
@@ -89,7 +89,8 @@ describe('native WidenPath of dashed wide pens on curves', () => {
 		expect(flat.differing).toBe(0);
 		expect(flat.total).toBe(0);
 		const square = summary(1, true);
-		expect(square.differing).toBeLessThanOrEqual(1);
-		expect(square.total).toBeLessThanOrEqual(1);
+		// Round 4: exact (the last pixel was the 110.5 tie of sample 117: single-precision extensions and cut points).
+		expect(square.differing).toBe(0);
+		expect(square.total).toBe(0);
 	});
 });

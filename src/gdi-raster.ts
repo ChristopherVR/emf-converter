@@ -878,8 +878,8 @@ const POLYGON_NODES = (() => {
 	const cos: number[] = [];
 	const sin: number[] = [];
 	for (let k = 0; k <= 129; k++) {
-		cos.push(Math.cos(k * TRIG_STEP));
-		sin.push(Math.sin(k * TRIG_STEP));
+		cos.push(Math.fround(Math.cos(k * TRIG_STEP)));
+		sin.push(Math.fround(Math.sin(k * TRIG_STEP)));
 	}
 	// Whole quarter turns are exact.
 	for (let k = 0; k <= 128; k += 32) {
@@ -902,7 +902,7 @@ export function polygonTrig(angle: number): [number, number] {
 	if (b < 0) {
 		b += 2 * Math.PI;
 	}
-	const x = b / TRIG_STEP;
+	const x = Math.fround(b / TRIG_STEP);
 	const i = Math.min(127, Math.floor(x));
 	const f = x - i;
 	return [
@@ -934,7 +934,7 @@ export function approximateArcAngle(x: number, y: number): number {
 	if (ax === 0 && ay === 0) {
 		return 0;
 	}
-	const a = ay <= ax ? interpolatedAtan(ay / ax) : Math.PI / 2 - interpolatedAtan(ax / ay);
+	const a = ay <= ax ? interpolatedAtan(Math.fround(ay / ax)) : Math.PI / 2 - interpolatedAtan(Math.fround(ax / ay));
 	if (x >= 0) {
 		return y >= 0 ? a : 2 * Math.PI - a;
 	}
@@ -1033,8 +1033,10 @@ export function arcBeziers(
 	} else {
 		while (a1 >= a0) a1 -= 2 * Math.PI;
 	}
-	const px = (u: number, v: number) => (clockwise && halfX ? Math.ceil(cx + rx * u + 0.5 - v) : Math.round(cx + rx * u + (halfX ? 1 + v : 0)));
-	const py = (v: number) => Math.round(cy - ry * v);
+	// The radius times the unit coordinate is a float32 product (GDI's arithmetic here is single precision); the centre is added to it exactly.
+	const axis = (r: number, c: number) => Math.fround(r * Math.fround(c));
+	const px = (u: number, v: number) => (clockwise && halfX ? Math.ceil(cx + axis(rx, u) + 0.5 - v) : Math.round(cx + axis(rx, u) + (halfX ? 1 + v : 0)));
+	const py = (v: number) => Math.round(cy - axis(ry, v));
 	// A clockwise arc's whole quadrants round their vertical control
 	// distances up (measured: 449 of 452 quadrants), the mirror image of
 	// the counter-clockwise ellipse's rounding down.

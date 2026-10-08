@@ -401,12 +401,21 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 	const quarterTurn = Math.abs(matrix[0]) < 1e-9 && Math.abs(matrix[3]) < 1e-9;
 	const general =
 		!rCtx.wholeDevicePixels && rotatedOrSheared && !quarterTurn && Math.abs(det) > 1e-9 && state.penWidth * Math.sqrt(Math.abs(det)) * 16 >= 1;
+	// A world scale (not one logical unit per device pixel, not GM_COMPATIBLE's whole device pixels): GDI converts a segment's device
+	// vector back to logical units and normalises a square cap's extension by it cut to the nearest whole unit (native
+	// WidenPath: 323 lines under eight scales, every swept arc under four), with the pen's nib at its width in FIX: the whole-pixel
+	// extent of a pen on a horizontal or vertical line is the perpendicular's rounding, not a rounded width (400 of 400 pens exact).
+	// A dashed pen under such a scale lays its pattern out in logical units too, and measures each segment by its logical vector
+	// rounded to the nearest whole unit (`dashMetric`): 1,416 native dashed square-capped arcs under scales 2, 0.5, 0.75 and 1.5 and
+	// the 1/16 and 2 by 1 anisotropic maps are fill-identical (`scaled-dash-caps.json.gz`).
+	const unrotated = Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6;
+	const scaled = !rCtx.wholeDevicePixels && unrotated && (Math.abs(Math.abs(matrix[0]) - 1) > 1e-6 || Math.abs(Math.abs(matrix[3]) - 1) > 1e-6);
 	const dashes = state.penExtended
-		? ellipse || general
+		? ellipse || general || scaled
 			? geometricStyle(flags, state.penWidth, state.penUserStyle, 1)
 			: geometricStyle(flags, widthPx, state.penUserStyle, widthPx / (state.penWidth || 1))
 		: null;
-	const dashMetric = ellipse && dashes ? ([Math.abs(matrix[0]), Math.abs(matrix[3])] as [number, number]) : undefined;
+	const dashMetric = (ellipse || scaled) && !general && dashes ? ([Math.abs(matrix[0]), Math.abs(matrix[3])] as [number, number]) : undefined;
 	if (general) {
 		return {
 			width: Math.round(state.penWidth * 16),
@@ -429,12 +438,6 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 			cutToLogicalUnits: !dashes,
 		};
 	}
-	// A world scale (not one logical unit per pixel, not GM_COMPATIBLE's whole device pixels): GDI converts a segment's device
-	// vector back to logical units and normalises a square cap's extension by it cut to the nearest whole unit (native
-	// WidenPath: 323 lines under eight scales, every swept arc under four), with the pen's nib at its width in FIX: the whole-pixel
-	// extent of a pen on a horizontal or vertical line is the perpendicular's rounding, not a rounded width (400 of 400 pens exact).
-	const unrotated = Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6;
-	const scaled = !rCtx.wholeDevicePixels && unrotated && (Math.abs(Math.abs(matrix[0]) - 1) > 1e-6 || Math.abs(Math.abs(matrix[3]) - 1) > 1e-6);
 	const uniform = scaled && !ellipse && state.penExtended && (flags & 0xf) !== 6;
 	return {
 		width: Math.round((ellipse ? state.penWidth * Math.abs(matrix[0]) : widthPx) * 16),
@@ -457,7 +460,7 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 		// segments in whole pixels.
 		wholePixelDashVectors:
 			Math.abs(matrix[0] - 1) < 1e-6 && Math.abs(matrix[3] - 1) < 1e-6 && Math.abs(matrix[1]) < 1e-6 && Math.abs(matrix[2]) < 1e-6,
-		...(scaled && !dashes
+		...(scaled
 			? {
 					cutToLogicalUnits: true,
 					logicalScale: (ellipse ? [Math.abs(matrix[0]), Math.abs(matrix[3])] : Math.abs(matrix[0])) as number | [number, number],

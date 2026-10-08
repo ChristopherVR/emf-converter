@@ -6,20 +6,21 @@
  *   end radials, plus solid pens. Every width-5 arc differed in one pixel (147 of 147), no other width did, and solid pens never did: a
  *   flat cap loops round the pen between the two inner sides of a flattened curve when that wedge holds two pen vertices or more and the
  *   join is not the boundary of two cubics. A wedge of one vertex is absent (a width-8 arc broke when it was added), and the boundary
- *   of two cubics already takes the true tangent (curve-widen sample 193 broke). All 2,484 captures now fill identically except the
- *   24 Bezier ones below.
+ *   of two cubics already takes the true tangent (curve-widen sample 193 broke). All 2,484 captures now fill identically except one
+ *   Bezier (flat caps, one pixel; round 4 closed the other 24, below).
  * - Sample 117 (a square-capped Bezier, user style 21 12 9 23, 13 px wide): the second control point moved by two pixels each way and
- *   the first dash 15 to 40 px long, 1,300 captures, 24 of which differ in one to three pixels. The vertices that differ are the end
+ *   the first dash 15 to 40 px long, 1,300 captures, 24 of which differed in one to three pixels. The vertices that differ are the end
  *   corners of a dash scaled by its real over its whole-pixel length, where the extension is an exact half (187 * 104 / 176 = 110.5,
- *   native 110; 4 * 112 / 128 = 3.5, native 4; 115 * 56 / 112 = 57.5, native 58): rounding those ties toward zero, away from zero, up
- *   or down, and nineteen orders of evaluating the product in double and float32, each fix 117 (or part of its family) and break
- *   at least one of the 18 samples among the 300 whose scaled extensions include an exact tie, so the rule is not a rounding mode
- *   or an evaluation order that was tried.
+ *   native 110; 4 * 112 / 128 = 3.5, native 4; 115 * 56 / 112 = 57.5, native 58). Round 4 closed the family: native computes both the
+ *   extension and the dash cut points in single precision (a float32 product with a float32 half-width over whole-pixel length rounded
+ *   half away from zero; a float32 sum x0 + d * t / len rounded half up when the component runs forward and half down when it runs
+ *   back). No rounding mode on the exact value fits (the 110.5 rounds down and the 3.5 up). 2,027 more captures with cut points near
+ *   ties are in dash-cut-ties.json.gz (gdi-raster-dash-cut-ties.fixture.test.ts).
  * - Sample 206 (a chord of 356.6 degrees, bevel join, one pixel): the native `GetPath` of that chord widens exactly (5,820 of 5,841
  *   captures fill identically, the 21 others have a closing line under 8 FIX), so the pixel is in our arc geometry: the start point of
- *   the arc sits at y = 3627.49993 FIX, a rounding tie the converter resolves down and native up. Evaluating the arc points in
- *   float32 resolves this one (168 of the 169 neighbouring paths) and breaks two of the 900 counter-clockwise arcs and 13 (or 5, with
- *   the cheaper variant) of the 182 exact points on the large circles.
+ *   the arc sits at y = 3627.49993 FIX, a rounding tie the converter resolved down and native up. Round 4 resolved it: the arc points are single precision (float32 nodes,
+ *   float32 radius times unit coordinate; see `polygonTrig` and `arcBeziers`), 168 of the 169 neighbouring paths now equal native and the
+ *   whole-path counts of the 900 arcs did not drop (an all-float32 evaluation had cost two of them and 5 to 13 large-circle points).
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -94,11 +95,12 @@ describe('dashed pens around curve-dash.json samples 117 and 128', () => {
 		expect(results.filter((r) => r.c.kind === 'arc' && r.d > 0)).toHaveLength(0);
 	});
 
-	it('keeps 24 of 1,300 square and flat Bezier dashes one to three pixels off (exact-half extension ties of a scaled dash end)', () => {
+	it('fills 1,299 of 1,300 square and flat Bezier dashes identically (24 differed in one to three pixels: ties of a scaled dash end)', () => {
 		const bad = results.filter((r) => r.c.kind !== 'arc' && r.d > 0);
-		expect(bad).toHaveLength(24);
-		expect(Math.max(...bad.map((r) => r.d))).toBeLessThanOrEqual(3);
-		// Before the wedge rule 27 of the 1,300 differed.
+		// The one left is a flat-capped dash cut one FIX away (round 4: float32 cut points and square-cap extensions; 24 before; the
+		// wedge rule had cut 27 to 24). See gdi-raster-dash-cut-ties.fixture.test.ts.
+		expect(bad).toHaveLength(1);
+		expect(Math.max(...bad.map((r) => r.d))).toBeLessThanOrEqual(1);
 	});
 });
 
@@ -128,7 +130,7 @@ describe('near-complete chords around curve-widen.json sample 206', () => {
 		expect(bad).toBe(21);
 	});
 
-	it('builds the arc of sample 206 one FIX from native at its start (a rounding tie), in 108 of 169 neighbouring paths', () => {
+	it('builds the arc of sample 206 as native does in 168 of 169 neighbouring paths (single-precision arc points; 108 started a FIX off at a rounding tie)', () => {
 		const neighbours = closing.filter((c) => c.radials && c.cap === 1 && c.join === 1);
 		expect(neighbours).toHaveLength(169);
 		let equal = 0;
@@ -147,6 +149,6 @@ describe('near-complete chords around curve-widen.json sample 206', () => {
 			if (differs.length === 0) equal++;
 			else if (differs.length === 1 && differs[0] === 1 && native[1] - ours[1] === 1) startOnly++;
 		}
-		expect({ equal, startOnly }).toEqual({ equal: 60, startOnly: 108 });
+		expect({ equal, startOnly }).toEqual({ equal: 168, startOnly: 0 });
 	});
 });

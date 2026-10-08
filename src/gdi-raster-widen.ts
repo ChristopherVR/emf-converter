@@ -36,10 +36,11 @@
  * - Geometric dash patterns cut the figure into pieces by arc length, each
  *   segment measured from its vector cut down to whole pixels (when one
  *   logical unit is one pixel: `wholePixelDashVectors`), the cut points
- *   rounded to 28.4 at the same fraction of the real segment; each piece is
+ *   rounded to 28.4 at the same fraction of the real segment (a float32 sum,
+ *   `cutCoordinate`); each piece is
  *   widened as an open figure with the directions of the path segments it
  *   lies on, and a square cap's extension is scaled like the segment under
- *   the cut (real over measured length). With round or
+ *   the cut (real over measured length; a float32 product, `scaledExtension`). With round or
  *   square caps the stock styles shorten every dash by the pen width.
  * - The first and last flattened segment of a Bezier take their draw
  *   vertices from the curve's end tangents (`GdiFigure.tangents`).
@@ -60,7 +61,7 @@
  * round caps and joins (every `CreatePen` pen) 3,000 of 3,000; square caps
  * with round joins, and flat or square caps with bevel or miter joins,
  * 99.3% to 99.5%; round caps with bevel or miter joins 97.5%; flat caps
- * with round joins 97.2%; 299 of 300 random dashed polylines. The residual
+ * with round joins 97.2%; 300 of 300 random dashed polylines (299 before the single-precision cuts and extensions). The residual
  * is GDI's inclusion of a pen vertex exactly at the end of a join or cap
  * arc (mostly for the flattened pens of 7 px and more), and the half-pixel
  * rounding of the perpendicular for 8 px pens (now a closed rule, `oddEdgeAdjustment`).
@@ -235,6 +236,14 @@ export function penPolygonMatrix(width: number, m: Matrix): Pt[] {
 	const cached = matrixPenCache.get(key);
 	if (cached) {
 		return cached;
+	}
+	// A rotation with a uniform scale maps the logical circle to a device circle, and a device circle under 6.5 pixels across is
+	// one of the digital pens (Hobby), not rotated: the nibs of 6 widths each under the 30 and 45 degree matrices.
+	const scale = Math.hypot(m[0], m[1]);
+	if (Math.abs(Math.hypot(m[2], m[3]) - scale) < 1e-4 * scale && Math.abs(m[0] * m[2] + m[1] * m[3]) < 1e-4 * scale * scale && width * scale < HOBBY_LIMIT) {
+		const digital = penPolygon(Math.round(width * scale));
+		matrixPenCache.set(key, digital);
+		return digital;
 	}
 	const r = Math.ceil(width / 2);
 	const mirror = m[0] * m[3] - m[1] * m[2] < 0 ? -1 : 1;
@@ -448,6 +457,9 @@ function turnSign(ax: number, ay: number, bx: number, by: number): number {
 interface Seg {
 	dx: number;
 	dy: number;
+	/** The direction the turn at a join is measured along: the segment's own, or a curve end's tangent when it opposes the chord. */
+	tx: number;
+	ty: number;
 	/** Left and right draw vertex indices. */
 	L: number;
 	R: number;
@@ -502,7 +514,8 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.capWidth ?? this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height ?? this.opts.capWidth, nibMatrix, !!(this.opts.wholePixelDashVectors || this.opts.cutToLogicalUnits), undefined, this.opts.logicalScale), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		const reversed = !!drawDir && dx * drawDir[0] + dy * drawDir[1] < 0;
+		return { dx, dy, tx: reversed ? drawDir![0] : dx, ty: reversed ? drawDir![1] : dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.capWidth ?? this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height ?? this.opts.capWidth, nibMatrix, !!(this.opts.wholePixelDashVectors || this.opts.cutToLogicalUnits), undefined, this.opts.logicalScale), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -625,7 +638,7 @@ class Outliner {
 		const sv = this.capSide(s, from);
 		const ev = this.capSide(s, to);
 		if (cap === 'square') {
-			const e0: Pt = scale === 1 || s.curveEnd ? s.e : squareExtension(this.opts.width, s.pe[0], s.pe[1], scale, this.opts.height, this.opts.deviceNib ? this.opts.matrix : undefined, false, !!this.opts.wholePixelDashVectors);
+			const e0: Pt = scale === 1 || s.curveEnd ? s.e : this.scaledExtension(s, scale);
 			const e: Pt = start ? [-e0[0], -e0[1]] : e0;
 			this.push(p, [sv[0] + e[0], sv[1] + e[1]]);
 			this.push(p, [ev[0] + e[0], ev[1] + e[1]]);
@@ -633,6 +646,24 @@ class Outliner {
 			this.push(p, sv);
 			this.push(p, ev);
 		}
+	}
+
+	/**
+	 * The square-cap extension of a dash end that GDI scales by its real over whole-pixel length. At one logical unit per device pixel the
+	 * extension is the vector component times (half the width over the whole-pixel length), a float32 product of a float32 ratio, rounded
+	 * half away from zero; ties of the exact product (110.5, 3.5, 57.5, -62.5) fall where that single-precision value puts them.
+	 */
+	private scaledExtension(s: Seg, scale: number): Pt {
+		const o = this.opts;
+		if (o.wholePixelDashVectors && !o.matrix && !o.dashMetric && (o.height === undefined || o.height === o.width)) {
+			const length = norm(Math.floor(s.pe[0] / 16), Math.floor(s.pe[1] / 16)) * 16;
+			if (length > 0) {
+				const ratio = Math.fround(o.width / 2 / length);
+				const component = (v: number): number => Math.sign(v) * Math.floor(Math.fround(Math.abs(v) * ratio) + 0.5);
+				return [component(s.pe[0]), component(s.pe[1])];
+			}
+		}
+		return squareExtension(o.width, s.pe[0], s.pe[1], scale, o.height, o.deviceNib ? o.matrix : undefined, false, !!o.wholePixelDashVectors);
 	}
 
 	/**
@@ -768,7 +799,7 @@ class Outliner {
 		for (let i = 0; i + 1 < segs.length; i++) {
 			const s = segs[i];
 			const t = segs[i + 1];
-			const tr = turnSign(s.dx, s.dy, t.dx, t.dy);
+			const tr = turnSign(s.tx, s.ty, t.tx, t.ty);
 			if (tr === 0) {
 				this.push(P[i + 1], this.joinSide(s, 'R'));
 			} else {
@@ -779,7 +810,7 @@ class Outliner {
 		for (let i = segs.length - 1; i > 0; i--) {
 			const s = segs[i];
 			const t = segs[i - 1];
-			const tr = turnSign(t.dx, t.dy, s.dx, s.dy);
+			const tr = turnSign(t.tx, t.ty, s.tx, s.ty);
 			if (tr === 0) {
 				this.push(P[i], this.joinSide(s, 'L'));
 			} else {
@@ -801,7 +832,7 @@ class Outliner {
 			const i = j % m;
 			const s = segs[(i + m - 1) % m];
 			const t = segs[i];
-			const tr = turnSign(s.dx, s.dy, t.dx, t.dy);
+			const tr = turnSign(s.tx, s.ty, t.tx, t.ty);
 			if (tr === 0) {
 				this.push(P[i], this.joinSide(s, 'R'));
 			} else {
@@ -814,7 +845,7 @@ class Outliner {
 			const i = (m - j) % m;
 			const s = segs[i];
 			const t = segs[(i + m - 1) % m];
-			const tr = turnSign(t.dx, t.dy, s.dx, s.dy);
+			const tr = turnSign(t.tx, t.ty, s.tx, s.ty);
 			if (tr === 0) {
 				this.push(P[i], this.joinSide(s, 'L'));
 			} else {
@@ -851,6 +882,22 @@ interface DashPiece {
 	 */
 	startScale: number;
 	endScale: number;
+}
+
+/** `v` (logical FIX) rounded to the nearest whole logical unit, ties away from zero. */
+function nearestUnit(v: number): number {
+	return Math.sign(v) * Math.floor((Math.abs(v) + 8) / 16) * 16;
+}
+
+/**
+ * One coordinate of a dash cut: `x0` plus the offset `d * t / len` along the segment (`d` its vector component, `t` the distance
+ * walked, `len` its length). GDI adds the offset in single precision and rounds the sum half away from the segment's start: up when the
+ * component runs forward, down when it runs back (the cuts of 2,027 native dashed Beziers whose cut points sit within 6e-4 FIX of a tie).
+ */
+function cutCoordinate(x0: number, d: number, t: number, len: number): number {
+	const offset = Math.abs(d) * (t / len);
+	const v = Math.fround(x0 + (d < 0 ? -offset : offset));
+	return d < 0 ? Math.ceil(v - 0.5) : Math.floor(v + 0.5);
 }
 
 /**
@@ -900,7 +947,7 @@ function dashPieces(
 		// infinity), then places the cut at the same fraction of the real
 		// segment. Lines on whole pixels lose nothing; the odd-FIX segments of a
 		// flattened curve come out up to a pixel short or long.
-		const len = metric || matrix ? real : wholePixelVectors ? norm(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : norm(dir[0], dir[1]);
+		const len = metric ? norm(nearestUnit(dir[0] / metric[0]), nearestUnit(dir[1] / metric[1])) : matrix ? norm(nearestUnit((matrix[3] * dir[0] - matrix[2] * dir[1]) / det), nearestUnit((-matrix[1] * dir[0] + matrix[0] * dir[1]) / det)) : wholePixelVectors ? norm(Math.floor(dir[0] / 16), Math.floor(dir[1] / 16)) * 16 : norm(dir[0], dir[1]);
 		if (len === 0) {
 			if (on && cur) {
 				cur.pts.push(P[i + 1]);
@@ -913,7 +960,7 @@ function dashPieces(
 		let t = 0;
 		while (len - t > left || (left === 0 && on)) {
 			t += left;
-			const q: Pt = [Math.floor(x0 + (dir[0] * t) / len + 0.5), Math.floor(y0 + (dir[1] * t) / len + 0.5)];
+			const q: Pt = [cutCoordinate(x0, dir[0], t, len), cutCoordinate(y0, dir[1], t, len)];
 			if (on && cur) {
 				cur.pts.push(q);
 				cur.dirs.push(dir);

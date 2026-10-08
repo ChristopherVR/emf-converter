@@ -5,13 +5,21 @@
  * polygon (`penPolygonMatrix`) is GDI's logical circle mapped through the matrix, rounded and flattened (`nib-matrix-pen`
  * captures the native nibs). Pure shears and shear-with-scale (matrices 3, 4 and 6) are exact on all 72 outlines each; the
  * matrices with a rotation keep a few pixels of residual, pinned below (the half-pixel rounding of a diagonal's perpendicular).
+ *
+ * Round 4: a rotation with a uniform scale maps the logical circle to a device circle, and a device circle narrower than 6.5 pixels
+ * is one of the digital (Hobby) pens, not a rotated polygon. The 12 nibs of widths 1 to 6 under the 30 and 45 degree matrices
+ * (`nib-matrix-pen.json.gz`) are exactly those pens; before, none of the 12 was. The rotated outlines fell from 1,087 and 424 differing
+ * pixels (matrices 0 and 1) to 650 and 313; matrix 5 (a rotation with an unequal scale) is not a circle and is unchanged. A dashed pen under
+ * a matrix measures each segment by its logical vector rounded to the nearest whole unit, as under a scale (`dashPieces`), which
+ * took the three rotated matrices to 620, 292 and 554 differing pixels (matrix 5 from 600) and 48, 56 and 48 of the 72 outlines each
+ * exact (23, 41 and 34 before round 4).
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { expect, it } from 'vitest';
 import { fixturePath } from './__fixtures__/gdi-parity-harness';
 import { GdiRasterPath, fillPolygonSpans, geometricStyle, type SpanList } from './gdi-raster';
-import { widenPath } from './gdi-raster-widen';
+import { penPolygonMatrix, widenPath } from './gdi-raster-widen';
 
 interface NativeCase {
 	m: number;
@@ -40,7 +48,7 @@ const SOURCES = [
 	[[10, 10], [40, 55], [70, 20]],
 ];
 /** Pixel-difference bound per matrix (the sum over its 72 outlines), as measured; the exact ones are 0. */
-const MATRIX_BOUND: Record<number, number> = { 0: 1087, 1: 424, 3: 0, 4: 0, 5: 600, 6: 0, 7: 416 };
+const MATRIX_BOUND: Record<number, number> = { 0: 620, 1: 292, 3: 0, 4: 0, 5: 554, 6: 0, 7: 416 };
 
 function pixels(spans: SpanList): Set<number> {
 	const set = new Set<number>();
@@ -98,4 +106,24 @@ it('matches native sheared pens exactly and rotated pens within the measured bou
 	for (const [m, bound] of Object.entries(MATRIX_BOUND)) {
 		expect(total[Number(m)], `matrix ${m} totals ${JSON.stringify(total)}`).toBeLessThanOrEqual(bound);
 	}
+});
+
+it('uses the digital pens for the nibs of narrow pens under a rotation with a uniform scale (12 of 12 native nibs; none before)', () => {
+	const nibs: Array<{ w: number; m: number; shape: number; points: number[] }> = JSON.parse(gunzipSync(readFileSync(fixturePath('nib-matrix-pen.json.gz'))).toString());
+	let exact = 0;
+	let total = 0;
+	for (const c of nibs) {
+		if (c.shape !== 0 || c.m > 1 || c.w > 6) continue;
+		total++;
+		const m = MATRICES[c.m];
+		const pts: number[][] = [];
+		for (let i = 0; i < c.points.length; i += 3) pts.push([c.points[i], c.points[i + 1]]);
+		// The pen's centre is where the zero-length path maps; the outline repeats the vertices where the two caps meet.
+		const cx = Math.round((m[0] * 20 + m[2] * 20) * 16);
+		const cy = Math.round((m[1] * 20 + m[3] * 20) * 16);
+		const native = new Set(pts.map((p) => `${p[0] - cx},${p[1] - cy}`));
+		const ours = new Set(penPolygonMatrix(c.w * 16, m).map((p) => `${p[0]},${p[1]}`));
+		if (native.size === ours.size && [...native].every((v) => ours.has(v))) exact++;
+	}
+	expect({ exact, total }).toEqual({ exact: 12, total: 12 });
 });
