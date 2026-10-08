@@ -6,7 +6,7 @@
 // Input file, version 2: int32 -count, int32 keepOutput, then per image int32 bw, bh (bitmap size),
 // sx, sy, sw, sh (source rectangle), dw, dh (destination size), flags (bit 0: StretchDIBits instead of
 // StretchBlt; bit 1: SetStretchBltMode HALFTONE is skipped, i.e. COLORONCOLOR; bit 2 / bit 3: the destination is mirrored
-// horizontally / vertically; bits 4-6: a colour adjustment, see Adjustment), followed by bw*bh*4 BGRA bytes.
+// horizontally / vertically; bits 4-6: a colour adjustment, see Adjustment; bit 7: pre-fill the destination with BGRA 20 7F 40 55), followed by bw*bh*4 BGRA bytes.
 //
 // Output file: int32 count, then per image int32 sw, sh, scale (dw / sw, or 0 when not an integer),
 // int32 badBlocks (-1 when the scale is not an integer), sh int32 non-uniform block counts per block
@@ -69,6 +69,8 @@ public static class HalftoneBoundaryProbe
                     if (sb == IntPtr.Zero || db == IntPtr.Zero) throw new Exception("CreateDIBSection failed");
                     so = SelectObject(src, sb); dOld = SelectObject(dst, db);
                     Marshal.Copy(input, 0, sBits, input.Length);
+                    // Bit 7: the destination starts as the BGRA pattern 20 7F 40 55 (so a stretch that leaves alpha alone is visible).
+                    if ((flags & 128) != 0) { var fill = new byte[dw * dh * 4]; for (int q = 0; q < fill.Length; q += 4) { fill[q] = 0x20; fill[q + 1] = 0x7F; fill[q + 2] = 0x40; fill[q + 3] = 0x55; } Marshal.Copy(fill, 0, dBits, fill.Length); }
                     SetStretchBltMode(dst, (flags & 2) != 0 ? 3 : 4);
                     int caMode = (flags >> 4) & 7;
                     if (caMode != 0 && !SetColorAdjustment(dst, Adjustment(caMode))) throw new Exception("SetColorAdjustment failed");

@@ -279,6 +279,24 @@ function enlargeKernel(u: number): number {
  * is 8192), so a row always sums to exactly 8192.
  */
 export function halftoneEnlargeTaps(src: number, dst: number): HalftoneTaps[] {
+	return halftoneEnlargeCumulative(src, dst).map(row => {
+		let prev = 0;
+		return row.map(([j, cum], i): [number, number] => {
+			const c = i === row.length - 1 ? 8192 : Math.ceil(cum - 1e-7);
+			const share = c - prev;
+			prev = c;
+			return [j, share / 8192];
+		});
+	});
+}
+
+/**
+ * The unrounded cumulative shares behind {@link halftoneEnlargeTaps}: for each of `dst` pixels, the source indices
+ * under its footprint in order, each with the cumulative weight (of 8192) up to and including that source pixel. The
+ * taps round these up, so a cumulative share within a few thousandths of a whole share is where the native float
+ * arithmetic, not the formula, decides a row (see `halftone-kernel-sides.fixture.test.ts`).
+ */
+export function halftoneEnlargeCumulative(src: number, dst: number): Array<Array<[number, number]>> {
 	const ratio = dst / src;
 	const reach = Math.ceil(ratio) - 1;
 	const fir: number[] = [];
@@ -300,7 +318,7 @@ export function halftoneEnlargeTaps(src: number, dst: number): HalftoneTaps[] {
 		}
 		cover.push(run);
 	}
-	const taps: HalftoneTaps[] = [];
+	const rows: Array<Array<[number, number]>> = [];
 	for (let x = 0; x < dst; x++) {
 		const weights = new Map<number, number>();
 		for (let k = -reach; k <= reach; k++) {
@@ -311,18 +329,13 @@ export function halftoneEnlargeTaps(src: number, dst: number): HalftoneTaps[] {
 			}
 		}
 		const sorted = [...weights.entries()].sort((a, b) => a[0] - b[0]);
-		let prev = 0;
 		let cum = 0;
-		const row: HalftoneTaps = [];
-		for (let i = 0; i < sorted.length; i++) {
-			cum += sorted[i][1] * 8192;
-			const c = i === sorted.length - 1 ? 8192 : Math.ceil(cum - 1e-7);
-			row.push([sorted[i][0], (c - prev) / 8192]);
-			prev = c;
-		}
-		taps.push(row);
+		rows.push(sorted.map(([j, v]): [number, number] => {
+			cum += v * 8192;
+			return [j, cum];
+		}));
 	}
-	return taps;
+	return rows;
 }
 
 /**
@@ -620,18 +633,11 @@ const FILTER_WEIGHTS: Record<number, number[][]> = {
 };
 
 /**
- * The one whole-factor row the kernel formula gets the other way round: the centre phase of the
- * odd factor 15, where the two outer shares sum to the odd 1,311 and the native engine hands the
- * spare share to the later source sample (every other odd factor, 7 to 13, hands it to the earlier
- * one as the formula does). Measured exactly (shares of 8192, before, at and after) from native
- * random-profile captures; `[factor, phase] -> row`.
- */
-const FILTER_CENTRE_ROWS: Record<number, [number, number, number]> = { 15: [655, 6881, 656] };
-
-/**
  * Taps (source index, integer share of 8192) of an enlarged axis in the larger-ratio engine: an
  * exact 2x keeps the 3:1 linear weights, anything else {@link halftoneEnlargeTaps} (every whole
- * factor 6 to 16 is reproduced except the centre row of 15, see {@link FILTER_CENTRE_ROWS}).
+ * factor 6 to 16 is reproduced; the centre row of 15, whose two outer shares sum to the odd 1,311, gives
+ * the spare share to the earlier source pixel here and the native capture to the later one, and the two
+ * rows `(655, 6881, 656)` and `(656, 6881, 655)` give the same output for every 8-bit input).
  */
 function filterAxisTaps(src: number, dst: number): Array<Array<[number, number]>> {
 	const factor = dst / src;
@@ -643,15 +649,7 @@ function filterAxisTaps(src: number, dst: number): Array<Array<[number, number]>
 			return [[Math.max(0, k - 1), a], [k, b], [Math.min(src - 1, k + 1), c]];
 		});
 	}
-	const taps = halftoneEnlargeTaps(src, dst).map(row => row.map(([j, v]): [number, number] => [j, Math.round(v * 8192)]));
-	const centre = FILTER_CENTRE_ROWS[factor];
-	if (centre) {
-		for (let i = (factor - 1) / 2; i < dst; i += factor) {
-			const k = Math.floor(i / factor);
-			taps[i] = [[Math.max(0, k - 1), centre[0]], [k, centre[1]], [Math.min(src - 1, k + 1), centre[2]]];
-		}
-	}
-	return taps;
+	return halftoneEnlargeTaps(src, dst).map(row => row.map(([j, v]): [number, number] => [j, Math.round(v * 8192)]));
 }
 
 /**
@@ -768,7 +766,7 @@ function ditherFilteredSource(rect: Int32Array, SW: number, SH: number, W: numbe
  *   weights {@link halftoneEnlargeTaps} (13-bit shares of the kernel formula,
  *   except an exact 2x axis, which stays the 3:1 linear weights),
  *   the intermediate rounded half up. Exact for every whole factor 6x to 16x
- *   but the centre phase of 15x (see FILTER_CENTRE_ROWS) and for the captured
+ *   and for the captured
  *   fractional ratios; 5.016x is 6 of 193,563 values one level off.
  *
  * - One axis enlarged while the other keeps its size: {@link halftoneFilterOneAxis}.
