@@ -68,6 +68,65 @@ function gdiExact(set: string, format: 1 | 5, small: boolean): [number, number] 
 	return [exact, total];
 }
 
+describe('GDI+ images against GDI bitmaps of the same private fonts (native data only)', () => {
+	const plusLevels = (c: any): Map<string, number> => {
+		const gray = Buffer.from(c.gray, 'base64'), out = new Map<string, number>();
+		for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) { const level = Math.round((255 - gray[y * 64 + x]) / 17); if (level) out.set(`${x - 8},${47 - y}`, level); }
+		return out;
+	};
+	const plus = json('text-raster-polygons.json.gz');
+	it('AntiAlias text is GDI\'s GGO_GRAY4_BITMAP bitmap with the 17th level mapped to the 16th: 4,969 of 5,120 images, the 151 other pixels one sample lighter', () => {
+		const gray4 = new Map<string, any>();
+		for (const r of mono) if (r.set === 'polygons' && r.format === 5) gray4.set(`${r.ppem}:${r.index}`, r);
+		let images = 0, equal = 0, lighter = 0, other = 0;
+		for (const c of plus) {
+			if (c.hint !== 4) continue;
+			const native = levels(gray4.get(`${c.size}:${c.index}`)), image = plusLevels(c);
+			images++;
+			let same = true;
+			for (const key of new Set([...native.keys(), ...image.keys()])) {
+				const a = native.get(key) ?? 0, b = image.get(key) ?? 0;
+				if (a === b || (a === 16 && b === 15)) continue;
+				same = false;
+				if (b === a - 1) lighter++; else other++;
+			}
+			if (same) equal++;
+		}
+		expect({ images, equal, lighter, other }).toEqual({ images: 5120, equal: 4969, lighter: 151, other: 0 });
+	});
+	it('AntiAliasGridFit on a font without a gasp table is the monochrome bitmap from 9 to 17 ppem (2,304 of 2,304) and not at 8 or from 18', () => {
+		const monoBits = new Map<string, any>();
+		for (const r of mono) if (r.set === 'polygons' && r.format === 1) monoBits.set(`${r.ppem}:${r.index}`, r);
+		const result: Record<string, number> = { inside: 0, insideTotal: 0, outside: 0, outsideTotal: 0 };
+		for (const c of plus) {
+			if (c.hint !== 3 || c.size > 20) continue;
+			const bits = samples(monoBits.get(`${c.size}:${c.index}`)), image = plusLevels(c);
+			const same = image.size === bits.size && [...bits].every((k) => image.get(k) === 15);
+			const bucket = c.size >= 9 && c.size <= 17 ? 'inside' : 'outside';
+			result[`${bucket}Total`]++;
+			if (same) result[bucket]++;
+		}
+		expect(result).toEqual({ inside: 2304, insideTotal: 2304, outside: 0, outsideTotal: 1024 });
+	});
+	it('a bar between two sample rows or columns, touching neither centre, is drawn on the upper or right one in all 210', () => {
+		const pairs: [number, number][] = [];
+		for (let lo = 56; lo < 72; lo++) for (let hi = lo + 1; hi <= 72; hi++) pairs.push([lo, hi]);
+		let pure = 0, upper = 0;
+		for (const c of json('text-raster-bars.json.gz')) {
+			if (c.hint !== 4) continue;
+			const [lo, hi] = pairs[c.index % 136];
+			if (lo === 56 || hi === 72) continue;
+			pure++;
+			const gray = Buffer.from(c.gray, 'base64');
+			let lower = 0, higher = 0;
+			if (c.index < 136) for (let x = 12; x < 22; x++) { lower += gray[47 * 64 + x] !== 255 ? 1 : 0; higher += gray[46 * 64 + x] !== 255 ? 1 : 0; }
+			else for (let y = 36; y < 46; y++) { lower += gray[y * 64 + 8] !== 255 ? 1 : 0; higher += gray[y * 64 + 9] !== 255 ? 1 : 0; }
+			if (higher > 0 && lower === 0) upper++;
+		}
+		expect({ pure, upper }).toEqual({ pure: 210, upper: 210 });
+	});
+});
+
 describe('GDI monochrome bitmaps of the private polygon fonts (GetGlyphOutline GGO_BITMAP)', () => {
 	// [exact at 8 to 32 ppem of 4,096, exact at 33 to 40 ppem of 1,024]
 	const expected: Record<string, [number, number]> = {

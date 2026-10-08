@@ -25,6 +25,22 @@ const json = (name: string): any => JSON.parse(gunzipSync(readFileSync(new URL(`
 const perProduct = (x: number, y: number, vx: number, vy: number) => Math.floor((x * vx + 8192) / 16384) + Math.floor((y * vy + 8192) / 16384);
 const available = new Set(['Arial', 'Times New Roman', 'Segoe UI', 'Tahoma', 'Courier New']);
 
+describe('call-level first divergences of the projection arithmetic (state B)', () => {
+	// For each glyph of text-real-glyphs whose image tells the two arithmetics apart, every call of the projection
+	// primitives where per-product and combined rounding differ, with the arithmetic the native image requires when
+	// it is determined (all assignments reproducing the image agree). Fonts: Arial, Times New Roman, Segoe UI,
+	// Tahoma, Verdana, Georgia, Calibri, Courier New, Comic Sans MS, Consolas, 9 to 24 ppem.
+	it('2,149 determined calls: 2,125 need per-product rounding, 24 combined (state A: 1,013 and 78 of 1,091)', () => {
+		const dump = json('hinting-divergence.json.gz');
+		const determined = dump.rows.filter((r: any) => r.verdict !== 'either');
+		expect(dump.rows).toHaveLength(5039);
+		expect(determined).toHaveLength(2149);
+		expect(determined.filter((r: any) => r.verdict === 'pp')).toHaveLength(2125);
+		expect(determined.filter((r: any) => r.verdict === 'comb')).toHaveLength(24);
+		for (const r of dump.rows.slice(0, 200)) expect(r.pp).toBe(perProduct(r.dx, r.dy, r.vx, r.vy));
+	});
+});
+
 describe.skipIf(!windowsFonts())('native glyph output differs between runs on one machine', () => {
 	const fonts = { combined: new GdiFontCollection(windowsFonts()!), perProduct: new GdiFontCollection(windowsFonts()!) };
 	function render(kind: 'combined' | 'perProduct', c: any, side: number, x: number, y: number, scale: number, contrast: number): Uint8Array {
