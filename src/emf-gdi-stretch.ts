@@ -860,6 +860,43 @@ export function halftoneFilterDouble(rgb: Int32Array, w: number, h: number): Int
 }
 
 /**
+ * Which engine Windows' HALFTONE runs for a mixed enlarge-and-reduce stretch (one axis grows, the other
+ * shrinks) of the RGB source `rect` (`SW` x `SH`) to `W` x `H`:
+ *
+ * - `'reduced'`: reduce the shrinking axis with the 13-bit shares, sharpen each axis, then enlarge
+ *   (the native sequence of {@link stretchHalftone}), taken when
+ *   (a) the shrinking axis loses at least 1.5 source pixels per destination pixel, counted as
+ *   `3 * dst + 2 <= 2 * src` (a 64-pixel axis reduced to 42 takes it, to 43 does not; 100 to 66 takes it, 50 to
+ *   33 does not), whatever the source;
+ *   (b) the source takes the filtered branch ({@link halftoneBranch}, which needs more than 2,304
+ *   pixels), whatever the destination; or
+ *   (c) the destination has fewer pixels than the source (`W * H < SW * SH`, strictly: equal
+ *   areas do not), for sources of more than 2,304 pixels.
+ * - `'despeckled'`: the same sequence after the source is despeckled, the case (c) for the sources
+ *   of up to 2,304 pixels (they always take the replicated branch, whose first step is the despeckle).
+ * - `'nearest'`: otherwise, the replicated branch picks single source pixels.
+ *
+ * Found with native boundary sweeps (sources of 3 to 1,500 colours, 20 to 120 pixels a side, enlargements of 1.03x to
+ * 6.5x against reductions of 0.3x to 0.99x; `halftone-mixed-engine.fixture.test.ts`). The rule is a
+ * property of the source and destination sizes, not of the colour adjustment.
+ */
+export function halftoneMixedEngine(
+	rect: ArrayLike<number>,
+	SW: number,
+	SH: number,
+	W: number,
+	H: number,
+): 'nearest' | 'reduced' | 'despeckled' {
+	const halved = (W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW);
+	const cap = (H < SH && 3 * H + 2 <= 2 * SH) || (W < SW && 3 * W + 2 <= 2 * SW);
+	if (halved || cap) return 'reduced';
+	const small = SW * SH <= 2304;
+	if (!small && halftoneBranch(rect, SW, SH) === 'filter') return 'reduced';
+	if (W * H < SW * SH) return small ? 'despeckled' : 'reduced';
+	return 'nearest';
+}
+
+/**
  * HALFTONE stretch, with the same argument conventions as
  * {@link stretchGdi}. Reproduces Windows' halftone engine on 32bpp output
  * (`emfrec-halftone-*` fixtures):
@@ -948,14 +985,14 @@ export function stretchHalftone(
 	const reducing = W < SW && H < SH;
 	const mixed = (W > SW && H < SH) || (W < SW && H > SH);
 	const dithered = !!dither && !!adjust && !adjustAfterSampling;
-	const nearestMixed = mixed && (!adjust || adjustAfterSampling || dithered)
+	// Which engine a mixed enlarge-and-reduce stretch runs (see halftoneMixedEngine): the native reduce,
+	// sharpen, enlarge sequence, or single source pixels for milder reductions. Full fitted colour
+	// adjustment also retains its previous sampling path.
+	const mixedPlain = mixed && (!adjust || adjustAfterSampling || dithered);
+	const engine = mixedPlain ? halftoneMixedEngine(rect, SW, SH, W, H) : 'nearest';
+	const nearestMixed = mixedPlain && engine === 'nearest'
 		&& ((W < SW && W * 2 > SW) || (H < SH && H * 2 > SH));
-	// Reduction by at least 2x on one axis and enlargement on the other follows the
-	// native reduce, sharpen, enlarge sequence. Milder reductions pick single source
-	// pixels instead. Full fitted colour adjustment also retains its previous
-	// sampling path.
-	const nativeMixed = mixed && (!adjust || adjustAfterSampling || dithered)
-		&& ((W > SW && H * 2 <= SH) || (H > SH && W * 2 <= SW));
+	const nativeMixed = mixedPlain && engine !== 'nearest';
 	// An enlargement of both axes by whole factors up to 5, or by more than 5x on either axis, whose
 	// source takes the filtered branch (see halftoneBranch) is sharpened and interpolated instead of
 	// replicated (see halftoneFilterEnlarge). A mirrored blit is the mirror image of the unmirrored
@@ -987,7 +1024,11 @@ export function stretchHalftone(
 		}
 		return { width: W, height: H, data };
 	}
-	if ((enlarging || nearestMixed) && !directDib && !pairRows && !pairColumns) {
+	// The despeckle is a step of the replicated branch for sources of up to 2,304 pixels and of more than
+	// 16,384; between them the scan of the source (halftoneBranch) hands over without it (native
+	// captures of checker-dense sources: 2,304 and 16,392 pixels despeckled, 2,305 to 16,384 not).
+	const despeckles = SW * SH <= 2304 || SW * SH > 16384;
+	if ((enlarging || nearestMixed || engine === 'despeckled') && despeckles && !directDib && !pairRows && !pairColumns) {
 		halftoneDespeckle(rect, SW, SH);
 	}
 	// A combined adjustment quantises the source to 32 levels with an ordered
