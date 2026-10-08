@@ -615,4 +615,134 @@ public static class PathProbe
 			using(var file=File.Create(Path.Combine(dir,"curve-dash-neighbourhood.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
 		}finally{DeleteDC(dc);}
 	}
+	// Native WidenPath of dashed, square-capped arcs under the transforms of ScaledCapSweep (scaled-dash-caps.json.gz): scales 2, 0.5, 0.75,
+	// 1.5 and the 1/16 and 2 by 1 anisotropic map modes, a stock PS_DASH pen and a user style, every 6 degrees of sweep at two start angles.
+	// "source" is the arc's device GetPath points (FIX), "expected" the widened outline; "dashes" is the user style in logical units (empty for stock).
+	public static void ScaledDashCaps(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		string[] names={"s2","s0.5","s0.75","s1.5","aniso16","aniso2"};
+		try {
+			foreach(string name in names)foreach(int style in new[]{1,7})foreach(int start in new[]{0,37})for(int a=6;a<360;a+=6){
+				SetGraphicsMode(dc,2);SetMapMode(dc,1);var id=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref id);
+				double cx,cy,rx,ry;int width;Action apply;uint[] user;
+				if(name=="s2"){cx=100;cy=100;rx=ry=50;width=6;user=new uint[]{9,4,3,4};apply=delegate(){var t=new Xform{M11=2,M22=2};SetWorldTransform(dc,ref t);};}
+				else if(name=="s0.5"){cx=400;cy=400;rx=ry=200;width=24;user=new uint[]{40,16,8,16};apply=delegate(){var t=new Xform{M11=0.5f,M22=0.5f};SetWorldTransform(dc,ref t);};}
+				else if(name=="s0.75"){cx=264;cy=264;rx=ry=132;width=16;user=new uint[]{24,12,8,12};apply=delegate(){var t=new Xform{M11=0.75f,M22=0.75f};SetWorldTransform(dc,ref t);};}
+				else if(name=="s1.5"){cx=128;cy=128;rx=ry=64;width=8;user=new uint[]{14,6,4,6};apply=delegate(){var t=new Xform{M11=1.5f,M22=1.5f};SetWorldTransform(dc,ref t);};}
+				else if(name=="aniso16"){cx=3200;cy=200;rx=1600;ry=100;width=48;user=new uint[]{480,160,96,160};apply=delegate(){SetMapMode(dc,8);SetWindowExtEx(dc,16,1,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);};}
+				else {cx=100;cy=200;rx=100;ry=100;width=12;user=new uint[]{20,8,6,8};apply=delegate(){SetMapMode(dc,8);SetWindowExtEx(dc,2,1,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);};}
+				Func<int,int[]> rad=delegate(int deg){double r=Math.PI*deg/180.0;return new[]{(int)Math.Round(cx+Math.Cos(r)*rx*10),(int)Math.Round(cy-Math.Sin(r)*ry*10)};};
+				int[] p1=rad(start),p2=rad((start+a)%360);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePenDashes((uint)(0x10000|style|1*0x100),(uint)width,ref brush,style==7?(uint)user.Length:0u,style==7?user:null);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					apply();
+					BeginPath(dc);Arc(dc,(int)(cx-rx),(int)(cy-ry),(int)(cx+rx),(int)(cy+ry),p1[0],p1[1],p2[0],p2[1]);EndPath(dc);
+					SetMapMode(dc,1);var idn=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref idn);
+					string source=ReadFixPath(dc);
+					apply();
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);SetWorldTransform(dc,ref idn);
+					string expected=ReadFixPath(dc);
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"scale\":\"").Append(name).Append("\",\"style\":").Append(style).Append(",\"dashes\":[").Append(style==7?string.Join(",",user):"").Append("],\"width\":").Append(width).Append(",\"start\":").Append(start).Append(",\"sweep\":").Append(a).Append(",\"source\":").Append(source).Append(",\"expected\":").Append(expected).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen);SetMapMode(dc,1);var idn2=new Xform{M11=1,M22=1};SetWorldTransform(dc,ref idn2); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"scaled-dash-caps.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
+	// Native WidenPath of the Beziers listed in curve-end-reversal-cases.txt (curve-end-reversal.json.gz; generate-curve-end-reversal.ts writes the list): each
+	// line is eight device pixel coordinates of a Bezier whose end tangent (P3 - P2) is exactly opposite to its last flattened segment, so the curve
+	// runs past its end point and returns. Every case is widened under the identity map and under a 2 by 1 anisotropic map (the logical points are
+	// the device ones scaled back; a 12 unit pen), with square, flat and round caps. "source" is the device GetPath points (FIX), "expected" the outline.
+	public static void CurveEndReversal(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			foreach(string line in File.ReadAllLines(Path.Combine(dir,"curve-end-reversal-cases.txt"))){
+				if(line.Trim().Length==0)continue;
+				var f=line.Trim().Split(' ');var v=new int[f.Length];for(int i=0;i<f.Length;i++)v[i]=int.Parse(f[i]);
+				foreach(string map in new[]{"id","x2"})foreach(int cap in new[]{1,2,0}){
+					SetGraphicsMode(dc,2);SetMapMode(dc,1);
+					int mx=map=="x2"?2:1,my=map=="y2"?2:1;
+					var p=new Point[4];for(int i=0;i<4;i++)p[i]=new Point{X=v[2*i]*mx,Y=v[2*i+1]*my};
+					var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|cap*0x100),12u,ref brush,0,IntPtr.Zero);
+					IntPtr old=SelectObject(dc,pen);
+					try {
+						if(map!="id"){SetMapMode(dc,8);SetWindowExtEx(dc,mx,my,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);}
+						BeginPath(dc);PolyBezier(dc,p,4);EndPath(dc);
+						SetMapMode(dc,1);string source=ReadFixPath(dc);
+						if(map!="id"){SetMapMode(dc,8);SetWindowExtEx(dc,mx,my,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);}
+						if(!WidenPath(dc))throw new Exception("WidenPath failed");
+						SetMapMode(dc,1);string expected=ReadFixPath(dc);
+						if(json.Length>1)json.Append(',');
+						json.Append("{\"map\":\"").Append(map).Append("\",\"cap\":").Append(cap).Append(",\"width\":12,\"points\":[").Append(string.Join(",",v)).Append("],\"source\":").Append(source).Append(",\"expected\":").Append(expected).Append('}');
+					} finally { SelectObject(dc,old);DeleteObject(pen);SetMapMode(dc,1); }
+				}
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"curve-end-reversal.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
+	// Native WidenPath of two-segment polylines whose second segment is a few FIX long, under the 1/16 anisotropic map modes in which one logical
+	// unit is one FIX across (tiny-final-segment-lines.json.gz): a 400 unit first segment either way along the map's thin axis, then a second segment of
+	// -24..24 units along the same axis (collinear, reversed, or none), square, flat and round caps, a 48 unit pen (3 by 48 pixels).
+	// "source" is the device GetPath points (FIX), "expected" the widened outline.
+	public static void TinyFinalSegmentLines(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			foreach(string map in new[]{"x16","y16"})foreach(int sign in new[]{1,-1})for(int b=-24;b<=24;b++)foreach(int cap in new[]{1,2,0}){
+				SetGraphicsMode(dc,2);SetMapMode(dc,1);
+				bool x=map=="x16";
+				var brush=new LogBrush();IntPtr pen=ExtCreatePen((uint)(0x10000|cap*0x100),48u,ref brush,0,IntPtr.Zero);
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					SetMapMode(dc,8);if(x)SetWindowExtEx(dc,16,1,IntPtr.Zero);else SetWindowExtEx(dc,1,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+					int ox=x?1600:200,oy=x?200:1600;
+					var p=new Point[3];
+					p[0]=new Point{X=ox,Y=oy};
+					p[1]=x?new Point{X=ox+sign*400,Y=oy}:new Point{X=ox,Y=oy+sign*400};
+					p[2]=x?new Point{X=p[1].X+b,Y=oy}:new Point{X=ox,Y=p[1].Y+b};
+					BeginPath(dc);Polyline(dc,p,3);EndPath(dc);
+					SetMapMode(dc,1);string source=ReadFixPath(dc);
+					SetMapMode(dc,8);if(x)SetWindowExtEx(dc,16,1,IntPtr.Zero);else SetWindowExtEx(dc,1,16,IntPtr.Zero);SetViewportExtEx(dc,1,1,IntPtr.Zero);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					SetMapMode(dc,1);string expected=ReadFixPath(dc);
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"map\":\"").Append(map).Append("\",\"sign\":").Append(sign).Append(",\"b\":").Append(b).Append(",\"cap\":").Append(cap).Append(",\"width\":48,\"source\":").Append(source).Append(",\"expected\":").Append(expected).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen);SetMapMode(dc,1); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"tiny-final-segment-lines.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
+	// Native WidenPath of the dashed Beziers listed in dash-cut-tie-cases.txt (written by generate-dash-cut-ties.ts): one case per line,
+	// "cap width x0 y0 x1 y1 x2 y2 x3 y3 d0 d1 d2 d3" with a user-style dash array in pixels (zero entries dropped). The generator picks Beziers
+	// whose dash cut points sit within 6e-4 FIX of a rounding tie, so the capture reads which way Windows rounds them.
+	public static void DashCutTies(string dir) {
+		IntPtr dc=CreateCompatibleDC(IntPtr.Zero);var json=new StringBuilder("[");
+		try {
+			foreach(string line in File.ReadAllLines(Path.Combine(dir,"dash-cut-tie-cases.txt"))){
+				if(line.Trim().Length==0)continue;
+				var f=line.Trim().Split(' ');var v=new int[f.Length];for(int i=0;i<f.Length;i++)v[i]=int.Parse(f[i]);
+				int cap=v[0],width=v[1];var p=new Point[4];for(int i=0;i<4;i++)p[i]=new Point{X=v[2+2*i],Y=v[3+2*i]};
+				var dl=new System.Collections.Generic.List<uint>();for(int i=10;i<v.Length;i++)if(v[i]>0)dl.Add((uint)v[i]);
+				uint[] dashes=dl.ToArray();
+				SetMapMode(dc,1);
+				var brush=new LogBrush();IntPtr pen=ExtCreatePenDashes((uint)(0x10000|7|cap*0x100),(uint)width,ref brush,(uint)dashes.Length,dashes);
+				if(pen==IntPtr.Zero)throw new Exception("ExtCreatePen failed");
+				IntPtr old=SelectObject(dc,pen);
+				try {
+					BeginPath(dc);PolyBezier(dc,p,4);EndPath(dc);
+					if(!WidenPath(dc))throw new Exception("WidenPath failed");
+					if(json.Length>1)json.Append(',');
+					json.Append("{\"points\":[");for(int i=0;i<8;i++){if(i>0)json.Append(',');json.Append(v[2+i]);}
+					json.Append("],\"style\":7,\"cap\":").Append(cap).Append(",\"width\":").Append(width).Append(",\"dashes\":[").Append(string.Join(",",dashes)).Append("],\"expected\":").Append(ReadFixPath(dc)).Append('}');
+				} finally { SelectObject(dc,old);DeleteObject(pen); }
+			}
+			var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());
+			using(var file=File.Create(Path.Combine(dir,"dash-cut-ties.json.gz")))using(var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))zip.Write(bytes,0,bytes.Length);
+		}finally{DeleteDC(dc);}
+	}
 }

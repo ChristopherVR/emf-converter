@@ -44,9 +44,9 @@ if ($Which -eq 'illuminant-cubes') {
     [HalftoneColorProbe]::IlluminantCubes($destination)
     return
 }
-if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe') {
+if ($Which -eq 'chord-closing-probe' -or $Which -eq 'dash-neighbourhood-probe' -or $Which -eq 'dash-cut-tie-probe' -or $Which -eq 'scaled-dash-cap-probe' -or $Which -eq 'curve-end-reversal-probe' -or $Which -eq 'tiny-final-segment-probe') {
     Add-Type -Path (Join-Path $here 'PathProbe.cs')
-    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
+    if ($Which -eq 'chord-closing-probe') { [PathProbe]::ChordClosing($outDir) } elseif ($Which -eq 'dash-cut-tie-probe') { [PathProbe]::DashCutTies($outDir) } elseif ($Which -eq 'scaled-dash-cap-probe') { [PathProbe]::ScaledDashCaps($outDir) } elseif ($Which -eq 'curve-end-reversal-probe') { [PathProbe]::CurveEndReversal($outDir) } elseif ($Which -eq 'tiny-final-segment-probe') { [PathProbe]::TinyFinalSegmentLines($outDir) } else { [PathProbe]::CurveDashNeighbourhood($outDir) }
     Complete-Fixtures
     return
 }

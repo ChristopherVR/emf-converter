@@ -448,6 +448,9 @@ function turnSign(ax: number, ay: number, bx: number, by: number): number {
 interface Seg {
 	dx: number;
 	dy: number;
+	/** The direction the turn at a join is measured along: the segment's own, or a curve end's tangent when it opposes the chord. */
+	tx: number;
+	ty: number;
 	/** Left and right draw vertex indices. */
 	L: number;
 	R: number;
@@ -502,7 +505,8 @@ class Outliner {
 		// A curve's end segments take their perpendicular and square-cap extension from the end tangent.
 		const perpendicular = curve && drawDir ? drawDir : [dx, dy];
 		const vectors = perpendicularVectors(this.opts.width, perpendicular[0], perpendicular[1], this.opts.height, nibMatrix ? this.pen : undefined);
-		return { dx, dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.capWidth ?? this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height ?? this.opts.capWidth, nibMatrix, !!(this.opts.wholePixelDashVectors || this.opts.cutToLogicalUnits), undefined, this.opts.logicalScale), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
+		const reversed = !!drawDir && dx * drawDir[0] + dy * drawDir[1] < 0;
+		return { dx, dy, tx: reversed ? drawDir![0] : dx, ty: reversed ? drawDir![1] : dy, L, R, v: vectors.v, vRaw: vectors.ray, e: squareExtension(this.opts.capWidth ?? this.opts.width, perpendicular[0], perpendicular[1], 1, this.opts.height ?? this.opts.capWidth, nibMatrix, !!(this.opts.wholePixelDashVectors || this.opts.cutToLogicalUnits), undefined, this.opts.logicalScale), pe: [perpendicular[0], perpendicular[1]], curveEnd: !!drawDir, role: drawDir?.[2] ?? 3, tangentLength: drawDir ? drawDir[0] * drawDir[0] + drawDir[1] * drawDir[1] : 0, curve };
 	}
 
 	private push(p: Pt, v: Pt): void {
@@ -768,7 +772,7 @@ class Outliner {
 		for (let i = 0; i + 1 < segs.length; i++) {
 			const s = segs[i];
 			const t = segs[i + 1];
-			const tr = turnSign(s.dx, s.dy, t.dx, t.dy);
+			const tr = turnSign(s.tx, s.ty, t.tx, t.ty);
 			if (tr === 0) {
 				this.push(P[i + 1], this.joinSide(s, 'R'));
 			} else {
@@ -779,7 +783,7 @@ class Outliner {
 		for (let i = segs.length - 1; i > 0; i--) {
 			const s = segs[i];
 			const t = segs[i - 1];
-			const tr = turnSign(t.dx, t.dy, s.dx, s.dy);
+			const tr = turnSign(t.tx, t.ty, s.tx, s.ty);
 			if (tr === 0) {
 				this.push(P[i], this.joinSide(s, 'L'));
 			} else {
@@ -801,7 +805,7 @@ class Outliner {
 			const i = j % m;
 			const s = segs[(i + m - 1) % m];
 			const t = segs[i];
-			const tr = turnSign(s.dx, s.dy, t.dx, t.dy);
+			const tr = turnSign(s.tx, s.ty, t.tx, t.ty);
 			if (tr === 0) {
 				this.push(P[i], this.joinSide(s, 'R'));
 			} else {
@@ -814,7 +818,7 @@ class Outliner {
 			const i = (m - j) % m;
 			const s = segs[i];
 			const t = segs[(i + m - 1) % m];
-			const tr = turnSign(t.dx, t.dy, s.dx, s.dy);
+			const tr = turnSign(t.tx, t.ty, s.tx, s.ty);
 			if (tr === 0) {
 				this.push(P[i], this.joinSide(s, 'L'));
 			} else {
