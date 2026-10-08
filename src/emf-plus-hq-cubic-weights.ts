@@ -90,3 +90,37 @@ export function hqCubicBinWeights(bin: number): { first: number; weights: readon
 	}
 	return { first: -1, weights: HQ_CUBIC_HALF_TABLE[127 - bin].slice().reverse() };
 }
+
+/**
+ * The running integral of the native bicubic kernel (an odd function, `-32768 .. 32768` over 65536) at the
+ * half-grid points `u = (m + 1/2) / 128`, for `m` from -256 to 255, rebuilt from the measured weights: tap `i` of
+ * bin `b` spans the texel edges `128 t - 64 - b - 1` and `+ 128` in these units.
+ */
+const HQ_CUBIC_CDF: Int32Array = (() => {
+	const cdf = new Int32Array(512).fill(Number.NaN);
+	for (let bin = 0; bin < 128; bin++) {
+		const { first, weights } = hqCubicBinWeights(bin);
+		let acc = -32768;
+		for (let i = 0; i <= 5; i++) {
+			const m = 128 * (first + i) - 64 - bin - 1;
+			if (m >= -256 && m <= 255) {
+				cdf[m + 256] = acc;
+			}
+			if (i < 5) {
+				acc += weights[i];
+			}
+		}
+	}
+	return cdf;
+})();
+
+/** The kernel's running integral at the half-grid index `m` (`u = (m + 1/2) / 128` kernel units), over 65536. */
+export function hqCubicCdf(m: number): number {
+	if (m < -256) {
+		return -32768;
+	}
+	if (m > 255) {
+		return 32768;
+	}
+	return HQ_CUBIC_CDF[m + 256];
+}

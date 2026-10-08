@@ -192,18 +192,18 @@ describe('rotated high-quality DrawImage scale sweep (native captures)', () => {
 			const cls = hi <= 0.75 ? 'reduction' : near ? 'near' : 'upscale';
 			add((stats[`pom${c.pom} k${c.kernel} ${cls}`] ??= tally()), draw(c, src, 16), c.bgra);
 		}
-		// Reductions pre-scale with the float model (the exact reduction arithmetic is open): up to 31 levels at 0.5x under Half.
+		// Reductions pre-scale with the native destination-space rule; the Half variant still differs by up to 30 levels at 0.5x (open).
 		expect(stats).toEqual({
-			'pom3 k6 reduction': { n: 4, px: 197, max: 1, over8: 0, exact: 0 },
+			'pom3 k6 reduction': { n: 4, px: 7, max: 1, over8: 0, exact: 0 },
 			'pom3 k6 near': { n: 18, px: 261, max: 1, over8: 0, exact: 0 },
 			'pom3 k6 upscale': { n: 20, px: 191, max: 1, over8: 0, exact: 0 },
-			'pom4 k6 reduction': { n: 4, px: 227, max: 23, over8: 24, exact: 0 },
+			'pom4 k6 reduction': { n: 4, px: 69, max: 23, over8: 23, exact: 0 },
 			'pom4 k6 near': { n: 18, px: 291, max: 1, over8: 0, exact: 0 },
 			'pom4 k6 upscale': { n: 20, px: 278, max: 1, over8: 0, exact: 0 },
-			'pom3 k7 reduction': { n: 4, px: 285, max: 2, over8: 0, exact: 0 },
+			'pom3 k7 reduction': { n: 4, px: 0, max: 0, over8: 0, exact: 4 },
 			'pom3 k7 near': { n: 18, px: 21, max: 4, over8: 0, exact: 12 },
 			'pom3 k7 upscale': { n: 20, px: 12, max: 1, over8: 0, exact: 15 },
-			'pom4 k7 reduction': { n: 4, px: 304, max: 31, over8: 40, exact: 0 },
+			'pom4 k7 reduction': { n: 4, px: 60, max: 30, over8: 38, exact: 3 },
 			'pom4 k7 near': { n: 18, px: 18, max: 5, over8: 0, exact: 12 },
 			'pom4 k7 upscale': { n: 20, px: 21, max: 1, over8: 0, exact: 12 },
 		});
@@ -223,7 +223,7 @@ describe('axis-aligned high-quality phase arithmetic (native noise captures)', (
 		}
 	}
 
-	it('reproduces the tent exactly and the cubic to 0.08% of values, one level, for every upscale', () => {
+	it('reproduces the tent and the cubic exactly for every upscale, and every reduction but two values', () => {
 		const stats: Record<string, { n: number; px: number; bad: number; max: number }> = {};
 		for (const c of noise.slice(1)) {
 			const row = Buffer.from(c.row, 'base64');
@@ -248,12 +248,12 @@ describe('axis-aligned high-quality phase arithmetic (native noise captures)', (
 				}
 			}
 		}
-		// The reductions keep the float model (open): 1,161 and 987 values off, by up to two levels.
+		// Reductions follow the same rule in destination space; two bilinear values at 0.4x (a texel edge exactly at the end of the kernel) are off by a level.
 		expect(stats).toEqual({
 			'k6 upscale': { n: 17, px: 46569, bad: 0, max: 0 },
 			'k7 upscale': { n: 17, px: 46569, bad: 0, max: 0 },
-			'k6 reduction': { n: 8, px: 4544, bad: 1161, max: 2 },
-			'k7 reduction': { n: 8, px: 4544, bad: 987, max: 2 },
+			'k6 reduction': { n: 8, px: 4536, bad: 2, max: 1 },
+			'k7 reduction': { n: 8, px: 4536, bad: 0, max: 0 },
 		});
 	});
 });

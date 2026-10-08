@@ -69,7 +69,7 @@
  * @module emf-plus-image-resample
  */
 
-import { hqCubicBinWeights } from './emf-plus-hq-cubic-weights';
+import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
 import type { DeferredImageResample, ImageResampleKernel, TransformMatrix } from './emf-types';
 
@@ -719,6 +719,68 @@ export function resampleImage(
 const HQ_PHASES = 128;
 
 /**
+ * The 16.16 step per destination pixel of an axis-aligned high-quality draw scaled by `scale`: the rounded
+ * reciprocal. A reciprocal within about 0.004 below a half (1.37 is 47836.496) rounds either way in native
+ * draws, and which way depends on the draw's height (47836 at heights 8 to 64, 47837 at 336): a float32
+ * rounding of the matrix inverse that the width alone does not fix. The plain rounding is kept.
+ */
+function hqStep(scale: number): number {
+	return Math.round(65536 / scale);
+}
+
+/** The tent's running integral at `u = j / 128` kernel units, over 65536 (`512 j - 2 j^2` on `|j| < 128`). */
+function hqTentCdf(j: number): number {
+	if (j <= -128) {
+		return -32768;
+	}
+	if (j >= 128) {
+		return 32768;
+	}
+	return j < 0 ? -(512 * -j - 2 * j * j) : 512 * j - 2 * j * j;
+}
+
+interface HqTaps {
+	first: number;
+	weights: number[];
+}
+
+/**
+ * The taps of a reduced axis (scale below one) of a high-quality draw, from the native noise captures. Each
+ * texel edge `e` (relative to the source origin) lands in destination space at `s' (e - P)`, where `s' = 65536 /
+ * step` and `P = (k step + offset) / 65536` is the position of destination pixel `k`; that offset, in 1/128
+ * destination pixel, is rounded down, and a texel's weight is the difference of the kernel's running integral at
+ * its two edges' rounded offsets: the cubic's measured half-grid table ({@link hqCubicCdf}), the tent's exact
+ * integral at whole grid points. All 9,012 noise values of the sweep from 0.9x to 0.25x match, except two tent
+ * values at 0.4x where an offset falls exactly on the end of the kernel.
+ *
+ * `originBins` is the source origin in 1/128 texel (a whole number).
+ */
+function hqReductionTaps(cubic: boolean, scale: number, step: number, offset: number, origin: number, from: number, to: number): HqTaps[] {
+	const taps: HqTaps[] = [];
+	const s = Math.fround(scale);
+	const radius = (cubic ? 2 : 1) * (step / 65536) + 1;
+	for (let k = from; k <= to; k++) {
+		const p = k * step + offset;
+		const centre = origin + p / 65536;
+		const first = Math.ceil(centre - radius);
+		const last = Math.floor(centre + radius);
+		const weights: number[] = [];
+		let prev = Number.NaN;
+		for (let t = first; t <= last + 1; t++) {
+			// 128 u at texel edge t - 1/2, u = s (e - origin - P) in destination pixels.
+			const edge = Math.floor(128 * s * (t - 0.5 - origin - p / 65536));
+			const cdf = cubic ? hqCubicCdf(edge) : hqTentCdf(edge);
+			if (t > first) {
+				weights.push((cdf - prev) / 65536);
+			}
+			prev = cdf;
+		}
+		taps.push({ first, weights });
+	}
+	return taps;
+}
+
+/**
  * An axis-aligned HighQualityBilinear/HighQualityBicubic draw whose two axes
  * are each scaled by one or more, as GDI+ computes it (measured from native
  * impulse and noise draws, `hq-axis`, `hq-axis-noise`, `hq-arithmetic`):
@@ -755,7 +817,7 @@ function resampleHqAxisAligned(
 	const kernel = spec.kernel;
 	const scaleU = m[0];
 	const scaleV = m[3];
-	if (!(scaleU >= 1 && scaleV >= 1) || spec.rightHalo) {
+	if (!(scaleU > 0 && scaleV > 0) || spec.rightHalo) {
 		return undefined;
 	}
 	const integral = (v: number): boolean => Math.abs(v - Math.round(v)) < 1e-9;
@@ -785,8 +847,8 @@ function resampleHqAxisAligned(
 	}
 	const cubic = kernel === 'hq-bicubic';
 	const bin = cubic ? 0.5 : 1;
-	const stepU = Math.round(65536 / scaleU);
-	const stepV = Math.round(65536 / scaleV);
+	const stepU = hqStep(scaleU);
+	const stepV = hqStep(scaleV);
 	const dx = Math.max(0, xFirst - left);
 	const dy = Math.max(0, yFirst - top);
 	const offsetU = dx > 1e-9 ? Math.round((1 - dx) * stepU) : 0;
@@ -797,11 +859,15 @@ function resampleHqAxisAligned(
 		first: number;
 		weights: number[];
 	}
-	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number): Taps[] => {
+	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number, scale: number): Taps[] => {
 		const taps: Taps[] = [];
 		// The measured integer table applies when the source origin is a whole number of phase bins.
 		const originBins = origin * HQ_PHASES;
-		const tabulated = cubic && Math.abs(originBins - Math.round(originBins)) < 1e-6;
+		const wholeBins = Math.abs(originBins - Math.round(originBins)) < 1e-6;
+		if (scale < 1 && wholeBins) {
+			return hqReductionTaps(cubic, scale, step, offset, origin, from, to);
+		}
+		const tabulated = cubic && wholeBins;
 		for (let k = from; k <= to; k++) {
 			const phase = Math.floor((k * step + offset - 1) / (65536 / HQ_PHASES));
 			if (tabulated) {
@@ -824,8 +890,8 @@ function resampleHqAxisAligned(
 		}
 		return taps;
 	};
-	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst);
-	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst);
+	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst, scaleU);
+	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst, scaleV);
 	// Source rows the vertical pass reads (rows outside the bitmap are transparent).
 	let rowMin = Infinity;
 	let rowMax = -Infinity;
