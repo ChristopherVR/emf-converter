@@ -1048,5 +1048,82 @@
     "playbackSucceeded": true,
     "maxMismatched": 29,
     "maxDiff": 255
+  },
+  {
+    "name": "compat-playback-id-geosq9",
+    "w": 426,
+    "h": 307,
+    "ox": -6,
+    "oy": -7,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
+  },
+  {
+    "name": "compat-playback-id-wide7",
+    "w": 423,
+    "h": 354,
+    "ox": -3,
+    "oy": -40,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
+  },
+  {
+    "name": "compat-playback-r32x11-geosq9",
+    "w": 423,
+    "h": 307,
+    "ox": -3,
+    "oy": -7,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 2,
+    "maxDiff": 223
+  },
+  {
+    "name": "compat-playback-r32x11-wide7",
+    "w": 421,
+    "h": 378,
+    "ox": -1,
+    "oy": -43,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 7,
+    "maxDiff": 223
+  },
+  {
+    "name": "compat-playback-r34-geosq9",
+    "w": 428,
+    "h": 311,
+    "ox": -8,
+    "oy": -8,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 55,
+    "maxDiff": 223
+  },
+  {
+    "name": "compat-playback-r34-wide7",
+    "w": 423,
+    "h": 390,
+    "ox": -3,
+    "oy": -53,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 6,
+    "maxDiff": 223
+  },
+  {
+    "name": "compat-playback-r43-geosq9",
+    "w": 424,
+    "h": 307,
+    "ox": -4,
+    "oy": -5,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
   }
 ]

@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-07T22:42:09.0120234Z",
+    "capturedAt":  "2026-10-08T09:37:57.0354919Z",
     "groups":  "playback-extents",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
@@ -26,6 +26,11 @@
                           "name":  "win32u.dll",
                           "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
                           "sha256":  "9cd636e8a1b300e2f4b16f339d650eda71fa02b92b100e4b2f89ce7c04811767"
+                      },
+                      {
+                          "name":  "mscms.dll",
+                          "version":  "10.0.26100.1 (WinBuild.160101.0800)",
+                          "sha256":  "062d1ca19c5b7d076c11baa3fb41d23e3b05b37d3f5852a5d1fa14f86b95d528"
                       }
                   ],
     "fonts":  [
@@ -3382,6 +3387,90 @@
               ],
     "references":  [
                        {
+                           "name":  "compat-playback-id-geosq9.emf",
+                           "sha256":  "2817a0d78dbddbc35a4a9fd1190c3d89e3afe5e94eb55611d915f35de929e6b1"
+                       },
+                       {
+                           "name":  "compat-playback-id-geosq9.extent.png",
+                           "sha256":  "5f8a54976aa2029481034ddf17c252b2ca7c7aee16d63527179bea6a90bcd838"
+                       },
+                       {
+                           "name":  "compat-playback-id-geosq9.png",
+                           "sha256":  "55121bb4ecc58d249f2fa2123a9c0ffed0a222470b5be57cf784e53b1e29061e"
+                       },
+                       {
+                           "name":  "compat-playback-id-wide7.emf",
+                           "sha256":  "901ea309e48658dde97a771213c203e47f2bbcce1de60638273840e317c329ac"
+                       },
+                       {
+                           "name":  "compat-playback-id-wide7.extent.png",
+                           "sha256":  "b48ff1c072aa5d316a4a320bc0824609b359c7b0fc201a4c97368a14301f4f09"
+                       },
+                       {
+                           "name":  "compat-playback-id-wide7.png",
+                           "sha256":  "6549600776bd41438bf10a3cda586288d83d6f61bfb57fdfc4ef80e018b9862e"
+                       },
+                       {
+                           "name":  "compat-playback-r32x11-geosq9.emf",
+                           "sha256":  "27f7a1c0f65fd9c0406c9f2c0dae75053d871827547685124c02916113d2d016"
+                       },
+                       {
+                           "name":  "compat-playback-r32x11-geosq9.extent.png",
+                           "sha256":  "0b0a887cb0cefba9f4d178d8c858dfa7fd8161ce4336597538d6b4f2afbb8cfe"
+                       },
+                       {
+                           "name":  "compat-playback-r32x11-geosq9.png",
+                           "sha256":  "9f432cc765e82b0c7d61ac7c6a0420eab02bc4ca152b720d8eb0aebab1c9f948"
+                       },
+                       {
+                           "name":  "compat-playback-r32x11-wide7.emf",
+                           "sha256":  "fd8409c8c548c43b2031c8dd3b09f2dd056a1219010a5c7ec32c5311ac9f1a4b"
+                       },
+                       {
+                           "name":  "compat-playback-r32x11-wide7.extent.png",
+                           "sha256":  "d8beee2d7385777c182e71e1f251bbc0d24d0bbb36c24a271b2f7b8ca6b97460"
+                       },
+                       {
+                           "name":  "compat-playback-r32x11-wide7.png",
+                           "sha256":  "c4108e734681ba7336054c0e14f667b27bf5ca7c27839c093b230ca527e42aa3"
+                       },
+                       {
+                           "name":  "compat-playback-r34-geosq9.emf",
+                           "sha256":  "2201c2205096776a717cbc5f38fef941af95c36f73d8549b300c2d0d5cbdd395"
+                       },
+                       {
+                           "name":  "compat-playback-r34-geosq9.extent.png",
+                           "sha256":  "22ae5e2ba4f277c9494efcce2c47c90784fcaf2cde83554d20fda3d32219cb41"
+                       },
+                       {
+                           "name":  "compat-playback-r34-geosq9.png",
+                           "sha256":  "f49bb9375420c2a6f93e9d41f5e3e217376f7ac64b03cad6a2d7b58deef4445a"
+                       },
+                       {
+                           "name":  "compat-playback-r34-wide7.emf",
+                           "sha256":  "d90228889f60a34173c034a37c8ba152866292b05fa2c15c68f662f03ad06a77"
+                       },
+                       {
+                           "name":  "compat-playback-r34-wide7.extent.png",
+                           "sha256":  "b9e093c02bc039041f548add449d75cfe206950a6933b11a83f205cad8dd8f5e"
+                       },
+                       {
+                           "name":  "compat-playback-r34-wide7.png",
+                           "sha256":  "63a4487b0f930fdfd542a093a77177aced7e1ea6a8106961a543a4b8c470b005"
+                       },
+                       {
+                           "name":  "compat-playback-r43-geosq9.emf",
+                           "sha256":  "bd0902f112ca7b03dfef4f2d0015449737f0cfe46b4375add71c8797a7107889"
+                       },
+                       {
+                           "name":  "compat-playback-r43-geosq9.extent.png",
+                           "sha256":  "52e3b158390f38abb777f4ccacb2455cc2a0920a9c5e9278ef03ab097f4d2ef3"
+                       },
+                       {
+                           "name":  "compat-playback-r43-geosq9.png",
+                           "sha256":  "0182b495219c4e25a4b32e119f3b2ed9db2d76b9037209e59a4822b92e64a924"
+                       },
+                       {
                            "name":  "emf-insideframe-rect.emf",
                            "sha256":  "20233eb3e6b1f4974c1d4cb659793bff8b6f92f4e53b91b9b54ba8c69b4f0de6"
                        },
@@ -3851,11 +3940,11 @@
                        },
                        {
                            "name":  "playback-extents.json",
-                           "sha256":  "dae4fa7c4c198a44ec6f8fe6cbc5bea0014cd0ceee5901a0ceca566b4a7e57a1"
+                           "sha256":  "d419096c9e4922e8dd9f609328b021d7681488db470c1f88862808f23e131a8b"
                        },
                        {
                            "name":  "playback-extents-open.json",
-                           "sha256":  "0f91dbb3aa14a77eb9c4868c8d446582b7347e97bbb12b6230900ad8e9b490f5"
+                           "sha256":  "e3469631b541bf36c08d09dd76160738abef37bdc0c95765ea2e4b6febce7add"
                        },
                        {
                            "name":  "plus-effect-blur-r4-subrect.emf",
