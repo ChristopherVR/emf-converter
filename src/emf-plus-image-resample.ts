@@ -284,6 +284,27 @@ function nearSourceExtent(deviceLen: number, srcLen: number): boolean {
 	return d >= -1 && d <= 1;
 }
 
+/**
+ * Whether the translation `t` along one axis of an unscaled plain Bicubic draw (`other` along the other axis) is
+ * close enough to a whole number for native GDI+ to copy the texels. The interval is (-1/64, 1/64] away from a whole
+ * number, so a source phase of -1/64 copies and a source phase of +1/64 (a translation of exactly -1/64 from a whole
+ * number) is the boundary. The boundary copies only when the rectangle's width and height are both powers of two
+ * (the matrix is then exact in float32) and either `w * h * max(w, h)` is at most 256 or the other axis' translation
+ * is a multiple of 1/128 (`bicubic-boundary`: noise bitmaps of 12 x 12 and 48 x 48 texels, 11,058 draws with
+ * rectangles from 1 x 1 to 32 x 32, whole and fractional destination offsets, the two offsets swept independently).
+ */
+function unitCopyOffset(t: number, other: number, spec: DeferredImageResample): boolean {
+	const f = t - Math.round(t);
+	if (f > -1 / 64 + 1e-9) {
+		return f <= 1 / 64 + 1e-9;
+	}
+	if (Math.abs(f + 1 / 64) > 1e-9 || !isPowerOfTwo(spec.srcW) || !isPowerOfTwo(spec.srcH)) {
+		return false;
+	}
+	const g = (other - Math.round(other)) * 128;
+	return spec.srcW * spec.srcH * Math.max(spec.srcW, spec.srcH) <= 256 || Math.abs(g - Math.round(g)) < 1e-9;
+}
+
 /** Cubic parameter GDI+ uses for `Bicubic` (point-sampled). */
 const BICUBIC_A = -0.5;
 /** Cubic parameter GDI+ uses for `HighQualityBicubic` (area-integrated). */
@@ -526,13 +547,11 @@ export function resampleImage(
 	// captures (modes 2 and 3) do not support the integer arithmetic there
 	// at every scale.
 	let plainRotated = plainRotatedPass;
-	// Native unit-scale draws copy near-integral texels within this signed
-	// 1/64 phase interval. The positive source-phase endpoint has additional
-	// dispatch conditions, so keep it on the convolution path. Public captures
-	// cover both axes, fractional destination origins, cropped sizes and alpha.
+	// Native unit-scale draws copy near-integral texels when each axis' translation is within 1/64 of a whole
+	// number (see `unitCopyOffset` for the two ends). Public captures cover both axes, fractional destination
+	// origins, cropped sizes and alpha.
 	const unitBicubicCopy = kernel === 'bicubic' && axisAligned && !spec.halfPixelOffset && m[0] === 1 && m[3] === 1 &&
-		m[4] - Math.round(m[4]) > -1 / 64 && m[4] - Math.round(m[4]) <= 1 / 64 &&
-		m[5] - Math.round(m[5]) > -1 / 64 && m[5] - Math.round(m[5]) <= 1 / 64;
+		unitCopyOffset(m[4], m[5], spec) && unitCopyOffset(m[5], m[4], spec);
 	let farFade = false;
 	let shiftX = 0;
 	let shiftY = 0;
