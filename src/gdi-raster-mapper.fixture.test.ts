@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { GdiFontCollection } from './gdi-font-engine';
@@ -50,6 +51,30 @@ describe('raster font mapper on a 144 dpi session', () => {
 		expect(agreement(windowsFonts()!)).toEqual({
 			'MS Sans Serif': 119, 'MS Serif': 117, Courier: 118, 'Small Fonts': 117, System: 79, Terminal: 116, Fixedsys: 81, Helv: 119, 'Tms Rmn': 117, 'MS Shell Dlg': 117,
 		});
+	});
+	it.skipIf(!windowsFonts() || !extra())('at lfHeight 61 to 130 (where the 6x to 8x costs were fitted) it picks the native cell height at 919 of 980 heights and the width at 929', () => {
+		// `raster-mapper-wide.json.gz`: the seven raster families at lfHeight -130..-61 and 61..130 (weight 400) and weight 700 at -60..60.
+		interface Wide { rows: Array<Row & { weight: number; tmAveCharWidth: number }> }
+		const wide: Wide = JSON.parse(gunzipSync(readFileSync(fixturePath('raster-mapper-wide.json.gz'))).toString());
+		const collection = new GdiFontCollection([...windowsFonts()!, ...extra()!], 'cleartype');
+		const counts = { regular: 0, height: 0, width: 0, both: 0, bold: 0, boldHeight: 0 };
+		for (const r of wide.rows) {
+			const font = collection.realize({ face: r.face, height: r.height, width: 0, weight: r.weight, italic: false, charSet: 1, pitchAndFamily: 0, quality: 3 }) as unknown as { face: { pixHeight: number; avgWidth: number }; scale: number; scaleX: number };
+			const heightOk = font.face.pixHeight * font.scale === r.tmHeight;
+			if (r.weight === 400) {
+				const widthOk = font.face.avgWidth * font.scaleX === r.tmAveCharWidth;
+				counts.regular++;
+				counts.height += heightOk ? 1 : 0;
+				counts.width += widthOk ? 1 : 0;
+				counts.both += heightOk && widthOk ? 1 : 0;
+			} else {
+				counts.bold++;
+				counts.boldHeight += heightOk ? 1 : 0;
+			}
+		}
+		// Before the vertical factors 6 to 8 were allowed (and the horizontal one capped at 5): 631 of the 980 heights. Fitting the three
+		// costs on the 490 negative heights alone gives 456 of the 490 positive ones (291 and 340 before), so the fit is not memorised.
+		expect(counts).toEqual({ regular: 980, height: 919, width: 929, both: 918, bold: 840, boldHeight: 818 });
 	});
 	it.skipIf(!windowsFonts() || !extra())('given 8514sys.fon and 8514fix.fon it picks the native cell height at 118 of 120 System and 117 of 120 Fixedsys heights', () => {
 		expect(agreement([...windowsFonts()!, ...extra()!])).toEqual({

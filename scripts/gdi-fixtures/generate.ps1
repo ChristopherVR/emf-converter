@@ -16,7 +16,7 @@
 #   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
-#   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
+#   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-coverage,
 #   text-cleartype-coverage, text-cleartype-sizes, text-shpix, text-iup,
 #   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
 #   text-origin-phases, text-origin-vertical-phases,
@@ -196,12 +196,25 @@ if ($Which -eq 'text-recorded-advance') {
 if ($Which -eq 'text-raster-mapper') {
     Add-Type -Path (Join-Path $here 'RasterMapperProbe.cs') -ReferencedAssemblies System.Drawing
     [RasterMapperProbe]::Run($outDir)
+    [RasterMapperProbe]::Wide($outDir)
     Complete-Fixtures
     return
 }
 if ($Which -eq 'text-playback-hinting') {
     Add-Type -Path (Join-Path $here 'TextPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
     [TextPlaybackProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-stretch-hinting') {
+    Add-Type -Path (Join-Path $here 'StretchHintingProbe.cs')
+    [StretchHintingProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-rotated-matrix') {
+    Add-Type -Path (Join-Path $here 'RotatedGlyphMatrixProbe.cs')
+    [RotatedGlyphMatrixProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

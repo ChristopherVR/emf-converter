@@ -437,7 +437,7 @@ const fontCase = (name: string, ext: 'emf' | 'wmf', maxMismatch: number): Parity
 });
 
 const FONT_ENGINE_CASES: ParityCase[] = [
-	fontCase('rotate-text-25deg', 'emf', 0.0025), // measured 0.197%
+	fontCase('rotate-text-25deg', 'emf', 0.0014), // measured 0.086% (24 px; 0.197% with component-wise matrix rounding)
 	fontCase('text-arial-hm13', 'wmf', 0.0006), // measured 0.029%
 	fontCase('text-arial-hm20', 'wmf', 0.0004), // measured 0.007%
 	fontCase('text-arial-hp18', 'wmf', 0), // measured 0.000%
@@ -538,8 +538,8 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.0006), // measured 0.028%
 	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0.0005), // measured 0.020%
 	fontCase('textx-wmf-timesnewroman-styles-mono', 'wmf', 0.0005), // measured 0.012%
-	fontCase('textx-world-aa', 'emf', 0.0036), // measured 0.284%
-	fontCase('textx-world-mono', 'emf', 0.0028), // measured 0.221%
+	fontCase('textx-world-aa', 'emf', 0.0034), // measured 0.265% (0.284% with component-wise matrix rounding)
+	fontCase('textx-world-mono', 'emf', 0.0026), // measured 0.202% (0.221% with component-wise matrix rounding)
 ];
 
 /**

@@ -1,7 +1,7 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T07:40:12.8821655Z",
-    "groups":  "text-raster-mapper",
+    "capturedAt":  "2026-10-08T07:21:02.8871501Z",
+    "groups":  "text-stretch-hinting",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
     "architecture":  "AMD64",
@@ -3387,12 +3387,12 @@
               ],
     "references":  [
                        {
-                           "name":  "raster-mapper.json",
-                           "sha256":  "65075076920555e02ee96288e0783f3bbe73bb9b47bcba6353d934a503e1f4e6"
+                           "name":  "text-stretch-hinting.json.gz",
+                           "sha256":  "d0b4da1fc77d877d956131d58e34988ec016c8878d2bd7a2be268e40b9f0fc24"
                        },
                        {
-                           "name":  "raster-mapper-wide.json.gz",
-                           "sha256":  "f83aa0f2e69ad33e0f94301cbaaeb1bc78e118cdf1669a9d3bc9f3191a013379"
+                           "name":  "text-stretch-outlines.json",
+                           "sha256":  "3907a8ae653ca026ac58bc8b430c6d81777b9972a45d8f78421a860ef4dc726d"
                        }
                    ]
 }

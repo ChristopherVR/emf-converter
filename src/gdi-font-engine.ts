@@ -37,7 +37,9 @@
  *   grid-fitted outline; at non-axis angles the glyph is grid-fitted with
  *   GETINFO's "rotated" bit set and advances are the rounded linear
  *   widths, as GDI does. GDI additionally rounds its rotated scaling
- *   matrix, which is not reproduced (rotated text is close, not exact).
+ *   matrix (the larger of ppem * cos and ppem * sin to whole pixels, the
+ *   rotation scaled by the ratio: `roundedRotationMatrix`); the remaining
+ *   rotated-text differences are single edge pixels.
  *
  * @module gdi-font-engine
  */
@@ -153,8 +155,15 @@ function slantRows(b: GlyphBitmap): GlyphBitmap {
 	return { ...b, width, data };
 }
 
-/** Raster-font stretch cost by whole-number factor (see `pickRaster`). */
-const RASTER_STRETCH_COST = [0, 0, 120, 150, 250, 250];
+/**
+ * Raster-font stretch cost by whole-number vertical factor (see `pickRaster`). GDI stretches a bitmap face by up to 8
+ * vertically but by at most 5 horizontally (`text-raster-mapper`, `raster-mapper-wide.json`: every native pick of a
+ * face scaled above 5 has the width of a 5x stretch). Factors above 5 are costed so high that they serve only requests
+ * no smaller factor comes within a few pixels of.
+ */
+const RASTER_STRETCH_COST = [0, 0, 120, 150, 250, 250, 1150, 1280, 1840];
+/** Largest horizontal stretch of a raster face. */
+const RASTER_MAX_X_SCALE = 5;
 
 /** A raster face's character height (cell minus internal leading). */
 function unitOf(f: RasterFace): number {
@@ -582,8 +591,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// glyph at 25 degrees is drawn about 16.5 px tall (measured with
 			// GetGlyphOutline; it cuts the escapement fixtures' residual by
 			// a fifth).
-			const p = this.ppem;
-			m = [Math.round(m[0] * p) / p, Math.round(m[1] * p) / p, Math.round(m[2] * p) / p, Math.round(m[3] * p) / p];
+			m = roundedRotationMatrix(m, this.ppem);
 		}
 		let o: Outline = this.mode === 'cleartype' && !m && !this.syntheticItalic ? this.ctOutline(index) : src;
 		if (this.syntheticItalic || m || subX || subY) {
@@ -625,6 +633,28 @@ export class RealizedFont implements GdiRealizedFont {
 		this.glyphs.set(key, g);
 		return g;
 	}
+}
+
+/**
+ * The matrix GDI scales a rotated glyph by (native `GetGlyphOutline` of Arial at 12 to 48 px and 10 to 80 degrees under a
+ * world rotation, least-squares fitted against the font-unit outlines; `rotated-glyph-matrix.json.gz`): for a pure
+ * rotation the larger of `ppem * |cos|` and `ppem * |sin|` is rounded to whole pixels and the whole rotation is scaled by
+ * the rounded over the exact value, so the smaller component keeps the true angle (20 px at 25 degrees: 18 / 18.126 =
+ * 0.993, giving 0.900 and 0.420, where rounding both components gave 0.900 and 0.400; the native fit is 0.9000 and
+ * 0.4189). Other matrices keep the component-wise rounding of the earlier fit.
+ */
+export function roundedRotationMatrix(m: readonly [number, number, number, number], ppem: number): [number, number, number, number] {
+	const isRotation = Math.abs(m[0] - m[3]) < 1e-6 && Math.abs(m[1] + m[2]) < 1e-6;
+	if (isRotation && ppem > 0) {
+		const major = ppem * Math.max(Math.abs(m[0]), Math.abs(m[1]));
+		const target = Math.round(major);
+		if (target >= 1) {
+			const k = target / major;
+			return [m[0] * k, m[1] * k, m[2] * k, m[3] * k];
+		}
+	}
+	const p = ppem;
+	return [Math.round(m[0] * p) / p, Math.round(m[1] * p) / p, Math.round(m[2] * p) / p, Math.round(m[3] * p) / p];
 }
 
 /** GDI's bitmap emboldening: each row OR-ed (max-ed) with itself shifted one pixel right. */
@@ -743,7 +773,8 @@ export class GdiFontCollection {
 	 * The cost model is fitted to GetTextMetrics over lfHeight -60..60 for
 	 * MS Sans Serif, MS Serif, Courier, Small Fonts, System and Terminal
 	 * (98% exact): 150 per pixel too small; 290 plus 340 per pixel too big;
-	 * a stretch cost by factor (120, 150, 250, 250 for 2x..5x) plus 100 per
+	 * a stretch cost by factor (120, 150, 250, 250 for 2x..5x and 1,150,
+	 * 1,280 and 1,840 for 6x..8x, the largest GDI uses) plus 100 per
 	 * extra factor divided by the face's character height (small faces
 	 * stretch less readily); ties go to the smaller stretch, then to the
 	 * 96 dpi face. A weight mismatch costs 3 per 10 units (so Terminal's
@@ -763,7 +794,7 @@ export class GdiFontCollection {
 		let bestCost = Infinity;
 		for (const f of pool) {
 			const unit = height < 0 ? unitOf(f) : f.pixHeight;
-			for (let n = 1; n <= 5; n++) {
+			for (let n = 1; n < RASTER_STRETCH_COST.length; n++) {
 				const d = unit * n - target;
 				const cost =
 					(d < 0 ? -d * 150 : d > 0 ? 290 + d * 340 : 0) +
@@ -788,7 +819,7 @@ export class GdiFontCollection {
 			return null;
 		}
 		const { face, scale } = pick;
-		const scaleX = spec.width > 0 && face.avgWidth > 0 ? Math.max(1, Math.ceil(spec.width / face.avgWidth - 0.5)) : scale;
+		const scaleX = spec.width > 0 && face.avgWidth > 0 ? Math.max(1, Math.ceil(spec.width / face.avgWidth - 0.5)) : Math.min(scale, RASTER_MAX_X_SCALE);
 		return new RasterRealizedFont(face, scale, weight >= 600 && face.weight < 600, scaleX, spec.italic && !face.italic);
 	}
 
