@@ -6,7 +6,7 @@ import { halftoneMixedEngine, stretchHalftone } from './emf-gdi-stretch';
 import { mixedEngineCases, mixedSource } from './halftone-mixed-engine.fixture-helper';
 
 /**
- * 663 native HALFTONE stretches (`generate-halftone-mixed-engine.ts`) behind `halftoneMixedEngine` (which engine a mixed
+ * 783 native HALFTONE stretches (`generate-halftone-mixed-engine.ts`) behind `halftoneMixedEngine` (which engine a mixed
  * enlarge-and-reduce stretch runs: the 1.5x reduction, the shrinking destination area, the filtered source) and the
  * despeckle size bands (sources of up to 2,304 and of more than 16,384 pixels are despeckled, those between are not).
  */
@@ -41,15 +41,16 @@ function run(): Record<string, Result & { count: number }> {
 describe('native mixed enlarge-and-reduce engine and despeckle bands', () => {
 	const groups = run();
 
-	it('reproduces every engine-grid, 1.5x-boundary and size-band capture exactly', () => {
+	it('reproduces every engine-grid, 1.5x-boundary, size-band and both-axes-reduction capture exactly', () => {
 		expect(groups.grid).toEqual({ count: 280, exact: 280, values: 0, maximum: 0 });
 		expect(groups.cap).toEqual({ count: 40, exact: 40, values: 0, maximum: 0 });
 		expect(groups.band).toEqual({ count: 23, exact: 23, values: 0, maximum: 0 });
+		expect(groups.reduce).toEqual({ count: 120, exact: 120, values: 0, maximum: 0 });
 	});
 
-	it('pins the residual of the area-boundary and random captures (the enlargement kernel table at one level; the 112, 63 and 30 level cases are few-colour reductions of both axes)', () => {
-		expect(groups.area).toEqual({ count: 160, exact: 99, values: 1623, maximum: 1 });
-		expect(groups.random).toEqual({ count: 160, exact: 113, values: 4952, maximum: 112 });
+	it('pins the residual of the area-boundary and random captures (a handful of boundary values one level off)', () => {
+		expect(groups.area).toEqual({ count: 160, exact: 156, values: 24, maximum: 1 });
+		expect(groups.random).toEqual({ count: 160, exact: 154, values: 13, maximum: 1 });
 	});
 });
 

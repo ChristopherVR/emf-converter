@@ -1,7 +1,7 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T07:24:48.3090114Z",
-    "groups":  "halftone-mixed-engine",
+    "capturedAt":  "2026-10-08T07:23:37.4717734Z",
+    "groups":  "halftone-kernel-rows",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9457,
     "architecture":  "AMD64",
@@ -3387,8 +3387,8 @@
               ],
     "references":  [
                        {
-                           "name":  "halftone-mixed-engine.json.gz",
-                           "sha256":  "f47742a1a23174658801284f64baa7ebd48666151d6ed27ad0b6bd8c7095288a"
+                           "name":  "halftone-kernel-rows.json.gz",
+                           "sha256":  "70cb66de49d606226ee5d61e21e8174b879466313dba486d56aaf36aab1181d9"
                        }
                    ]
 }

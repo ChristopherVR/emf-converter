@@ -243,44 +243,23 @@ export function halftoneReduceTaps(srcLen: number, dstLen: number, reverse: bool
 }
 
 /**
- * Enlargement kernel, sampled every 1/96 source pixel from the centre out to
- * one pixel (zero beyond), scaled so the centre is 1000. Left of half a pixel
- * the table holds the values just inside |u| < 0.5 and the box edge is in
- * {@link ENLARGE_HALF}; right of it the values from just outside. The
- * generating formula of the native kernel is not known: these are the values
- * of the one piecewise-linear curve that, with {@link halftoneEnlargeTaps}'s
- * integerisation, reproduces the integer weight rows measured from native
- * captures of about 410 source/destination size pairs (about 98% of the
- * rows it was solved on; about 95% of the rows of sizes held out of the solve).
- * Far from the centre (beyond about 0.9 pixels) and for ratios just above a
- * whole number a few rows are a share or two off.
+ * Unnormalised enlargement kernel weight at `u` source pixels from the centre: with `x = 1 - u`,
+ * `x ** (1 / sqrt 2)` before half a pixel, `x` at exactly half a pixel and `x ** sqrt 2` from there
+ * to one pixel (zero beyond). Two power laws of the distance to the edge of the support, with
+ * reciprocal exponents, meet at a jump (0.613 against 0.375 either side of half a pixel). Found by
+ * solving the integer weight rows of 51 native source/destination size pairs (ratios 1.04x to
+ * 15.1x, about 8,800 distinct rows, and the whole factors 6 to 16) for the kernel with a linear
+ * program, which came out smooth to a fraction of a level; a fit of the solved knots gave a power of
+ * 1.4142 on the outer half and 0.7058 on the inner half, and the closed form reproduces 99.8% of
+ * the rows exactly (the rest are float-level boundary cases and exact ties, see
+ * {@link halftoneEnlargeTaps}). It replaced a 96-step interpolation table fitted to the same rows,
+ * which reproduced 90%.
  */
-const ENLARGE_INNER = [
-	1000.0000, 992.4700, 984.9399, 977.4099, 969.8798, 962.3498, 954.8198, 947.2897, 939.7597, 932.2296, 924.6996, 917.1695,
-	909.6395, 902.1095, 894.5665, 886.8087, 879.0450, 871.2813, 863.4349, 855.5885, 847.7421, 839.8269, 831.9046, 823.9120,
-	815.9193, 807.9266, 799.8470, 791.7283, 783.6096, 775.4490, 767.3204, 758.9233, 750.5263, 742.4271, 734.0547, 725.6823,
-	717.2320, 708.7675, 700.2393, 691.7111, 683.0734, 674.4357, 665.7105, 656.9854, 648.2603, 639.3747, 630.4873, 621.5157,
-	612.5442,
-];
-const ENLARGE_OUTER = [
-	375.1388, 364.2093, 353.2797, 342.4714, 331.7615, 321.1462, 310.6456, 300.2252, 289.9229, 279.7227, 269.6439, 259.6535,
-	249.7825, 240.0362, 230.3856, 220.8799, 211.4594, 202.1844, 192.9996, 183.9679, 175.1064, 166.2864, 157.6436, 149.1447,
-	140.7609, 132.5474, 124.4802, 116.5636, 108.7780, 101.1602, 93.7098, 86.4419, 79.3251, 72.4091, 65.6853, 59.1472,
-	52.8120, 46.6978, 40.8001, 35.1449, 29.7494, 24.6096, 19.7977, 15.2801, 11.1442, 7.3916, 4.1415, 1.4039,
-	0.0000,
-];
-/** Kernel value exactly half a pixel from the centre (the box edge). */
-const ENLARGE_HALF = 500.0106;
-const ENLARGE_KNOTS = 96;
-
-/** Unnormalised enlargement kernel weight at `u` source pixels from the centre. */
 function enlargeKernel(u: number): number {
 	if (u >= 1) return 0;
-	if (Math.abs(u - 0.5) < 1e-9) return ENLARGE_HALF;
-	const table = u < 0.5 ? ENLARGE_INNER : ENLARGE_OUTER;
-	const edge = u * ENLARGE_KNOTS - (u < 0.5 ? 0 : ENLARGE_KNOTS / 2);
-	const i = Math.min(table.length - 2, Math.floor(edge + 1e-9));
-	return table[i] + (table[i + 1] - table[i]) * (edge - i);
+	const x = 1 - u;
+	if (Math.abs(u - 0.5) < 1e-9) return x;
+	return Math.pow(x, u < 0.5 ? Math.SQRT1_2 : Math.SQRT2);
 }
 
 /**
@@ -602,43 +581,46 @@ const FILTER_WEIGHTS: Record<number, number[][]> = {
 };
 
 /**
- * Exact weights (shares of 8192, rows for the source samples before, at and after) of the
- * larger whole factors where {@link halftoneEnlargeTaps} misses a share or two. Each row is
- * the unique integer solution of thousands of native random-profile samples per phase
- * (the cumulative round-up shares the kernel table is integerised with); factors 6 to 8, 12 and 14
- * agree with the table exactly.
+ * The one whole-factor row the kernel formula gets the other way round: the centre phase of the
+ * odd factor 15, where the two outer shares sum to the odd 1,311 and the native engine hands the
+ * spare share to the later source sample (every other odd factor, 7 to 13, hands it to the earlier
+ * one as the formula does). Measured exactly (shares of 8192, before, at and after) from native
+ * random-profile captures; `[factor, phase] -> row`.
  */
-const FILTER_TABLE_FACTORS: Record<number, number[][]> = {
-	9: [[3627, 4565, 0], [2763, 5387, 42], [1976, 6063, 153], [1271, 6569, 352], [651, 6891, 650], [353, 6569, 1270], [154, 6063, 1975], [43, 5387, 2762], [0, 4566, 3626]],
-	10: [[3675, 4517, 0], [2891, 5269, 32], [2170, 5903, 119], [1515, 6405, 272], [926, 6763, 503], [504, 6763, 925], [273, 6405, 1514], [120, 5903, 2169], [33, 5269, 2890], [0, 4518, 3674]],
-	11: [[3712, 4480, 0], [2994, 5173, 25], [2327, 5771, 94], [1713, 6262, 217], [1154, 6637, 401], [654, 6885, 653], [402, 6637, 1153], [218, 6262, 1712], [95, 5771, 2326], [26, 5173, 2993], [0, 4481, 3711]],
-	13: [[3771, 4421, 0], [3156, 5019, 17], [2578, 5551, 63], [2038, 6009, 145], [1536, 6388, 268], [1075, 6681, 436], [655, 6883, 654], [437, 6681, 1074], [269, 6388, 1535], [146, 6009, 2037], [64, 5551, 2577], [18, 5019, 3155], [0, 4422, 3770]],
-	15: [[3815, 4377, 0], [3278, 4902, 12], [2768, 5380, 44], [2286, 5804, 102], [1834, 6169, 189], [1410, 6474, 308], [1017, 6712, 463], [655, 6881, 656], [464, 6712, 1016], [309, 6474, 1409], [190, 6169, 1833], [103, 5804, 2285], [45, 5380, 2767], [13, 4902, 3277], [0, 4378, 3814]],
-	16: [[3832, 4360, 0], [3328, 4854, 10], [2847, 5307, 38], [2391, 5714, 87], [1960, 6070, 162], [1555, 6373, 264], [1176, 6620, 396], [825, 6807, 560], [561, 6807, 824], [397, 6620, 1175], [265, 6373, 1554], [163, 6070, 1959], [88, 5714, 2390], [39, 5307, 2846], [11, 4854, 3327], [0, 4361, 3831]],
-};
+const FILTER_CENTRE_ROWS: Record<number, [number, number, number]> = { 15: [655, 6881, 656] };
 
 /**
- * Taps (source index, integer share of 8192) of an enlarged axis in the larger-ratio engine:
- * an exact 2x keeps the 3:1 linear weights, the whole factors of {@link FILTER_TABLE_FACTORS} their
- * measured shares, anything else {@link halftoneEnlargeTaps}.
+ * Taps (source index, integer share of 8192) of an enlarged axis in the larger-ratio engine: an
+ * exact 2x keeps the 3:1 linear weights, anything else {@link halftoneEnlargeTaps} (every whole
+ * factor 6 to 16 is reproduced except the centre row of 15, see {@link FILTER_CENTRE_ROWS}).
  */
 function filterAxisTaps(src: number, dst: number): Array<Array<[number, number]>> {
 	const factor = dst / src;
-	const rows = factor === 2 ? FILTER_WEIGHTS[2].map(([a, b, c]) => [a * 512, b * 512, c * 512]) : FILTER_TABLE_FACTORS[factor];
-	if (!rows) return halftoneEnlargeTaps(src, dst).map(row => row.map(([j, v]): [number, number] => [j, Math.round(v * 8192)]));
-	return Array.from({ length: dst }, (_, i): Array<[number, number]> => {
-		const k = Math.floor(i / factor);
-		const [a, b, c] = rows[i % factor];
-		return [[Math.max(0, k - 1), a], [k, b], [Math.min(src - 1, k + 1), c]];
-	});
+	if (factor === 2) {
+		const rows = FILTER_WEIGHTS[2].map(([a, b, c]) => [a * 512, b * 512, c * 512]);
+		return Array.from({ length: dst }, (_, i): Array<[number, number]> => {
+			const k = Math.floor(i / 2);
+			const [a, b, c] = rows[i % 2];
+			return [[Math.max(0, k - 1), a], [k, b], [Math.min(src - 1, k + 1), c]];
+		});
+	}
+	const taps = halftoneEnlargeTaps(src, dst).map(row => row.map(([j, v]): [number, number] => [j, Math.round(v * 8192)]));
+	const centre = FILTER_CENTRE_ROWS[factor];
+	if (centre) {
+		for (let i = (factor - 1) / 2; i < dst; i += factor) {
+			const k = Math.floor(i / factor);
+			taps[i] = [[Math.max(0, k - 1), centre[0]], [k, centre[1]], [Math.min(src - 1, k + 1), centre[2]]];
+		}
+	}
+	return taps;
 }
 
 /**
  * Enlarging one axis while the other keeps its size: only the enlarged axis is sharpened (with
  * `v + floor((2v - l - r) / 4)`, clamped, its edge pixels standing in for missing neighbours) and
  * interpolated with {@link filterAxisTaps}, one rounding half up. Exact on native captures for
- * 2x, 3x, 5x, 7x, 10x and fractional ratios such as 1.5x and 2.5x; the table misses a share for
- * ratios just above 1 and 2.
+ * 2x, 3x, 5x, 7x, 10x and fractional ratios from 1.025x up (the kernel formula of {@link enlargeKernel}
+ * is a share off only at boundaries within 0.002 of a whole share).
  */
 function halftoneFilterOneAxis(rgb: Int32Array, w: number, h: number, W: number, H: number): Int32Array {
 	const horizontal = W > w;
@@ -738,11 +720,11 @@ function ditherFilteredSource(rect: Int32Array, SW: number, SH: number, W: numbe
  *   simply replicated after sharpening.
  * - Either axis enlarged by more than 5x (also by a fraction): horizontal
  *   first, the sharpened source clamped at its edges with no extension row, the
- *   weights {@link halftoneEnlargeTaps} (13-bit shares of the older kernel
- *   table, except an exact 2x axis, which stays the 3:1 linear weights),
- *   the intermediate rounded half up. Exact for 6x to 8x and 12x; the table
- *   misses a few weights by a share for factors such as 9x and 10x and for
- *   ratios just above 5.
+ *   weights {@link halftoneEnlargeTaps} (13-bit shares of the kernel formula,
+ *   except an exact 2x axis, which stays the 3:1 linear weights),
+ *   the intermediate rounded half up. Exact for every whole factor 6x to 16x
+ *   but the centre phase of 15x (see FILTER_CENTRE_ROWS) and for the captured
+ *   fractional ratios; 5.016x is 6 of 193,563 values one level off.
  *
  * - One axis enlarged while the other keeps its size: {@link halftoneFilterOneAxis}.
  *
@@ -905,6 +887,11 @@ export function halftoneMixedEngine(
  *   source is first smoothed where it has exact two-by-two checkers
  *   ({@link halftoneDespeckle}) and then replicated, each destination pixel
  *   taking the source pixel under its centre ({@link halftoneNearest}).
+ *   The despeckle runs only for sources of up to 2,304 pixels and of more than
+ *   16,384 (those between are copied without it), and a reduction of both axes
+ *   despeckles first under the same bands when neither axis loses 1.5 pixels
+ *   per pixel. Mixed enlarge-and-reduce stretches pick their engine with
+ *   {@link halftoneMixedEngine}.
  * - Reducing both axes follows {@link halftoneReduceBoth}: the rows are
  *   reduced with the 13-bit-share weights and rounded half up, the columns
  *   are reduced from those unrounded, and the sharpening
@@ -1028,7 +1015,11 @@ export function stretchHalftone(
 	// 16,384; between them the scan of the source (halftoneBranch) hands over without it (native
 	// captures of checker-dense sources: 2,304 and 16,392 pixels despeckled, 2,305 to 16,384 not).
 	const despeckles = SW * SH <= 2304 || SW * SH > 16384;
-	if ((enlarging || nearestMixed || engine === 'despeckled') && despeckles && !directDib && !pairRows && !pairColumns) {
+	// A reduction of both axes despeckles first when neither axis loses 1.5 source pixels per destination pixel
+	// (the reduction by 2x of the checker fixtures does not) and the source takes the replicated branch.
+	const reduceDespeckle = reducing && !(W < SW && 3 * W + 2 <= 2 * SW) && !(H < SH && 3 * H + 2 <= 2 * SH)
+		&& (SW * SH <= 2304 || halftoneBranch(rect, SW, SH) === 'replicate');
+	if ((enlarging || reduceDespeckle || nearestMixed || engine === 'despeckled') && despeckles && !directDib && !pairRows && !pairColumns) {
 		halftoneDespeckle(rect, SW, SH);
 	}
 	// A combined adjustment quantises the source to 32 levels with an ordered

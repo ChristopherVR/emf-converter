@@ -10,7 +10,7 @@ export type SourceKind = 'check' | 'k3' | 'k27' | 'k100' | 'noise' | 'smooth';
 
 export interface MixedCase {
 	id: string;
-	group: 'grid' | 'cap' | 'area' | 'band' | 'random';
+	group: 'grid' | 'cap' | 'area' | 'band' | 'random' | 'reduce';
 	kind: SourceKind;
 	seed: number;
 	w: number;
@@ -120,6 +120,23 @@ export function mixedEngineCases(): MixedCase[] {
 		dw = Math.max(1, dw); dh = Math.max(1, dh);
 		if (dw * dh > 90000) continue;
 		add('random', kind, w, h, dw, dh);
+		made++;
+	}
+	// Reductions of both axes of checker-dense and few-colour sources in the three size bands, with and without an
+	// axis that loses 1.5 pixels per pixel (the despeckle precedes the reduction only when neither does).
+	const reduceRnd = lcg(2024);
+	for (let made = 0; made < 120;) {
+		const [w, h] = (() => {
+			const b = ['s', 'm', 'l'][made % 3];
+			for (;;) {
+				const w = 6 + Math.floor(reduceRnd() * (b === 'l' ? 220 : 120)), h = 6 + Math.floor(reduceRnd() * (b === 'l' ? 220 : 120)), n = w * h;
+				if ((b === 's' && n <= 2304) || (b === 'm' && n > 2304 && n <= 16384) || (b === 'l' && n > 16384 && n < 40000)) return [w, h] as [number, number];
+			}
+		})();
+		const fx = 0.3 + reduceRnd() * 0.69, fy = reduceRnd() < 0.5 ? fx : 0.3 + reduceRnd() * 0.69;
+		const dw = Math.max(1, Math.round(w * fx)), dh = Math.max(1, Math.round(h * fy));
+		if (dw >= w || dh >= h) continue;
+		add('reduce', (['check', 'k3', 'k27'] as SourceKind[])[Math.floor(reduceRnd() * 3)], w, h, dw, dh);
 		made++;
 	}
 	return cases;
