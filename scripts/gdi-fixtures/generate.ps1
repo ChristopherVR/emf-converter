@@ -9,6 +9,34 @@
 #   emf-records, halftone, halftone-mixed, halftone-origin, emfplus-effects  (GdiFixtures.cs)
 #   pen-transform                            (PenTransformProbe.cs)
 #
+# Standalone probe modes (run separately from drawing groups):
+#   path-probe, wide-path-probe, wide-outline-probe, flat-pen-probe,
+#   arc-path-probe, wmf-scaled-path-probe, emf-scaled-path-probe,
+#   curve-widen-probe, curve-dash-probe, arc-cap-sweep-probe,
+#   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
+#   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
+#   emf-roundrect-wide-probe, emf-roundrect-mode-probe, chord-closing-probe,
+#   dash-neighbourhood-probe, text-recorded-advance, text-coverage,
+#   text-cleartype-coverage, text-origin-phases, text-origin-vertical-phases,
+#   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
+#   text-opcode-hinting, text-opcode-coverage, text-vector-stage-hinting,
+#   text-vector-stage-coverage, text-signed-diagonal, path-gradient-steps,
+#   path-gradient-vertices, path-gradient-rotated, path-gradient-focus-shapes,
+#   path-gradient-ties, path-gradient-colors, path-gradient-focus,
+#   focus-contours, redeye-independent, vertical-focus-line, playback-extents,
+#   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
+#   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
+#   halftone-kernel, halftone-arrangement, halftone-selection, halftone-boundary,
+#   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
+#   bicubic-arithmetic, bicubic-independent, wide-pen-axis-probe,
+#   wide-pen-axis-directions, dashed-pen-axis-probe, general-matrix-pen-probe,
+#   nib-matrix-pen-probe, rotated-pen-vector-probe, bezier-flatten,
+#   illuminant-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
+#   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
+#   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
+#   image-effect-narrow-blur, image-effect-hue, image-effect-tint,
+#   image-effect-tables, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-translate16
+#
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
 # playback of the recorded metafile.

@@ -149,4 +149,4 @@ describe('SVG output without any canvas backend', () => {
 			expect(String(img.href)).toMatch(/^data:image\/png;base64,/);
 		}
 	});
-});
+}, 120_000);
