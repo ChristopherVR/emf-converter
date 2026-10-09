@@ -79,6 +79,19 @@ export function gdiDevicePixelY(r: EmfGdiReplayCtx): number {
 	return !r.useMappingMode || r.deviceToCanvas ? r.sy : 1;
 }
 
+/**
+ * Map a device X coordinate (already past the world and page transforms,
+ * e.g. an EMR_EXTSELECTCLIPRGN rectangle) to canvas X.
+ */
+export function gdiDeviceToCanvasX(r: EmfGdiReplayCtx, x: number): number {
+	return !r.useMappingMode || r.deviceToCanvas ? (x - r.bounds.left) * r.sx : x;
+}
+
+/** Map a device Y coordinate to canvas Y. */
+export function gdiDeviceToCanvasY(r: EmfGdiReplayCtx, y: number): number {
+	return !r.useMappingMode || r.deviceToCanvas ? (y - r.bounds.top) * r.sy : y;
+}
+
 /** Switch to window/viewport mapping mode. */
 export function activateGdiMappingMode(r: EmfGdiReplayCtx): void {
 	r.useMappingMode = true;

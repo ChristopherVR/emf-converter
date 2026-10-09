@@ -895,6 +895,7 @@ const EMF_RECORD_CASES: ParityCase[] = [
 	emfrec('emfrec-gradient-tri'),
 	emfrec('emfrec-fillrgn'),
 	emfrec('emfrec-fillrgn-scaled'),
+	emfrec('emfrec-cliprgn-mapped'), // device-unit ExtSelectClipRgn under a scaling map mode and world transform, then a logical OffsetClipRgn: exact (before 15.7%, the region went through both transforms)
 	emfrec('emfrec-framergn'),
 	emfrec('emfrec-invertrgn'),
 	emfrec('emfrec-paintrgn'),

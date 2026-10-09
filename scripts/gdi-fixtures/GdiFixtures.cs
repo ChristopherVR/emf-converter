@@ -4942,6 +4942,8 @@ public static class GdiFixtures
 			DeleteObject(r); DeleteObject(brush);
 		});
 
+		EmfClipRgnMappedCase();
+
 		GdiCase("emfrec-framergn", 260, 170, delegate (IntPtr hdc)
 		{
 			Stripes(hdc, 260, 170);
@@ -6470,6 +6472,41 @@ public static class GdiFixtures
 		}
 	}
 
+	/**
+	 * A selected clip region is in device units: GDI records it exactly as
+	 * passed, untouched by the world transform or a scaling window/viewport
+	 * mapping, while OffsetClipRgn's offset is logical (mapped and rounded to
+	 * whole device pixels).
+	 */
+	static void EmfClipRgnMappedCase()
+	{
+		GdiCase("emfrec-cliprgn-mapped", 220, 160, delegate (IntPtr hdc)
+		{
+			Stripes(hdc, 220, 160);
+			ErApi.SetMapMode(hdc, 8); // MM_ANISOTROPIC
+			ErApi.SetWindowExtEx(hdc, 4, 4, IntPtr.Zero);
+			ErApi.SetViewportExtEx(hdc, 3, 3, IntPtr.Zero);
+			WmfApi.SetWindowOrgEx(hdc, -12, -8, IntPtr.Zero);
+			SetGraphicsMode(hdc, 2);
+			var m = new XFORM { eM11 = 1.5f, eM22 = 1.25f, eDx = 6, eDy = 4 };
+			SetWorldTransform(hdc, ref m);
+			IntPtr orange = CreateSolidBrush(Rgb(0xE0, 0x70, 0x20));
+			IntPtr blue = CreateSolidBrush(Rgb(0x20, 0x40, 0xB0));
+			IntPtr e = WmfApi.CreateEllipticRgn(14, 12, 104, 92);
+			WmfApi.SelectClipRgn(hdc, e);
+			WithObjects(hdc, CreatePen(5, 0, 0), orange, delegate { Rectangle(hdc, -20, -20, 300, 300); });
+			WmfApi.OffsetClipRgn(hdc, 50, 30); // logical: device (28, 14) after rounding
+			WithObjects(hdc, CreatePen(5, 0, 0), blue, delegate { Rectangle(hdc, 40, 30, 300, 300); });
+			WmfApi.SelectClipRgn(hdc, IntPtr.Zero);
+			var id = new XFORM { eM11 = 1, eM22 = 1 };
+			SetWorldTransform(hdc, ref id);
+			SetGraphicsMode(hdc, 1);
+			ErApi.SetMapMode(hdc, 1);
+			WmfApi.SetWindowOrgEx(hdc, 0, 0, IntPtr.Zero);
+			DeleteObject(e);
+		});
+	}
+
 	static void EmfRecordCases()
 	{
 		ErGeometryCases();
@@ -6537,6 +6574,7 @@ public static class GdiFixtures
 		if (which == "all" || which == "wmf-insideframe-curves") { WmfInsideFrameCurves(); }
 		if (which == "wmf-roundrect-corners") { WmfRoundRectCorners(); }
 		if (which == "emf-insideframe") { EmfInsideFrameCases(); }
+		if (which == "emf-cliprgn") { EmfClipRgnMappedCase(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
 		if (which == "emfplus-pens") { GpxPenFigureCases(); }
 	}

@@ -22,7 +22,16 @@ import {
 	EMR_EXCLUDECLIPRECT,
 	EMR_OFFSETCLIPRGN,
 } from './emf-constants';
-import { gmx, gmy, gmw, gmh } from './emf-gdi-coord';
+import {
+	gmx,
+	gmy,
+	gmw,
+	gmh,
+	gdiDevicePixelX,
+	gdiDevicePixelY,
+	gdiDeviceToCanvasX,
+	gdiDeviceToCanvasY,
+} from './emf-gdi-coord';
 import { emfLog } from './emf-logging';
 import type { EmfGdiReplayCtx } from './emf-types';
 
@@ -123,6 +132,10 @@ function handleExtSelectClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize:
 	}
 
 	// RGNDATA scanline rects are pairwise disjoint, so the shape stays simple.
+	// The rects are in device units: GDI records the selected region exactly
+	// as passed to ExtSelectClipRgn, unaffected by the world transform or the
+	// window/viewport mapping in force (native playback confirms), so they
+	// skip the logical-to-device mapping.
 	const rects: Array<{ x: number; y: number; w: number; h: number }> = [];
 	const rectsStart = rgnStart + 32;
 	for (let i = 0; i < nCount; i++) {
@@ -134,11 +147,13 @@ function handleExtSelectClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize:
 		const top = view.getInt32(rOff + 4, true);
 		const right = view.getInt32(rOff + 8, true);
 		const bottom = view.getInt32(rOff + 12, true);
+		const x = gdiDeviceToCanvasX(rCtx, left);
+		const y = gdiDeviceToCanvasY(rCtx, top);
 		rects.push({
-			x: gmx(rCtx, left),
-			y: gmy(rCtx, top),
-			w: gmw(rCtx, right - left),
-			h: gmh(rCtx, bottom - top),
+			x,
+			y,
+			w: gdiDeviceToCanvasX(rCtx, right) - x,
+			h: gdiDeviceToCanvasY(rCtx, bottom) - y,
 		});
 	}
 	if (rects.length === 0) {
@@ -155,7 +170,12 @@ function handleOffsetClipRgn(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: nu
 		const dx = rCtx.view.getInt32(dataOff, true);
 		const dy = rCtx.view.getInt32(dataOff + 4, true);
 		if (rCtx.clipRegion) {
-			rCtx.clipRegion = translateClipRegion(rCtx.clipRegion, gmw(rCtx, dx), gmh(rCtx, dy));
+			// The offset is logical: GDI maps it to whole device pixels.
+			const px = gdiDevicePixelX(rCtx);
+			const py = gdiDevicePixelY(rCtx);
+			const ox = Math.round(gmw(rCtx, dx) / px) * px;
+			const oy = Math.round(gmh(rCtx, dy) / py) * py;
+			rCtx.clipRegion = translateClipRegion(rCtx.clipRegion, ox, oy);
 			reapplyClipRegion(rCtx, rCtx.clipRegion);
 			emfLog(`EMR_OFFSETCLIPRGN: clip translated by (${dx},${dy}) logical units`);
 		}
