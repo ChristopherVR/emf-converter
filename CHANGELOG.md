@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.18.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.18.1) - 2026-10-09
+
+### Bug Fixes
+
+- **emf:** ExtSelectClipRgn regions are in device units ([4f35e26](https://github.com/ChristopherVR/emf-converter/commit/4f35e2629972b9646ae41b51e5c90cdbbc2b25de))
+
 ## [4.18.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.18.0) - 2026-10-08
 
 ### Features
