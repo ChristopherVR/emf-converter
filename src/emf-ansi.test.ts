@@ -5,29 +5,29 @@ describe('ANSI record decoding', () => {
 	it.each([0, 1])('uses a known device code page for charset %s without changing the default', (charset) => {
 		const bytes = [0x41, 0xd6, 0xd0, 0xce, 0xc4, 0x42]; // A中文B, Windows code page 936
 		expect(decodeAnsiRecord(bytes, charset)).toEqual({ codes: [0x41, 0xd6, 0xd0, 0xce, 0xc4, 0x42], byteLengths: [1, 1, 1, 1, 1, 1] });
-		expect(decodeAnsiRecord(bytes, charset, 936)).toEqual({ codes: [0x41, 0x4e2d, 0x6587, 0x42], byteLengths: [1, 2, 2, 1] });
+		expect(decodeAnsiRecord(bytes, charset, { ansi: 936 })).toEqual({ codes: [0x41, 0x4e2d, 0x6587, 0x42], byteLengths: [1, 2, 2, 1] });
 	});
 	it('keeps an explicit charset and Symbol decoding independent of the device code page', () => {
-		expect(decodeAnsiRecord([0x82, 0xa0], 128, 936)).toEqual({ codes: [0x3042], byteLengths: [2] });
-		expect(decodeAnsiRecord([0xd6, 0xd0], 134, 1252)).toEqual({ codes: [0x4e2d], byteLengths: [2] });
-		expect(decodeAnsiRecord([0xd6, 0xd0], 2, 936)).toEqual({ codes: [0xd6, 0xd0], byteLengths: [1, 1] });
+		expect(decodeAnsiRecord([0x82, 0xa0], 128, { ansi: 936 })).toEqual({ codes: [0x3042], byteLengths: [2] });
+		expect(decodeAnsiRecord([0xd6, 0xd0], 134, { ansi: 1252 })).toEqual({ codes: [0x4e2d], byteLengths: [2] });
+		expect(decodeAnsiRecord([0xd6, 0xd0], 2, { ansi: 936 })).toEqual({ codes: [0xd6, 0xd0], byteLengths: [1, 1] });
 	});
 	it('supports UTF-8 surrogate pairs without losing source byte advances', () => {
-		expect(decodeAnsiRecord([0x41, 0xf0, 0x9f, 0x98, 0x80, 0x42], 1, 65001)).toEqual({ codes: [0x41, 0xd83d, 0xde00, 0x42], byteLengths: [1, 0, 4, 1] });
+		expect(decodeAnsiRecord([0x41, 0xf0, 0x9f, 0x98, 0x80, 0x42], 1, { ansi: 65001 })).toEqual({ codes: [0x41, 0xd83d, 0xde00, 0x42], byteLengths: [1, 0, 4, 1] });
 	});
 	it('preserves a UTF-8 BOM as an authored character and keeps its byte advance', () => {
-		expect(decodeAnsiRecord([0xef, 0xbb, 0xbf, 0x41], 1, 65001)).toEqual({ codes: [0xfeff, 0x41], byteLengths: [3, 1] });
+		expect(decodeAnsiRecord([0xef, 0xbb, 0xbf, 0x41], 1, { ansi: 65001 })).toEqual({ codes: [0xfeff, 0x41], byteLengths: [3, 1] });
 	});
 	it('keeps the next ASCII character after invalid or truncated device-code-page bytes', () => {
-		expect(decodeAnsiRecord([0xd6, 0x20, 0x41, 0xd6], 0, 936)).toEqual({ codes: [0xfffd, 0x20, 0x41, 0xfffd], byteLengths: [1, 1, 1, 1] });
+		expect(decodeAnsiRecord([0xd6, 0x20, 0x41, 0xd6], 0, { ansi: 936 })).toEqual({ codes: [0xfffd, 0x20, 0x41, 0xfffd], byteLengths: [1, 1, 1, 1] });
 	});
 	it.each([0, -1, 999, NaN, Infinity])('falls back to the original ANSI page for unsupported device page %s', (page) => {
-		expect(decodeAnsiRecord([0x80, 0xd6, 0xd0], 1, page)).toEqual({ codes: [0x20ac, 0xd6, 0xd0], byteLengths: [1, 1, 1] });
+		expect(decodeAnsiRecord([0x80, 0xd6, 0xd0], 1, { ansi: page })).toEqual({ codes: [0x20ac, 0xd6, 0xd0], byteLengths: [1, 1, 1] });
 	});
 	it('keeps Windows-1252 punctuation without a host TextDecoder', () => {
 		vi.stubGlobal('TextDecoder', undefined);
 		try {
-			expect(decodeAnsiRecord([0x80, 0x93, 0x94], 0, 1252)).toEqual({ codes: [0x20ac, 0x201c, 0x201d], byteLengths: [1, 1, 1] });
+			expect(decodeAnsiRecord([0x80, 0x93, 0x94], 0, { ansi: 1252 })).toEqual({ codes: [0x20ac, 0x201c, 0x201d], byteLengths: [1, 1, 1] });
 		} finally { vi.unstubAllGlobals(); }
 	});
 	it('tracks source bytes for a mixed Shift-JIS string', () => {
@@ -50,6 +50,29 @@ describe('ANSI record decoding', () => {
 				codes: [0x41, 0xc7, 0xfc, 0x2502, 0x2500, 0x2588], byteLengths: [1, 1, 1, 1, 1, 1],
 			});
 		} finally { vi.unstubAllGlobals(); }
+	});
+	it.each([
+		[866, [0x8f, 0xe0, 0xa8], 'При'],
+		[850, [0x9b, 0x9d, 0xd5], 'øØı'],
+		[858, [0xd5], '€'],
+		[852, [0x85, 0xa5], 'ůą'],
+		[737, [0x80, 0x98], 'Αα'],
+		[437, [0x8f], 'Å'],
+	])('decodes OEM text with the device OEM code page %s', (oem, bytes, text) => {
+		vi.stubGlobal('TextDecoder', undefined);
+		try {
+			expect(decodeAnsiRecord(bytes, 255, { oem })).toEqual({ codes: [...text].map((c) => c.charCodeAt(0)), byteLengths: bytes.map(() => 1) });
+		} finally { vi.unstubAllGlobals(); }
+	});
+	it('decodes multibyte OEM code pages and keeps byte advances aligned', () => {
+		expect(decodeAnsiRecord([0x41, 0xd6, 0xd0], 255, { oem: 936 })).toEqual({ codes: [0x41, 0x4e2d], byteLengths: [1, 2] });
+	});
+	it.each([undefined, 0, 1252, 999, NaN])('falls back to OEM code page 437 for device OEM page %s', (oem) => {
+		expect(decodeAnsiRecord([0x8f, 0xb3], 255, { oem })).toEqual({ codes: [0xc5, 0x2502], byteLengths: [1, 1] });
+	});
+	it('keeps ANSI and OEM device pages independent', () => {
+		expect(decodeAnsiRecord([0x8f], 255, { ansi: 1251 })).toEqual({ codes: [0xc5], byteLengths: [1] });
+		expect(decodeAnsiRecord([0x8f], 1, { oem: 866 })).toEqual({ codes: [0x8f], byteLengths: [1] });
 	});
 	it('decodes Johab syllables and keeps explicit byte advances aligned', () => {
 		expect(decodeAnsiRecord([0x41, 0x88, 0x61, 0xd3, 0xbd, 0x42], 130)).toEqual({

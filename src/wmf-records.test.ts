@@ -427,6 +427,15 @@ describe('wmf-text', () => {
 		expect(defaultSvg).toContain('Ö');
 		expect(new Uint8Array(buffer)).toEqual(original);
 	});
+	it('applies the generic device code pages to WMF text, with wmfAnsiCodePage taking precedence', async () => {
+		const text = new Uint8Array([2, 0, 0xd6, 0xd0, 10, 0, 10, 0]);
+		const ansi = buildWmf([[0x02fb, ansiFont(1)], select(0), [0x0521, text]], [0, 0, 100, 50]);
+		expect(await convertMetafileToSvg(ansi, { ansiCodePage: 936 })).toContain('中');
+		expect(await convertMetafileToSvg(ansi, { ansiCodePage: 936, wmfAnsiCodePage: 1252 })).toContain('ÖÐ');
+		const oem = buildWmf([[0x02fb, ansiFont(255)], select(0), [0x0521, new Uint8Array([2, 0, 0x8f, 0xe0, 10, 0, 10, 0])]], [0, 0, 100, 50]);
+		expect(await convertMetafileToSvg(oem, { oemCodePage: 866 })).toContain('Пр');
+		expect(await convertMetafileToSvg(oem)).toContain('Åα');
+	});
 	it('sums ExtTextOut advances per decoded character and keeps the device page after RestoreDC', async () => {
 		const text = new Uint8Array([10, 0, 10, 0, 4, 0, 0, 0, 0xd6, 0xd0, 0xce, 0xc4, 14, 0, 16, 0, 18, 0, 22, 0]);
 		const buffer = buildWmf([[0x02fb, ansiFont(1)], select(0), [0x001e, []], [0x02fb, ansiFont(128)], select(1), [0x0127, [0xffff]], [0x0a32, text]], [0, 0, 100, 50]);

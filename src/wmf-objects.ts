@@ -168,7 +168,7 @@ export function createFont(p: WmfPlayer, dataOff: number, recSize: number, recEn
 	}
 	// LOGFONT's ANSI face name uses the device code page, even for a
 	// font with an explicit text charset (or a Symbol font).
-	const family = String.fromCharCode(...decodeAnsiRecord(faceBytes, 1, p.ansiCodePage).codes);
+	const family = String.fromCharCode(...decodeAnsiRecord(faceBytes, 1, { ansi: p.ansiCodePage }).codes);
 	const font: GdiFont = {
 		kind: 'font',
 		// Sign kept: resolveFontPixelHeight() tells cell from character height by it.

@@ -18,7 +18,9 @@ Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is n
 | `maxHeight`          | `number`                                |                     | Maximum output height in pixels. |
 | `dpiScale`           | `number`                                | `1`                 | Resolution multiplier, clamped to `4`. |
 | `wmfReferenceDpi`     | `number \| { x: number; y: number }`      | `96`                | Playback-device resolution for WMF physical map modes. Supply the original device DPI when known; values must be finite and positive. |
-| `wmfAnsiCodePage`     | `number`                                | `1252`              | WMF playback-device ANSI code page for ANSI/DEFAULT text and font face names. Explicit text charsets and EMF text keep their own decoding. |
+| `ansiCodePage`        | `number`                                | `1252`              | Playback-device ANSI code page (`GetACP()`) for ANSI/DEFAULT text in EMF and WMF ANSI text records, and WMF font face names. Explicit text charsets keep their own decoding. |
+| `oemCodePage`         | `number`                                | `437`               | Playback-device OEM code page (`GetOEMCP()`) for OEM_CHARSET text in EMF and WMF ANSI text records. |
+| `wmfAnsiCodePage`     | `number`                                | `ansiCodePage`      | WMF-only override of `ansiCodePage`. |
 | `maxCanvasDimension` | `number`                                | `8192`              | Upper limit for output width and height in pixels. |
 | `maxRecords`         | `number`                                | `200000` / `500000` | Records processed per stream before replay stops. EMF+ uses the higher default. |
 | `gdiAntialias`       | `boolean`                               | `false`             | Smooth shape edges with canvas antialiasing instead of reproducing GDI/GDI+ rasterisation. |
@@ -28,10 +30,13 @@ Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is n
 
 `DEFAULT_DPI_SCALE` is exported as the default value of `dpiScale` (`1`).
 
-For WMF files from a Windows device with another ANSI code page, supply the
-device's known `GetACP()` value. Supported values are `874`, `932`, `936`, `949`,
-`950`, `1250`–`1258`, `54936` and `65001`; other values fall back to `1252`.
-The converter does not infer this value from the file bytes or browser language.
+For metafiles from a Windows device with other system code pages, supply the
+device's known `GetACP()` value as `ansiCodePage` and its `GetOEMCP()` value as
+`oemCodePage`. Supported ANSI values are `874`, `932`, `936`, `949`, `950`,
+`1250`–`1258`, `54936` and `65001`; other values fall back to `1252`. Supported
+OEM values are `437`, `737`, `775`, `850`, `852`, `855`, `858`, `860`–`863`,
+`865`, `866`, `874`, `932`, `936`, `949` and `950`; other values fall back to `437`.
+The converter does not infer these values from the file bytes or browser language.
 
 ## SVG functions
 

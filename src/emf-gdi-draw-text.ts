@@ -305,8 +305,9 @@ function drawTextCall(rCtx: EmfGdiReplayCtx, x: number, y: number, codes: number
 	handleExtTextOutW(child, 0, 8, size);
 }
 
-function readAnsiRecord(view: DataView, start: number, count: number, charSet: number): { codes: number[]; byteLengths: number[] } {
-	return decodeAnsiRecord(Array.from({ length: count }, (_, i) => view.getUint8(start + i)), charSet);
+function readAnsiRecord(rCtx: EmfGdiReplayCtx, start: number, count: number, charSet: number): { codes: number[]; byteLengths: number[] } {
+	const { view } = rCtx;
+	return decodeAnsiRecord(Array.from({ length: count }, (_, i) => view.getUint8(start + i)), charSet, rCtx.codePages);
 }
 
 function collapseAnsiDx(dx: number[] | null, byteLengths: number[], pdy: boolean): number[] | null {
@@ -343,7 +344,7 @@ function handlePolyText(rCtx: EmfGdiReplayCtx, offset: number, dataOff: number, 
 		const offDx = view.getUint32(e + 36, true);
 		const unit = wide ? 2 : 1;
 		if (!offString || offString > end - offset || n > Math.floor((end - (offset + offString)) / unit)) continue;
-		const ansi = wide ? null : readAnsiRecord(view, offset + offString, n, charSet);
+		const ansi = wide ? null : readAnsiRecord(rCtx, offset + offString, n, charSet);
 		const codes = wide ? Array.from({ length: n }, (_, j) => view.getUint16(offset + offString + j * 2, true)) : ansi!.codes;
 		let dx: number[] | null = null;
 		const pdy = (options & ETO_PDY) !== 0;
@@ -394,7 +395,7 @@ export function handleEmfGdiDrawTextRecord(
 		const n = view.getUint32(dataOff + 36, true), strOff = view.getUint32(dataOff + 40, true), options = view.getUint32(dataOff + 44, true);
 		if (!strOff || strOff > end - offset) return true;
 		if (n > end - (offset + strOff)) return true;
-		const ansi = readAnsiRecord(view, offset + strOff, n, state.fontDetails?.charSet ?? 1);
+		const ansi = readAnsiRecord(rCtx, offset + strOff, n, state.fontDetails?.charSet ?? 1);
 		const rect: [number, number, number, number] = [view.getInt32(dataOff + 48, true), view.getInt32(dataOff + 52, true), view.getInt32(dataOff + 56, true), view.getInt32(dataOff + 60, true)];
 		const offDx = view.getUint32(dataOff + 64, true);
 		let dx: number[] | null = null;

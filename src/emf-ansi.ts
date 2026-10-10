@@ -1,4 +1,5 @@
-import { JOHAB_ROWS, OEM437_HIGH } from './emf-ansi-tables';
+import { JOHAB_ROWS, OEM437_HIGH, OEM_HIGH } from './emf-ansi-tables';
+import type { TextCodePages } from './emf-types';
 
 /** Windows-1252 mapping used by the EMF/WMF ANSI text records. */
 const CP1252_HIGH = [
@@ -17,7 +18,7 @@ const CHARSET_ENCODING: Record<number, string> = {
 	186: 'windows-1257', 204: 'windows-1251', 222: 'windows-874', 238: 'windows-1250', 255: 'ibm437',
 };
 
-/** Code pages accepted by the WMF playback-device ANSI override. */
+/** Code pages accepted as the playback device's ANSI code page. */
 const ANSI_CODE_PAGE_ENCODING: Record<number, string> = {
 	874: 'windows-874', 932: 'shift_jis', 936: 'gbk', 949: 'euc-kr', 950: 'big5',
 	1250: 'windows-1250', 1251: 'windows-1251', 1252: 'windows-1252', 1253: 'windows-1253',
@@ -26,16 +27,34 @@ const ANSI_CODE_PAGE_ENCODING: Record<number, string> = {
 };
 
 /**
+ * Multibyte OEM code pages, decoded through TextDecoder. On East Asian and
+ * Thai systems the OEM code page is the ANSI one; the single-byte OEM pages
+ * use the bundled tables of `emf-ansi-tables.ts`.
+ */
+const OEM_CODE_PAGE_ENCODING: Record<number, string> = {
+	874: 'windows-874', 932: 'shift_jis', 936: 'gbk', 949: 'euc-kr', 950: 'big5',
+};
+
+/** Decodes single-byte OEM text with a 128-character high-half table. */
+function decodeOemTable(bytes: readonly number[], high: string): { codes: number[]; byteLengths: number[] } {
+	return { codes: bytes.map((b) => b < 128 ? b : high.charCodeAt(b - 128)), byteLengths: bytes.map(() => 1) };
+}
+
+/**
  * Decodes ANSI bytes to UTF-16 units for the shared wide-text handler.
  * Byte counts keep explicit advances aligned after multibyte decoding.
- * Encodings unavailable in the host's TextDecoder fall back to Windows-1252.
+ * `codePages` are the playback device's system code pages: ANSI/DEFAULT
+ * text uses its ANSI page and OEM text its OEM page (unsupported values
+ * fall back to 1252 and 437). Encodings unavailable in the host's
+ * TextDecoder fall back to Windows-1252.
  */
-export function decodeAnsiRecord(bytes: readonly number[], charSet: number, ansiCodePage?: number): { codes: number[]; byteLengths: number[] } {
+export function decodeAnsiRecord(bytes: readonly number[], charSet: number, codePages?: TextCodePages): { codes: number[]; byteLengths: number[] } {
 	if (charSet === 2) {
 		return { codes: [...bytes], byteLengths: bytes.map(() => 1) };
 	}
-	if (charSet === 255) {
-		return { codes: bytes.map((b) => b < 128 ? b : OEM437_HIGH.charCodeAt(b - 128)), byteLengths: bytes.map(() => 1) };
+	const oemCodePage = codePages?.oem;
+	if (charSet === 255 && (oemCodePage === undefined || !(oemCodePage in OEM_CODE_PAGE_ENCODING))) {
+		return decodeOemTable(bytes, (oemCodePage !== undefined ? OEM_HIGH[oemCodePage] : undefined) ?? OEM437_HIGH);
 	}
 	if (charSet === 130) {
 		const codes: number[] = [];
@@ -51,9 +70,12 @@ export function decodeAnsiRecord(bytes: readonly number[], charSet: number, ansi
 		}
 		return { codes, byteLengths };
 	}
-	const label = (charSet === 0 || charSet === 1) && ansiCodePage !== undefined
-		? ANSI_CODE_PAGE_ENCODING[ansiCodePage] ?? 'windows-1252'
-		: CHARSET_ENCODING[charSet] ?? 'windows-1252';
+	const ansiCodePage = codePages?.ansi;
+	const label = charSet === 255 && oemCodePage !== undefined
+		? OEM_CODE_PAGE_ENCODING[oemCodePage]
+		: (charSet === 0 || charSet === 1) && ansiCodePage !== undefined
+			? ANSI_CODE_PAGE_ENCODING[ansiCodePage] ?? 'windows-1252'
+			: CHARSET_ENCODING[charSet] ?? 'windows-1252';
 	if (label === 'windows-1252') {
 		// Use GDI's mapping directly: some Node TextDecoder backends resolve
 		// this label as Latin-1, which would leave the Euro byte as U+0080.

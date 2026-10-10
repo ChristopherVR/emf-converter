@@ -192,6 +192,7 @@ describe('convertMetafileToDataUrl (EMF path)', () => {
 				maxRecords: 1234,
 				maxRecordsEmfPlus: 1234,
 				fontFamilyMap: { calibri: 'Carlito' },
+				codePages: { ansi: undefined, oem: undefined },
 				textureCache: expect.any(Map),
 				imageCache: expect.any(Map),
 				// PNG output defaults to Windows-exact rasterisation.

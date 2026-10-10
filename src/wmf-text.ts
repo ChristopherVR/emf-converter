@@ -117,7 +117,7 @@ function drawWithFontEngine(p: WmfPlayer, call: WmfTextCall, codes: number[], dx
 /** Plays the call: the font engine when it can, else `EMR_EXTTEXTOUTW` through the EMF handler. */
 function playText(p: WmfPlayer, call: WmfTextCall): void {
 	const charSet = p.rCtx.state.fontDetails?.charSet ?? 1;
-	const { codes, byteLengths } = decodeAnsiRecord(call.bytes, charSet, p.ansiCodePage);
+	const { codes, byteLengths } = decodeAnsiRecord(call.bytes, charSet, { ansi: p.ansiCodePage, oem: p.oemCodePage });
 	const n = codes.length;
 	if (n === 0) {
 		return;

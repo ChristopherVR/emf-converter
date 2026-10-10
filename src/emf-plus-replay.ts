@@ -173,6 +173,7 @@ export function replayEmfPlusRecords(
 		imageCache: s.imageCache,
 		nestingDepth: s.nestingDepth,
 		gdiAntialias: s.gdiAntialias,
+		codePages: s.codePages,
 		antiAlias: s.antiAlias,
 		ext: s.ext ?? (s.ext = {}),
 	};

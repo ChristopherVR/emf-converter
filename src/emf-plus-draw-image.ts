@@ -310,6 +310,7 @@ function drawNestedMetafile(
 			imageCache: caches?.images,
 			fontFamilyMap: rCtx.fontFamilyMap,
 			gdiAntialias: rCtx.gdiAntialias,
+			codePages: rCtx.codePages,
 			nestingDepth: depth + 1,
 		});
 	} finally {

@@ -64,11 +64,24 @@ export interface EmfConvertOptions {
 	/** WMF playback-device pixels per inch; defaults to 96 on each axis. */
 	wmfReferenceDpi?: number | { x: number; y: number };
 	/**
-	 * ANSI code page of the WMF playback device. Used for ANSI/DEFAULT
-	 * charset text and LOGFONT face names. Defaults to 1252; supply the
-	 * original Windows device's GetACP() value when known. Supported values:
-	 * 874, 932, 936, 949, 950, 1250..1258, 54936 and 65001. Other values
-	 * fall back to 1252. Explicit text charsets and EMF text are unchanged.
+	 * ANSI code page of the playback device (Windows `GetACP()`), used for
+	 * ANSI/DEFAULT charset text in EMF and WMF ANSI text records and for WMF
+	 * LOGFONT face names, as Windows decodes them. Defaults to 1252.
+	 * Supported values: 874, 932, 936, 949, 950, 1250..1258, 54936 and
+	 * 65001. Other values fall back to 1252. Explicit text charsets keep
+	 * their own code page.
+	 */
+	ansiCodePage?: number;
+	/**
+	 * OEM code page of the playback device (Windows `GetOEMCP()`), used for
+	 * OEM_CHARSET text in EMF and WMF ANSI text records. Defaults to 437.
+	 * Supported values: 437, 737, 775, 850, 852, 855, 858, 860, 861, 862,
+	 * 863, 865, 866, 874, 932, 936, 949 and 950. Other values fall back to 437.
+	 */
+	oemCodePage?: number;
+	/**
+	 * ANSI code page of the WMF playback device only; overrides
+	 * {@link ansiCodePage} for WMF input. Same values as `ansiCodePage`.
 	 */
 	wmfAnsiCodePage?: number;
 	/** Maximum output width in pixels. */
@@ -306,6 +319,7 @@ async function replayMetafile(
 					maxRecords: opts.maxRecords,
 					maxRecordsEmfPlus: opts.maxRecords,
 					fontFamilyMap: opts.fontFamilyMap,
+					codePages: { ansi: opts.ansiCodePage, oem: opts.oemCodePage },
 					textureCache,
 					imageCache,
 					gdiAntialias: opts.gdiAntialias,
@@ -344,6 +358,7 @@ async function replayMetafile(
 		replayWmfRecords(view, surface.ctx, header, surface.width, surface.height, {
 			wmfReferenceDpi: opts.wmfReferenceDpi,
 			wmfAnsiCodePage: opts.wmfAnsiCodePage,
+			codePages: { ansi: opts.ansiCodePage, oem: opts.oemCodePage },
 			maxRecords: opts.maxRecords,
 			fontFamilyMap: opts.fontFamilyMap,
 			gdiAntialias: opts.gdiAntialias,

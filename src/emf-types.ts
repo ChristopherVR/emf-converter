@@ -359,11 +359,27 @@ export function cloneState(s: DrawState): DrawState {
  * record-replay loops. All fields are optional; omitted values fall back to the
  * built-in safety defaults.
  */
+/**
+ * Code pages of the playback device, used to decode ANSI text records
+ * (`EMR_EXTTEXTOUTA`, `EMR_POLYTEXTOUTA`, `META_TEXTOUT`, `META_EXTTEXTOUT`).
+ * Windows decodes `ANSI_CHARSET`/`DEFAULT_CHARSET` text with the system ANSI
+ * code page (`GetACP()`) and `OEM_CHARSET` text with the system OEM code page
+ * (`GetOEMCP()`). Omitted pages default to 1252 and 437.
+ */
+export interface TextCodePages {
+	/** System ANSI code page (`GetACP()`). */
+	ansi?: number;
+	/** System OEM code page (`GetOEMCP()`). */
+	oem?: number;
+}
+
 export interface ReplayOptions {
 	/** Playback-device resolution for WMF physical map modes (default 96 dpi). */
 	wmfReferenceDpi?: number | { x: number; y: number };
-	/** WMF playback-device ANSI code page (default 1252). */
+	/** WMF playback-device ANSI code page (default {@link codePages}' ANSI page, then 1252). */
 	wmfAnsiCodePage?: number;
+	/** Playback-device ANSI/OEM code pages for ANSI text records (see {@link TextCodePages}). */
+	codePages?: TextCodePages;
 	/** Record cap for the GDI/WMF stream (default {@link MAX_RECORDS_DEFAULT}). */
 	maxRecords?: number;
 	/** Record cap for the EMF+ stream (default {@link MAX_RECORDS_EMFPLUS_DEFAULT}). */
@@ -1014,6 +1030,8 @@ export interface EmfPlusState {
 	ext?: EmfPlusGraphicsExt;
 	/** `EmfConvertOptions.gdiAntialias`, for nested metafile replays. */
 	gdiAntialias?: boolean;
+	/** Playback-device code pages, for nested metafile replays. */
+	codePages?: TextCodePages;
 	/**
 	 * True once an `EmfPlusHeader` with the `EmfPlusDual` flag (record flags
 	 * bit 0) has been played: the classic EMF records then duplicate the
@@ -1199,6 +1217,8 @@ export interface EmfPlusReplayCtx {
 	ext?: EmfPlusGraphicsExt;
 	/** `EmfConvertOptions.gdiAntialias`, threaded through for nested metafile replays. */
 	gdiAntialias?: boolean;
+	/** Playback-device code pages, threaded through for nested metafile replays. */
+	codePages?: TextCodePages;
 }
 
 // ---------------------------------------------------------------------------
@@ -1305,6 +1325,8 @@ export interface EmfGdiReplayCtx {
 	gdiAntialias?: boolean;
 	/** Font files for exact GDI text (see {@link ReplayOptions.fonts}). */
 	fonts?: import('./gdi-font-engine').GdiFontCollection;
+	/** Playback-device code pages for ANSI text records (see {@link ReplayOptions.codePages}). */
+	codePages?: TextCodePages;
 	/**
 	 * The current `BeginPath`/`EndPath` bracket's geometry in device FIX, as
 	 * the GDI rasteriser needs it (`gdi-raster.ts`); built alongside

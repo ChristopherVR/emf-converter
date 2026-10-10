@@ -75,6 +75,8 @@ export interface WmfPlayer extends WmfSavedState {
 	rCtx: EmfGdiReplayCtx;
 	/** Playback-device ANSI code page; not a SaveDC/RestoreDC property. */
 	ansiCodePage?: number;
+	/** Playback-device OEM code page; not a SaveDC/RestoreDC property. */
+	oemCodePage?: number;
 	/** The WMF bytes. */
 	view: DataView;
 	/** Canvas pixels per playback-device pixel. */

@@ -110,7 +110,7 @@ const png = await convertMetafileToDataUrl(buffer, { fontFamilyMap: { calibri: '
 
 SVG output always keeps text as `<text>` elements. With `fonts`, the elements carry the per-glyph positions computed by the GDI text engine.
 
-ANSI text records are decoded by the LOGFONT charset, with or without `fonts`: Windows-1252 for ANSI and default, Macintosh, Shift-JIS, Hangul, GB2312, Big5, the Windows Greek, Turkish, Vietnamese, Hebrew, Arabic, Baltic, Cyrillic, Thai and Central European pages, Johab, OEM (code page 437) and Symbol. Code pages the host's `TextDecoder` does not provide fall back to Windows-1252.
+ANSI text records are decoded by the LOGFONT charset, with or without `fonts`: ANSI and default, Macintosh, Shift-JIS, Hangul, GB2312, Big5, the Windows Greek, Turkish, Vietnamese, Hebrew, Arabic, Baltic, Cyrillic, Thai and Central European pages, Johab, OEM and Symbol. ANSI and default text use the playback device's ANSI code page (`ansiCodePage`, Windows-1252 by default) and OEM text its OEM code page (`oemCodePage`, 437 by default), as Windows does. Code pages the host's `TextDecoder` does not provide fall back to Windows-1252.
 
 ## How it works
 

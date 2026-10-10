@@ -10,6 +10,7 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { convertMetafileToSvg } from './emf-converter';
 import { canvasGetImageData, createTempCanvas, ensureNodeCanvasModule } from './emf-canvas-helpers';
 import { getRenderableEmfBounds, parseEmfHeader } from './emf-header-parser';
 import { replayEmfRecords } from './emf-record-replay';
@@ -349,5 +350,64 @@ describe('EMF+ DrawDriverString', () => {
 		expect(text.area).toBeGreaterThan(0.005);
 		expect(text.cy).toBeGreaterThan(0.35);
 		expect(text.cy).toBeLessThan(0.55);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// EMR_EXTTEXTOUTA under the playback device's code pages
+// ---------------------------------------------------------------------------
+
+describe('EMR_EXTTEXTOUTA device code pages', () => {
+	/** EMR_EXTCREATEFONTINDIRECTW (object 1, Arial, 20 px) with the given charset. */
+	function font(charSet: number): Uint8Array {
+		const b = new Uint8Array(332);
+		const v = new DataView(b.buffer);
+		v.setUint32(0, 82, true);
+		v.setUint32(4, b.length, true);
+		v.setUint32(8, 1, true);
+		v.setInt32(12, -20, true);
+		v.setInt32(28, 400, true);
+		b[35] = charSet;
+		[...'Arial'].forEach((c, i) => v.setUint16(40 + i * 2, c.charCodeAt(0), true));
+		return b;
+	}
+
+	/** EMR_EXTTEXTOUTA at (10, 30) drawing `bytes` without a Dx array. */
+	function textA(bytes: number[]): Uint8Array {
+		const b = new Uint8Array(76 + ((bytes.length + 3) & ~3));
+		const v = new DataView(b.buffer);
+		v.setUint32(0, 83, true);
+		v.setUint32(4, b.length, true);
+		v.setUint32(24, 1, true); // GM_COMPATIBLE
+		v.setInt32(36, 10, true);
+		v.setInt32(40, 30, true);
+		v.setUint32(44, bytes.length, true);
+		v.setUint32(48, 76, true);
+		b.set(bytes, 76);
+		return b;
+	}
+
+	function textEmf(charSet: number, bytes: number[]): ArrayBuffer {
+		return buildEmf([0, 0, 100, 50], [font(charSet), record(37, [1]), textA(bytes)]);
+	}
+
+	it.each([0, 1])('decodes charset %s with the ANSI code page, 1252 by default', async (charSet) => {
+		const emf = textEmf(charSet, [0xd6, 0xd0, 0xce, 0xc4]); // 中文 in code page 936
+		const svg = await convertMetafileToSvg(emf, { ansiCodePage: 936 });
+		expect(svg).toContain('中文');
+		const defaultSvg = await convertMetafileToSvg(emf);
+		expect(defaultSvg).not.toContain('中');
+		expect(defaultSvg).toContain('ÖÐÎÄ');
+	});
+
+	it('decodes OEM_CHARSET with the OEM code page, 437 by default', async () => {
+		const emf = textEmf(255, [0x8f, 0xe0, 0xa8, 0xa2, 0xa5, 0xe2]); // Привет in code page 866
+		expect(await convertMetafileToSvg(emf, { oemCodePage: 866 })).toContain('Привет');
+		expect(await convertMetafileToSvg(emf)).toContain('Åα¿óÑΓ');
+	});
+
+	it('keeps an explicit charset independent of the device code pages', async () => {
+		const emf = textEmf(204, [0xcf, 0xf0, 0xe8]); // При in Windows-1251
+		expect(await convertMetafileToSvg(emf, { ansiCodePage: 936, oemCodePage: 850 })).toContain('При');
 	});
 });

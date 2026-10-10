@@ -144,14 +144,19 @@ Without `fonts`, text is drawn by the host's canvas font engine (supply `fontFam
 
 #### `EmfConvertOptions`
 
-`wmfAnsiCodePage` sets the known ANSI code page of a WMF playback device
-(for example, `936` from Windows `GetACP()`). It applies to ANSI/DEFAULT text
-and ANSI font face names. Its default is `1252`; explicit text charsets and
-EMF text are unchanged. See the [API reference](docs/api.md) for supported values.
+`ansiCodePage` and `oemCodePage` set the known code pages of the playback
+device (for example, `936` from Windows `GetACP()` and `866` from `GetOEMCP()`).
+Windows decodes ANSI text records (EMF and WMF) in ANSI/DEFAULT fonts with the
+ANSI code page, WMF font face names too, and text in OEM fonts with the OEM code
+page. The defaults are `1252` and `437`; explicit text charsets are unchanged.
+`wmfAnsiCodePage` overrides `ansiCodePage` for WMF input only. See the
+[API reference](docs/api.md) for supported values.
 
 | Field                | Type                                  | Default           | Description |
 | -------------------- | ------------------------------------- | ----------------- | ----------- |
 | `maxWidth`           | `number`                              | None              | Maximum output width in pixels (aspect ratio preserved) |
+| `ansiCodePage`       | `number`                              | `1252`            | Playback-device ANSI code page (`GetACP()`) for ANSI/DEFAULT text |
+| `oemCodePage`        | `number`                              | `437`             | Playback-device OEM code page (`GetOEMCP()`) for OEM text |
 | `maxHeight`          | `number`                              | None              | Maximum output height in pixels |
 | `dpiScale`           | `number`                              | `1`               | Resolution multiplier; clamped to `4` |
 | `maxCanvasDimension` | `number`                              | `8192`            | Hard cap on output width/height in pixels |

@@ -109,6 +109,7 @@ export function replayEmfRecords(
 	const plusScale = dpiScale > 0 ? dpiScale : 1;
 	emfPlusState.imageCache = replayOptions.imageCache;
 	emfPlusState.gdiAntialias = replayOptions.gdiAntialias;
+	emfPlusState.codePages = replayOptions.codePages;
 	emfPlusState.baseTransform = replayOptions.plusBaseTransform ?? [
 		sx / plusScale,
 		0,
@@ -150,6 +151,7 @@ export function replayEmfRecords(
 		pathCmds: [],
 		gdiAntialias: replayOptions.gdiAntialias,
 		fonts: replayOptions.fonts,
+		codePages: replayOptions.codePages,
 	};
 
 	let offset = 0;
