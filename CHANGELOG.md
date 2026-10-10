@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.18.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.18.2) - 2026-10-10
+
+### Bug Fixes
+
+- Support the WMF device ANSI code page (#24) ([7eb9790](https://github.com/ChristopherVR/emf-converter/commit/7eb9790c28dff7dfa923056d72da02821e337b0c))
+
 ## [4.18.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.18.1) - 2026-10-09
 
 ### Bug Fixes
