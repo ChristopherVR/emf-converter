@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.19.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.19.0) - 2026-10-10
+
+### Features
+
+- Decode ANSI text with the device ANSI and OEM code pages ([ba534a1](https://github.com/ChristopherVR/emf-converter/commit/ba534a19bef9398cb1f094953214c05026f6c77e))
+
 ## [4.18.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.18.2) - 2026-10-10
 
 ### Bug Fixes
