@@ -26,7 +26,7 @@ import {
 	wmfPlayback,
 	type WmfMapping,
 } from './wmf-mapping';
-import { DEFAULT_PALETTE, resolveColorRef } from './wmf-objects';
+import { DEFAULT_PALETTE, resolveColorRef, createFont } from './wmf-objects';
 import { createWmfPlayer, replayWmfRecords } from './wmf-replay';
 import { ansiToCode, wmfExtTextOut } from './wmf-text';
 import { convertMetafileToSvg } from './emf-converter';
@@ -398,6 +398,43 @@ describe('wmf-emf-bridge', () => {
 });
 
 describe('wmf-text', () => {
+	function ansiFont(charset: number, family: number[] = Array.from(new TextEncoder().encode('Times New Roman'))): Uint8Array {
+		const bytes = new Uint8Array(50);
+		const view = new DataView(bytes.buffer);
+		view.setInt16(0, -20, true);
+		view.setInt16(8, 400, true);
+		bytes[13] = charset;
+		bytes.set(family, 18);
+		return bytes;
+	}
+	it.each([0, 1, 134, 2])('decodes the ANSI font face independently of charset %s', (charset) => {
+		const view = new DataView(buildWmf([], [0, 0, 100, 50]));
+		const ctx = new SvgContext(100, 50);
+		const p = createWmfPlayer(view, ctx, parseWmfHeader(view)!, 100, 50, { wmfAnsiCodePage: 936 });
+		p.view = new DataView(ansiFont(charset, [0xcb, 0xce, 0xcc, 0xe5]).buffer); // 宋体
+		createFont(p, 0, 56, 50);
+		expect(p.objects[0]).toMatchObject({ kind: 'font', font: { family: '宋体', details: { charSet: charset } } });
+	});
+	it.each([0, 1])('threads the public WMF device code page into TextOut for charset %s', async (charset) => {
+		const text = new Uint8Array([4, 0, 0xd6, 0xd0, 0xce, 0xc4, 10, 0, 10, 0]);
+		const buffer = buildWmf([[0x02fb, ansiFont(charset)], select(0), [0x0521, text]], [0, 0, 100, 50]);
+		const original = new Uint8Array(buffer).slice();
+		const defaultSvg = await convertMetafileToSvg(buffer);
+		const svg = await convertMetafileToSvg(buffer, { wmfAnsiCodePage: 936 });
+		expect(svg).toContain('中');
+		expect(svg).toContain('文');
+		expect(defaultSvg).not.toContain('中');
+		expect(defaultSvg).toContain('Ö');
+		expect(new Uint8Array(buffer)).toEqual(original);
+	});
+	it('sums ExtTextOut advances per decoded character and keeps the device page after RestoreDC', async () => {
+		const text = new Uint8Array([10, 0, 10, 0, 4, 0, 0, 0, 0xd6, 0xd0, 0xce, 0xc4, 14, 0, 16, 0, 18, 0, 22, 0]);
+		const buffer = buildWmf([[0x02fb, ansiFont(1)], select(0), [0x001e, []], [0x02fb, ansiFont(128)], select(1), [0x0127, [0xffff]], [0x0a32, text]], [0, 0, 100, 50]);
+		const svg = await convertMetafileToSvg(buffer, { wmfAnsiCodePage: 936 });
+		expect(svg).toContain('中');
+		expect(svg).toContain('文');
+		expect(svg).toContain('x="40"');
+	});
 	it('decodes a multibyte Johab run and sums byte advances per character', async () => {
 		const buffer = buildWmf([], [0, 0, 100, 50]);
 		const view = new DataView(buffer);

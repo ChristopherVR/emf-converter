@@ -73,6 +73,8 @@ export interface WmfSavedState {
 /** The WMF player: shared replay context plus WMF-only DC state. */
 export interface WmfPlayer extends WmfSavedState {
 	rCtx: EmfGdiReplayCtx;
+	/** Playback-device ANSI code page; not a SaveDC/RestoreDC property. */
+	ansiCodePage?: number;
 	/** The WMF bytes. */
 	view: DataView;
 	/** Canvas pixels per playback-device pixel. */

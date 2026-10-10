@@ -205,6 +205,7 @@ export function createWmfPlayer(
 	};
 	const p: WmfPlayer = {
 		rCtx,
+		ansiCodePage: replayOptions.wmfAnsiCodePage,
 		view,
 		kx,
 		ky,

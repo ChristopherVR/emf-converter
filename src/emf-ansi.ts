@@ -17,12 +17,20 @@ const CHARSET_ENCODING: Record<number, string> = {
 	186: 'windows-1257', 204: 'windows-1251', 222: 'windows-874', 238: 'windows-1250', 255: 'ibm437',
 };
 
+/** Code pages accepted by the WMF playback-device ANSI override. */
+const ANSI_CODE_PAGE_ENCODING: Record<number, string> = {
+	874: 'windows-874', 932: 'shift_jis', 936: 'gbk', 949: 'euc-kr', 950: 'big5',
+	1250: 'windows-1250', 1251: 'windows-1251', 1252: 'windows-1252', 1253: 'windows-1253',
+	1254: 'windows-1254', 1255: 'windows-1255', 1256: 'windows-1256', 1257: 'windows-1257',
+	1258: 'windows-1258', 54936: 'gb18030', 65001: 'utf-8',
+};
+
 /**
  * Decodes ANSI bytes to UTF-16 units for the shared wide-text handler.
  * Byte counts keep explicit advances aligned after multibyte decoding.
  * Encodings unavailable in the host's TextDecoder fall back to Windows-1252.
  */
-export function decodeAnsiRecord(bytes: readonly number[], charSet: number): { codes: number[]; byteLengths: number[] } {
+export function decodeAnsiRecord(bytes: readonly number[], charSet: number, ansiCodePage?: number): { codes: number[]; byteLengths: number[] } {
 	if (charSet === 2) {
 		return { codes: [...bytes], byteLengths: bytes.map(() => 1) };
 	}
@@ -43,10 +51,17 @@ export function decodeAnsiRecord(bytes: readonly number[], charSet: number): { c
 		}
 		return { codes, byteLengths };
 	}
-	const label = CHARSET_ENCODING[charSet] ?? 'windows-1252';
+	const label = (charSet === 0 || charSet === 1) && ansiCodePage !== undefined
+		? ANSI_CODE_PAGE_ENCODING[ansiCodePage] ?? 'windows-1252'
+		: CHARSET_ENCODING[charSet] ?? 'windows-1252';
+	if (label === 'windows-1252') {
+		// Use GDI's mapping directly: some Node TextDecoder backends resolve
+		// this label as Latin-1, which would leave the Euro byte as U+0080.
+		return { codes: bytes.map((b) => ansiToCode(b, charSet)), byteLengths: bytes.map(() => 1) };
+	}
 	try {
-		const decoder = new TextDecoder(label, { fatal: true });
-		const replacementDecoder = new TextDecoder(label);
+		const decoder = new TextDecoder(label, { fatal: true, ignoreBOM: true });
+		const replacementDecoder = new TextDecoder(label, { ignoreBOM: true });
 		const source = new Uint8Array(bytes);
 		const codes: number[] = [];
 		const byteLengths: number[] = [];

@@ -362,6 +362,8 @@ export function cloneState(s: DrawState): DrawState {
 export interface ReplayOptions {
 	/** Playback-device resolution for WMF physical map modes (default 96 dpi). */
 	wmfReferenceDpi?: number | { x: number; y: number };
+	/** WMF playback-device ANSI code page (default 1252). */
+	wmfAnsiCodePage?: number;
 	/** Record cap for the GDI/WMF stream (default {@link MAX_RECORDS_DEFAULT}). */
 	maxRecords?: number;
 	/** Record cap for the EMF+ stream (default {@link MAX_RECORDS_EMFPLUS_DEFAULT}). */
