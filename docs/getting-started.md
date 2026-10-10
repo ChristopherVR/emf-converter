@@ -1,6 +1,6 @@
 # Getting started
 
-emf-converter converts Windows metafiles into PNG or SVG:
+emf-converter converts Windows metafiles into PNG, JPEG or SVG:
 
 | Format | Description                    | Coordinate system       |
 | ------ | ------------------------------ | ----------------------- |
@@ -36,13 +36,13 @@ The package has no required dependencies.
 
 ### Browser and Web Workers
 
-`OffscreenCanvas` or `HTMLCanvasElement` is used automatically for PNG output.
+`OffscreenCanvas` or `HTMLCanvasElement` is used automatically for PNG and JPEG output.
 
 ### Node.js
 
-SVG output works without a canvas. PNG output of drawings without text uses the built-in JavaScript rasteriser.
+SVG output works without a canvas. PNG and JPEG output of drawings without text uses the built-in JavaScript rasteriser.
 
-For PNG output of drawings that contain text, do one of the following:
+For PNG or JPEG output of drawings that contain text, do one of the following:
 
 - Pass font files with the `fonts` option. See [Exact text](./usage.md#exact-text).
 - Install the optional [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas) package. It ships prebuilt binaries and does not need `node-gyp`.

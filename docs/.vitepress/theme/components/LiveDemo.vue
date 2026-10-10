@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * In-browser demo: pick or drop an EMF/WMF file, convert it to PNG or SVG
+ * In-browser demo: pick or drop an EMF/WMF file, convert it to PNG, JPEG or SVG
  * with the library, show the result and offer it as a download. SVG output
  * can also be copied as a TSX component.
  *
@@ -9,7 +9,7 @@
  */
 import { ref, watch } from 'vue';
 
-type Format = 'png' | 'svg';
+type Format = 'png' | 'jpeg' | 'svg';
 type Tone = 'idle' | 'busy' | 'ok' | 'error';
 
 interface Result {
@@ -24,6 +24,8 @@ interface Result {
 const fileInput = ref<HTMLInputElement | null>(null);
 const selectedFile = ref<File | null>(null);
 const format = ref<Format>('png');
+/** JPEG quality in percent (the library takes 0 to 1). */
+const quality = ref(92);
 const dragging = ref(false);
 const busy = ref(false);
 const status = ref('Select or drop an .emf or .wmf file.');
@@ -92,6 +94,8 @@ async function convert(): Promise<void> {
 			const tree = await lib.convertMetafileToSvgTree(buffer);
 			dataUrl = tree ? lib.svgTreeToDataUrl(tree) : null;
 			jsx = tree ? lib.svgTreeToJsx(tree, { componentName: componentNameFor(file.name) }) : null;
+		} else if (target === 'jpeg') {
+			dataUrl = await lib.convertMetafileToJpegDataUrl(buffer, { quality: quality.value / 100 });
 		} else {
 			dataUrl = await lib.convertMetafileToDataUrl(buffer);
 		}
@@ -149,7 +153,12 @@ async function copyJsx(): Promise<void> {
 	}
 }
 
-watch(format, () => {
+/** File extension for downloads. */
+function extensionFor(target: Format): string {
+	return target === 'jpeg' ? 'jpg' : target;
+}
+
+watch([format, quality], () => {
 	if (selectedFile.value !== null) {
 		void convert();
 	}
@@ -180,8 +189,14 @@ watch(format, () => {
 				<fieldset class="format">
 					<legend>Output</legend>
 					<label><input v-model="format" type="radio" value="png" /> PNG</label>
+					<label><input v-model="format" type="radio" value="jpeg" /> JPEG</label>
 					<label><input v-model="format" type="radio" value="svg" /> SVG</label>
 				</fieldset>
+				<label v-if="format === 'jpeg'" class="quality">
+					Quality
+					<input v-model.lazy.number="quality" type="range" min="10" max="100" step="1" data-testid="jpeg-quality" />
+					<span>{{ quality }}</span>
+				</label>
 				<button type="button" class="btn" :disabled="busy || selectedFile === null" @click="convert">
 					Convert
 				</button>
@@ -206,8 +221,8 @@ watch(format, () => {
 					<dd>{{ result.dataUrl.length.toLocaleString() }} characters</dd>
 				</dl>
 				<div class="actions">
-					<a class="btn" :href="result.dataUrl" :download="`${baseName(result.fileName)}.${result.format}`">
-						Download .{{ result.format }}
+					<a class="btn" :href="result.dataUrl" :download="`${baseName(result.fileName)}.${extensionFor(result.format)}`">
+						Download .{{ extensionFor(result.format) }}
 					</a>
 					<button v-if="result.jsx" type="button" class="btn alt" @click="copyJsx">Copy as TSX component</button>
 				</div>
@@ -292,6 +307,19 @@ watch(format, () => {
 	float: left;
 	margin-right: 4px;
 	color: var(--vp-c-text-2);
+}
+
+.quality {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 14px;
+	color: var(--vp-c-text-2);
+}
+
+.quality span {
+	min-width: 2.5em;
+	font-variant-numeric: tabular-nums;
 }
 
 .format label {

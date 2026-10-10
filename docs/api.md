@@ -38,6 +38,24 @@ OEM values are `437`, `737`, `775`, `850`, `852`, `855`, `858`, `860`–`863`,
 `865`, `866`, `874`, `932`, `936`, `949` and `950`; other values fall back to `437`.
 The converter does not infer these values from the file bytes or browser language.
 
+## convertMetafileToJpegDataUrl
+
+```ts
+function convertMetafileToJpegDataUrl(buffer: ArrayBuffer, options?: JpegConvertOptions): Promise<string | null>;
+```
+
+Converts an EMF or WMF file to a JPEG data URL (`data:image/jpeg;base64,...`). The drawing is rendered exactly as for `convertMetafileToDataUrl`, with the same options and the same `null` cases, then encoded by the bundled baseline JPEG encoder, so the output does not depend on the canvas backend. JPEG has no transparency: the transparent background and translucent pixels are composited over `background`.
+
+### JpegConvertOptions
+
+Extends `EmfConvertOptions`.
+
+| Option              | Type      | Default     | Description |
+| ------------------- | --------- | ----------- | ----------- |
+| `quality`           | `number`  | `0.92`      | Quality from `0` to `1`, as for `canvas.toDataURL('image/jpeg', quality)`. |
+| `background`        | `string`  | `'#ffffff'` | Colour under transparent pixels, as `#rgb` or `#rrggbb`. Other values fall back to white. |
+| `chromaSubsampling` | `boolean` | `false`     | `true` stores colour at half resolution (4:2:0) for a smaller file. The default keeps full-resolution colour (4:4:4), so coloured lines and text have no colour fringes. |
+
 ## SVG functions
 
 ```ts

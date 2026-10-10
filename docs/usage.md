@@ -22,6 +22,20 @@ const smooth = await convertMetafileToDataUrl(buffer, { gdiAntialias: true });
 
 By default, PNG output reproduces the aliased edges that Windows GDI draws. EMF+ drawing follows the `SmoothingMode` recorded in the file. Set `gdiAntialias: true` to smooth all shape edges with the canvas instead.
 
+## JPEG
+
+```ts
+import { convertMetafileToJpegDataUrl } from 'emf-converter';
+
+const jpeg = await convertMetafileToJpegDataUrl(buffer);
+// "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ..."
+
+// Smaller file, on a light grey background instead of white.
+const preview = await convertMetafileToJpegDataUrl(buffer, { quality: 0.7, background: '#f4f4f4', maxWidth: 800 });
+```
+
+JPEG output is the PNG rendering (same options, same backends) encoded by the bundled JPEG encoder, so the bytes are the same in the browser and in Node.js. JPEG has no transparency, so the metafile's transparent background is filled with `background` (white by default). Colour is kept at full resolution unless you set `chromaSubsampling: true`. Use PNG or SVG when you need transparency or exact pixels.
+
 ## SVG
 
 ```ts

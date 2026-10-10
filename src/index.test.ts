@@ -33,7 +33,7 @@ import { parseEmfPlusPenObject, parseEmfPlusFontObject } from './emf-plus-object
 import { parseEmfPlusPath } from './emf-plus-path';
 import { defaultState, cloneState, createEmfPlusState } from './emf-types';
 import type { EmfGdiReplayCtx } from './emf-types';
-import { convertMetafileToDataUrl } from './index';
+import { convertMetafileToDataUrl, convertMetafileToJpegDataUrl } from './index';
 import { isSoftwareRaster } from './software-raster';
 
 // ---------------------------------------------------------------------------
@@ -1641,5 +1641,10 @@ describe('continuation records tracking', () => {
 describe('emf-converter exports', () => {
 	it('should export convertMetafileToDataUrl as a function', () => {
 		expectTypeOf(convertMetafileToDataUrl).toBeFunction();
+	});
+
+	it('should export convertMetafileToJpegDataUrl as a function', () => {
+		expectTypeOf(convertMetafileToJpegDataUrl).toBeFunction();
+		expect(typeof convertMetafileToJpegDataUrl).toBe('function');
 	});
 });

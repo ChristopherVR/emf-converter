@@ -25,7 +25,7 @@ function shimNodeOnlyImports(): Plugin {
 
 export default defineConfig({
 	title: 'emf-converter',
-	description: 'Convert EMF and WMF metafiles to PNG or SVG in the browser and Node.js.',
+	description: 'Convert EMF and WMF metafiles to PNG, JPEG or SVG in the browser and Node.js.',
 	base: '/emf-converter/',
 	cleanUrls: true,
 	themeConfig: {

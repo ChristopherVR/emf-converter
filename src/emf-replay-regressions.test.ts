@@ -10,8 +10,11 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { convertMetafileToSvg } from './emf-converter';
-import { canvasGetImageData, createTempCanvas, ensureNodeCanvasModule } from './emf-canvas-helpers';
+import jpegJs from 'jpeg-js';
+
+import { convertMetafileToDataUrl, convertMetafileToJpegDataUrl, convertMetafileToSvg } from './emf-converter';
+import { canvasGetImageData, createTempCanvas, ensureNodeCanvasModule, setSoftwareCanvasOnly } from './emf-canvas-helpers';
+import { decodePng } from './png-decoder';
 import { getRenderableEmfBounds, parseEmfHeader } from './emf-header-parser';
 import { replayEmfRecords } from './emf-record-replay';
 
@@ -409,5 +412,64 @@ describe('EMR_EXTTEXTOUTA device code pages', () => {
 	it('keeps an explicit charset independent of the device code pages', async () => {
 		const emf = textEmf(204, [0xcf, 0xf0, 0xe8]); // При in Windows-1251
 		expect(await convertMetafileToSvg(emf, { ansiCodePage: 936, oemCodePage: 850 })).toContain('При');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// JPEG output
+// ---------------------------------------------------------------------------
+
+describe('convertMetafileToJpegDataUrl', () => {
+	/** Red rectangle in the middle of a transparent 100 x 50 picture. */
+	const emf = () => buildEmf([0, 0, 100, 50], redRect(20, 10, 80, 40));
+
+	function decodeDataUrl(url: string): { data: Uint8Array; width: number; height: number } {
+		expect(url.startsWith('data:image/jpeg;base64,')).toBe(true);
+		const bytes = Uint8Array.from(atob(url.slice(url.indexOf(',') + 1)), (c) => c.charCodeAt(0));
+		return jpegJs.decode(bytes, { useTArray: true, formatAsRGBA: true });
+	}
+
+	/** Largest RGB difference between the JPEG and the PNG composited over `bg`. */
+	async function maxDifferenceFromPng(jpegUrl: string, bg: [number, number, number]): Promise<number> {
+		const pngUrl = await convertMetafileToDataUrl(emf());
+		const png = await decodePng(Uint8Array.from(atob(pngUrl!.slice(pngUrl!.indexOf(',') + 1)), (c) => c.charCodeAt(0)));
+		const jpeg = decodeDataUrl(jpegUrl);
+		expect([jpeg.width, jpeg.height]).toEqual([png!.width, png!.height]);
+		let max = 0;
+		for (let i = 0; i < jpeg.data.length; i += 4) {
+			const a = png!.data[i + 3] / 255;
+			for (let c = 0; c < 3; c++) {
+				max = Math.max(max, Math.abs(jpeg.data[i + c] - (png!.data[i + c] * a + bg[c] * (1 - a))));
+			}
+		}
+		return max;
+	}
+
+	it.each([false, true])('matches the PNG over a white background (software rasteriser %s)', async (software) => {
+		setSoftwareCanvasOnly(software);
+		try {
+			const url = await convertMetafileToJpegDataUrl(emf(), { quality: 1 });
+			expect(url).not.toBeNull();
+			expect(await maxDifferenceFromPng(url!, [255, 255, 255])).toBeLessThanOrEqual(8);
+		} finally {
+			setSoftwareCanvasOnly(false);
+		}
+	});
+
+	it('composites over the background option and falls back to white for an invalid colour', async () => {
+		expect(await maxDifferenceFromPng((await convertMetafileToJpegDataUrl(emf(), { quality: 1, background: '#03f' }))!, [0, 0x33, 0xff])).toBeLessThanOrEqual(8);
+		expect(await maxDifferenceFromPng((await convertMetafileToJpegDataUrl(emf(), { quality: 1, background: 'teal' }))!, [255, 255, 255])).toBeLessThanOrEqual(8);
+	});
+
+	it('honours the size options and quality', async () => {
+		const small = decodeDataUrl((await convertMetafileToJpegDataUrl(emf(), { maxWidth: 50 }))!);
+		expect([small.width, small.height]).toEqual([50, 25]);
+		const low = (await convertMetafileToJpegDataUrl(emf(), { quality: 0.1 }))!;
+		const high = (await convertMetafileToJpegDataUrl(emf(), { quality: 1 }))!;
+		expect(low.length).toBeLessThan(high.length);
+	});
+
+	it('returns null for a buffer that is not a metafile', async () => {
+		expect(await convertMetafileToJpegDataUrl(new ArrayBuffer(16))).toBeNull();
 	});
 });

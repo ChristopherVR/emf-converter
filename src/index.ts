@@ -9,6 +9,8 @@
  *   `@napi-rs/canvas` package) a Node canvas backend, and with no canvas at
  *   all the built-in pure-JavaScript rasteriser (for drawings without text,
  *   which needs a font engine): {@link convertMetafileToDataUrl}
+ * - JPEG data URLs from the same rendering, encoded by the bundled
+ *   encoder: {@link convertMetafileToJpegDataUrl}
  * - SVG, by replaying the same drawing onto an SVG recorder that needs no
  *   canvas at all: {@link convertMetafileToSvg} (markup),
  *   {@link convertMetafileToSvgDataUrl} (base64 data URL), and
@@ -21,10 +23,12 @@
  */
 export {
 	convertMetafileToDataUrl,
+	convertMetafileToJpegDataUrl,
 	convertMetafileToSvg,
 	convertMetafileToSvgDataUrl,
 	convertMetafileToSvgTree,
 	type EmfConvertOptions,
+	type JpegConvertOptions,
 	type SvgConvertOptions,
 } from './emf-converter';
 export { DEFAULT_DPI_SCALE } from './emf-canvas-helpers';

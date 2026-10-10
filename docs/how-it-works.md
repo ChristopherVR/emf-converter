@@ -1,6 +1,6 @@
 # How it works
 
-A three-phase pipeline: **parse → replay → export**. The header parser reads the drawing bounds (a placeable WMF is sized from its header's units per inch), the output surface is created (clamped to `maxCanvasDimension`), and the records are replayed in order by the GDI, EMF+ or WMF handlers. PNG output draws onto a Canvas (OffscreenCanvas, HTMLCanvasElement, `@napi-rs/canvas`, or the built-in pure-JavaScript rasteriser); SVG output draws onto `SvgContext`, a recorder implementing the part of the Canvas 2D API the replay uses, mirrored onto a hidden raster wherever a raster operation must read the destination.
+A three-phase pipeline: **parse → replay → export**. The header parser reads the drawing bounds (a placeable WMF is sized from its header's units per inch), the output surface is created (clamped to `maxCanvasDimension`), and the records are replayed in order by the GDI, EMF+ or WMF handlers. PNG and JPEG output draw onto a Canvas (OffscreenCanvas, HTMLCanvasElement, `@napi-rs/canvas`, or the built-in pure-JavaScript rasteriser), and JPEG is then encoded by the bundled baseline encoder (`src/jpeg-encoder.ts`); SVG output draws onto `SvgContext`, a recorder implementing the part of the Canvas 2D API the replay uses, mirrored onto a hidden raster wherever a raster operation must read the destination.
 
 Everything below is verified against output painted by Windows itself; `src/gdi-parity.fixture.test.ts` holds the per-fixture bounds.
 

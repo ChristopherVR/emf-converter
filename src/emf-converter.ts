@@ -22,6 +22,7 @@
 
 import { effectedDraw } from './emf-plus-draw-image';
 import { encodePng } from './png-encoder';
+import { encodeJpeg } from './jpeg-encoder';
 import {
 	canvasDrawImage,
 	canvasGetImageData,
@@ -51,7 +52,7 @@ import type { AnyCanvas, CanvasContext, DeferredImageDraw, DeferredImageResample
 import { SoftwareRasterCanvas } from './software-raster';
 import { SvgContext } from './svg-context';
 import type { ImagePayload } from './svg-context';
-import { svgMarkupToDataUrl, svgTreeToDataUrl, svgTreeToString } from './svg-tree';
+import { bytesToBase64, svgMarkupToDataUrl, svgTreeToDataUrl, svgTreeToString } from './svg-tree';
 import type { SvgNode } from './svg-tree';
 import { extractEmbeddedEmf } from './wmf-embedded-emf';
 import { wmfPlayback } from './wmf-mapping';
@@ -159,6 +160,30 @@ export interface EmfConvertOptions {
 	 * antialiasing) or `'mono'` (smoothing off). Only used with `fonts`.
 	 */
 	fontSmoothing?: 'cleartype' | 'gray' | 'mono';
+}
+
+/**
+ * Options for {@link convertMetafileToJpegDataUrl}: every
+ * {@link EmfConvertOptions} field plus the JPEG encoding settings.
+ */
+export interface JpegConvertOptions extends EmfConvertOptions {
+	/**
+	 * JPEG quality from 0 to 1, as for `canvas.toDataURL('image/jpeg', quality)`.
+	 * Default 0.92.
+	 */
+	quality?: number;
+	/**
+	 * Colour the transparent background and translucent pixels are
+	 * composited over, as `#rgb` or `#rrggbb` (JPEG has no alpha channel).
+	 * Default `'#ffffff'`.
+	 */
+	background?: string;
+	/**
+	 * `true` averages colour over 2 x 2 pixels (4:2:0) for a smaller file.
+	 * Default `false`: full-resolution colour (4:4:4), which keeps coloured
+	 * lines and text free of colour fringes.
+	 */
+	chromaSubsampling?: boolean;
 }
 
 /**
@@ -549,14 +574,96 @@ export async function convertMetafileToDataUrl(
 	options?: EmfConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<string | null> {
+	const raster = await renderRaster(buffer, options, recursionDepth, 'convertMetafileToDataUrl');
+	if (!raster) {
+		return null;
+	}
+	try {
+		const url = await exportCanvasToPngDataUrl(raster.canvas);
+		if (!url) {
+			emfWarn('convertMetafileToDataUrl: exportCanvasToPngDataUrl returned null');
+		}
+		return url;
+	} catch (err) {
+		emfWarn('convertMetafileToDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
+		return null;
+	}
+}
+
+/**
+ * Converts an EMF or WMF buffer (format auto-detected) to a JPEG data URL.
+ *
+ * The drawing is rendered exactly as for {@link convertMetafileToDataUrl}
+ * (same options, same backends, same `null` cases) and encoded by the
+ * bundled baseline JPEG encoder, so the bytes do not depend on the canvas
+ * backend. JPEG has no transparency: the metafile's transparent background
+ * and any translucent pixels are composited over
+ * {@link JpegConvertOptions.background} (white by default).
+ *
+ * @param buffer  - The raw EMF or WMF file bytes.
+ * @param options - Optional {@link JpegConvertOptions}.
+ * @returns A `data:image/jpeg;base64,...` string, or `null` on failure.
+ */
+export async function convertMetafileToJpegDataUrl(
+	buffer: ArrayBuffer,
+	options?: JpegConvertOptions,
+): Promise<string | null> {
+	const raster = await renderRaster(buffer, options, 0, 'convertMetafileToJpegDataUrl');
+	if (!raster) {
+		return null;
+	}
+	try {
+		const { canvas, ctx } = raster;
+		const pixels = (canvas as unknown) instanceof SoftwareRasterCanvas
+			? (canvas as unknown as SoftwareRasterCanvas).pixels
+			: canvasGetImageData(ctx, 0, 0, canvas.width, canvas.height).data;
+		const jpeg = encodeJpeg(pixels, canvas.width, canvas.height, {
+			quality: options?.quality,
+			background: parseBackground(options?.background),
+			chromaSubsampling: options?.chromaSubsampling,
+		});
+		return `data:image/jpeg;base64,${bytesToBase64(jpeg)}`;
+	} catch (err) {
+		emfWarn('convertMetafileToJpegDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
+		return null;
+	}
+}
+
+/** Parses a `#rgb` / `#rrggbb` background colour; anything else is white. */
+function parseBackground(color: string | undefined): [number, number, number] {
+	if (color === undefined) {
+		return [255, 255, 255];
+	}
+	const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim())?.[1];
+	if (!hex) {
+		emfWarn(`convertMetafileToJpegDataUrl: background "${color}" is not #rgb or #rrggbb; using white`);
+		return [255, 255, 255];
+	}
+	const full = hex.length === 3 ? [...hex].map((c) => c + c).join('') : hex;
+	return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+/**
+ * Replays a metafile onto a raster canvas for PNG or JPEG output, with
+ * deferred images drawn. Returns `null` for an invalid metafile, or when the
+ * software rasteriser would have to drop text or an image it cannot decode.
+ */
+async function renderRaster(
+	buffer: ArrayBuffer,
+	options: EmfConvertOptions | undefined,
+	recursionDepth: number,
+	caller: string,
+): Promise<{ canvas: AnyCanvas; ctx: CanvasContext } | null> {
 	// Resolve (and cache) the optional Node.js canvas backend once, up front,
 	// before any synchronous replay work begins.
 	await ensureNodeCanvasModule();
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
-		emfWarn(`convertMetafileToDataUrl: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION}`);
+		emfWarn(`${caller}: recursion depth ${recursionDepth} exceeds limit ${MAX_METAFILE_RECURSION}`);
 		return null;
 	}
-	// PNG output reproduces what Windows paints unless smoothing is asked for.
+	// Raster output reproduces what Windows paints unless smoothing is asked for.
 	const opts: EmfConvertOptions = { ...options, gdiAntialias: options?.gdiAntialias ?? false };
 	let canvas: AnyCanvas | null = null;
 	const result = await replayMetafile(buffer, opts, (w, h) => {
@@ -582,22 +689,18 @@ export async function convertMetafileToDataUrl(
 		const soft = (canvas as unknown) instanceof SoftwareRasterCanvas ? (canvas as unknown as SoftwareRasterCanvas) : null;
 		if (soft && (soft.textDraws > 0 || !complete)) {
 			// The software rasteriser has no font engine, and no decoder for
-			// JPEG/GIF/TIFF: a PNG missing text or an image would be silently
+			// JPEG/GIF/TIFF: an image missing text or an image would be silently
 			// wrong, so refuse it (SVG output renders both).
 			emfWarn(
-				`convertMetafileToDataUrl: no canvas backend and the drawing ${
+				`${caller}: no canvas backend and the drawing ${
 					soft.textDraws > 0 ? `contains text (${soft.textDraws} runs)` : 'contains an image only a canvas can decode'
-				}; install @napi-rs/canvas for PNG output, or use SVG output`,
+				}; install @napi-rs/canvas for raster output, or use SVG output`,
 			);
 			return null;
 		}
-		const url = await exportCanvasToPngDataUrl(canvas);
-		if (!url) {
-			emfWarn('convertMetafileToDataUrl: exportCanvasToPngDataUrl returned null');
-		}
-		return url;
+		return { canvas, ctx: result.surface.ctx };
 	} catch (err) {
-		emfWarn('convertMetafileToDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
+		emfWarn(`${caller}: EXCEPTION:`, err instanceof Error ? err.message : err);
 		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
 		return null;
 	}
