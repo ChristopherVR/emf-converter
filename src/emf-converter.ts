@@ -63,6 +63,14 @@ import { replayWmfRecords } from './wmf-replay';
 export interface EmfConvertOptions {
 	/** WMF playback-device pixels per inch; defaults to 96 on each axis. */
 	wmfReferenceDpi?: number | { x: number; y: number };
+	/**
+	 * ANSI code page of the WMF playback device. Used for ANSI/DEFAULT
+	 * charset text and LOGFONT face names. Defaults to 1252; supply the
+	 * original Windows device's GetACP() value when known. Supported values:
+	 * 874, 932, 936, 949, 950, 1250..1258, 54936 and 65001. Other values
+	 * fall back to 1252. Explicit text charsets and EMF text are unchanged.
+	 */
+	wmfAnsiCodePage?: number;
 	/** Maximum output width in pixels. */
 	maxWidth?: number;
 	/** Maximum output height in pixels. */
@@ -335,6 +343,7 @@ async function replayMetafile(
 		surface.ctx.save();
 		replayWmfRecords(view, surface.ctx, header, surface.width, surface.height, {
 			wmfReferenceDpi: opts.wmfReferenceDpi,
+			wmfAnsiCodePage: opts.wmfAnsiCodePage,
 			maxRecords: opts.maxRecords,
 			fontFamilyMap: opts.fontFamilyMap,
 			gdiAntialias: opts.gdiAntialias,

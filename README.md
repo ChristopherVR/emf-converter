@@ -144,6 +144,11 @@ Without `fonts`, text is drawn by the host's canvas font engine (supply `fontFam
 
 #### `EmfConvertOptions`
 
+`wmfAnsiCodePage` sets the known ANSI code page of a WMF playback device
+(for example, `936` from Windows `GetACP()`). It applies to ANSI/DEFAULT text
+and ANSI font face names. Its default is `1252`; explicit text charsets and
+EMF text are unchanged. See the [API reference](docs/api.md) for supported values.
+
 | Field                | Type                                  | Default           | Description |
 | -------------------- | ------------------------------------- | ----------------- | ----------- |
 | `maxWidth`           | `number`                              | None              | Maximum output width in pixels (aspect ratio preserved) |

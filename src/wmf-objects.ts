@@ -24,6 +24,7 @@
  * @module wmf-objects
  */
 
+import { decodeAnsiRecord } from './emf-ansi';
 import { colorRefToHex } from './emf-color-helpers';
 import { decodeMonoBits } from './emf-gdi-brush-pattern';
 import { decodeDibToImageData } from './emf-dib-decoder';
@@ -157,14 +158,17 @@ export function createFont(p: WmfPlayer, dataOff: number, recSize: number, recEn
 		addObject(p, { kind: 'other' });
 		return;
 	}
-	let family = '';
+	const faceBytes: number[] = [];
 	for (let i = 0; i < 32 && dataOff + 18 + i < recEnd; i++) {
 		const ch = view.getUint8(dataOff + 18 + i);
 		if (ch === 0) {
 			break;
 		}
-		family += String.fromCharCode(ch);
+		faceBytes.push(ch);
 	}
+	// LOGFONT's ANSI face name uses the device code page, even for a
+	// font with an explicit text charset (or a Symbol font).
+	const family = String.fromCharCode(...decodeAnsiRecord(faceBytes, 1, p.ansiCodePage).codes);
 	const font: GdiFont = {
 		kind: 'font',
 		// Sign kept: resolveFontPixelHeight() tells cell from character height by it.

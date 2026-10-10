@@ -18,6 +18,7 @@ Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is n
 | `maxHeight`          | `number`                                |                     | Maximum output height in pixels. |
 | `dpiScale`           | `number`                                | `1`                 | Resolution multiplier, clamped to `4`. |
 | `wmfReferenceDpi`     | `number \| { x: number; y: number }`      | `96`                | Playback-device resolution for WMF physical map modes. Supply the original device DPI when known; values must be finite and positive. |
+| `wmfAnsiCodePage`     | `number`                                | `1252`              | WMF playback-device ANSI code page for ANSI/DEFAULT text and font face names. Explicit text charsets and EMF text keep their own decoding. |
 | `maxCanvasDimension` | `number`                                | `8192`              | Upper limit for output width and height in pixels. |
 | `maxRecords`         | `number`                                | `200000` / `500000` | Records processed per stream before replay stops. EMF+ uses the higher default. |
 | `gdiAntialias`       | `boolean`                               | `false`             | Smooth shape edges with canvas antialiasing instead of reproducing GDI/GDI+ rasterisation. |
@@ -26,6 +27,11 @@ Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is n
 | `fontFamilyMap`      | `Record<string, string>`                |                     | Used without `fonts`. Maps Windows face names (case-insensitive) to local font families, for example `{ calibri: 'Carlito' }`. |
 
 `DEFAULT_DPI_SCALE` is exported as the default value of `dpiScale` (`1`).
+
+For WMF files from a Windows device with another ANSI code page, supply the
+device's known `GetACP()` value. Supported values are `874`, `932`, `936`, `949`,
+`950`, `1250`–`1258`, `54936` and `65001`; other values fall back to `1252`.
+The converter does not infer this value from the file bytes or browser language.
 
 ## SVG functions
 
