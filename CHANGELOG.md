@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.20.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.0) - 2026-10-10
+
+### Features
+
+- JPEG output with a bundled encoder ([fdbf2d0](https://github.com/ChristopherVR/emf-converter/commit/fdbf2d041a0e6b50971815afd6f8849f0c7f57a9))
+
 ## [4.19.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.19.0) - 2026-10-10
 
 ### Features
