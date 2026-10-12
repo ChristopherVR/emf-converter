@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.20.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.3) - 2026-10-12
+
+### Bug Fixes
+
+- Improve scaled text alignment, baselines and glyph parity ([6c8c067](https://github.com/ChristopherVR/emf-converter/commit/6c8c0671358c3250bffd7905d85646d7fa012617))
+
+### Documentation
+
+- Correct baseline size range encoding ([c880b97](https://github.com/ChristopherVR/emf-converter/commit/c880b97aef83d90a4dfcd1467782f8eb8a569985))
+
 ## [4.20.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.2) - 2026-10-12
 
 ### Bug Fixes
