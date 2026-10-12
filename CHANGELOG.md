@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.20.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.1) - 2026-10-12
+
+### Bug Fixes
+
+- Improve native metafile sampling and text parity ([1aac5a6](https://github.com/ChristopherVR/emf-converter/commit/1aac5a6b236a1f304a94e89714f9338cb5fb5ae9))
+
 ## [4.20.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.0) - 2026-10-10
 
 ### Features
