@@ -729,7 +729,7 @@ class MonoStubContour {
 }
 
 /** The pixel box a mono bitmap covers: every pixel whose centre lies in the control box. */
-function monoBox(o: Outline): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
+function monoBox(o: Outline): PixelBox | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -750,16 +750,14 @@ function monoBox(o: Outline): { xMin: number; xMax: number; yMin: number; yMax: 
 	let xMax = Math.floor((cxMax + 32) / 64);
 	let yMin = Math.floor((cyMin + 31) / 64);
 	let yMax = Math.floor((cyMax + 32) / 64);
-	const rem = (v: number, add: number): number => ((v + add) & 63) - add;
-	if (xMin === xMax) {
-		if (rem(cxMin, 31) + rem(cxMax, 32) < 0) xMin -= 1;
-		else xMax += 1;
-	}
-	if (yMin === yMax) {
-		if (rem(cyMin, 31) + rem(cyMax, 32) < 0) yMin -= 1;
-		else yMax += 1;
-	}
-	return { xMin, xMax, yMin, yMax };
+	// When the control box covers no sample centre on an axis, GDI assigns
+	// its positive/right-or-upper sample, not the nearest one to the box's
+	// midpoint (native mono-collapse: every signed phase and both axes).
+	const collapsedX = xMin === xMax;
+	const collapsedY = yMin === yMax;
+	if (collapsedX) xMax += 1;
+	if (collapsedY) yMax += 1;
+	return { xMin, xMax, yMin, yMax, collapsedX, collapsedY };
 }
 
 /** A pixel box: columns [xMin, xMax), rows [yMin, yMax) (y up). */
@@ -768,6 +766,9 @@ interface PixelBox {
 	xMax: number;
 	yMin: number;
 	yMax: number;
+	/** GDI supplies a sole sample because this control-box axis contains no pixel centre. */
+	collapsedX?: boolean;
+	collapsedY?: boolean;
 }
 
 /**
@@ -849,7 +850,9 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 							break;
 						case 1:
 						case 5:
-							const stub = monoContour?.isStub(false, y, x1 / P, e2 / P, e1 / P, P);
+							// A collapsed control-box axis has only the forced sample;
+							// excluding its end stubs would shorten the sole visible stroke.
+							const stub = monoContour && box.collapsedX ? false : monoContour?.isStub(false, y, x1 / P, e2 / P, e1 / P, P);
 							if (stub === true) return;
 							if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= r.half)) {
 								return;
@@ -912,7 +915,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 								break;
 							case 1:
 							case 5:
-								const stub = monoContour?.isStub(true, col, x1 / P, e2 / P, e1 / P, P);
+								const stub = monoContour && box.collapsedY ? false : monoContour?.isStub(true, col, x1 / P, e2 / P, e1 / P, P);
 								if (stub === true) return;
 								if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= h.half)) {
 									return;

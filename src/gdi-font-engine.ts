@@ -199,6 +199,8 @@ export interface GdiFaceInfo {
 	fsSelection: number;
 	macStyle: number;
 	winAscent: number;
+	/** Unrounded cell descent in font units, when the face supplies it. */
+	winDescent?: number;
 	unitsPerEm: number;
 }
 
@@ -221,6 +223,8 @@ export interface GdiRealizedFont {
 	readonly fractionalOrigins?: 'x' | 'xy';
 	glyphIndex(code: number): number;
 	advance(index: number): number;
+	/** GDI+ design advance: apply tracking in font units before device scaling. */
+	designAdvance?(index: number, tracking: number): number;
 	rotatedAdvance(index: number): number;
 	/**
 	 * tmAscent / tmDescent of the font realised at a non-axis angle
@@ -310,6 +314,7 @@ export class RasterRealizedFont implements GdiRealizedFont {
 			fsSelection: face.italic ? 1 : 0,
 			macStyle: 0,
 			winAscent: this.ascent,
+			winDescent: this.descent,
 			unitsPerEm: this.ppem || 1,
 		};
 	}
@@ -555,6 +560,12 @@ export class RealizedFont implements GdiRealizedFont {
 			base = hd && index < hd.length ? hd[index] : Math.round(this.outline(index).advance / 64);
 		}
 		return base + (this.syntheticBold ? 1 : 0);
+	}
+
+	/** GDI+ rounds tracked hmtx advances to font units before device scaling. */
+	designAdvance(index: number, tracking: number): number {
+		const { advance } = this.ttf.hMetrics(index < this.ttf.numGlyphs ? index : NOTDEF);
+		return Math.round(advance * tracking) * this.ppemX / this.ttf.unitsPerEm + (this.syntheticBold ? 1 : 0);
 	}
 
 	/**

@@ -62,10 +62,10 @@ describe('playback versus direct drawing of recorded text sheets', () => {
 describe.skipIf(!windowsFonts())('the converter draws the direct shapes', () => {
 	// name -> [converter vs direct drawing, converter vs native playback] over the whole sheet
 	const expected: Record<string, [number, number]> = {
-		// Native direct-drawing reference: neighbouring-square monochrome
-		// dropout control closes five more Segoe UI pixels (174 before).
-		'textpb-segoeui-cell-q3': [169, 4215],
-		'textpb-segoeui-em-q3': [80, 80],
+		// Native direct-drawing references: collapsed-box dropout placement
+		// closes another eight pixels per sheet (cell 169/4215, em 80/80 before).
+		'textpb-segoeui-cell-q3': [161, 4207],
+		'textpb-segoeui-em-q3': [72, 72],
 	};
 	it('matches the direct drawing on the nine flagged heights, not the playback', async () => {
 		for (const [name, [direct, played]] of Object.entries(expected)) {

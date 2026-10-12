@@ -67,6 +67,20 @@ Final text-round validation: **211 test files, 7,191 tests passed**. Library and
 
 The historical text measurements in Outstanding work describe earlier implementations. Native font results also depend on font versions and process state; the new captures include environment manifests and do not replace older references.
 
+## Alignment and collapsed monochrome boxes
+
+The next GPT-6.1 Sol round adds single-line EMF+ DrawString horizontal and vertical alignment for supplied fonts under unscaled, unrotated AntiAlias rendering. Native layout uses tracked design advances, cell-height metrics, default margins, trailing-space measurement flags and float32 layout origins. The new path accepts Latin/common/private-use characters with mapped glyphs; combining marks, formatting controls and other scripts keep their prior rendering path. Default-format italic black-box fitting, grid-fitted alignment, wrapping, trimming, complex shaping and transformed layout remain open; unsupported cases retain their existing path.
+
+Across 2,592 new Windows captures, 1,728 comparisons improve and none worsens. Exact complete RGBA comparisons increase from 78 to 701; the portable CC0-font subset increases from 42 to 375 of 432. The controls cover all nine horizontal/vertical alignment combinations, default and typographic formats, regular/italic system faces, six sizes, fractional rectangles and trailing-space measurement. Remaining glyph raster and run-spacing residuals are retained as per-case ceilings rather than described as exact alignment output.
+
+Collapsed monochrome control boxes now select the positive-axis sample when no pixel centre lies inside the box. The sole forced sample is retained through straight-contour stub exclusion. This fixes all twelve one-to-two-pixel tradeoffs from the preceding round. The existing 29,696 controls gain another 215 exact matches with no per-case increase; all 15,360 original ST1/ST4/ST5 controls are exact. A fresh signed-phase, two-axis boundary sweep improves from 4,880 to **10,240 / 10,240 exact**. Curved and multiple-contour black-box placement is corrected without changing their stub rules.
+
+Further ClearType spacing and grayscale dropout candidates were rejected because independent mixed-text or polygon controls worsened. The new Courier geometry diagnostic contains 3,200 native surfaces and generated CC0 fonts with identical outlines under different family names; it preserves 1,393 exact controls and per-case bounds without changing production rendering.
+
+The 870-metafile report retains 646 exact common-area RGB comparisons and 642 with complete ink coverage. Five existing text comparisons improve, none worsens, and there are no render failures or omitted native ink. Browser/Node playback remains portable TypeScript with no added runtime dependency.
+
+Validation: 214 test files and 7,203 tests pass, together with library/documentation type checks, package/documentation builds and browser ESM/CJS/Vite checks with optional canvas absent. All 18 native input/reference hashes in the four new environment manifests match. The additional shaping guard is checked against 36 native controls; existing residual ceilings are not widened.
+
 ## Open-source alternatives
 
 | Project | Useful role | Limitation for this converter |

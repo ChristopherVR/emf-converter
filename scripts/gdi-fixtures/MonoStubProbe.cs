@@ -24,6 +24,10 @@ public static class MonoStubProbe {
     }
 
     public static void Run(string directory, string prefix, string output) {
+        Run(directory, prefix, output, 512, new[] {8,12,16,20,24,32,40});
+    }
+
+    public static void Run(string directory, string prefix, string output, int count, int[] sizes) {
         using (var file=File.Create(Path.Combine(directory,output)))
         using (var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))
         using (var writer=new StreamWriter(zip,new UTF8Encoding(false))) {
@@ -33,12 +37,12 @@ public static class MonoStubProbe {
                 if (AddFontResourceEx(path,16,IntPtr.Zero)==0) throw new Exception("Private font load failed");
                 IntPtr dc=CreateCompatibleDC(IntPtr.Zero);
                 try {
-                    foreach (int ppem in new[] {8,12,16,20,24,32,40}) {
+                    foreach (int ppem in sizes) {
                         IntPtr font=CreateFont(-ppem,0,0,0,400,0,0,0,1,4,0,3,0,family),old=SelectObject(dc,font);
                         try {
                             var face=new StringBuilder(100); GetTextFace(dc,100,face);
                             if(face.ToString()!=family) throw new Exception("Font fallback: "+face);
-                            for (uint index=0;index<512;index++) {
+                            for (uint index=0;index<count;index++) {
                                 var matrix=new Matrix();matrix.xx.value=matrix.yy.value=1;Metrics metrics;
                                 uint length=GetGlyphOutline(dc,0xE000+index,1,out metrics,0,null,ref matrix);
                                 if(length==uint.MaxValue)throw new Exception("GetGlyphOutline failed");

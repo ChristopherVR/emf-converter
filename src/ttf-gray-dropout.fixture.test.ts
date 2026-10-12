@@ -131,10 +131,10 @@ describe('GDI+ images against GDI bitmaps of the same private fonts (native data
 describe('GDI monochrome bitmaps of the private polygon fonts (GetGlyphOutline GGO_BITMAP)', () => {
 	// [exact at 8 to 32 ppem of 4,096, exact at 33 to 40 ppem of 1,024]
 	const expected: Record<string, [number, number]> = {
-		polygons: [4079, 1024], st0: [4079, 1024], st4: [4079, 1024],
+		polygons: [4096, 1024], st0: [4096, 1024], st4: [4096, 1024],
 		// Straight single contours follow native neighbouring-square stub control
 		// and 26.6 smart crossings; per-case ceilings/preservation live in ttf-mono-stub.fixture.test.ts.
-		st1: [4063, 1024], st5: [4063, 1024],
+		st1: [4096, 1024], st5: [4096, 1024],
 	};
 	it.each(Object.keys(expected))('%s', (set) => {
 		expect(gdiExact(set, 1, true)).toEqual([expected[set][0], 4096]);
@@ -144,7 +144,7 @@ describe('GDI monochrome bitmaps of the private polygon fonts (GetGlyphOutline G
 
 describe('GDI monochrome bitmaps of polygon fonts with hinting machinery that never runs SCANCTRL', () => {
 	// Declared stack and zone sizes, a one-instruction glyph program, a cvt table or an empty prep change nothing:
-	// simple dropouts up to 32 ppem (1,787 of 1,792 bitmaps at 8 to 32 ppem), none at 33 and 36 ppem (512 of 512).
+	// simple dropouts up to 32 ppem (1,792 of 1,792 bitmaps at 8 to 32 ppem), none at 33 and 36 ppem (512 of 512).
 	const variants = ['stack', 'glyphprog', 'cvt', 'prep'];
 	const variantFonts = new GdiFontCollection(variants.map((v) => fixture(`raster-polygons-${v}.ttf`)));
 	const records: any[] = json('text-raster-variants.json.gz');
@@ -163,7 +163,7 @@ describe('GDI monochrome bitmaps of polygon fonts with hinting machinery that ne
 		}
 		expect(exact.small[1]).toBe(1792);
 		expect(exact.large[1]).toBe(512);
-		expect(exact.small[0]).toBe(1787);
+		expect(exact.small[0]).toBe(1792);
 		expect(exact.large[0]).toBe(512);
 	});
 });

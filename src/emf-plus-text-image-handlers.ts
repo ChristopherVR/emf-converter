@@ -32,6 +32,7 @@ import { isHalfPixelOffset, resampleKernelFor } from './emf-plus-image-resample'
 import { replayEmfPlusPath } from './emf-plus-path';
 import { readPlusPoints } from './emf-plus-read-helpers';
 import { strokePlusGeometry } from './emf-plus-stroke';
+import { layoutPlusAlignedString } from './emf-plus-text-alignment';
 import {
 	resolveBrushPaint,
 	applyPlusWorldTransform,
@@ -503,7 +504,8 @@ function paintPlusEngineRun(
 
 /**
  * Draws an EmfPlusDrawString with the GDI font engine when fonts were
- * supplied, for near (left) alignment and an unrotated world transform.
+ * supplied and the world transform is unrotated. Single-line AntiAlias
+ * alignment also uses native layout metrics in the supported unit-scale case.
  * Returns false, having drawn nothing, otherwise.
  */
 function drawPlusStringWithEngine(
@@ -512,19 +514,26 @@ function drawPlusStringWithEngine(
 	text: string,
 	layoutX: number,
 	layoutY: number,
+	layoutW: number,
+	layoutH: number,
 	paint: string | CanvasGradient | CanvasPattern,
 	alignment: number,
 	format?: EmfPlusStringFormat,
 	brushSampler: DeviceBrushSampler | null = null,
 ): boolean {
-	if (alignment !== 0) {
-		return false;
-	}
 	const ef = realizePlusEngineFont(rCtx, font, paint, brushSampler);
 	if (!ef) {
 		return false;
 	}
 	const { realized, emPx, m, unhinted } = ef;
+	const codes = Array.from(text, (character) => character.codePointAt(0)!);
+	if (format && (alignment !== 0 || format.lineAlignment !== 0) && unhinted &&
+		m[0] === 1 && m[3] === 1 && emPx === realized.ppem) {
+		const aligned = layoutPlusAlignedString(realized, codes, format,
+			layoutX + m[4], layoutY + m[5], layoutW, layoutH);
+		if (aligned) return paintPlusEngineRun(rCtx, ef, { codes, glyphIndices: false, ...aligned, dy: null });
+	}
+	if (alignment !== 0) return false;
 	const ttf = realized.ttf;
 	// DrawString rounds the font ascent before adding the layout position;
 	// DriverString supplies its baseline directly and retains its own phase.
@@ -533,10 +542,6 @@ function drawPlusStringWithEngine(
 	let x = m[0] * layoutX + m[4] + emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
 	if (!unhinted) x = Math.round(x);
 	const y = m[3] * layoutY + m[5] + ascent;
-	const codes: number[] = [];
-	for (const character of text) {
-		codes.push(character.codePointAt(0)!);
-	}
 	// Without grid fitting GDI+ spaces glyphs by their linear advances times
 	// the format's tracking (1.03 for the default format, 1 for
 	// GenericTypographic; measured with MeasureString).
@@ -659,9 +664,7 @@ export function handleEmfPlusTextImageRecord(
 				const layoutX = view.getFloat32(dataOff + 12, true);
 				const layoutY = view.getFloat32(dataOff + 16, true);
 				const layoutW = view.getFloat32(dataOff + 20, true);
-				void layoutW;
 				const layoutH = view.getFloat32(dataOff + 24, true);
-				void layoutH;
 
 				const fontId = recFlags & 0xff;
 				const font = objectTable.get(fontId);
@@ -680,6 +683,8 @@ export function handleEmfPlusTextImageRecord(
 								text,
 								layoutX,
 								layoutY,
+								layoutW,
+								layoutH,
 								paint,
 								alignment,
 								format,

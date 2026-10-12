@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 
 import { fixturePath, windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { buildTestFnt, buildTestFon } from './__fixtures__/test-fnt';
@@ -114,10 +115,14 @@ describe('ttf-raster', () => {
 
 	it('keeps a sub-pixel stem only with dropout control', () => {
 		const g = size.hintGlyph(3);
-		// SCANTYPE 1: simple dropout control, stubs (the stem's two ends) excluded.
+		// Native equivalent outline: x1000..1040, y0..1400 at10 ppem.
+		// A collapsed control box assigns the right sample and retains both tips.
+		const native = JSON.parse(gunzipSync(readFileSync(fixturePath('mono-unit-stem.json.gz'))).toString()).find((c: any) => c.mode === 1);
 		const withDropout = rasterizeMono(g, dropoutMode(true, 1))!;
-		expect([withDropout.left, withDropout.width, withDropout.height]).toEqual([4, 1, 7]);
-		expect(Array.from(withDropout.data)).toEqual([0, 1, 1, 1, 1, 1, 0]);
+		expect([native.x, native.y, native.w, native.h]).toEqual([5, 7, 1, 7]);
+		expect([withDropout.left, withDropout.top, withDropout.width, withDropout.height]).toEqual([native.x, native.y, native.w, native.h]);
+		const bytes = Buffer.from(native.data, 'base64');
+		expect(Array.from(withDropout.data)).toEqual(Array.from({ length: native.h }, (_, row) => +(!!(bytes[row * 4] & 0x80))));
 		// SCANTYPE 0 includes the stubs.
 		expect(Array.from(rasterizeMono(g, dropoutMode(true, 0))!.data)).toEqual([1, 1, 1, 1, 1, 1, 1]);
 		const without = rasterizeMono(g, dropoutMode(false, 1))!;

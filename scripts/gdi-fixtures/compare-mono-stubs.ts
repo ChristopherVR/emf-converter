@@ -2,6 +2,8 @@
  * bun scripts/gdi-fixtures/compare-mono-stubs.ts <pre-change ttf-raster.ts>
  * The supplied baseline is a frozen source snapshot; no baseline bitmap is
  * substituted for a Windows reference. Native inputs remain the GGO_BITMAP captures.
+ * Add --collapsed-box to compare with the previous smart-crossing renderer
+ * (1aac5a6) and write mono-collapse-bounds.json.gz without replacing historical evidence.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -15,6 +17,7 @@ const directory = 'src/__fixtures__/gdi/';
 const load = (name: string): any[] => JSON.parse(gunzipSync(readFileSync(directory + name)).toString());
 if (!process.argv[2]) throw new Error('Pass a frozen pre-change ttf-raster.ts source for the baseline.');
 const baseline = (await import(resolve(process.argv[2]))).rasterizeMono as typeof rasterizeMono;
+const collapsedBox = process.argv.includes('--collapsed-box');
 const inputs = [
 	...load('text-raster-mono.json.gz').filter((c) => c.format === 1 && ['st1', 'st4', 'st5'].includes(c.set)).map((c) => ({ ...c, group: 'original', mode: +c.set.slice(-1) })),
 	...load('mono-stubs.json.gz').map((c) => ({ ...c, group: 'independent' })),
@@ -45,7 +48,7 @@ function difference(a: Set<string>, b: Set<string>): number {
 	for (const key of new Set([...a, ...b])) if (a.has(key) !== b.has(key)) count++;
 	return count;
 }
-const bounds: Record<string, [number, number, string?]> = {};
+const bounds: Record<string, [number, number, string?, string?]> = {};
 const stats: Record<string, any> = {};
 const increases: any[] = [];
 for (const c of inputs) {
@@ -56,15 +59,27 @@ for (const c of inputs) {
 		sizes.set(sizeKey, size);
 	}
 	const outline = size.hintGlyph(c.index + 1), reference = native(c);
-	const prior = baseline(outline, c.mode);
+	const prior = collapsedBox ? baseline(outline, c.mode, undefined, true, true) : baseline(outline, c.mode);
 	const before = difference(samples(prior), reference);
-	const after = difference(samples(rasterizeMono(outline, c.mode, undefined, true, true)), reference);
+	const actual = rasterizeMono(outline, c.mode, undefined, true, true);
+	const after = difference(samples(actual), reference);
 	const key = `${c.group}:${c.mode}:${c.ppem}:${c.index}`;
 	bounds[key] = [before, after];
 	if (outline.endPts.length !== 1 || Array.from(outline.onCurve).some((p) => !p)) {
 		const hash = createHash('sha256').update(JSON.stringify(prior ? [prior.width, prior.height, prior.left, prior.top] : null));
 		if (prior) hash.update(prior.data);
 		bounds[key].push(hash.digest('hex'));
+		if (collapsedBox) {
+			const changedHash = createHash('sha256').update(JSON.stringify(actual ? [actual.width, actual.height, actual.left, actual.top] : null));
+			if (actual) changedHash.update(actual.data);
+			const fingerprint = changedHash.digest('hex');
+			if (fingerprint !== bounds[key][2]) {
+				if (!actual || actual.width !== c.w || actual.height !== c.h || actual.left !== c.x || actual.top !== c.y || after > before) {
+					throw new Error(`Unsupported contour changed without a native box correction: ${key}`);
+				}
+				bounds[key].push(fingerprint);
+			}
+		}
 	}
 	const bucket = stats[`${c.group}:${c.mode}`] ??= { total: 0, beforeExact: 0, afterExact: 0, gained: 0, lost: 0, beforePixels: 0, afterPixels: 0 };
 	bucket.total++; bucket.beforeExact += +(before === 0); bucket.afterExact += +(after === 0);
@@ -72,6 +87,6 @@ for (const c of inputs) {
 	bucket.beforePixels += before; bucket.afterPixels += after;
 	if (after > before) increases.push({ key, before, after });
 }
-const output = { schemaVersion: 1, baseline: 'pre-change native-parity text round', stats, increases, bounds };
-writeFileSync(directory + 'mono-stub-bounds.json.gz', gzipSync(JSON.stringify(output)));
+const output = { schemaVersion: 1, baseline: collapsedBox ? '1aac5a6, uniform smart crossings enabled' : 'pre-change native-parity text round', stats, increases, bounds };
+writeFileSync(directory + (collapsedBox ? 'mono-collapse-bounds.json.gz' : 'mono-stub-bounds.json.gz'), gzipSync(JSON.stringify(output)));
 console.log(JSON.stringify({ stats, increases }, null, 2));

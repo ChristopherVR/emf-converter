@@ -35,6 +35,11 @@ const evidence = load('mono-stub-bounds.json.gz') as {
 	increases: { key: string; before: number; after: number }[];
 	bounds: Record<string, [number, number, string?]>;
 };
+const collapseEvidence = load('mono-collapse-bounds.json.gz') as {
+	stats: typeof evidence.stats;
+	increases: typeof evidence.increases;
+	bounds: Record<string, [number, number, string?, string?]>;
+};
 const fonts = {
 	original: parseFontFile(file('raster-polygons-st1.ttf'))[0],
 	independent: parseFontFile(file('mono-stub-st1.ttf'))[0],
@@ -72,6 +77,8 @@ describe('monochrome stub control against native Windows', () => {
 	it('compares every original, independent and held-out bitmap', () => {
 		expect(references).toHaveLength(29_696);
 		expect(Object.keys(evidence.bounds)).toHaveLength(references.length);
+		expect(Object.keys(collapseEvidence.bounds)).toHaveLength(references.length);
+		expect(collapseEvidence.increases).toEqual([]);
 	});
 	for (const [groupMode, stats] of Object.entries(evidence.stats)) {
 		it(`${groupMode}: preserves every prior exact case and pins each residual`, () => {
@@ -89,23 +96,34 @@ describe('monochrome stub control against native Windows', () => {
 				const outline = size.hintGlyph(c.index + 1), bitmap = rasterizeMono(outline, c.mode, undefined, true, true);
 				const key = `${groupMode}:${c.ppem}:${c.index}`;
 				const [before, ceiling, unchanged] = evidence.bounds[key];
+				const [previous, collapsedCeiling, , correctedBoxHash] = collapseEvidence.bounds[key];
 				const mismatch = difference(samples(bitmap), native(c));
 				expect(mismatch, key).toBeLessThanOrEqual(ceiling);
+				expect(mismatch, `collapsed-box ceiling ${key}`).toBeLessThanOrEqual(collapsedCeiling);
+				expect(mismatch, `previous round ${key}`).toBeLessThanOrEqual(previous);
 				if (before === 0) expect(mismatch, `prior exact ${key}`).toBe(0);
 				// Curved and multiple contours retain the complete prior bitmap,
-				// including its dimensions, placement and every zero/one sample.
-				if (unchanged) expect(fingerprint(bitmap), key).toBe(unchanged);
+				// except collapsed-box placement corrections backed by the native
+				// black box. Their complete ink still obeys both per-case ceilings.
+				if (unchanged) {
+					expect(fingerprint(bitmap), key).toBe(correctedBoxHash ?? unchanged);
+					if (correctedBoxHash) {
+						expect(bitmap, key).not.toBeNull();
+						expect([bitmap!.width, bitmap!.height, bitmap!.left, bitmap!.top], key).toEqual([c.w, c.h, c.x, c.y]);
+					}
+				}
 				if (mismatch === 0) exact++;
 			}
-			expect(exact).toBeGreaterThanOrEqual(stats.afterExact);
+			expect(exact).toBeGreaterThanOrEqual(collapseEvidence.stats[groupMode].afterExact);
 		});
 	}
-	it('records twelve one-pixel increases in previously inexact independent controls', () => {
-		// Historical metadata; runtime ceilings above permit later improvements.
+	it('closes all twelve historical one-pixel increases in independent controls', () => {
+		// Preserve the historical metadata and require every affected case exact.
 		expect(evidence.increases).toHaveLength(12);
 		for (const c of evidence.increases) {
 			expect(c.key).not.toMatch(/^original:/);
 			expect([c.before, c.after]).toEqual([1, 2]);
+			expect(collapseEvidence.bounds[c.key][1], c.key).toBe(0);
 		}
 	});
 });
