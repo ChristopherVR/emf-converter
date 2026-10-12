@@ -1125,5 +1125,38 @@
     "playbackSucceeded": true,
     "maxMismatched": 0,
     "maxDiff": 0
+  },
+  {
+    "name": "compat-playback-mx-r34-geo5",
+    "w": 423,
+    "h": 300,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 2,
+    "maxDiff": 223
+  },
+  {
+    "name": "compat-playback-mxy-r34-geo5",
+    "w": 423,
+    "h": 302,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
+  },
+  {
+    "name": "emfrec-cliprgn-mapped",
+    "w": 222,
+    "h": 160,
+    "ox": 0,
+    "oy": 0,
+    "plus": false,
+    "playbackSucceeded": true,
+    "maxMismatched": 0,
+    "maxDiff": 0
   }
 ]

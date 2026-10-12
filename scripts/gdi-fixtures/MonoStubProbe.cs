@@ -28,11 +28,15 @@ public static class MonoStubProbe {
     }
 
     public static void Run(string directory, string prefix, string output, int count, int[] sizes) {
+        Run(directory, prefix, output, count, sizes, new[] {1,5});
+    }
+
+    public static void Run(string directory, string prefix, string output, int count, int[] sizes, int[] modes) {
         using (var file=File.Create(Path.Combine(directory,output)))
         using (var zip=new System.IO.Compression.GZipStream(file,System.IO.Compression.CompressionMode.Compress))
         using (var writer=new StreamWriter(zip,new UTF8Encoding(false))) {
             writer.Write('['); bool first=true;
-            foreach (int mode in new[] {1,5}) {
+            foreach (int mode in modes) {
                 string path=Path.Combine(directory,prefix+"-st"+mode+".ttf"), family="Parity Mono Stub ST"+mode;
                 if (AddFontResourceEx(path,16,IntPtr.Zero)==0) throw new Exception("Private font load failed");
                 IntPtr dc=CreateCompatibleDC(IntPtr.Zero);

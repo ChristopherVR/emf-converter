@@ -676,12 +676,12 @@ function mulDivRound(a: number, b: number, c: number): number {
 }
 
 /**
- * Rule 4's neighbouring squares for a single straight contour. A short tip
+ * Rule 4's neighbouring squares for a straight contour. A short tip
  * still continues when its contour leaves through a square's side. Follow
  * the two branches from the dropout crossing so an unrelated lobe of a
- * concave contour cannot supply that continuation. Curved and multiple
- * contours retain the profile rule until equivalent controls establish
- * their crossing and continuation arithmetic.
+ * concave contour cannot supply that continuation. Multiple contours are
+ * admitted by MonoStubContours only when their sample neighbourhoods are
+ * independent; curves retain the profile rule.
  */
 class MonoStubContour {
 	private readonly points: [number, number][];
@@ -689,7 +689,7 @@ class MonoStubContour {
 		this.points = Array.from(o.xs, (x, i) => [x / 64 - 0.5, o.ys[i] / 64 - 0.5]);
 	}
 
-	isStub(flipped: boolean, scan: number, crossing: number, lo: number, hi: number, precision: number): boolean | null {
+	isStub(flipped: boolean, scan: number, crossing: number, lo: number, hi: number, precision: number, _opposite?: number): boolean | null {
 		const points = this.points;
 		const n = points.length;
 		const point = (i: number): [number, number] => flipped ? [points[i][1], points[i][0]] : points[i];
@@ -725,6 +725,89 @@ class MonoStubContour {
 		};
 		const a = trace(1), b = trace(-1);
 		return !(a.side * b.side < 0 && a.continues && b.continues);
+	}
+}
+
+/** Convexity without quadratic work or floating-point angle comparisons.
+ * Consistent turns alone also admit stars; one revolution excludes them.
+ */
+function convexContour(o: Outline): boolean {
+	const edges: [number, number][] = [];
+	for (let i = 0; i < o.xs.length; i++) {
+		const j = (i + 1) % o.xs.length;
+		const dx = o.xs[j] - o.xs[i], dy = o.ys[j] - o.ys[i];
+		if (dx || dy) edges.push([dx, dy]);
+	}
+	if (edges.length < 3) return false;
+	const half = (p: [number, number]): number => p[1] > 0 || (p[1] === 0 && p[0] >= 0) ? 0 : 1;
+	let direction = 0, revolutions = 0;
+	for (let i = 0; i < edges.length; i++) {
+		const a = edges[i], b = edges[(i + 1) % edges.length];
+		const cross = a[0] * b[1] - a[1] * b[0];
+		if (!cross) {
+			if (a[0] * b[0] + a[1] * b[1] < 0) return false;
+			continue;
+		}
+		const turn = Math.sign(cross);
+		if (direction && direction !== turn) return false;
+		direction = turn;
+		if (half(a) !== half(b) && half(a) === (turn > 0 ? 1 : 0)) revolutions++;
+	}
+	return direction !== 0 && revolutions === 1;
+}
+
+/** Native continuation for separate convex components. Nearby, overlapping,
+ * concave and curved components keep the profile rule: fresh native controls
+ * show interactions there that cannot be decided from one contour alone.
+ */
+class MonoStubContours {
+	private constructor(private readonly contours: MonoStubContour[]) {}
+
+	static create(o: Outline): MonoStubContour | MonoStubContours | null {
+		// Bound the new pairwise eligibility work (at most 2,016 box pairs).
+		// Unusually complex glyphs retain their established profile behavior.
+		if (o.endPts.length > 64) return null;
+		if (Array.from(o.onCurve).some((p) => !p)) return null;
+		if (o.endPts.length === 1) return new MonoStubContour(o);
+		const contours: MonoStubContour[] = [];
+		const boxes: { xMin: number; xMax: number; yMin: number; yMax: number }[] = [];
+		let start = 0;
+		for (const end of o.endPts) {
+			const xs: number[] = [], ys: number[] = [], onCurve: number[] = [];
+			for (let i = start; i <= end; i++) { xs.push(o.xs[i]); ys.push(o.ys[i]); onCurve.push(o.onCurve[i]); }
+			const part: Outline = { xs, ys, onCurve, endPts: [end - start] };
+			start = end + 1;
+			if (!convexContour(part)) return null;
+			const box = { xMin: Infinity, xMax: -Infinity, yMin: Infinity, yMax: -Infinity };
+			for (let i = 0; i < part.xs.length; i++) {
+				box.xMin = Math.min(box.xMin, part.xs[i]); box.xMax = Math.max(box.xMax, part.xs[i]);
+				box.yMin = Math.min(box.yMin, part.ys[i]); box.yMax = Math.max(box.yMax, part.ys[i]);
+			}
+			// One full pixel separates the neighbouring squares used by each
+			// component. This is a conservative scope, not a native font exception.
+			if (boxes.some((b) => box.xMin <= b.xMax + 64 && b.xMin <= box.xMax + 64 &&
+				box.yMin <= b.yMax + 64 && b.yMin <= box.yMax + 64)) return null;
+			boxes.push(box);
+			contours.push(new MonoStubContour(part));
+		}
+		return new MonoStubContours(contours);
+	}
+
+	isStub(flipped: boolean, scan: number, crossing: number, lo: number, hi: number, precision: number, opposite: number): boolean | null {
+		let owner = -1, otherOwner = -1, result: boolean | null = null;
+		for (let i = 0; i < this.contours.length; i++) {
+			const a = this.contours[i].isStub(flipped, scan, crossing, lo, hi, precision);
+			const b = this.contours[i].isStub(flipped, scan, opposite, lo, hi, precision);
+			if (a !== null) {
+				if (owner >= 0) return null;
+				owner = i; result = a;
+			}
+			if (b !== null) {
+				if (otherOwner >= 0) return null;
+				otherOwner = i;
+			}
+		}
+		return owner >= 0 && owner === otherOwner ? result : null;
 	}
 }
 
@@ -804,8 +887,8 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 	// ---- vertical sweep: scanlines are rows ----
 	const r = new Raster(dropout);
 	const P = r.precision;
-	const monoContour = stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) &&
-		local.endPts.length === 1 && Array.from(local.onCurve).every(Boolean) ? new MonoStubContour(local) : null;
+	const monoContour = stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) ?
+		MonoStubContours.create(local) : null;
 	const smartPixel = (raster: Raster, x1: number, x2: number): number => {
 		if (monoContour && smartCrossings26Dot6) {
 			// Native monochrome smart control compares 26.6 crossings, with an
@@ -852,7 +935,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 						case 5:
 							// A collapsed control-box axis has only the forced sample;
 							// excluding its end stubs would shorten the sole visible stroke.
-							const stub = monoContour && box.collapsedX ? false : monoContour?.isStub(false, y, x1 / P, e2 / P, e1 / P, P);
+							const stub = monoContour && box.collapsedX ? false : monoContour?.isStub(false, y, x1 / P, e2 / P, e1 / P, P, x2 / P);
 							if (stub === true) return;
 							if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= r.half)) {
 								return;
@@ -915,7 +998,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 								break;
 							case 1:
 							case 5:
-								const stub = monoContour && box.collapsedY ? false : monoContour?.isStub(true, col, x1 / P, e2 / P, e1 / P, P);
+								const stub = monoContour && box.collapsedY ? false : monoContour?.isStub(true, col, x1 / P, e2 / P, e1 / P, P, x2 / P);
 								if (stub === true) return;
 								if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= h.half)) {
 									return;

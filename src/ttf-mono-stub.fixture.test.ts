@@ -40,6 +40,7 @@ const collapseEvidence = load('mono-collapse-bounds.json.gz') as {
 	increases: typeof evidence.increases;
 	bounds: Record<string, [number, number, string?, string?]>;
 };
+const multipleEvidence = load('mono-multiple-bounds.json.gz') as typeof collapseEvidence;
 const fonts = {
 	original: parseFontFile(file('raster-polygons-st1.ttf'))[0],
 	independent: parseFontFile(file('mono-stub-st1.ttf'))[0],
@@ -97,6 +98,7 @@ describe('monochrome stub control against native Windows', () => {
 				const key = `${groupMode}:${c.ppem}:${c.index}`;
 				const [before, ceiling, unchanged] = evidence.bounds[key];
 				const [previous, collapsedCeiling, , correctedBoxHash] = collapseEvidence.bounds[key];
+				const refinedContourHash = multipleEvidence.bounds[key][3];
 				const mismatch = difference(samples(bitmap), native(c));
 				expect(mismatch, key).toBeLessThanOrEqual(ceiling);
 				expect(mismatch, `collapsed-box ceiling ${key}`).toBeLessThanOrEqual(collapsedCeiling);
@@ -106,8 +108,8 @@ describe('monochrome stub control against native Windows', () => {
 				// except collapsed-box placement corrections backed by the native
 				// black box. Their complete ink still obeys both per-case ceilings.
 				if (unchanged) {
-					expect(fingerprint(bitmap), key).toBe(correctedBoxHash ?? unchanged);
-					if (correctedBoxHash) {
+					expect(fingerprint(bitmap), key).toBe(refinedContourHash ?? correctedBoxHash ?? unchanged);
+					if (correctedBoxHash || refinedContourHash) {
 						expect(bitmap, key).not.toBeNull();
 						expect([bitmap!.width, bitmap!.height, bitmap!.left, bitmap!.top], key).toEqual([c.w, c.h, c.x, c.y]);
 					}

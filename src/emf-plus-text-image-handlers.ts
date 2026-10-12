@@ -505,7 +505,8 @@ function paintPlusEngineRun(
 /**
  * Draws an EmfPlusDrawString with the GDI font engine when fonts were
  * supplied and the world transform is unrotated. Single-line AntiAlias
- * alignment also uses native layout metrics in the supported unit-scale case.
+ * alignment also uses native layout metrics under positive uniform scales
+ * when the effective em is a whole device pixel.
  * Returns false, having drawn nothing, otherwise.
  */
 function drawPlusStringWithEngine(
@@ -528,9 +529,11 @@ function drawPlusStringWithEngine(
 	const { realized, emPx, m, unhinted } = ef;
 	const codes = Array.from(text, (character) => character.codePointAt(0)!);
 	if (format && (alignment !== 0 || format.lineAlignment !== 0) && unhinted &&
-		m[0] === 1 && m[3] === 1 && emPx === realized.ppem) {
+		m[0] === m[3] && Math.fround(emPx) === realized.ppem) {
+		// Native scales the layout rectangle into device units before placing
+		// this run. The font em product is float32 (20 * float32(1.1) is 22).
 		const aligned = layoutPlusAlignedString(realized, codes, format,
-			layoutX + m[4], layoutY + m[5], layoutW, layoutH);
+			m[0] * layoutX + m[4], m[3] * layoutY + m[5], m[0] * layoutW, m[3] * layoutH);
 		if (aligned) return paintPlusEngineRun(rCtx, ef, { codes, glyphIndices: false, ...aligned, dy: null });
 	}
 	if (alignment !== 0) return false;
@@ -538,7 +541,16 @@ function drawPlusStringWithEngine(
 	// DrawString rounds the font ascent before adding the layout position;
 	// DriverString supplies its baseline directly and retains its own phase.
 	const exactAscent = (emPx * ttf.winAscent) / ttf.unitsPerEm;
-	const ascent = unhinted ? Math.round(exactAscent) : Math.ceil(exactAscent);
+	// At integer device sizes, native ClearType also reserves the realized
+	// cell's ascent (including VDMX). A rounded design ascent is the lower
+	// bound: neither a smaller VDMX ascent nor ceil(design) alone matches it.
+	// Synthetic styles, scaled transforms and fractional device sizes or
+	// baseline phases retain the existing path pending native controls.
+	const clearTypeCell = realized.mode === 'cleartype' && !realized.syntheticBold &&
+		!realized.syntheticItalic && emPx === realized.ppem && m[0] === 1 && m[3] === 1 &&
+		Number.isInteger(layoutY + m[5]) && (format?.lineAlignment ?? 0) === 0;
+	const ascent = unhinted ? Math.round(exactAscent) : clearTypeCell
+		? Math.max(Math.round(exactAscent), realized.ascent) : Math.ceil(exactAscent);
 	let x = m[0] * layoutX + m[4] + emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
 	if (!unhinted) x = Math.round(x);
 	const y = m[3] * layoutY + m[5] + ascent;

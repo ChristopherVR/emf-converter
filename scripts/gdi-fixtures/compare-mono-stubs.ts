@@ -4,6 +4,8 @@
  * substituted for a Windows reference. Native inputs remain the GGO_BITMAP captures.
  * Add --collapsed-box to compare with the previous smart-crossing renderer
  * (1aac5a6) and write mono-collapse-bounds.json.gz without replacing historical evidence.
+ * Add --multiple-contours with baseline e7bea83 to include the three fresh
+ * Windows control sets and write mono-multiple-bounds.json.gz.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -18,16 +20,21 @@ const load = (name: string): any[] => JSON.parse(gunzipSync(readFileSync(directo
 if (!process.argv[2]) throw new Error('Pass a frozen pre-change ttf-raster.ts source for the baseline.');
 const baseline = (await import(resolve(process.argv[2]))).rasterizeMono as typeof rasterizeMono;
 const collapsedBox = process.argv.includes('--collapsed-box');
+const multipleContours = process.argv.includes('--multiple-contours');
 const inputs = [
 	...load('text-raster-mono.json.gz').filter((c) => c.format === 1 && ['st1', 'st4', 'st5'].includes(c.set)).map((c) => ({ ...c, group: 'original', mode: +c.set.slice(-1) })),
 	...load('mono-stubs.json.gz').map((c) => ({ ...c, group: 'independent' })),
 	...load('mono-stubs-heldout.json.gz').map((c) => ({ ...c, group: 'heldout' })),
 ];
-const fonts = {
+const fonts: Record<string, ReturnType<typeof parseFontFile>[number]> = {
 	original: parseFontFile(readFileSync(directory + 'raster-polygons-st1.ttf'))[0],
 	independent: parseFontFile(readFileSync(directory + 'mono-stub-st1.ttf'))[0],
 	heldout: parseFontFile(readFileSync(directory + 'mono-stub-heldout-st1.ttf'))[0],
 };
+if (multipleContours) for (const prefix of ['mono-multiple', 'mono-multiple-heldout', 'mono-multiple-validation']) {
+	inputs.push(...load(`${prefix}.json.gz`).map((c) => ({ ...c, group: prefix })));
+	fonts[prefix] = parseFontFile(readFileSync(directory + `${prefix}-st1.ttf`))[0];
+}
 const sizes = new Map<string, HintedSize>();
 function samples(bitmap: GlyphBitmap | null): Set<string> {
 	const out = new Set<string>();
@@ -59,7 +66,7 @@ for (const c of inputs) {
 		sizes.set(sizeKey, size);
 	}
 	const outline = size.hintGlyph(c.index + 1), reference = native(c);
-	const prior = collapsedBox ? baseline(outline, c.mode, undefined, true, true) : baseline(outline, c.mode);
+	const prior = collapsedBox || multipleContours ? baseline(outline, c.mode, undefined, true, true) : baseline(outline, c.mode);
 	const before = difference(samples(prior), reference);
 	const actual = rasterizeMono(outline, c.mode, undefined, true, true);
 	const after = difference(samples(actual), reference);
@@ -69,7 +76,7 @@ for (const c of inputs) {
 		const hash = createHash('sha256').update(JSON.stringify(prior ? [prior.width, prior.height, prior.left, prior.top] : null));
 		if (prior) hash.update(prior.data);
 		bounds[key].push(hash.digest('hex'));
-		if (collapsedBox) {
+		if (collapsedBox || multipleContours) {
 			const changedHash = createHash('sha256').update(JSON.stringify(actual ? [actual.width, actual.height, actual.left, actual.top] : null));
 			if (actual) changedHash.update(actual.data);
 			const fingerprint = changedHash.digest('hex');
@@ -87,6 +94,6 @@ for (const c of inputs) {
 	bucket.beforePixels += before; bucket.afterPixels += after;
 	if (after > before) increases.push({ key, before, after });
 }
-const output = { schemaVersion: 1, baseline: collapsedBox ? '1aac5a6, uniform smart crossings enabled' : 'pre-change native-parity text round', stats, increases, bounds };
-writeFileSync(directory + (collapsedBox ? 'mono-collapse-bounds.json.gz' : 'mono-stub-bounds.json.gz'), gzipSync(JSON.stringify(output)));
+const output = { schemaVersion: 1, baseline: multipleContours ? 'e7bea83, uniform smart crossings enabled' : collapsedBox ? '1aac5a6, uniform smart crossings enabled' : 'pre-change native-parity text round', stats, increases, bounds };
+writeFileSync(directory + (multipleContours ? 'mono-multiple-bounds.json.gz' : collapsedBox ? 'mono-collapse-bounds.json.gz' : 'mono-stub-bounds.json.gz'), gzipSync(JSON.stringify(output)));
 console.log(JSON.stringify({ stats, increases }, null, 2));
