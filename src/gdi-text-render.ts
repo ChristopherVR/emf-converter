@@ -40,7 +40,7 @@ export interface DeviceRect {
 
 /** One ExtTextOut call, already mapped to device pixels. */
 export interface GdiTextRun {
-	/** Character codes (UTF-16 code units) or, with `glyphIndices`, glyph indices. */
+	/** Unicode code points (or legacy GDI UTF-16 units); with `glyphIndices`, glyph indices. */
 	codes: number[];
 	glyphIndices: boolean;
 	/** Device reference point (before alignment). */
@@ -428,7 +428,7 @@ function emitSvgRun(
 	for (let i = 0; i < origins.length; i++) {
 		const code = run.glyphIndices ? font.charForGlyph(glyphs[i]) : run.codes[i];
 		if (!run.glyphIndices && !(run.options & ETO_IGNORELANGUAGE) && isC1Control(code)) continue;
-		text += String.fromCharCode(code);
+		text += String.fromCodePoint(code);
 		visibleOrigins.push(origins[i]);
 	}
 	if (text.length === 0) return;

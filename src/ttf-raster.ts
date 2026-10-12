@@ -675,6 +675,59 @@ function mulDivRound(a: number, b: number, c: number): number {
 	return s < 0 ? -d : d;
 }
 
+/**
+ * Rule 4's neighbouring squares for a single straight contour. A short tip
+ * still continues when its contour leaves through a square's side. Follow
+ * the two branches from the dropout crossing so an unrelated lobe of a
+ * concave contour cannot supply that continuation. Curved and multiple
+ * contours retain the profile rule until equivalent controls establish
+ * their crossing and continuation arithmetic.
+ */
+class MonoStubContour {
+	private readonly points: [number, number][];
+	constructor(o: Outline) {
+		this.points = Array.from(o.xs, (x, i) => [x / 64 - 0.5, o.ys[i] / 64 - 0.5]);
+	}
+
+	isStub(flipped: boolean, scan: number, crossing: number, lo: number, hi: number, precision: number): boolean | null {
+		const points = this.points;
+		const n = points.length;
+		const point = (i: number): [number, number] => flipped ? [points[i][1], points[i][0]] : points[i];
+		let edge = -1;
+		let distance = Infinity;
+		for (let i = 0; i < n; i++) {
+			const a = point(i), b = point((i + 1) % n);
+			if (a[1] === b[1] || scan < Math.min(a[1], b[1]) || scan > Math.max(a[1], b[1])) continue;
+			const x = a[0] + (b[0] - a[0]) * (scan - a[1]) / (b[1] - a[1]);
+			if (Math.abs(x - crossing) < distance) {
+				distance = Math.abs(x - crossing);
+				edge = i;
+			}
+		}
+		// Profile interpolation can differ from the exact line by two ticks.
+		// If there is no matching edge, preserve the existing profile decision.
+		if (edge < 0 || distance > 2 / precision) return null;
+		const trace = (step: number): { side: number; continues: boolean } => {
+			let i = step === 1 ? (edge + 1) % n : edge;
+			let previous: [number, number] = [crossing, scan];
+			let side = 0;
+			for (let k = 0; k < n; k++, i = (i + step + n) % n) {
+				const p = point(i), dy = p[1] - scan;
+				if (!side && dy) side = Math.sign(dy);
+				if (side && dy * side < 0) {
+					const x = previous[0] + (p[0] - previous[0]) * (scan - previous[1]) / (p[1] - previous[1]);
+					return { side, continues: x <= lo || x >= hi };
+				}
+				if (p[0] <= lo || p[0] >= hi || dy * side >= 1) return { side, continues: true };
+				previous = p;
+			}
+			return { side, continues: false };
+		};
+		const a = trace(1), b = trace(-1);
+		return !(a.side * b.side < 0 && a.continues && b.continues);
+	}
+}
+
 /** The pixel box a mono bitmap covers: every pixel whose centre lies in the control box. */
 function monoBox(o: Outline): { xMin: number; xMax: number; yMin: number; yMax: number } | null {
 	const n = o.xs.length;
@@ -721,9 +774,11 @@ interface PixelBox {
  * Rasterises a grid-fitted outline to a 1-bit bitmap (one byte per pixel),
  * with the given dropout mode (see {@link dropoutMode}). The bitmap covers
  * every pixel whose centre lies in the outline's control box, as GDI's
- * glyph black box does, unless `fixedBox` pins it.
+ * glyph black box does, unless `fixedBox` pins it. `smartCrossings26Dot6`
+ * enables the measured smart-crossing precision only for a caller's verified
+ * upright uniform realization; the default preserves previous arithmetic.
  */
-export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true): GlyphBitmap | null {
+export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false): GlyphBitmap | null {
 	const box = fixedBox ?? monoBox(o);
 	if (!box) {
 		return null;
@@ -748,6 +803,18 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 	// ---- vertical sweep: scanlines are rows ----
 	const r = new Raster(dropout);
 	const P = r.precision;
+	const monoContour = stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) &&
+		local.endPts.length === 1 && Array.from(local.onCurve).every(Boolean) ? new MonoStubContour(local) : null;
+	const smartPixel = (raster: Raster, x1: number, x2: number): number => {
+		if (monoContour && smartCrossings26Dot6) {
+			// Native monochrome smart control compares 26.6 crossings, with an
+			// exact midpoint tie taking the lower sample (native mono-stubs).
+			const step = P / 64;
+			x1 = Math.round(x1 / step) * step;
+			x2 = Math.round(x2 / step) * step;
+		}
+		return raster.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
+	};
 	if (r.convert(local, false, 0, (height - 1) * P)) {
 		r.sweep(
 			(y, x1, x2) => {
@@ -778,17 +845,19 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 							pxl = e2;
 							break;
 						case 4:
-							pxl = r.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
+							pxl = smartPixel(r, x1, x2);
 							break;
 						case 1:
 						case 5:
-							if (left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= r.half)) {
+							const stub = monoContour?.isStub(false, y, x1 / P, e2 / P, e1 / P, P);
+							if (stub === true) return;
+							if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= r.half)) {
 								return;
 							}
-							if (right.next === left && left.start === y && !(stubOvershoot && left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= r.half)) {
+							if (stub == null && right.next === left && left.start === y && !(stubOvershoot && left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= r.half)) {
 								return;
 							}
-							pxl = mode === 1 ? e2 : r.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
+							pxl = mode === 1 ? e2 : smartPixel(r, x1, x2);
 							break;
 						default:
 							return;
@@ -839,17 +908,19 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 								pxl = e2;
 								break;
 							case 4:
-								pxl = h.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
+								pxl = smartPixel(h, x1, x2);
 								break;
 							case 1:
 							case 5:
-								if (left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= h.half)) {
+								const stub = monoContour?.isStub(true, col, x1 / P, e2 / P, e1 / P, P);
+								if (stub === true) return;
+								if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= h.half)) {
 									return;
 								}
-								if (right.next === left && left.start === col && !(stubOvershoot && left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= h.half)) {
+								if (stub == null && right.next === left && left.start === col && !(stubOvershoot && left.flags & OVERSHOOT_BOTTOM && x2 - x1 >= h.half)) {
 									return;
 								}
-								pxl = mode === 1 ? e2 : h.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
+								pxl = mode === 1 ? e2 : smartPixel(h, x1, x2);
 								break;
 							default:
 								return;

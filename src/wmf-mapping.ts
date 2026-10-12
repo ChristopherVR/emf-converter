@@ -142,9 +142,14 @@ export function setViewportExt(m: WmfMapping, cx: number, cy: number): void {
 	fixIsotropic(m);
 }
 
-/** `ScaleWindowExtEx` / `ScaleViewportExtEx`: `ext * num / den`, truncated, on each axis. */
+/** Signed 32-bit multiplication followed by truncating division, as GDI scales extents. */
 function scaled(v: number, num: number, den: number): number {
-	return Math.trunc((v * num) / den);
+	const product = Math.imul(v, num);
+	// The one signed division overflow is rejected along with a zero extent.
+	if (product === -0x80000000 && den === -1) {
+		return 0;
+	}
+	return Math.trunc(product / den);
 }
 
 /** `META_SCALEWINDOWEXT`. */

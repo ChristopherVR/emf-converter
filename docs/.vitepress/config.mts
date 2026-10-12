@@ -47,6 +47,7 @@ export default defineConfig({
 					{ text: 'How it works', link: '/how-it-works' },
 					{ text: 'Limitations', link: '/limitations' },
 					{ text: 'Outstanding work', link: '/outstanding-work' },
+					{ text: 'Native parity review', link: '/native-parity-review' },
 				],
 			},
 			{

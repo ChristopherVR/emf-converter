@@ -131,9 +131,10 @@ describe('GDI+ images against GDI bitmaps of the same private fonts (native data
 describe('GDI monochrome bitmaps of the private polygon fonts (GetGlyphOutline GGO_BITMAP)', () => {
 	// [exact at 8 to 32 ppem of 4,096, exact at 33 to 40 ppem of 1,024]
 	const expected: Record<string, [number, number]> = {
-		polygons: [4079, 1024], st0: [4079, 1024], st4: [4049, 1009],
-		// SCANTYPE 1 and 5 exclude stubs; the engine's FreeType stub rule is right for about 3 in 4 bitmaps.
-		st1: [3102, 774], st5: [3134, 782],
+		polygons: [4079, 1024], st0: [4079, 1024], st4: [4079, 1024],
+		// Straight single contours follow native neighbouring-square stub control
+		// and 26.6 smart crossings; per-case ceilings/preservation live in ttf-mono-stub.fixture.test.ts.
+		st1: [4063, 1024], st5: [4063, 1024],
 	};
 	it.each(Object.keys(expected))('%s', (set) => {
 		expect(gdiExact(set, 1, true)).toEqual([expected[set][0], 4096]);

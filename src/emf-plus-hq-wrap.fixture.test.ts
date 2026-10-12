@@ -123,7 +123,7 @@ describe('high-quality draws under an ImageAttributes WrapMode (native captures)
 		const count = (round: (v: number) => number): number => rotated.reduce((n, c) => n + compare({ ...c, p: c.p.map(round) }, 1).px, 0);
 		const asRecorded = count((v) => v);
 		const allThree = count((v) => Math.round(v * 16) / 16);
-		expect([asRecorded, allThree]).toEqual([704, 1141]);
+		expect([asRecorded, allThree]).toEqual([704, 1135]);
 	});
 
 	it('pins the converter against every capture (pixels more than 3 levels off, per wrap mode and shape)', () => {

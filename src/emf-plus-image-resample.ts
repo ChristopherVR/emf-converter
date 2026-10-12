@@ -23,6 +23,8 @@
  *   scale, rotation, shear or flip.
  * - Bilinear (also Default and LowQuality): the 2x2 tent, point-sampled at
  *   every scale (no prefilter, so a strong reduction aliases, as in GDI+).
+ *   Source colours are rounded to premultiplied bytes before filtering;
+ *   the result is rounded half up to premultiplied bytes before unpremultiplying.
  * - Bicubic: the 4x4 cubic convolution kernel with `a = -0.5`
  *   (Catmull-Rom), point-sampled at every scale.
  * - HighQualityBilinear / HighQualityBicubic (and HighQuality): the source
@@ -370,6 +372,8 @@ interface TexelBox {
  * horizontal pass first (each order matches its own fixtures exactly and
  * the other does not). Axis-aligned Bicubic first converts source colours
  * to integer premultiplied bytes and truncates each convolution pass.
+ * Bilinear also reads integer premultiplied bytes, but keeps its fractional
+ * intermediate and rounds only after the two passes.
  * A texel outside `box` is transparent. Returns
  * premultiplied `[r, g, b, a]` on a 0..255 scale, unclamped. Pure.
  */
@@ -385,6 +389,7 @@ function blendSeparable(
 	edge: EdgeMode = { wrap: undefined, clamp: null },
 	integerBicubic = false,
 	premult = false,
+	integerPremult = false,
 ): [number, number, number, number] {
 	const [outer0, outerW, inner0, innerW] = verticalFirst ? [iu0, wu, iv0, wv] : [iv0, wv, iu0, wu];
 	const [oMin, oMax, iMin, iMax] = verticalFirst ? [box.x0, box.x1, box.y0, box.y1] : [box.y0, box.y1, box.x0, box.x1];
@@ -426,9 +431,9 @@ function blendSeparable(
 			}
 			const alpha = px[s + 3];
 			const wa = (wi * alpha) / 255;
-			lr += premult ? wi * px[s] : integerBicubic ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
-			lg += premult ? wi * px[s + 1] : integerBicubic ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
-			lb += premult ? wi * px[s + 2] : integerBicubic ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
+			lr += premult ? wi * px[s] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
+			lg += premult ? wi * px[s + 1] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
+			lb += premult ? wi * px[s + 2] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
 			la += wi * alpha;
 		}
 		if (integerBicubic) {
@@ -705,8 +710,17 @@ export function resampleImage(
 				for (let t = iv0; t <= iv1; t++) {
 					wv.push(integerBicubic ? Math.round(fv.weight(t, cv) * 65536) / 65536 : fv.weight(t, cv));
 				}
-				return blendSeparable(rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge, integerBicubic, premultSource);
+				return blendSeparable(
+					rgba, width, box, iu0, wu, iv0, wv, kernel === 'bicubic', edge,
+					integerBicubic, premultSource, kernel === 'bilinear',
+				);
 			};
+			if (kernel === 'bilinear') {
+				// Quantize each fractional coordinate once, keeping the two tent shares complementary.
+				// Native DrawImage and TextureBrush use nearest 11-bit fractions, also under mirrors.
+				u = Math.floor(u) + Math.round((u - Math.floor(u)) * 2048) / 2048;
+				v = Math.floor(v) + Math.round((v - Math.floor(v)) * 2048) / 2048;
+			}
 			let [r, g, b, a] = sampleAt(u, v);
 			if (farFade && !spec.wrap && a > 0) {
 				const du = (uMax - u) / gradU;
@@ -732,8 +746,10 @@ export function resampleImage(
 				b = Math.trunc(b);
 				a = Math.trunc(a);
 				if (a <= 0) continue;
-			} else if (premultSource) {
-				// The plain pass of a rotated high-quality draw writes whole premultiplied bytes.
+			} else if (premultSource || kernel === 'bilinear') {
+				// Native Bilinear writes whole premultiplied bytes, including a directly requested
+				// draw from a straight-alpha source. Round before unpremultiplying: otherwise
+				// fractional alpha changes the reconstructed colour and byte ties round to even.
 				r = Math.round(r);
 				g = Math.round(g);
 				b = Math.round(b);

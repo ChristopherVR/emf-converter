@@ -620,7 +620,12 @@ export class RealizedFont implements GdiRealizedFont {
 		}
 		let bitmap: GlyphBitmap | null;
 		if (this.mode === 'mono') {
-			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType));
+			// 26.6 smart-crossing selection is verified for an upright uniformly
+			// realised font. Stretched or transformed glyphs retain the previous
+			// arithmetic: native condensed controls expose an unresolved interaction
+			// with their hinted outlines (mono-condensed.json.gz).
+			const smartGrid = this.ppemX === this.ppem && !m && !this.syntheticItalic && !subX && !subY;
+			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType), undefined, true, smartGrid);
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
@@ -628,7 +633,13 @@ export class RealizedFont implements GdiRealizedFont {
 			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
 			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout);
 		} else {
-			bitmap = rasterizeGray(o, src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2);
+			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
+			// GDI+ AntiAlias widens regular/italic Courier New by one grayscale
+			// sample to the right; the grid-fit hint and bold faces do not.
+			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&
+				this.ttf.weightClass < 600 && this.ttf.family.toLowerCase() === 'courier new'
+				? rasterizeCourierGray(o, dropout)
+				: rasterizeGray(o, dropout);
 		}
 		if (bitmap && this.syntheticBold) {
 			bitmap = embolden(bitmap, this.mode === 'mono' ? 1 : 16);
@@ -998,6 +1009,32 @@ export function resolvePpem(font: TtfFont, height: number): number {
 
 /** ClearType's horizontal oversampling: 2 samples per subpixel, 6 per pixel. */
 const CLEARTYPE_OVERSAMPLE = 6;
+
+/**
+ * Courier New's regular/italic GDI+ AntiAlias raster: widen each 4x4 sample
+ * row one sample right before counting coverage. Native quarter-origin
+ * controls prove this is a raster adjustment, not an origin shift: all
+ * left edges stay put while right edges grow. A private copy with only its
+ * family renamed renders without it (CourierGrayProbe.cs); bold faces,
+ * AntiAliasGridFit and classic GDI do not use this adjustment.
+ */
+function rasterizeCourierGray(o: Outline, dropout: number): GlyphBitmap | null {
+	const samples = rasterizeSamples(o, 4, 4, 1, dropout, false);
+	if (!samples) return null;
+	const { box, hi } = samples;
+	const width = box.xMax - box.xMin;
+	const height = box.yMax - box.yMin;
+	const data = new Uint8Array(width * height);
+	for (let y = 0; y < hi.height; y++) {
+		const row = y * hi.width;
+		for (let x = 0; x < hi.width; x++) {
+			if (hi.data[row + x] || (x > 0 && hi.data[row + x - 1])) {
+				data[Math.floor(y / 4) * width + Math.floor(x / 4)]++;
+			}
+		}
+	}
+	return { width, height, left: box.xMin, top: box.yMax, data };
+}
 
 /** How far a ClearType sample row is widened before filtering: samples to the left and to the right. */
 interface ClearTypeSpread {

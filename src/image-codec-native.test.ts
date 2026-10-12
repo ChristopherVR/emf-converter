@@ -173,13 +173,14 @@ it('plays an EMF+ DrawImage of a progressive 4:2:0 arithmetic JPEG with restart 
 		}
 	}
 	// The decoded 37 x 19 source is exact (above); the one-level differences are the 7x enlargement done by DrawImage.
-	expect(exact).toBe(148274);
+	// Native 11-bit bilinear shares raise exact channel values from 148,274 to 151,082.
+	expect(exact).toBe(151082);
 	expect(max).toBeLessThanOrEqual(1);
 });
 
 it.each([
-	['arithmetic', 151086, 1],
-	['cmyk-photo', 150664, 1],
+	['arithmetic', 151198, 1],
+	['cmyk-photo', 150792, 1],
 ])('plays an EMF+ DrawImage of the %s JPEG like GDI+ (exact channel values, largest error)', async (name, exactCount, maxError) => {
 	const rendered = (await renderFixture(`codec-jpeg-${name}-playback.emf`))!;
 	const reference = await loadReference(`codec-jpeg-${name}-playback`);

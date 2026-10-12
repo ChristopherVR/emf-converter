@@ -15,7 +15,7 @@ import {
 } from './emf-constants';
 import { activateGdiMappingMode } from './emf-gdi-coord';
 import type { EmfGdiReplayCtx, TransformMatrix } from './emf-types';
-import { MM_ANISOTROPIC, MM_TEXT, type WmfMapping, extentsSettable, fixIsotropic, setMapMode } from './wmf-mapping';
+import { MM_ANISOTROPIC, MM_TEXT, type WmfMapping, extentsSettable, fixIsotropic, scaleViewportExt, scaleWindowExt, setMapMode } from './wmf-mapping';
 
 // ---------------------------------------------------------------------------
 // Map mode
@@ -83,10 +83,19 @@ function setExtent(r: EmfGdiReplayCtx, viewport: boolean, cx: number, cy: number
 
 /** `ScaleViewportExtEx` / `ScaleWindowExtEx`: rational scaling, under the same rules as {@link setExtent}. */
 function scaleExtent(r: EmfGdiReplayCtx, viewport: boolean, xNum: number, xDenom: number, yNum: number, yDenom: number): void {
-	const ext = viewport ? r.viewportExt : r.windowExt;
-	const cx = xDenom !== 0 ? Math.round((ext.cx * xNum) / xDenom) : ext.cx;
-	const cy = yDenom !== 0 ? Math.round((ext.cy * yNum) / yDenom) : ext.cy;
-	setExtent(r, viewport, cx, cy);
+	const m = emfMapping(r);
+	if (!extentsSettable(m) || !xDenom || !yDenom) {
+		return;
+	}
+	// Windows truncates signed rational products and rejects the whole update
+	// when either divisor or resulting extent is zero (MappingExtentProbe.cs).
+	(viewport ? scaleViewportExt : scaleWindowExt)(m, xNum, xDenom, yNum, yDenom);
+	if (r.windowExt.cx === m.winExt.cx && r.windowExt.cy === m.winExt.cy &&
+		r.viewportExt.cx === m.vpExt.cx && r.viewportExt.cy === m.vpExt.cy) {
+		return;
+	}
+	storeMapping(r, m);
+	activateGdiMappingMode(r);
 }
 
 // ---------------------------------------------------------------------------

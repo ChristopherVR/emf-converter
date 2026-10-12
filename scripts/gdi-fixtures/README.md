@@ -10,8 +10,29 @@ replay each metafile through the converter and compare against the PNG.
 | `PenTransformProbe.cs` | Pen-transform (`Pen.Transform`) cases: `pen-<case>.emf`, `pen-<case>.png` (GDI+ playback) and `pen-<case>-direct.png` (drawn straight onto a bitmap). |
 | `generate.ps1` | Compiles both files with `Add-Type` and runs the requested groups. |
 | `report.ts` | Parity table for every fixture: `bun scripts/gdi-fixtures/report.ts` (not part of `bun run test`). |
+| `generate-mapping-extents.ps1` | Standalone signed rational extent scaling, rejection and 32-bit arithmetic controls, including complete native polygon masks for EMF/WMF replay tests. |
+| `capture-bilinear.ps1` | Standalone GDI+ Bilinear arithmetic, cropped/mirrored image and alpha controls captured into premultiplied surfaces. |
+| `generate-texture-sampling.ps1` | Standalone TextureBrush controls across transforms, wrap modes and pixel offsets, capturing both straight and premultiplied RGBA. |
+
+Run standalone PowerShell generators with Windows PowerShell, for example `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/gdi-fixtures/capture-bilinear.ps1`. Each accepts `-OutDir` for a separate capture directory and writes an environment manifest with native-library and reference hashes. They do not regenerate the older fixture groups.
 
 The report supplies `windowsFonts()` when the complete fixture font set is available (override its directory with `GDI_FIXTURE_FONTS`). Set `GDI_FONTS=host` to inspect canvas text rendering instead. It identifies the font mode, reports exact RGB pixel counts as well as differences beyond eight levels, and includes the overlap's right/bottom edges. `size` lists rendered/reference dimensions; `outside` counts reference ink missing from the render and rendered ink with no captured reference. White margins are ignored in those counts. Exact common-area RGB does not certify matching bounds or independent alpha. `GDI_FILTER` selects fixture names, `GDI_REPORT` selects the output file, and `GDI_DUMP` saves the same renders used for comparison.
+
+## Supplementary Unicode text controls
+
+`python scripts/gdi-fixtures/build-supplementary-font.py` builds the CC0 diagnostic font (requires fontTools). Then `powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-text-supplementary.ps1` captures 75 native GDI+ DrawString controls across five text hints and three sizes, with an environment manifest. BMP and supplementary Unicode aliases map to identical glyphs so the controls isolate surrogate-pair decoding and advances from font-shape differences. `emf-plus-supplementary-text.fixture.test.ts` compares complete RGBA output exactly and checks supplementary text and glyph positions in vector SVG. The checked-in font and captures make tests portable; Windows is needed only to regenerate references.
+
+## Courier New grayscale controls
+
+`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-courier-gray.ps1 -Renamed` captures 6,400 native size/style/hint/quarter-origin controls and 1,600 private-family controls. The optional rename comparison requires Python fontTools; its copy of the installed Windows font stays under `.scratch/` and is not bundled. Environment manifests record the inputs. `gdiplus-courier-gray.fixture.test.ts` retains individual before/after bounds, including five small increases in already-inexact cases, and checks that no previously exact control is lost. The family-specific widening applies only to regular/italic GDI+ AntiAlias; bold, grid fitting, matrices and synthetic styles are excluded.
+
+## Monochrome stub and DrawString spacing controls
+
+`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-mono-stubs.ps1` captures native monochrome glyph masks using generated diagnostic fonts. `build-mono-stub-fonts.py` rebuilds those fonts with Python fontTools. Original, independent and held-out sets total 29,696 controls; `ttf-mono-stub.fixture.test.ts` checks complete ink coordinates, individual bounds and preservation of previously exact cases. Curves and multiple contours remain diagnostic controls; the new runtime rule is limited to straight single-contour outlines.
+
+`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-drawstring-advances.ps1` captures native repeat-glyph and mixed-string spacing evidence. `gdiplus-drawstring-advances.fixture.test.ts` pins the current per-case baselines. These captures rejected two candidate ClearType spacing corrections; they do not establish a complete layout model. See the text follow-up in `docs/native-parity-review.md` for the measured counterexamples.
+
+The monochrome generator also captures 1,200 real-font controls using `MonoCondensedProbe.cs`; `ttf-mono-condensed.fixture.test.ts` preserves every prior per-case ceiling and 970 exact controls. The smart-crossing refinement is restricted to upright, uniformly realized glyphs without synthetic shear or fractional translation. Condensed glyphs retain the previous arithmetic where refinement exposes unresolved hinting/raster interactions; existing real-font residual limits remain unchanged.
 
 ## Case groups
 

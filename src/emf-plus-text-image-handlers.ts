@@ -534,8 +534,8 @@ function drawPlusStringWithEngine(
 	if (!unhinted) x = Math.round(x);
 	const y = m[3] * layoutY + m[5] + ascent;
 	const codes: number[] = [];
-	for (let i = 0; i < text.length; i++) {
-		codes.push(text.charCodeAt(i));
+	for (const character of text) {
+		codes.push(character.codePointAt(0)!);
 	}
 	// Without grid fitting GDI+ spaces glyphs by their linear advances times
 	// the format's tracking (1.03 for the default format, 1 for

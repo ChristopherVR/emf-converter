@@ -80,7 +80,9 @@ export function textureTexelAt(
  * a pixel. The four neighbouring texels wrap per the `WrapMode` (TileFlipX/
  * Y mirror alternate tiles texel for texel), and under Clamp a neighbour
  * outside the bitmap is transparent, so the last half texel along each
- * edge fades out. Blending is premultiplied. `inv` is the device-to-texture
+ * edge fades out. The bilinear fractions use 11 bits, source colours and
+ * filtered results round to premultiplied bytes, and the straight output
+ * preserves those bytes when the canvas premultiplies it. `inv` is the device-to-texture
  * matrix. Pure apart from writing `out`.
  */
 export function writeTextureColor(
@@ -104,8 +106,10 @@ export function writeTextureColor(
 	// float noise in the inverse matrix.
 	const iu = Math.floor(cu + 1e-9);
 	const iv = Math.floor(cv + 1e-9);
-	const fu = Math.max(0, cu - iu);
-	const fv = Math.max(0, cv - iv);
+	// Native TextureBrush uses 11-bit bilinear fractions, including under
+	// reductions and shears (texture-sampling.json.gz).
+	const fu = Math.round(Math.max(0, cu - iu) * 2048) / 2048;
+	const fv = Math.round(Math.max(0, cv - iv) * 2048) / 2048;
 	const clamp = wrap === 'clamp';
 	const mirrorX = wrap === 'tile-flip-x' || wrap === 'tile-flip-xy';
 	const mirrorY = wrap === 'tile-flip-y' || wrap === 'tile-flip-xy';
@@ -133,18 +137,24 @@ export function writeTextureColor(
 			y = wrapTexel(tv, height, mirrorY);
 		}
 		const s = (y * width + x) * 4;
-		const wa = w * rgba[s + 3];
-		r += wa * rgba[s];
-		g += wa * rgba[s + 1];
-		b += wa * rgba[s + 2];
-		a += wa;
+		const alpha = rgba[s + 3];
+		// Premultiplication belongs to the source bitmap, before filtering.
+		r += w * Math.round(rgba[s] * alpha / 255);
+		g += w * Math.round(rgba[s + 1] * alpha / 255);
+		b += w * Math.round(rgba[s + 2] * alpha / 255);
+		a += w * alpha;
 	}
+	a = Math.round(a);
 	if (a <= 0) {
 		return;
 	}
-	out[o] = r / a;
-	out[o + 1] = g / a;
-	out[o + 2] = b / a;
+	// Round the filtered premultiplied bytes before unpremultiplying. The
+	// nearest straight value preserves those bytes when the canvas consumes
+	// this buffer; copying native ARGB extraction's truncated reciprocal here
+	// would lose a level when the canvas premultiplies it again.
+	out[o] = Math.round(Math.round(r) * 255 / a);
+	out[o + 1] = Math.round(Math.round(g) * 255 / a);
+	out[o + 2] = Math.round(Math.round(b) * 255 / a);
 	out[o + 3] = a;
 }
 
