@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.20.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.2) - 2026-10-12
+
+### Bug Fixes
+
+- Align portable text and correct collapsed mono glyph boxes ([1e59456](https://github.com/ChristopherVR/emf-converter/commit/1e59456ded974356df7d6282e1b0c55944bc1561))
+
 ## [4.20.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.1) - 2026-10-12
 
 ### Bug Fixes
