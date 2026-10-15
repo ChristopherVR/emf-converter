@@ -25,6 +25,7 @@ public static class CompatPlaybackProbe
 	[DllImport("gdi32.dll")] static extern bool MoveToEx(IntPtr dc, int x, int y, IntPtr old);
 	[DllImport("gdi32.dll")] static extern bool LineTo(IntPtr dc, int x, int y);
 	[DllImport("gdi32.dll")] static extern bool Polygon(IntPtr dc, int[] pts, int n);
+	[DllImport("gdi32.dll")] static extern bool Polyline(IntPtr dc, int[] pts, int n);
 	[DllImport("gdi32.dll")] static extern bool PatBlt(IntPtr dc, int x, int y, int w, int h, uint rop);
 	[DllImport("gdi32.dll")] static extern IntPtr CreatePen(int style, int width, uint color);
 	[DllImport("gdi32.dll")] static extern IntPtr ExtCreatePen(uint style, uint width, ref LogBrush brush, uint count, uint[] dashes);
@@ -358,7 +359,7 @@ public static class CompatPlaybackProbe
 		EnumEnhMetaFile(dc, emf, delegate(IntPtr hdc, IntPtr table, IntPtr rec, int n, IntPtr data)
 		{
 			int type = Marshal.ReadInt32(rec);
-			if ((type >= 42 && type <= 47) || (lines && type == 54))
+			if ((type >= 42 && type <= 47) || (lines && (type == 54 || type == 3 || type == 4 || type == 86 || type == 87)))
 			{
 				SaveDC(hdc);
 				BeginPath(hdc);
@@ -380,6 +381,69 @@ public static class CompatPlaybackProbe
 		}, IntPtr.Zero, ref rect);
 		DeleteEnhMetaFile(emf); DeleteDC(dc); DeleteObject(bmp); ReleaseDC(IntPtr.Zero, screen);
 		return js.Append(']').ToString();
+	}
+
+	/**
+	 * Native `GetPath` and `WidenPath` of many random triangles and quadrilaterals recorded under the `compat-widemirror` map (3:2 by 1:1,
+	 * the x extent negated for `m`) with a plain pen of 3 or 4 units: `compat-poly-widen.json.gz`, `{variant: {raw: [...], wide: [...]}}`
+	 * where each list holds `SheetPaths` entries (the POLYGON16 record and its path as `[x, y, type]` FIX triples). `count` polygons per
+	 * variant, placed anywhere on the 420 by 300 surface so every sub-pixel phase occurs. Kinds: `poly3`, `poly4` (random Polygons),
+	 * `open3` (Polyline of 3 points), `line2` (of 2) and the same with `par` appended, whose first segment is parallel to an edge of the nib
+	 * (the tie case that decides which end of the edge the pen rests on). Variant name: `<kind>-p<pen width>-<m|u>`.
+	 */
+	public static void PolyWiden(string dir, int count = 400, string kinds = "poly3,poly4,poly3par,poly4par,open3par,line2par", bool mirrorOnly = true)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		var js = new System.Text.StringBuilder("{");
+		int variants = 0;
+		// Segments (logical units) whose mirrored device vector is parallel to a pen edge: p3 (3a, +-3a); p4 (15, -6) and (24, 9).
+		int[][] parSegs3 = { new[] { 3, 3 }, new[] { 3, -3 }, new[] { 6, 6 }, new[] { 6, -6 }, new[] { 9, 9 }, new[] { 9, -9 }, new[] { 12, 12 }, new[] { 12, -12 } };
+		int[][] parSegs4 = { new[] { 15, -6 }, new[] { 24, 9 }, new[] { 30, -12 } };
+		string[] kindNames = kinds.Split(',');
+		for (int kindIx = 0; kindIx < kindNames.Length; kindIx++)
+			foreach (int pw in new[] { 3, 4 })
+				for (int mirror = mirrorOnly ? 1 : 0; mirror < 2; mirror++)
+				{
+					string kn = kindNames[kindIx];
+					int quad = kn.StartsWith("poly4") ? 1 : 0; bool open = kn.StartsWith("open3"), line2 = kn.StartsWith("line2"), par = kn.EndsWith("par");
+					string name = kn + "-p" + pw + "-" + (mirror == 1 ? "m" : "u");
+					string file = Path.Combine(dir, "compat-poly-widen-tmp.emf");
+					IntPtr mdc = CreateEnhMetaFileW(screen, file, ref frame, null);
+					SetMapMode(mdc, 8);
+					SetWindowExtEx(mdc, 3, 1, IntPtr.Zero);
+					SetViewportExtEx(mdc, mirror == 1 ? -2 : 2, 1, IntPtr.Zero);
+					if (mirror == 1) SetViewportOrgEx(mdc, W, 0, IntPtr.Zero);
+					SetBkMode(mdc, 1);
+					IntPtr p = CreatePen(0, pw, 0x202020), br = CreateSolidBrush(0x60A0F0);
+					IntPtr op = SelectObject(mdc, p), ob = SelectObject(mdc, br);
+					var rnd = new Random(9100 + kindIx * 10 + pw);
+					for (int i = 0; i < count; i++)
+					{
+						int lx0 = rnd.Next(30, 570), ly0 = rnd.Next(20, 260);
+						int[] pts = new int[8];
+						for (int k = 0; k < 4; k++) { pts[2 * k] = lx0 + rnd.Next(0, 25); pts[2 * k + 1] = ly0 + rnd.Next(0, 14); }
+						if (par)
+						{
+							// The first segment is parallel to a pen edge (either way along it); the others are random.
+							int[] s = pw == 3 ? parSegs3[rnd.Next(parSegs3.Length)] : parSegs4[rnd.Next(parSegs4.Length)];
+							int sign = rnd.Next(2) == 0 ? 1 : -1;
+							pts[2] = pts[0] + sign * s[0]; pts[3] = pts[1] + sign * s[1];
+						}
+						if (line2) Polyline(mdc, pts, 2); else if (open) Polyline(mdc, pts, 3); else Polygon(mdc, pts, quad == 1 ? 4 : 3);
+					}
+					SelectObject(mdc, op); SelectObject(mdc, ob); DeleteObject(p); DeleteObject(br);
+					DeleteEnhMetaFile(CloseEnhMetaFile(mdc));
+					string raw = SheetPaths(file, false, true), wide = SheetPaths(file, true, true);
+					if (variants++ > 0) js.Append(',');
+					js.Append('"').Append(name).Append("\":{\"raw\":").Append(raw).Append(",\"wide\":").Append(wide).Append('}');
+				}
+		File.Delete(Path.Combine(dir, "compat-poly-widen-tmp.emf"));
+		ReleaseDC(IntPtr.Zero, screen);
+		var bytes = System.Text.Encoding.UTF8.GetBytes(js.Append('}').ToString());
+		using (var f = File.Create(Path.Combine(dir, "compat-poly-widen.json.gz")))
+		using (var zip = new System.IO.Compression.GZipStream(f, System.IO.Compression.CompressionMode.Compress)) zip.Write(bytes, 0, bytes.Length);
 	}
 
 	/** The Rectangle and Ellipse sweeps under mirrored maps: `compat-rects-m<x|y|xy>-<sweep>-<pen>` and `compat-ellipses-m...` for the 10:7, 3:4, 4:3 and 1:2 sweeps. */

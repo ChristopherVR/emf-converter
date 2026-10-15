@@ -13,8 +13,8 @@
  *
  * Dots (`dot`, zero-length lines; 98 pixels on each `p3` sheet, 196 on `p4-m`) and the 3 to 14 end pixels of the line sheets were
  * one rule: a dot whose rounded device position is a whole pixel on both axes has a nib pulled in by one FIX
- * (`gdi-dot-nib.fixture.test.ts`; the line sheets hold such zero-length figures too). What is left is the 5 pixels of the polygon
- * sheets below.
+ * (`gdi-dot-nib.fixture.test.ts`; the line sheets hold such zero-length figures too). The 5 pixels the polygon
+ * sheets kept after that (round 8) were segments parallel to an edge of the nib: see the second block below.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -23,11 +23,7 @@ import { diffImages, loadReference, renderFixture } from './__fixtures__/gdi-par
 const kinds = ['line', 'hline', 'vline', 'poly3', 'poly4', 'ellipse', 'dot'];
 
 /** Differing pixels per sheet; every sheet not listed is pixel-exact. */
-const residual: Record<string, number> = {
-	'compat-widemirror-poly3-p3-m': 2,
-	'compat-widemirror-poly3-p4-m': 1,
-	'compat-widemirror-poly4-p4-m': 2,
-};
+const residual: Record<string, number> = {};
 
 const sheets = kinds.flatMap((k) => ['p3', 'p4'].flatMap((p) => ['m', 'u'].map((m) => `compat-widemirror-${k}-${p}-${m}`)));
 

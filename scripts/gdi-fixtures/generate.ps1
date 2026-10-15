@@ -51,7 +51,7 @@
 #   path-gradient-focus-corners, path-gradient-focus-edges, path-gradient-focus-thresholds,
 #   path-gradient-focus-slants, path-gradient-tile-rotations, compat-playback-paths-probe,
 #   compat-playback-shapes-probe, compat-playback-mirror-probe, compat-widemirror-probe,
-#   compat-dot-grid-probe, compat-roundrect-sweep-probe, compat-roundrect-modes-probe
+#   compat-dot-grid-probe, compat-roundrect-sweep-probe, compat-roundrect-modes-probe, compat-poly-widen-probe
 #
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
@@ -111,9 +111,9 @@ if ($Which -eq 'emf-roundrect-mode-probe') {
     Complete-Fixtures
     return
 }
-if ($Which -eq 'compat-playback-paths-probe' -or $Which -eq 'compat-playback-shapes-probe' -or $Which -eq 'compat-playback-mirror-probe' -or $Which -eq 'compat-widemirror-probe' -or $Which -eq 'compat-dot-grid-probe' -or $Which -eq 'compat-roundrect-sweep-probe' -or $Which -eq 'compat-roundrect-modes-probe') {
+if ($Which -eq 'compat-playback-paths-probe' -or $Which -eq 'compat-playback-shapes-probe' -or $Which -eq 'compat-playback-mirror-probe' -or $Which -eq 'compat-widemirror-probe' -or $Which -eq 'compat-dot-grid-probe' -or $Which -eq 'compat-roundrect-sweep-probe' -or $Which -eq 'compat-roundrect-modes-probe' -or $Which -eq 'compat-poly-widen-probe') {
     Add-Type -Path (Join-Path $here 'CompatPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
-    if ($Which -eq 'compat-playback-paths-probe') { [CompatPlaybackProbe]::PathPlayback($outDir) } elseif ($Which -eq 'compat-widemirror-probe') { [CompatPlaybackProbe]::WideMirror($outDir) } elseif ($Which -eq 'compat-dot-grid-probe') { [CompatPlaybackProbe]::DotGrid($outDir) } elseif ($Which -eq 'compat-roundrect-sweep-probe') { [CompatPlaybackProbe]::RoundRectSweep($outDir) } elseif ($Which -eq 'compat-roundrect-modes-probe') { [CompatPlaybackProbe]::RoundRectModes($outDir) } elseif ($Which -eq 'compat-playback-mirror-probe') { [CompatPlaybackProbe]::RunMirrored($outDir); [CompatPlaybackProbe]::RectSweepMirrored($outDir) } else { [CompatPlaybackProbe]::PathPlaybackShapes($outDir) }
+    if ($Which -eq 'compat-playback-paths-probe') { [CompatPlaybackProbe]::PathPlayback($outDir) } elseif ($Which -eq 'compat-widemirror-probe') { [CompatPlaybackProbe]::WideMirror($outDir) } elseif ($Which -eq 'compat-poly-widen-probe') { [CompatPlaybackProbe]::PolyWiden($outDir) } elseif ($Which -eq 'compat-dot-grid-probe') { [CompatPlaybackProbe]::DotGrid($outDir) } elseif ($Which -eq 'compat-roundrect-sweep-probe') { [CompatPlaybackProbe]::RoundRectSweep($outDir) } elseif ($Which -eq 'compat-roundrect-modes-probe') { [CompatPlaybackProbe]::RoundRectModes($outDir) } elseif ($Which -eq 'compat-playback-mirror-probe') { [CompatPlaybackProbe]::RunMirrored($outDir); [CompatPlaybackProbe]::RectSweepMirrored($outDir) } else { [CompatPlaybackProbe]::PathPlaybackShapes($outDir) }
     Complete-Fixtures
     return
 }
@@ -364,6 +364,18 @@ if ($Which -eq 'playback-references') {
         $case = @($cases | Where-Object { $_.name -eq $PlaybackCase })
         if ($case.Count -ne 1) { throw "Unknown playback reference case: $PlaybackCase" }
         $case = $case[0]
+        if ($case.emf) {
+            # The recording is not `<name>.emf` (a WMF fixture's recovered EMF): stage it under the case name.
+            $stage = Join-Path ([IO.Path]::GetTempPath()) ('playback-ref-' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $stage | Out-Null
+            try {
+                Copy-Item -LiteralPath (Join-Path $outDir $case.emf) -Destination (Join-Path $stage ($case.name + '.emf'))
+                Copy-Item -LiteralPath (Join-Path $outDir ($case.name + '.png')) -Destination (Join-Path $stage ($case.name + '.png'))
+                [void][PlaybackExtentProbe]::Capture($stage, $case.name, $case.w, $case.h, $case.ox, $case.oy, $false, $false, $false, '.playback.png')
+                Copy-Item -LiteralPath (Join-Path $stage ($case.name + '.playback.png')) -Destination (Join-Path $outDir ($case.name + '.playback.png')) -Force
+            } finally { Remove-Item -LiteralPath $stage -Recurse -Force }
+            return
+        }
         [void][PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $false, $false, $false, '.playback.png')
         return
     }
@@ -372,7 +384,7 @@ if ($Which -eq 'playback-references') {
         if ($LASTEXITCODE -ne 0) { throw "Playback reference capture failed: $($case.name)" }
     }
     $files = @((Join-Path $outDir 'playback-references.json')) + @($cases | ForEach-Object {
-        Join-Path $outDir ($_.name + '.emf')
+        Join-Path $outDir $(if ($_.emf) { $_.emf } else { $_.name + '.emf' })
         Join-Path $outDir ($_.name + '.png')
         Join-Path $outDir ($_.name + '.playback.png')
     })

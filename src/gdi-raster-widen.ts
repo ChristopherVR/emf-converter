@@ -299,7 +299,13 @@ export function drawVertices(pen: readonly Pt[], dx: number, dy: number, width =
 		yMagnitude = Math.abs((-matrix[1] * dx + matrix[0] * dy) / det);
 	}
 	const steep = yMagnitude > xMagnitude || (yMagnitude === xMagnitude && axisVertex);
-	const s = (steep ? dy < 0 : dx < 0 || (dx === 0 && dy < 0)) ? -1 : 1;
+	let s = (steep ? dy < 0 : dx < 0 || (dx === 0 && dy < 0)) ? -1 : 1;
+	// A matrix that flips orientation (a mirrored x) runs the nib the other way round, so the end of a parallel edge that a segment rests on
+	// is the opposite one (native WidenPath of 24,000 triangles, quadrilaterals, polylines and lines with a segment parallel to an edge of the
+	// 3 and 4 unit nibs under the 3:2 map mirrored in x: `compat-poly-widen.json.gz`).
+	if (matrix && matrix[0] * matrix[3] - matrix[1] * matrix[2] < 0) {
+		s = -s;
+	}
 	let best = 0;
 	let bestH = -Infinity;
 	let bestAlong = 0;

@@ -1,5 +1,5 @@
 # Native GetPath / WidenPath of the Arc..RoundRect (and optionally LineTo) records of recorded sheets played back.
-#   powershell.exe -NoProfile -File scripts/gdi-fixtures/sheet-paths.ps1 -Emf a.emf[,b.emf] -OutFile out.json [-Widen] [-Lines]
+#   powershell.exe -NoProfile -File scripts/gdi-fixtures/sheet-paths.ps1 -Emf a.emf[,b.emf] -OutFile out.json [-Widen] [-Lines]  (-Lines adds LineTo, Polygon and Polyline records)
 param([string[]]$Emf, [string]$OutFile, [switch]$Widen, [switch]$Lines)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
