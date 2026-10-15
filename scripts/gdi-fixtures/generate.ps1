@@ -39,7 +39,7 @@
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
 #   image-effect-narrow-blur, image-effect-hue, image-effect-tint,
-#   image-effect-tables, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-translate16,
+#   image-effect-tables, effect-alpha, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-translate16,
 #   dash-cut-tie-probe, scaled-dash-cap-probe, curve-end-reversal-probe,
 #   tiny-final-segment-probe, text-raster-variants, text-raster-mapper,
 #   text-playback-hinting, text-signed-diagonal-hinting,
@@ -529,6 +529,12 @@ if ($Which -eq 'hq-step-grid') {
 if ($Which -eq 'hq-half-length') {
     Add-Type -Path (Join-Path $here 'HighQualityHalfLengthProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityHalfLengthProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'effect-alpha') {
+    Add-Type -Path (Join-Path $here 'EffectAlphaProbe.cs')
+    [EffectAlphaProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

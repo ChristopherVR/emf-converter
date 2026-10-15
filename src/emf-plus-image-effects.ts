@@ -1313,6 +1313,30 @@ function expandedBlur(
 }
 
 /**
+ * The straight RGBA an effect sees when GDI+ plays a metafile back. The
+ * playback bitmap is premultiplied (an effect recorded into the metafile
+ * ran on the straight ARGB bitmap, which is why the baked bitmaps need no
+ * such step), so each colour byte of a translucent pixel is premultiplied
+ * with rounding and restored by truncation before the effect runs. The
+ * effect's output is then composited as it is (the drawing premultiplies
+ * with rounding). Measured against native playback with
+ * `EffectAlphaProbe.cs` and the 96-pixel half-transparent bars of the
+ * `plus-effect-*` fixtures; opaque pixels are unchanged and transparent
+ * ones lose their colour.
+ */
+export function premultipliedPlaybackSource(rgba: Uint8ClampedArray): Uint8ClampedArray {
+	const out = new Uint8ClampedArray(rgba);
+	for (let i = 0; i < out.length; i += 4) {
+		const a = out[i + 3];
+		if (a === 255) continue;
+		for (let c = 0; c < 3; c++) {
+			out[i + c] = a === 0 ? 0 : Math.min(255, Math.floor((Math.round((out[i + c] * a) / 255) * 255) / a));
+		}
+	}
+	return out;
+}
+
+/**
  * Applies `effect` to the part of a `width` x `height` image that a draw's
  * source rectangle `src` (image pixels, possibly fractional) covers, the way
  * GDI+'s `DrawImage(image, srcRect, xform, effect, ...)` does:
