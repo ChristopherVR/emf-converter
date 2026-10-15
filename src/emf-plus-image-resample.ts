@@ -71,6 +71,8 @@
  * @module emf-plus-image-resample
  */
 
+import { invertTextureMatrix } from './emf-plus-brush-texture';
+import { down32 } from './float32-down';
 import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
 import type { DeferredImageResample, ImageResampleKernel, TransformMatrix } from './emf-types';
@@ -431,9 +433,10 @@ function blendSeparable(
 			}
 			const alpha = px[s + 3];
 			const wa = (wi * alpha) / 255;
-			lr += premult ? wi * px[s] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
-			lg += premult ? wi * px[s + 1] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
-			lb += premult ? wi * px[s + 2] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
+			const literal = !!edge.literal && px === edge.clamp;
+			lr += premult || literal ? wi * px[s] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
+			lg += premult || literal ? wi * px[s + 1] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
+			lb += premult || literal ? wi * px[s + 2] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
 			la += wi * alpha;
 		}
 		if (integerBicubic) {
@@ -443,9 +446,10 @@ function blendSeparable(
 			la = Math.trunc(la);
 		}
 		la = Math.min(255, Math.max(0, la));
-		r += wo * Math.min(la, Math.max(0, lr));
-		g += wo * Math.min(la, Math.max(0, lg));
-		b += wo * Math.min(la, Math.max(0, lb));
+		const cap = edge.literal && integerPremult ? Infinity : la;
+		r += wo * Math.min(cap, Math.max(0, lr));
+		g += wo * Math.min(cap, Math.max(0, lg));
+		b += wo * Math.min(cap, Math.max(0, lb));
 		a += wo * la;
 	}
 	return [r, g, b, a];
@@ -461,8 +465,23 @@ interface EdgeMode {
 	wrap: DeferredImageResample['wrap'];
 	/** The clamp colour as straight RGBA, under WrapMode Clamp. */
 	clamp: number[] | null;
+	/**
+	 * The clamp colour is translucent: GDI+ then reads its RGB as literal premultiplied bytes (a translucent
+	 * `Color.FromArgb(160, 217, 43, 129)` is the premultiplied pixel (217, 43, 129, 160), a red above its alpha),
+	 * for every kernel but the high-quality bicubic one, whose horizontal pass matches only within 20 levels
+	 * (`translucent-clamp-surfaces.json.gz`). The plain Bilinear and the high-quality passes keep that
+	 * intermediate above the alpha (and saturate when written); the plain Bicubic one clamps each line to
+	 * its alpha as before.
+	 */
+	literal?: boolean;
 	mirrorX?: boolean;
 	mirrorY?: boolean;
+}
+
+/** True for a Clamp colour whose alpha is neither 0 nor 255 (see {@link EdgeMode.literal}). */
+function translucentClamp(wrap: DeferredImageResample['wrap'], argb: number): boolean {
+	const alpha = argb >>> 24;
+	return wrap === 'clamp' && alpha > 0 && alpha < 255;
 }
 
 /**
@@ -534,7 +553,13 @@ export function resampleImage(
 	if (spec.kernel === 'nearest' && !spec.wrap) {
 		return resampleNearest(rgba, width, height, spec, surface);
 	}
-	let m = keepOrigin ? spec.toDevice : snapToDeviceGrid(spec);
+	// A plain Bilinear or Bicubic draw of a rotated or sheared quad is covered like NearestNeighbor: the destination
+	// parallelogram's corners (not otherwise snapped, so the origin keeps its fraction) scan-converted by the aliased
+	// fill rule (the 64 independent shear and rotation Bicubic captures: 136 differing pixels with the origin
+	// snapped to 1/16 and the parallelogram tested per pixel, 44 with this).
+	const rasterCovered = !keepOrigin && (spec.kernel === 'bilinear' || spec.kernel === 'bicubic') &&
+		(spec.toDevice[1] !== 0 || spec.toDevice[2] !== 0);
+	let m = keepOrigin || rasterCovered ? spec.toDevice : snapToDeviceGrid(spec);
 	let kernel = spec.kernel;
 	const hq = kernel === 'hq-bilinear' || kernel === 'hq-bicubic';
 	if (hq && (m[1] !== 0 || m[2] !== 0) && Math.abs(m[1]) <= AXIS_ALIGNED_SHEAR * Math.abs(m[0]) && Math.abs(m[2]) <= AXIS_ALIGNED_SHEAR * Math.abs(m[3])) {
@@ -545,12 +570,11 @@ export function resampleImage(
 	if (hq && !axisAligned && !keepOrigin) {
 		m = snapOriginKeepCorners(spec);
 	}
-	// Native DrawImage's axis-aligned Bicubic path uses integer colour
-	// intermediates, and so does the plain Bicubic pass of a rotated
-	// high-quality draw (`plainRotated`). A directly requested rotated or
-	// sheared Bicubic draw keeps the float convolution: the independent
-	// captures (modes 2 and 3) do not support the integer arithmetic there
-	// at every scale.
+	// Native DrawImage's Bicubic path uses integer colour intermediates, whatever the transform. The axis-aligned
+	// path and the plain Bicubic pass of a rotated high-quality draw (`plainRotated`) step the position in nearest
+	// 16.16; a directly requested rotated or sheared draw steps it in float32 rounded toward minus infinity, as
+	// Bilinear does (the 64 independent shear and rotation captures: 10,296 differing pixels with the float
+	// convolution, 136 with this).
 	let plainRotated = plainRotatedPass;
 	// Native unit-scale draws copy near-integral texels when each axis' translation is within 1/64 of a whole
 	// number (see `unitCopyOffset` for the two ends). Public captures cover both axes, fractional destination
@@ -567,7 +591,7 @@ export function resampleImage(
 		const near = nearSourceExtent(extentU, spec.srcW) || nearSourceExtent(extentV, spec.srcH);
 		return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel, near);
 	}
-	const integerBicubic = kernel === 'bicubic' && (axisAligned || plainRotated);
+	const integerBicubic = kernel === 'bicubic';
 	if (hq && axisAligned && !premultSource) {
 		const phased = resampleHqAxisAligned(rgba, width, height, spec, surface, m, premultOut);
 		if (phased !== undefined) {
@@ -621,6 +645,15 @@ export function resampleImage(
 	if (!(w > 0 && h > 0) || w * h > MAX_RESAMPLE_PIXELS) {
 		return null;
 	}
+	const rasterCoverage = rasterCovered
+		? rasterizePlusFill([[
+			[spec.srcX, spec.srcY],
+			[spec.srcX + spec.srcW, spec.srcY],
+			[spec.srcX + spec.srcW, spec.srcY + spec.srcH],
+			[spec.srcX, spec.srcY + spec.srcH],
+		].flatMap(([u, v]) => [toPlusFix(m[0] * u + m[2] * v + m[4]), toPlusFix(m[1] * u + m[3] * v + m[5])])],
+		false, false, !!spec.halfPixelOffset, { x: bx0, y: by0, w, h })
+		: null;
 	// Device pixels per source texel along each source axis.
 	const scaleU = Math.hypot(m[0], m[1]);
 	const scaleV = Math.hypot(m[2], m[3]);
@@ -648,16 +681,26 @@ export function resampleImage(
 	const edge: EdgeMode = {
 		wrap: spec.wrap,
 		clamp: [(c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff, (c >>> 24) & 0xff],
+		literal: translucentClamp(spec.wrap, c),
 		mirrorX: spec.wrap === 'tile-flip-x' || spec.wrap === 'tile-flip-xy',
 		mirrorY: spec.wrap === 'tile-flip-y' || spec.wrap === 'tile-flip-xy',
 	};
 	const bicubicDu = Math.round(inv[0] * FIX16);
 	const bicubicDv = Math.round(inv[1] * FIX16);
+	// Plain Bilinear steps its source position across a row in float32 rounded toward minus infinity, from the
+	// row's first covered pixel (see `writeTextureRect`, which measured the stepper on texture brushes).
+	// The second pass of a rotated high-quality draw is left on the per-pixel model: its intermediate bitmap's
+	// own origin is already snapped, and measured against 600 native rotated captures the stepper trades
+	// as many pixels as it fixes there.
+	const steppedInv = !plainRotatedPass && (kernel === 'bilinear' || (kernel === 'bicubic' && !axisAligned)) ? invertTextureMatrix(m) : null;
 	for (let j = 0; j < h; j++) {
 		const py = by0 + j + o;
 		let start = -1;
 		let su = 0;
 		let sv = 0;
+		let stepU = 0;
+		let stepV = 0;
+		let stepAt = 0;
 		for (let i = 0; i < w; i++) {
 			const px = bx0 + i + o;
 			let u = inv[0] * (px - shiftX) + inv[2] * (py - shiftY) + inv[4];
@@ -671,19 +714,48 @@ export function resampleImage(
 			const cy = py + COVERAGE_NUDGE_Y;
 			const eu = inv[0] * cx + inv[2] * cy + inv[4];
 			const ev = inv[1] * cx + inv[3] * cy + inv[5];
-			if (eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax) {
+			if (rasterCoverage ? !rasterCoverage[j * w + i] : eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax) {
 				continue;
 			}
-			if (integerBicubic) {
-				// The first covered pixel starts a nearest-16.16 row stepper.
-				// Kernel phases truncate to 1/64; y is reinitialised each row.
+			if (steppedInv) {
 				if (start < 0) {
 					start = i;
-					su = Math.round(u * FIX16);
-					sv = Math.round(v * FIX16);
+					stepAt = i;
+					// The position is measured from the device position of the source rectangle's corner, taken from
+					// the unsnapped matrix (native sweeps of the origin by 2^-16 pixel move the phase continuously,
+					// only coverage follows the 1/16 grid), and the corner itself is added after the float32
+					// products (the inverse's translation is not used: it loses a 1/4096 texel phase).
+					const ox = Math.fround(spec.toDevice[0] * spec.srcX + spec.toDevice[2] * spec.srcY + spec.toDevice[4]);
+					const oy = Math.fround(spec.toDevice[1] * spec.srcX + spec.toDevice[3] * spec.srcY + spec.toDevice[5]);
+					const dx0 = down32(px - ox);
+					const dy0 = down32(py - oy);
+					stepU = down32(down32(down32(steppedInv[0] * dx0) + down32(steppedInv[2] * dy0)) + Math.fround(spec.srcX));
+					stepV = down32(down32(down32(steppedInv[1] * dx0) + down32(steppedInv[3] * dy0)) + Math.fround(spec.srcY));
 				}
-				u = Math.floor((su + (i - start) * bicubicDu) / (FIX16 / 64)) / 64;
-				v = Math.floor((sv + (i - start) * bicubicDv) / (FIX16 / 64)) / 64;
+				for (; stepAt < i; stepAt++) {
+					stepU = down32(stepU + steppedInv[0]);
+					stepV = down32(stepV + steppedInv[1]);
+				}
+				u = stepU;
+				v = stepV;
+			}
+			if (integerBicubic) {
+				if (steppedInv) {
+					// A rotated or sheared Bicubic draw steps its position in float32 (above) and truncates the
+					// kernel phase to 1/64.
+					u = Math.floor(u * 64) / 64;
+					v = Math.floor(v * 64) / 64;
+				} else {
+					// The first covered pixel starts a nearest-16.16 row stepper.
+					// Kernel phases truncate to 1/64; y is reinitialised each row.
+					if (start < 0) {
+						start = i;
+						su = Math.round(u * FIX16);
+						sv = Math.round(v * FIX16);
+					}
+					u = Math.floor((su + (i - start) * bicubicDu) / (FIX16 / 64)) / 64;
+					v = Math.floor((sv + (i - start) * bicubicDv) / (FIX16 / 64)) / 64;
+				}
 				if (unitBicubicCopy) {
 					u = Math.round(u);
 					v = Math.round(v);
@@ -942,8 +1014,17 @@ function resampleHqAxisAligned(
 	}
 	const cubic = kernel === 'hq-bicubic';
 	const bin = cubic ? 0.5 : 1;
-	const stepU = hqStep(scaleU);
-	const stepV = hqStep(scaleV);
+	let stepU = hqStep(scaleU);
+	let stepV = hqStep(scaleV);
+	const nominal = spec.nominalScale;
+	if (nominal && !mirrorU && Math.abs(nominal[0] / scaleU - 1) < 1e-5 && Math.abs(nominal[1] / scaleV - 1) < 1e-5) {
+		// GDI+ inverts the float32 matrix with float32 arithmetic, determinant and reciprocal included, so each axis'
+		// step depends on the other's scale in the last bit.
+		const fr = Math.fround;
+		const reciprocal = fr(1 / fr(nominal[0] * nominal[1]));
+		stepU = Math.round(65536 * fr(nominal[1] * reciprocal));
+		stepV = Math.round(65536 * fr(nominal[0] * reciprocal));
+	}
 	const rawLeftEdge = mirrorU ? rawLeft : spec.toDevice[0] * spec.srcX + spec.toDevice[4] - shift;
 	// The phase offset follows the unsnapped edge (a 3.4 origin steps from 0.6, not from the snapped 0.625).
 	const dxRaw = xFirst - rawLeftEdge;
@@ -1021,6 +1102,7 @@ function resampleHqAxisAligned(
 		? {
 				wrap: spec.wrap,
 				clamp: [(c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff, (c >>> 24) & 0xff],
+				literal: translucentClamp(spec.wrap, c),
 				mirrorX: spec.wrap === 'tile-flip-x' || spec.wrap === 'tile-flip-xy',
 				mirrorY: spec.wrap === 'tile-flip-y' || spec.wrap === 'tile-flip-xy',
 			}
@@ -1071,16 +1153,18 @@ function resampleHqAxisAligned(
 					continue;
 				}
 				const wq = t.weights[q];
-				pr += wq * Math.round((px[o] * a) / 255);
-				pg += wq * Math.round((px[o + 1] * a) / 255);
-				pb += wq * Math.round((px[o + 2] * a) / 255);
+				const lit = !!edge?.literal && px === edge.clamp;
+				pr += wq * (lit ? px[o] : Math.round((px[o] * a) / 255));
+				pg += wq * (lit ? px[o + 1] : Math.round((px[o + 1] * a) / 255));
+				pb += wq * (lit ? px[o + 2] : Math.round((px[o + 2] * a) / 255));
 				pa += wq * a;
 			}
 			const alpha = Math.min(255, Math.max(0, Math.round(pa)));
 			const d = (r * w + i) * 4;
-			inter[d] = Math.min(alpha, Math.max(0, Math.round(pr)));
-			inter[d + 1] = Math.min(alpha, Math.max(0, Math.round(pg)));
-			inter[d + 2] = Math.min(alpha, Math.max(0, Math.round(pb)));
+			const capH = edge?.literal ? 255 : alpha;
+			inter[d] = Math.min(capH, Math.max(0, Math.round(pr)));
+			inter[d + 1] = Math.min(capH, Math.max(0, Math.round(pg)));
+			inter[d + 2] = Math.min(capH, Math.max(0, Math.round(pb)));
 			inter[d + 3] = alpha;
 		}
 	}
