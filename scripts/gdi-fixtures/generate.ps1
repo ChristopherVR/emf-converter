@@ -26,7 +26,8 @@
 #   path-gradient-vertices, path-gradient-rotated, path-gradient-focus-shapes,
 #   path-gradient-ties, path-gradient-colors, path-gradient-focus,
 #   focus-contours, redeye-independent, redeye-state, redeye-fresh,
-#   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, vertical-focus-line, playback-extents, playback-extent-survey,
+#   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, redeye-fixture-direct, redeye-fallback-centre, redeye-scenes,
+#   redeye-playback, vertical-focus-line, playback-extents, playback-extent-survey,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
 #   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-step-grid, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
@@ -47,7 +48,7 @@
 #   path-gradient-tips, path-gradient-corners, path-gradient-focus-ties,
 #   path-gradient-large, path-gradient-edges, path-gradient-focus-small,
 #   path-gradient-tiles, hq-phases, hq-wrap, hq-reductions, hq-cubic-weights,
-#   redeye-stages, redeye-sequence (internal), halftone-transitions,
+#   redeye-stages, redeye-sequence (internal), redeye-playback-run (internal), halftone-transitions,
 #   path-gradient-focus-corners, path-gradient-focus-edges, path-gradient-focus-thresholds,
 #   path-gradient-focus-slants, path-gradient-tile-rotations, compat-playback-paths-probe,
 #   compat-playback-shapes-probe, compat-playback-mirror-probe, compat-widemirror-probe,
@@ -775,7 +776,7 @@ if ($Which -eq 'redeye-sequence') {
     [RedEyeStageProbe]::RunSequence($PlaybackCase)
     return
 }
-if ($Which -eq 'redeye-state' -or $Which -eq 'redeye-zero-fraction' -or $Which -eq 'redeye-fresh' -or $Which -eq 'redeye-fallback-strength' -or $Which -eq 'redeye-nudge') {
+if ($Which -eq 'redeye-state' -or $Which -eq 'redeye-zero-fraction' -or $Which -eq 'redeye-fresh' -or $Which -eq 'redeye-fallback-strength' -or $Which -eq 'redeye-nudge' -or $Which -eq 'redeye-fixture-direct' -or $Which -eq 'redeye-fallback-centre' -or $Which -eq 'redeye-scenes') {
     # redeye-fresh: the 192 independent controls (RedEyeCorrectionProbe, sizes 16 to 40) each alone in a fresh process.
     # Runs each call sequence in fresh processes (the child is this script in redeye-sequence mode) to separate in-process
     # history from anything that persists between processes. Writes redeye-state.json.gz: { spec, runs: [ [step...] ... ] }.
@@ -838,6 +839,34 @@ if ($Which -eq 'redeye-state' -or $Which -eq 'redeye-zero-fraction' -or $Which -
         $specs = @()
         foreach ($n in 16, 24, 31, 40) { foreach ($p in 0..5) { foreach ($b in 0, 1, 2, 3, 4, 8, 16, 32) { $specs += "I${n}:${p}:${b}" } } }
     }
+    if ($Which -eq 'redeye-fixture-direct') {
+        # The red-eye effect of the plus-effect-redeye-{left,both,whole} fixtures applied through GdipBitmapApplyEffect to the
+        # generator's own test images (token Q: the 96 x 48 eyes image, token K: the 256 x 64 ramps image) in a fresh process:
+        # the eyes image and then the ramps image in one process, as the fixture's playback draws them, and each alone.
+        $fileName = 'redeye-fixture-direct.json.gz'
+        $repeats = 1
+        $specs = @('Ql;Kl', 'Qb;Kb', 'Qw;Kw', 'Qw', 'Kw')
+    }
+    if ($Which -eq 'redeye-fallback-centre') {
+        # Areas whose red centroid lies beyond the fallback circle (so the centre is the stand-in): the 256 x 64 ramps image
+        # (Kw), a pure red ramp in the top rows of grey fields (token B: width:height:first row:rows:-1:0:first column:end column:0:grey)
+        # of several sizes, grey levels and band heights, and black fields (every pixel luma 0, so the stand-in is the exact middle).
+        $fileName = 'redeye-fallback-centre.json.gz'
+        $repeats = 1
+        $specs = @('Kw')
+        foreach ($t in 4, 8, 12, 16, 20, 24) { $specs += "B128:128:0:${t}:-1:0:0:128:0:128" }
+        foreach ($g in 10, 20, 40, 60, 80, 100, 150, 151, 170) { $specs += "B128:128:0:16:-1:0:0:128:0:$g" }
+        foreach ($d in @(@(64, 64, 8), @(96, 96, 12), @(128, 128, 16), @(160, 160, 20), @(200, 100, 12), @(100, 200, 25), @(256, 64, 8), @(64, 256, 32), @(128, 64, 8), @(64, 128, 16))) { $specs += "B$($d[0]):$($d[1]):0:$($d[2]):-1:0:0:$($d[0]):0:0" }
+        foreach ($g in 128, 170) { $specs += "B256:64:0:8:-1:0:0:256:0:$g" }
+    }
+    if ($Which -eq 'redeye-scenes') {
+        # 36 held-out scenes from a seeded generator (token H: smooth coloured fields with noise and one to three red clusters),
+        # one fresh process each. They were captured after the model was fitted and never used to tune it.
+        $fileName = 'redeye-scenes.json.gz'
+        $repeats = 1
+        $specs = @()
+        foreach ($i in 1..36) { $specs += "H$(40 + (($i * 37) % 57)):$(40 + (($i * 53) % 49)):$i" }
+    }
     $self = $MyInvocation.MyCommand.Path
     $records = New-Object System.Collections.Generic.List[string]
     foreach ($spec in $specs) {
@@ -852,6 +881,34 @@ if ($Which -eq 'redeye-state' -or $Which -eq 'redeye-zero-fraction' -or $Which -
     $f = [IO.File]::Create((Join-Path $outDir $fileName))
     $z = New-Object IO.Compression.GZipStream($f, [IO.Compression.CompressionMode]::Compress)
     $z.Write($bytes, 0, $bytes.Length); $z.Dispose(); $f.Dispose()
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'redeye-playback-run') {
+    # Internal: plays the committed EMF+ red-eye fixtures named in $PlaybackCase (';'-separated base names) back in THIS process, in
+    # order, and prints "<index> <name> <pixels that differ from the committed <name>.png>" for each.
+    Add-Type -Path (Join-Path $here 'RedEyePlaybackProbe.cs') -ReferencedAssemblies System.Drawing
+    [RedEyePlaybackProbe]::Run($outDir, (Join-Path ([IO.Path]::GetTempPath()) ('redeye-playback-' + [Guid]::NewGuid().ToString('N'))), $PlaybackCase)
+    return
+}
+if ($Which -eq 'redeye-playback') {
+    # Does the recorded red-eye playback depend on the process's history? Each context is a fresh Windows process that plays the
+    # listed fixtures in order (the plus-only recordings of the effect on the eyes image and the ramps image, and their Dual
+    # twins) and compares each playback with the committed reference PNG; writes redeye-playback.json.
+    $self = $MyInvocation.MyCommand.Path
+    $w = 'plus-only-effect-redeye-whole'; $b = 'plus-only-effect-redeye-both'; $l = 'plus-only-effect-redeye-left'
+    $contexts = @(
+        $w, $w, $w, $w, $w, $b, $l, 'plus-effect-redeye-whole', 'plus-effect-redeye-both', 'plus-effect-redeye-left',
+        "$w;$w;$w", "$l;$w", "$b;$w", "plus-effect-redeye-whole;$w", "$l;$b;$w", "$w;$b;$l;$w",
+        'plus-effect-redeye-left;plus-only-effect-redeye-left;plus-effect-redeye-both;plus-only-effect-redeye-both;plus-effect-redeye-whole;plus-only-effect-redeye-whole'
+    )
+    $records = New-Object System.Collections.Generic.List[string]
+    foreach ($context in $contexts) {
+        $text = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $self redeye-playback-run -PlaybackCase $context 2>&1 | Out-String
+        $results = @($text -split "`r?`n" | Where-Object { $_ -match '^\d+ \S+ -?\d+$' } | ForEach-Object { $p = $_ -split ' '; '{"fixture":"' + $p[1] + '","differing":' + $p[2] + '}' })
+        $records.Add('{"context":' + (ConvertTo-Json $context) + ',"playbacks":[' + ($results -join ',') + ']}')
+    }
+    [IO.File]::WriteAllText((Join-Path $outDir 'redeye-playback.json'), '[' + ($records -join ",`n") + ']')
     Complete-Fixtures
     return
 }

@@ -87,11 +87,24 @@ public static class RedEyeStageProbe {
  // ';'-separated tokens, each a whole-image area: R<n> pure red n x n (200,0,0); G<n> grey (128,128,128); U<n> uniform (120,40,40);
  // P<n>:<lo>:<hi> the checker field of the stage probe; T<n>:<g> a pure-red field with a lone pixel of green g at the centre.
  // The driver (redeye-state in generate.ps1) starts a fresh process per spec to separate in-process history from anything persistent.
+ static byte[] Hsv(double h,double s,double v){double c=v*s,hp=h/60.0,x=c*(1-Math.Abs(hp%2-1)),m=v-c,r=0,g=0,b=0;
+  if(hp<1){r=c;g=x;}else if(hp<2){r=x;g=c;}else if(hp<3){g=c;b=x;}else if(hp<4){g=x;b=c;}else if(hp<5){r=x;b=c;}else{r=c;b=x;}
+  return new[]{(byte)Math.Round((r+m)*255),(byte)Math.Round((g+m)*255),(byte)Math.Round((b+m)*255)};}
+ // The generator's test images (GdiFixtures.cs FxImages), reproduced bit for bit.
+ static byte[] Ramps(){var p=new byte[256*64*4];for(int y=0;y<64;y++)for(int x=0;x<256;x++){int r,g,b;byte[] c;
+   switch(y/8){case 0:r=g=b=x;break;case 1:r=x;g=b=0;break;case 2:g=x;r=b=0;break;case 3:b=x;r=g=0;break;
+    case 4:c=Hsv(x*360.0/256,1,1);r=c[0];g=c[1];b=c[2];break;case 5:c=Hsv(x*360.0/256,0.5,0.75);r=c[0];g=c[1];b=c[2];break;
+    case 6:c=Hsv(x*360.0/256,1,0.4);r=c[0];g=c[1];b=c[2];break;default:r=x;g=255-x;b=128;break;}
+   Put(p,256,x,y,r,g,b);}return p;}
+ static byte[] Eyes(){var p=new byte[96*48*4];for(int y=0;y<48;y++)for(int x=0;x<96;x++){uint v=0xFFD8A888u;bool done=false;
+   for(int e=0;e<2&&!done;e++){int dx=x-(24+48*e),dy=y-24,d2=dx*dx+dy*dy;if(d2<=36){v=e==0?0xFFD02020u:0xFFC03850u;done=true;}else if(d2<=144){v=0xFFF4F0EAu;done=true;}}
+   if(!done&&x>=44&&x<52&&y>=40)v=0xFFE02018u;
+   Put(p,96,x,y,(int)((v>>16)&255),(int)((v>>8)&255),(int)(v&255));}return p;}
  public static string RunSequence(string spec){
   using(var init=new Bitmap(1,1)){
   var sb=new StringBuilder("[");bool first=true;
   foreach(var tok in spec.Split(';')){
-   char k=tok[0];var parts=tok.Substring(1).Split(':');int n=int.Parse(parts[0]);int W=n,H=n;byte[] p;
+   char k=tok[0];var parts=tok.Substring(1).Split(':');int n=k=='K'||k=='Q'?0:int.Parse(parts[0]);int W=n,H=n;byte[] p;int[][] areas=null;
    if(k=='R')p=Grey(n,n,200,0,0);else if(k=='G')p=Grey(n,n,128,128,128);else if(k=='U')p=Grey(n,n,120,40,40);
    else if(k=='P')p=Pair(n,int.Parse(parts[1]),int.Parse(parts[2]));
    else if(k=='T'){p=Grey(n,n,200,0,0);int g=int.Parse(parts[1]);Put(p,n,n/2,n/2,g+100,g,g);}
@@ -119,8 +132,27 @@ public static class RedEyeStageProbe {
     double rad=Math.Min(W,H)/2.0;
     for(int y=0;y<H;y++)for(int x=0;x<W;x++){int g=Math.Sqrt((x+.5-W/2.0)*(x+.5-W/2.0)+(y+.5-H/2.0)*(y+.5-H/2.0))<rad?lo:hi;Put(p,W,x,y,g,g,g);}
     Put(p,W,px,py,lo+127,lo,lo);}
+   else if(k=='K'){ // K<area>: the fixture generator's 256 x 64 ramps image (FxImages.Ramps) with the fixture's area list: 'w' whole image, 'b' both, 'l' left
+    W=256;H=64;p=Ramps();if(parts.Length>1){for(int y=0;y<64;y++)if(parts[1].IndexOf((char)('0'+y/8))<0)for(int x=0;x<256;x++)Put(p,256,x,y,128,128,128);} // K<area>:<bands>: keep only the listed 8-row bands (0 grey, 1 red, 2 green, 3 blue, 4 hue, 5 desaturated hue, 6 dark hue, 7 (x,255-x,128)), the rest mid grey
+    if(parts.Length>4){int px=int.Parse(parts[2]),py=int.Parse(parts[3]),sz=int.Parse(parts[4]);for(int y=py;y<py+sz;y++)for(int x=px;x<px+sz;x++)Put(p,256,x,y,255,1,1);} // K<area>:<bands>:<x>:<y>:<size> adds a size x size block of (255,1,1) (centroid weight 254 per pixel) at x,y
+    areas=parts[0]=="w"?new[]{new[]{0,0,256,64}}:parts[0]=="b"?new[]{new[]{12,12,36,36},new[]{60,12,84,36}}:new[]{new[]{12,12,36,36}};}
+   else if(k=='Q'){ // Q<area>: the generator's 96 x 48 eyes image (FxImages.Eyes) with the fixture's area list ('w','b','l' as for K)
+    W=96;H=48;p=Eyes();areas=parts[0]=="w"?new[]{new[]{0,0,96,48}}:parts[0]=="b"?new[]{new[]{12,12,36,36},new[]{60,12,84,36}}:new[]{new[]{12,12,36,36}};}
+   else if(k=='B'){ // B<w>:<h>:<y0>:<rows>:<bx>:<by>: a mid grey field with `rows` rows of the pure red ramp (x,0,0) from row y0 (as the generator's red ramp band) and a 4 x 4 block of (255,1,1) at bx,by: the block puts the centroid beyond the fallback circle
+    int bg=parts.Length>9?int.Parse(parts[9]):128; // optional: the field grey level (default 128)
+    W=n;H=int.Parse(parts[1]);int y0=int.Parse(parts[2]),nr=int.Parse(parts[3]),bx=int.Parse(parts[4]),by=int.Parse(parts[5]);p=Grey(W,H,bg,bg,bg);
+    int xs=parts.Length>6?int.Parse(parts[6]):0,xe=parts.Length>7?int.Parse(parts[7]):W; // optional: the ramp only spans columns xs..xe-1 (B<...>:<xs>:<xe>); a negative bx puts no block
+    int gb=parts.Length>8?int.Parse(parts[8]):0; // optional: the band is (x + gb, gb, gb) instead of (x, 0, 0): redness x, integer luma gb
+    for(int y=y0;y<y0+nr&&y<H;y++)for(int x=xs;x<xe&&x<W;x++)Put(p,W,x,y,Math.Min(255,x%256+gb),gb,gb);
+    if(bx>=0)for(int y=by;y<by+4;y++)for(int x=bx;x<bx+4;x++)Put(p,W,x,y,255,1,1);}
+   else if(k=='H'){ // H<w>:<h>:<seed>: a held-out scene from a seeded generator: a smooth coloured field with noise and one to three red clusters of random size, position and colour (some far from the middle: the fallback regime)
+    W=n;H=int.Parse(parts[1]);uint sd=uint.Parse(parts[2])*2654435761u+12345u;Func<int,int> rnd=m=>{sd=unchecked(sd*1664525u+1013904223u);return (int)((sd>>8)%(uint)m);};
+    int baseG=15+rnd(190),gx=rnd(61)-30,gy=rnd(61)-30,tintB=rnd(41)-20;p=new byte[W*H*4];
+    for(int y=0;y<H;y++)for(int x=0;x<W;x++){int g=Math.Max(0,Math.Min(255,baseG+(gx*x/Math.Max(1,W))+(gy*y/Math.Max(1,H))+rnd(9)-4));int b=Math.Max(0,Math.Min(255,g+tintB+rnd(3)-1));int r=Math.Min(255,g+rnd(12));Put(p,W,x,y,r,g,b);}
+    int clusters=1+rnd(3);for(int c=0;c<clusters;c++){int cs=3+rnd(18),cx0=rnd(Math.Max(1,W-cs)),cy0=rnd(Math.Max(1,H-cs)),cr=140+rnd(116),cg=rnd(81),cb=rnd(81);
+     for(int y=cy0;y<cy0+cs&&y<H;y++)for(int x=cx0;x<cx0+cs&&x<W;x++)Put(p,W,x,y,Math.Min(255,cr+rnd(9)),cg+rnd(7),cb+rnd(7));}}
    else throw new Exception("token "+tok);
-   var s=Mk(W,H,p,new[]{0,0,W,H});Apply(s);
+   var s=Mk(W,H,p,areas??new[]{new[]{0,0,W,H}});Apply(s);
    if(!first)sb.Append(',');first=false;
    sb.Append("{\"token\":\""+tok+"\",\"width\":"+W+",\"height\":"+H+",\"source\":\""+Convert.ToBase64String(s.Src)+"\",\"output\":\""+Convert.ToBase64String(s.Out)+"\"}");
   }
