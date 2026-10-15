@@ -111,9 +111,9 @@ describe('native effects on translucent pixels', () => {
 			// With no effect the converter draws the source untouched.
 			const modelled = compare(capture, premultiplied, name === 'none' ? source : premultipliedPlaybackSource(source));
 			// The pixels of every fixture's half-transparent bar (alpha 128) are exact, and so are
-			// opaque and transparent ones; truncating the restore leaves under 1.5% of bytes a level or two low.
+			// opaque and transparent ones; truncating the restore leaves under 1% of bytes a level or two low.
 			expect(modelled.alpha128).toBe(0);
-			expect(modelled.same / modelled.compared).toBeGreaterThan(0.985);
+			expect(modelled.same / modelled.compared).toBeGreaterThan(0.99);
 			// Without the round trip (the converter before this probe) more bytes differ for every real effect.
 			if (name !== 'none') {
 				const straight = compare(capture, premultiplied, source);
