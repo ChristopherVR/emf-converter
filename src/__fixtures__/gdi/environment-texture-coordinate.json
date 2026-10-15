@@ -1,7 +1,7 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-15T10:41:16.1295784Z",
-    "groups":  "texture-coordinate,image-coordinate,matrix-invert",
+    "capturedAt":  "2026-10-15T11:03:20.0120121Z",
+    "groups":  "texture-coordinate,image-coordinate,image-levels,matrix-invert",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9711,
     "architecture":  "AMD64",
@@ -3389,6 +3389,10 @@
                        {
                            "name":  "image-coordinate.json.gz",
                            "sha256":  "67a6c95275e2ec3b3b839d73609b91b20362f7886a1bf12424b98c24fb99cf76"
+                       },
+                       {
+                           "name":  "image-levels.json.gz",
+                           "sha256":  "733b8e780bb94a92dedc634af452e6053c01e41afafca6b9943cc3c6ba2ff598"
                        },
                        {
                            "name":  "matrix-invert.json.gz",

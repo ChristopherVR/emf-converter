@@ -127,6 +127,104 @@ describe('native texture-brush source coordinates', () => {
 	}
 });
 
+interface LevelSweep {
+	sw: number;
+	sh: number;
+	dw: number;
+	dh: number;
+	dx: number;
+	dy: number;
+	mode: number;
+	axis: number;
+	step: number;
+	n: number;
+	width: number;
+	height: number;
+	changes: number;
+	source: string;
+	first: string;
+	count: string;
+	when: string;
+	what: string;
+}
+
+describe('native high-quality DrawImage positions (image-levels.json.gz)', () => {
+	// ImageLevelProbe.cs: grey noise drawn with HighQualityBilinear (6) and HighQualityBicubic (7) while one origin
+	// axis moves by 2^-16 pixel per draw; for every pixel, the draws at which its red changes and the value it changes
+	// to. For each of the first eight changes of row 6, columns 12 to 39, the converter's model is searched within 300
+	// draws of the native one for the same change (same level before, same level after): `exact` finds it at the
+	// native draw, `near` within one draw. The horizontal axis agrees for 46% to 69% of the changes within a draw
+	// (60% and 57% exactly on the 58-pixel reduction; the rest are late or early by a draw, or a level apart at a
+	// phase-bin edge, 1/128 pixel = 512 draws); the vertical axis agrees for almost none, because native steps through
+	// ±1 level dithering between neighbouring bins that the monotone model does not (the sequences have the same
+	// range and slope: 150 to 140 over the first 21,333 draws against 150 to 138 over 22,528).
+	const sweeps: LevelSweep[] = JSON.parse(gunzipSync(readFileSync(
+		new URL('./__fixtures__/gdi/image-levels.json.gz', import.meta.url),
+	)).toString('utf8'));
+	// [exact at least, near at least] per sweep
+	const floors: Array<[number, number]> = [[135, 155], [128, 148], [0, 3], [0, 1], [29, 73], [15, 28], [0, 2], [0, 0]];
+
+	it('has 8 sweeps', () => {
+		expect(sweeps).toHaveLength(8);
+	});
+
+	for (const [index, c] of sweeps.entries()) {
+		it(`sweep ${index}: ${c.sw}x${c.sh} to ${c.dw}x${c.dh}, mode ${c.mode}, axis ${c.axis}`, () => {
+			const fround = Math.fround;
+			const source = Buffer.from(c.source, 'base64');
+			const rgba = new Uint8ClampedArray(c.sw * c.sh * 4);
+			for (let i = 0; i < source.length; i++) rgba.set([source[i], source[i], source[i], 255], i * 4);
+			const first = Buffer.from(c.first, 'base64');
+			const count = Buffer.from(c.count, 'base64');
+			const when = new Int32Array(Buffer.from(c.when, 'base64').buffer.slice(0));
+			const what = Buffer.from(c.what, 'base64');
+			const step = fround(c.step);
+			const y = 6;
+			const cache = new Map<number, ReturnType<typeof resampleImage>>();
+			const level = (j: number, x: number): number => {
+				if (!cache.has(j)) {
+					cache.set(j, resampleImage(rgba, c.sw, c.sh, {
+						srcX: 0, srcY: 0, srcW: c.sw, srcH: c.sh,
+						toDevice: [fround(fround(c.dw) / c.sw), 0, 0, fround(fround(c.dh) / c.sh),
+							c.axis === 0 ? fround(fround(c.dx) + fround(j * step)) : fround(c.dx),
+							c.axis === 1 ? fround(fround(c.dy) + fround(j * step)) : fround(c.dy)],
+						kernel: c.mode === 7 ? 'hq-bicubic' : 'hq-bilinear', halfPixelOffset: false, pointsForm: false,
+					}, { w: c.width, h: c.height }));
+				}
+				const b = cache.get(j);
+				if (!b || x < b.x || x >= b.x + b.w || y < b.y || y >= b.y + b.h) return -1;
+				const o = ((y - b.y) * b.w + x - b.x) * 4;
+				return Math.round(b.rgba[o] * b.rgba[o + 3] / 255);
+			};
+			let exact = 0;
+			let near = 0;
+			for (let x = 12; x < Math.min(c.width - 6, 40); x++) {
+				const q = y * c.width + x;
+				let before = first[q];
+				for (let k = 0; k < Math.min(count[q], 8); k++) {
+					const j = when[q * c.changes + k];
+					const after = what[q * c.changes + k];
+					let found = Infinity;
+					for (let d = 0; d <= 300 && found === Infinity; d++) {
+						for (const s of d === 0 ? [0] : [-1, 1]) {
+							const jj = j + s * d;
+							if (jj >= 1 && jj < c.n && level(jj - 1, x) === before && level(jj, x) === after) {
+								found = d;
+								break;
+							}
+						}
+					}
+					if (found === 0) exact++;
+					if (found <= 1) near++;
+					before = after;
+				}
+			}
+			expect(exact).toBeGreaterThanOrEqual(floors[index][0]);
+			expect(near).toBeGreaterThanOrEqual(floors[index][1]);
+		});
+	}
+});
+
 interface ImageSweep {
 	sw: number;
 	sh: number;

@@ -433,9 +433,10 @@ function blendSeparable(
 			}
 			const alpha = px[s + 3];
 			const wa = (wi * alpha) / 255;
-			lr += premult ? wi * px[s] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
-			lg += premult ? wi * px[s + 1] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
-			lb += premult ? wi * px[s + 2] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
+			const literal = !!edge.literal && px === edge.clamp;
+			lr += premult || literal ? wi * px[s] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s] / 255) : wa * px[s];
+			lg += premult || literal ? wi * px[s + 1] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 1] / 255) : wa * px[s + 1];
+			lb += premult || literal ? wi * px[s + 2] : (integerBicubic || integerPremult) ? wi * Math.round(alpha * px[s + 2] / 255) : wa * px[s + 2];
 			la += wi * alpha;
 		}
 		if (integerBicubic) {
@@ -445,9 +446,10 @@ function blendSeparable(
 			la = Math.trunc(la);
 		}
 		la = Math.min(255, Math.max(0, la));
-		r += wo * Math.min(la, Math.max(0, lr));
-		g += wo * Math.min(la, Math.max(0, lg));
-		b += wo * Math.min(la, Math.max(0, lb));
+		const cap = edge.literal && integerPremult ? Infinity : la;
+		r += wo * Math.min(cap, Math.max(0, lr));
+		g += wo * Math.min(cap, Math.max(0, lg));
+		b += wo * Math.min(cap, Math.max(0, lb));
 		a += wo * la;
 	}
 	return [r, g, b, a];
@@ -463,8 +465,23 @@ interface EdgeMode {
 	wrap: DeferredImageResample['wrap'];
 	/** The clamp colour as straight RGBA, under WrapMode Clamp. */
 	clamp: number[] | null;
+	/**
+	 * The clamp colour is translucent: GDI+ then reads its RGB as literal premultiplied bytes (a translucent
+	 * `Color.FromArgb(160, 217, 43, 129)` is the premultiplied pixel (217, 43, 129, 160), a red above its alpha),
+	 * for every kernel but the high-quality bicubic one, whose horizontal pass matches only within 20 levels
+	 * (`translucent-clamp-surfaces.json.gz`). The plain Bilinear and the high-quality passes keep that
+	 * intermediate above the alpha (and saturate when written); the plain Bicubic one clamps each line to
+	 * its alpha as before.
+	 */
+	literal?: boolean;
 	mirrorX?: boolean;
 	mirrorY?: boolean;
+}
+
+/** True for a Clamp colour whose alpha is neither 0 nor 255 (see {@link EdgeMode.literal}). */
+function translucentClamp(wrap: DeferredImageResample['wrap'], argb: number): boolean {
+	const alpha = argb >>> 24;
+	return wrap === 'clamp' && alpha > 0 && alpha < 255;
 }
 
 /**
@@ -650,6 +667,7 @@ export function resampleImage(
 	const edge: EdgeMode = {
 		wrap: spec.wrap,
 		clamp: [(c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff, (c >>> 24) & 0xff],
+		literal: translucentClamp(spec.wrap, c),
 		mirrorX: spec.wrap === 'tile-flip-x' || spec.wrap === 'tile-flip-xy',
 		mirrorY: spec.wrap === 'tile-flip-y' || spec.wrap === 'tile-flip-xy',
 	};
@@ -1054,6 +1072,7 @@ function resampleHqAxisAligned(
 		? {
 				wrap: spec.wrap,
 				clamp: [(c >>> 16) & 0xff, (c >>> 8) & 0xff, c & 0xff, (c >>> 24) & 0xff],
+				literal: translucentClamp(spec.wrap, c),
 				mirrorX: spec.wrap === 'tile-flip-x' || spec.wrap === 'tile-flip-xy',
 				mirrorY: spec.wrap === 'tile-flip-y' || spec.wrap === 'tile-flip-xy',
 			}
@@ -1104,16 +1123,18 @@ function resampleHqAxisAligned(
 					continue;
 				}
 				const wq = t.weights[q];
-				pr += wq * Math.round((px[o] * a) / 255);
-				pg += wq * Math.round((px[o + 1] * a) / 255);
-				pb += wq * Math.round((px[o + 2] * a) / 255);
+				const lit = !!edge?.literal && px === edge.clamp;
+				pr += wq * (lit ? px[o] : Math.round((px[o] * a) / 255));
+				pg += wq * (lit ? px[o + 1] : Math.round((px[o + 1] * a) / 255));
+				pb += wq * (lit ? px[o + 2] : Math.round((px[o + 2] * a) / 255));
 				pa += wq * a;
 			}
 			const alpha = Math.min(255, Math.max(0, Math.round(pa)));
 			const d = (r * w + i) * 4;
-			inter[d] = Math.min(alpha, Math.max(0, Math.round(pr)));
-			inter[d + 1] = Math.min(alpha, Math.max(0, Math.round(pg)));
-			inter[d + 2] = Math.min(alpha, Math.max(0, Math.round(pb)));
+			const capH = edge?.literal ? 255 : alpha;
+			inter[d] = Math.min(capH, Math.max(0, Math.round(pr)));
+			inter[d + 1] = Math.min(capH, Math.max(0, Math.round(pg)));
+			inter[d + 2] = Math.min(capH, Math.max(0, Math.round(pb)));
 			inter[d + 3] = alpha;
 		}
 	}
