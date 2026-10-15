@@ -804,10 +804,13 @@ function fillPlusShapeGdiplus(
  * premultiplies the colour, `p = round(c * a / 255)`, scales it by the
  * sample share, `round(p * k / 32)`, and adds the destination times
  * `255 - round(a * k / 32)` over 255, rounded. Returns `false` (with
- * `data` partly rewritten) when a covered destination pixel is not opaque,
- * which this formula does not model.
+ * `data` rewritten) when a covered destination pixel is not opaque, which
+ * this formula does not model: such a pixel keeps its straight brush colour
+ * with the alpha scaled by the coverage (a Canvas source-over blend), the
+ * others are blended exactly.
  */
 export function gdiplusBlendPixels(data: Uint8ClampedArray, dst: Uint8ClampedArray, coverage: Uint8ClampedArray): boolean {
+	let exact = true;
 	for (let p = 0; p < coverage.length; p++) {
 		const o = p * 4;
 		const cv = coverage[p];
@@ -817,7 +820,9 @@ export function gdiplusBlendPixels(data: Uint8ClampedArray, dst: Uint8ClampedArr
 			continue;
 		}
 		if (dst[o + 3] !== 255) {
-			return false;
+			data[o + 3] = (a * cv + 127) / 255;
+			exact = false;
+			continue;
 		}
 		// Samples inside (coverage = round(k * 255 / 32) is one-to-one).
 		const k = cv === 255 ? 32 : Math.round((cv * 32) / 255);
@@ -828,7 +833,7 @@ export function gdiplusBlendPixels(data: Uint8ClampedArray, dst: Uint8ClampedArr
 		}
 		data[o + 3] = 255;
 	}
-	return true;
+	return exact;
 }
 
 /**
@@ -966,19 +971,18 @@ export function compositeBrushCoverage(
 	}
 	if (channels === 1 && gdiplusBlend && typeof ctx.getImageData === 'function') {
 		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
-		if (gdiplusBlendPixels(data, dst, coverage)) {
-			canvasPutImageData(out.ctx, createImageDataCompat(data, box.w, box.h), 0, 0);
-			ctx.save();
-			try {
-				ctx.setTransform(1, 0, 0, 1, 0, 0);
-				ctx.imageSmoothingEnabled = false;
-				(ctx.drawImage as unknown as (img: unknown, x: number, y: number) => void).call(ctx, out.canvas, box.x, box.y);
-			} finally {
-				ctx.restore();
-			}
-			return true;
+		// Pixels over a translucent destination (outside the metafile's frame) keep the Canvas blend, the rest are exact.
+		gdiplusBlendPixels(data, dst, coverage);
+		canvasPutImageData(out.ctx, createImageDataCompat(data, box.w, box.h), 0, 0);
+		ctx.save();
+		try {
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			ctx.imageSmoothingEnabled = false;
+			(ctx.drawImage as unknown as (img: unknown, x: number, y: number) => void).call(ctx, out.canvas, box.x, box.y);
+		} finally {
+			ctx.restore();
 		}
-		sampler(box.x, box.y, box.w, box.h, data);
+		return true;
 	}
 	if (channels === 3) {
 		if (typeof ctx.getImageData !== 'function') {

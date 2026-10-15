@@ -42,8 +42,8 @@
  */
 
 import { arcBeziers } from './emf-plus-flatten';
-import { GDIPLUS_HFD_TOLERANCE, toPlusFix, type DeviceFigure } from './emf-plus-raster';
-import { flattenBezier } from './gdi-raster';
+import { toPlusFix, type DeviceFigure } from './emf-plus-raster';
+import { flattenBezierGdiplus } from './emf-plus-bezier';
 
 /** Pen geometry in device pixels, as {@link widenFigures} applies it. */
 export interface DevicePen {
@@ -83,19 +83,19 @@ function arcPoints(c: Pt, r: number, a0: number, sweep: number): Pt[] {
 	if (!(r > 0) || sweep === 0) {
 		return out;
 	}
-	for (const [p0, p1, p2, p3] of arcBeziers(c.x, c.y, r, r, a0, sweep)) {
+	// The sweep is cut into the fewest equal Beziers of at most a quarter turn (a 106 degree round join is two of 53, not 90 and 16:
+	// measured against `GraphicsPath.Widen`, whose Beziers of a line-path cap's round join split so).
+	const parts = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
+	const beziers = [];
+	for (let i = 0; i < parts; i++) {
+		beziers.push(...arcBeziers(c.x, c.y, r, r, a0 + (sweep * i) / parts, sweep / parts));
+	}
+	for (const [p0, p1, p2, p3] of beziers) {
 		const flat: number[] = [];
-		flattenBezier(
-			toPlusFix(p0.x),
-			toPlusFix(p0.y),
-			toPlusFix(p1.x),
-			toPlusFix(p1.y),
-			toPlusFix(p2.x),
-			toPlusFix(p2.y),
-			toPlusFix(p3.x),
-			toPlusFix(p3.y),
+		// GDI+'s own flattener, as the fill of a recorded Bezier uses (`recordDeviceFigures`).
+		flattenBezierGdiplus(
+			[toPlusFix(p0.x), toPlusFix(p0.y), toPlusFix(p1.x), toPlusFix(p1.y), toPlusFix(p2.x), toPlusFix(p2.y), toPlusFix(p3.x), toPlusFix(p3.y)],
 			flat,
-			GDIPLUS_HFD_TOLERANCE,
 		);
 		for (let i = 0; i + 1 < flat.length; i += 2) {
 			out.push({ x: flat[i] / 16, y: flat[i + 1] / 16 });
@@ -186,17 +186,19 @@ function joinPoints(p: Pt, f1: ReturnType<typeof frame>, f2: ReturnType<typeof f
 		return [m];
 	}
 	if (pen.join === 3) {
-		// Clipped at the limit, square to the miter direction.
-		const dx = (m.x - p.x) / len;
-		const dy = (m.y - p.y) / len;
+		// Clipped where each offset edge is `limit` from the vertex (Euclidean, measured with `GraphicsPath.Widen` of a custom-capped
+		// line's body: the two points lie on the offset edges at exactly the limit), and nothing else of the join.
 		const along = (q: Pt, r: Pt): Pt => {
-			// Point on segment q->r at distance `limit` along (dx, dy) from p.
-			const dq = (q.x - p.x) * dx + (q.y - p.y) * dy;
-			const dr = (r.x - p.x) * dx + (r.y - p.y) * dy;
-			const s = dr === dq ? 0 : (limit - dq) / (dr - dq);
-			return { x: q.x + (r.x - q.x) * s, y: q.y + (r.y - q.y) * s };
+			const vx = r.x - q.x, vy = r.y - q.y;
+			const wx = q.x - p.x, wy = q.y - p.y;
+			const A = vx * vx + vy * vy;
+			const B = wx * vx + wy * vy;
+			const C = wx * wx + wy * wy - limit * limit;
+			const disc = Math.max(0, B * B - A * C);
+			const t2 = A === 0 ? 0 : (-B + Math.sqrt(disc)) / A;
+			return { x: q.x + vx * t2, y: q.y + vy * t2 };
 		};
-		return [a, along(a, m), along(b, m), b];
+		return [along(a, m), along(b, m)];
 	}
 	return [a, b];
 }
@@ -215,7 +217,9 @@ function capPoints(p: Pt, f: ReturnType<typeof frame>, o1: number, o2: number, c
 	const kind = cap === 0x11 ? 1 : cap === 0x12 ? 2 : cap === 0x13 || cap === 0x14 ? 3 : cap >= 0x10 ? 0 : base;
 	switch (kind) {
 		case 1:
-			return [at(o2, 0), at(o2, half), at(o1, half), at(o1, 0)];
+			// Only the two extended corners: GDI+'s outline has no vertex on the line at a square end (the rectangle's long edges run corner to
+			// corner), where one would be rounded to 28.4 off the edge.
+			return [at(o2, half), at(o1, half)];
 		case 2: {
 			if (Math.abs(o1 + o2) > 1e-9) {
 				return [at(o2, 0), at(o1, 0)];
@@ -528,7 +532,8 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 				// At the start the outward frame is reversed, so its left normal is the
 				// line's right: the band runs from -o1 (the line's o1 side) to -o2.
 				const capStart = capPoints(pp[0], f0, -o2, -o1, startCap, h);
-				const poly = [...left.slice(0, -1), ...capEnd, ...right.slice(1, -1), ...capStart];
+				// The start corner of the left side is the cap's own when the start is square.
+				const poly = [...left.slice(startCap === 1 ? 1 : 0, -1), ...capEnd, ...right.slice(1, -1), ...capStart];
 				polys.push(poly);
 				// Same winding as the band, so the nonzero union keeps the overlap.
 				const sign = Math.sign(signedArea(poly));

@@ -506,6 +506,8 @@ function customCapOutline(
 		const figPen: DevicePen = {
 			...devicePen,
 			half: Math.max(width, 1) / 2,
+			// Beyond the miter limit the body of a custom-capped line gets a clipped miter, not the bevel of a plain pen (measured with Widen).
+			join: devicePen.join === 0 ? 3 : devicePen.join,
 			startCap: capped.start ? 0 : devicePen.startCap,
 			endCap: capped.end ? 0 : devicePen.endCap,
 		};
