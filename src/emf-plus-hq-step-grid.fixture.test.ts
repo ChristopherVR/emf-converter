@@ -10,8 +10,9 @@
  * why the vertical step depends on the width (`nominalScale` in `DeferredImageResample`). The extent of the quad
  * follows the scale rounded toward minus infinity, so a destination edge on a whole pixel adds no column. That
  * reproduces 572 of the 680 draws (the plain rounding of the nearest scale, 438, as the test pinned before). The 108 left
- * are tall sources (heights 200 and 336 at 1.55x, 336 at 1.37x), each one to three rows wrong, and the 8, 16 and 32
- * wide sources of height 64 at 1.37x are exact.
+ * are tall sources (heights 200 and 336 at 1.55x, 336 at 1.37x: one to four rows each) and, per kernel, the 8, 16 and
+ * 32 wide sources of height 64 at 1.37x, whose vertical step is 47,836 where the chain gives 47,837. No combination of
+ * nearest, down or up rounding of the scales, determinant, reciprocal and products (243 tried) goes past 572.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
