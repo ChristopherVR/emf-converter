@@ -71,6 +71,8 @@
  * @module emf-plus-image-resample
  */
 
+import { invertTextureMatrix } from './emf-plus-brush-texture';
+import { down32 } from './float32-down';
 import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
 import type { DeferredImageResample, ImageResampleKernel, TransformMatrix } from './emf-types';
@@ -653,11 +655,20 @@ export function resampleImage(
 	};
 	const bicubicDu = Math.round(inv[0] * FIX16);
 	const bicubicDv = Math.round(inv[1] * FIX16);
+	// Plain Bilinear steps its source position across a row in float32 rounded toward minus infinity, from the
+	// row's first covered pixel (see `writeTextureRect`, which measured the stepper on texture brushes).
+	// The second pass of a rotated high-quality draw is left on the per-pixel model: its intermediate bitmap's
+	// own origin is already snapped, and measured against 600 native rotated captures the stepper trades
+	// as many pixels as it fixes there.
+	const steppedInv = kernel === 'bilinear' && !plainRotatedPass ? invertTextureMatrix(m) : null;
 	for (let j = 0; j < h; j++) {
 		const py = by0 + j + o;
 		let start = -1;
 		let su = 0;
 		let sv = 0;
+		let stepU = 0;
+		let stepV = 0;
+		let stepAt = 0;
 		for (let i = 0; i < w; i++) {
 			const px = bx0 + i + o;
 			let u = inv[0] * (px - shiftX) + inv[2] * (py - shiftY) + inv[4];
@@ -715,6 +726,28 @@ export function resampleImage(
 					integerBicubic, premultSource, kernel === 'bilinear',
 				);
 			};
+			if (steppedInv) {
+				if (start < 0) {
+					start = i;
+					stepAt = i;
+					// The position is measured from the device position of the source rectangle's corner, taken from
+					// the unsnapped matrix (native sweeps of the origin by 2^-16 pixel move the phase continuously,
+					// only coverage follows the 1/16 grid), and the corner itself is added after the float32
+					// products (the inverse's translation is not used: it loses a 1/4096 texel phase).
+					const ox = Math.fround(spec.toDevice[0] * spec.srcX + spec.toDevice[2] * spec.srcY + spec.toDevice[4]);
+					const oy = Math.fround(spec.toDevice[1] * spec.srcX + spec.toDevice[3] * spec.srcY + spec.toDevice[5]);
+					const dx0 = down32(px - ox);
+					const dy0 = down32(py - oy);
+					stepU = down32(down32(down32(steppedInv[0] * dx0) + down32(steppedInv[2] * dy0)) + Math.fround(spec.srcX));
+					stepV = down32(down32(down32(steppedInv[1] * dx0) + down32(steppedInv[3] * dy0)) + Math.fround(spec.srcY));
+				}
+				for (; stepAt < i; stepAt++) {
+					stepU = down32(stepU + steppedInv[0]);
+					stepV = down32(stepV + steppedInv[1]);
+				}
+				u = stepU;
+				v = stepV;
+			}
 			if (kernel === 'bilinear') {
 				// Quantize each fractional coordinate once, keeping the two tent shares complementary.
 				// Native DrawImage and TextureBrush use nearest 11-bit fractions, also under mirrors.

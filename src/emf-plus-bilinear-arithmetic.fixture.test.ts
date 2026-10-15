@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { resampleImage } from './emf-plus-image-resample';
+import { diffImages, loadReference, renderFixture } from './__fixtures__/gdi-parity-harness';
 import type { TransformMatrix } from './emf-types';
 
 interface Capture {
@@ -52,6 +53,28 @@ function diff(block: ReturnType<typeof resampleImage>, native: string, size: num
 	}
 	return { pixels, maximum };
 }
+
+describe('recorded plain Bilinear DrawImage fixtures', () => {
+	// The source position steps across a row in float32 rounded toward minus infinity, from the first covered
+	// pixel, measured from the device position of the source rectangle's corner (see `writeTextureRect` and
+	// `texture-coordinate.json.gz` for the stepper). Zero-tolerance counts over every pixel; before: 18 (default,
+	// low, bilinear: a drifting column of the 0.9x enlargement), 3 (each attr-*-bilinear) and 4 (rotated).
+	const bounds: Record<string, number> = {
+		bilinear: 0, default: 0, low: 0, 'rotated-bilinear': 0, 'attr-clamp-bilinear': 0, 'attr-flipxy-bilinear': 0,
+		'attr-tile-bilinear': 0, 'pom-half-bilinear': 0, 'pom-highquality-bilinear': 0, 'pom-highspeed-bilinear': 0,
+	};
+	for (const [suffix, bound] of Object.entries(bounds)) {
+		it(suffix, async () => {
+			const name = `gpx-image-${suffix}`;
+			const actual = await renderFixture(`${name}.emf`);
+			expect(actual).not.toBeNull();
+			const reference = await loadReference(name);
+			const result = diffImages(actual!, reference, 0, 0);
+			expect(result.mismatched).toBeLessThanOrEqual(bound);
+			expect(result.maxDiff).toBeLessThanOrEqual(bound === 0 ? 0 : 1);
+		});
+	}
+});
 
 describe('native Bilinear premultiplication and output rounding', () => {
 	it('pins 144 opaque, translucent and impulse rectangle draws independently', () => {

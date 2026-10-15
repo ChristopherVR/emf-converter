@@ -35,7 +35,7 @@ import { mulMatrix, pathGradientColorAt, pathGradientQuantum, pathGradientStepCo
 import { copiesStepAt, prepareCopies } from './emf-plus-path-gradient-copies';
 import { hatchSampler } from './emf-plus-brush-hatch';
 import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
-import { writeTextureColor } from './emf-plus-brush-texture';
+import { invertTextureMatrix, writeTextureRect } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { linearRampSampler } from './emf-plus-linear-ramp';
 import { applyPlusWorldTransform, deviceToCanvasMatrix, plusCanvasShift, plusWorldMatrix } from './emf-plus-state-handlers';
@@ -107,16 +107,12 @@ export function textureSampler(
 	if (width <= 0 || height <= 0) {
 		return null;
 	}
-	const inv = invertAffine(mulMatrix(device, texture.transform ?? IDENTITY));
+	const inv = invertTextureMatrix(mulMatrix(device, texture.transform ?? IDENTITY));
 	if (!inv) {
 		return null;
 	}
 	return (x0, y0, w, h, out) => {
-		for (let j = 0; j < h; j++) {
-			for (let i = 0; i < w; i++) {
-				writeTextureColor(inv, width, height, rgba, wrapMode, halfPixel, x0 + i, y0 + j, out, (j * w + i) * 4);
-			}
-		}
+		writeTextureRect(inv, width, height, rgba, wrapMode, halfPixel, x0, y0, w, h, out);
 	};
 }
 
