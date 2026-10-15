@@ -129,9 +129,10 @@ describe('shapes played back under mirrored maps against native GetPath', () => 
 			if (mine.length === native.length && mine.every((v, i) => v === native[i])) exact[key]++;
 		}
 		// 216 shapes per kind and mirroring (72 for each of the three pens). Arc, Chord, Pie, Ellipse and Rectangle are exact everywhere;
-		// a RoundRect is exact for the cosmetic and plain pens under every map (the corner half extent is the half box times the call's corner over box ratio,
-		// see `roundRectCorners`), and an inside-frame pen under a mirrored x is not mirrored yet (72 of 216 for each of x and xy).
+		// a RoundRect is exact under every map for all three pens (the corner half extent is the half box times the call's corner over box ratio,
+		// see `roundRectCorners`; under a mirrored x an inside-frame pen rounds its horizontal controls down and makes an odd width even downwards,
+		// not upwards: 72 of 216 before, for each of x and xy).
 		const perfect = Object.fromEntries(['arc', 'chord', 'pie', 'ellipse', 'rect'].flatMap((k) => MIRRORS.map((m) => [`${k} ${m}`, 216])));
-		expect(exact).toEqual({ ...perfect, 'roundrect none': 216, 'roundrect x': 144, 'roundrect y': 216, 'roundrect xy': 144 });
+		expect(exact).toEqual({ ...perfect, 'roundrect none': 216, 'roundrect x': 216, 'roundrect y': 216, 'roundrect xy': 216 });
 	});
 });

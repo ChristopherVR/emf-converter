@@ -484,7 +484,10 @@ function handleRectangle(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 					c.beginPath();
 					c.rect(x, y, w, h);
 				},
-				raster: () => rectRasterPath(devicePositiveBox(box), clockwise),
+				// A widened (non-cosmetic) pen strokes the path GetPath reports, which is the logical Rectangle mapped point by point
+				// (from the mirrored x's left side for an x mirror); only a cosmetic outline starts from the device-positive corner
+				// (native playback of the mirrored `geo5` sheets: the missing round-join corner pixels of a mirrored x or y).
+				raster: () => rectRasterPath(penIsCosmetic(rCtx) ? devicePositiveBox(box) : box, clockwise),
 				rectangle: true,
 				fill: true,
 				stroke: true,

@@ -16,10 +16,12 @@
  * to `ceil(device coordinate)` in any orientation, a drawn Rectangle is traversed in device order whichever way the map mirrors
  * (a dotted outline shows it), and a RoundRect is the logical shape mapped (its horizontal controls round down under a mirrored x).
  *
- * What is left (55 pixels): the RoundRect corner under the non-dyadic maps (a handful of pixels, as unmirrored; the RoundRect
- * half-width under a mirrored x is a FIX off in about one shape of five). The wide plain pen under the 3:2 by 1:1 map that mirrors
+ * Every sheet is now pixel-exact (round 8; 5 pixels before). The wide plain pen under the 3:2 by 1:1 map that mirrors
  * x was 169 and 166 pixels on `wide3` (and 12 on `geo5`): an unequal-scale pen is an elliptical nib and the mirrored map gives
- * it the matrix nib (`penPolygonMatrix`, see `emf-compat-widemirror.fixture.test.ts`), now 2 pixels.
+ * it the matrix nib (`penPolygonMatrix`, see `emf-compat-widemirror.fixture.test.ts`). The last pixels of `mx-r34-geo5` (2) and
+ * `my-r34-geo5` (3) were the round-join corner pixels of a Rectangle: native strokes a widened (non-cosmetic) Rectangle along the
+ * path `GetPath` reports, the logical Rectangle mapped point by point (from the left, heading right, under a mirrored x), where
+ * the cosmetic and dotted outline starts from the device-positive corner; the widener is orientation sensitive at a round join.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -31,10 +33,7 @@ const pens = ['null', 'cosmetic', 'wide3', 'geo5', 'dash'];
 const sweeps = ['r43', 'r107', 'r34', 'r12'];
 
 /** Differing pixels per sheet; every sheet not listed is pixel-exact. */
-const residual: Record<string, number> = {
-	'compat-playback-mx-r34-geo5': 2,
-	'compat-playback-my-r34-geo5': 3,
-};
+const residual: Record<string, number> = {};
 
 const sheets = [
 	...mirrors.flatMap((mi) => maps.flatMap((m) => pens.map((p) => `compat-playback-m${mi}-${m}-${p}`))),
@@ -42,9 +41,9 @@ const sheets = [
 ];
 
 describe('GM_COMPATIBLE drawing under mirrored maps, recorded and played back natively', () => {
-	it('covers 132 sheets and 5 differing pixels', () => {
+	it('covers 132 sheets and no differing pixels', () => {
 		expect(sheets).toHaveLength(132);
-		expect(Object.values(residual).reduce((a, b) => a + b, 0)).toBe(5);
+		expect(Object.values(residual).reduce((a, b) => a + b, 0)).toBe(0);
 	});
 	for (const name of sheets) {
 		it(`${name}: ${residual[name] ?? 0} differing pixels`, async () => {

@@ -212,13 +212,16 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, reco
 		// An inside-frame pen's RoundRect: the edge end points and controls round from the unrounded corner scaled onto
 		// the box (native GetPath, 2,000 shapes at six scales in GM_ADVANCED and 1,500 at the WMF 0.96 scale, all exact):
 		// horizontally onto the width made even upwards (the top edge of an odd width a FIX right of the bottom's),
-		// vertically onto the height made even downwards.
+		// vertically onto the height made even downwards. Under a mirrored x both the horizontal rule and the controls flip: the width is made
+		// even downwards and the controls round down (native GetPath, `compat-playback-shapes.json.gz`: 144 of 144 inside-frame RoundRects
+		// under x and x-and-y, 24 of them odd widths that only the downward even width gets right).
 		const w = f.r - f.l;
 		const h = f.b - f.t;
 		if (w >= 0 && h >= 0) {
-			const hx = w === 0 ? 0 : Math.round((box.cornerExact[0] * (w + (w % 2))) / w / 2);
+			const hx = w === 0 ? 0 : Math.round((box.cornerExact[0] * (mirrorX ? w - (w % 2) : w + (w % 2))) / w / 2);
 			const hy = h === 0 ? 0 : Math.round((box.cornerExact[1] * (clockwise ? h + (h % 2) : h - (h % 2))) / h / 2);
-			const hc = Math.ceil(KAPPA * hx);
+			// The horizontal controls round down under a mirrored x, as for the other pens (`roundRectCorners`).
+			const hc = mirrorX ? Math.floor(KAPPA * hx) : Math.ceil(KAPPA * hx);
 			const vc = clockwise ? Math.ceil(KAPPA * hy) : Math.floor(KAPPA * hy);
 			const set = (k: number, x: number | null, y: number) => {
 				if (x !== null) pts[2 * k] = x;
