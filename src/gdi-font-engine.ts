@@ -524,7 +524,9 @@ export class RealizedFont implements GdiRealizedFont {
 		// GDI's ClearType follows the font's `gasp`: a size whose range has no GASP_GRIDFIT is drawn from the unhinted,
 		// unscaled outline (Arial up to 8 ppem: 483 of the 573 differing pixels of the 8 px row become 45).
 		const gridFit = this.gdiPlus || clearTypeGridFits(this.ttf, this.ppem);
-		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus }, gridFit);
+		// CLEARTYPE_NATURAL_QUALITY runs the programs without GETINFO's compatible-widths bit: its glyphs match native at
+		// 9 to 17 px (Arial lines of `textx-arial-ctnatural.wide.png`: 2,100 differing pixels fall to 270 in lines 1 to 8).
+		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus && !this.naturalWidths }, gridFit);
 		const u = this.ctSize.hintGlyph(gi);
 		const natural = (this.ttf.hMetrics(gi).advance * this.ppemX) / this.ttf.unitsPerEm;
 		const k = !this.naturalWidths && natural > 0 && gridFit ? this.advance(index) / natural : 1;
