@@ -1014,8 +1014,17 @@ function resampleHqAxisAligned(
 	}
 	const cubic = kernel === 'hq-bicubic';
 	const bin = cubic ? 0.5 : 1;
-	const stepU = hqStep(scaleU);
-	const stepV = hqStep(scaleV);
+	let stepU = hqStep(scaleU);
+	let stepV = hqStep(scaleV);
+	const nominal = spec.nominalScale;
+	if (nominal && !mirrorU && Math.abs(nominal[0] / scaleU - 1) < 1e-5 && Math.abs(nominal[1] / scaleV - 1) < 1e-5) {
+		// GDI+ inverts the float32 matrix with float32 arithmetic, determinant and reciprocal included, so each axis'
+		// step depends on the other's scale in the last bit.
+		const fr = Math.fround;
+		const reciprocal = fr(1 / fr(nominal[0] * nominal[1]));
+		stepU = Math.round(65536 * fr(nominal[1] * reciprocal));
+		stepV = Math.round(65536 * fr(nominal[0] * reciprocal));
+	}
 	const rawLeftEdge = mirrorU ? rawLeft : spec.toDevice[0] * spec.srcX + spec.toDevice[4] - shift;
 	// The phase offset follows the unsnapped edge (a 3.4 origin steps from 0.6, not from the snapped 0.625).
 	const dxRaw = xFirst - rawLeftEdge;

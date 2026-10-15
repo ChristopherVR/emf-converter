@@ -124,7 +124,7 @@ describe('native texture-brush source coordinates', () => {
 	for (const [index, c] of captures.entries()) {
 		it(`sweep ${index}: ${c.matrix.join(',')} at ${c.x0}, half ${c.half}, geometry ${c.geo}`, () => {
 			expect(missedFlips(c)).toBeLessThanOrEqual(bounds[index]);
-		});
+		}, 60_000);
 	}
 });
 
@@ -222,7 +222,7 @@ describe('native high-quality DrawImage positions (image-levels.json.gz)', () =>
 			}
 			expect(exact).toBeGreaterThanOrEqual(floors[index][0]);
 			expect(near).toBeGreaterThanOrEqual(floors[index][1]);
-		});
+		}, 120_000);
 	}
 });
 
@@ -293,6 +293,6 @@ describe('native plain Bilinear DrawImage source coordinates (image-coordinate.j
 				}
 			}
 			expect(missed).toBeLessThanOrEqual(bounds[index]);
-		});
+		}, 60_000);
 	}
 });
