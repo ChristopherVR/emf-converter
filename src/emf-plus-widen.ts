@@ -13,15 +13,22 @@
  * - on the outside of a turn the join is the miter point (a bevel beyond
  *   the miter limit, a clipped miter for MiterClipped, an arc for Round),
  *   on the inside simply both segments' offset end points: the outline
- *   overlaps itself there and the nonzero fill covers it;
+ *   overlaps itself there and the nonzero fill covers it; a Round join
+ *   through a turn of under about 8 degrees (cosine above 0.99) is a smooth
+ *   vertex, only the incoming offset point on both sides (the straight edge
+ *   beside it then sits 1/16 pixel off once the 28.4 conversion rounds the
+ *   excess up; `round-join-small-turn.json.gz`);
  * - an open figure is one outline (left side forward, end cap, right side
  *   back, start cap); a closed figure two loops, one per side;
  * - a compound pen strokes each band of its compound array as its own
  *   outline (on a closed figure the inner side of each band meets where
- *   its offset lines cross: exact on 24 figures, aliased and antialiased); an Inset pen on a closed figure strokes the ring
- *   between the figure and the figure offset inward by the whole width
- *   (the inner corners where the offset lines meet, the pen's join at a
- *   reflex vertex; see `emf-plus-pen-figures.fixture.test.ts`);
+ *   its offset lines cross: exact on 24 figures, aliased and antialiased); an Inset pen on a closed figure is, for the
+ *   fills of `strokeGdiplus`, the pen at twice its width clipped to the figure
+ *   (`emf-plus-inset-outline.ts`); the ring between the figure and the figure
+ *   offset inward by the whole width (the inner corners where the offset
+ *   lines meet, the pen's join at a reflex vertex) is the model kept for
+ *   callers that outline the stroke in world space (custom caps, anchors) and
+ *   for a half-pixel offset with antialiasing;
  * - a dashed pen widens every dash as its own open figure, capped with the
  *   pen's DashCap, the line's own start and end caps kept for the ends of
  *   the whole line.
@@ -117,6 +124,9 @@ function cleanPoints(pts: ReadonlyArray<number>, closed: boolean): Pt[] {
 	return out;
 }
 
+/** Cosine of the turn above which a round join counts as a smooth vertex (measured: 8 degrees is the last angle affected). */
+const ROUND_SMOOTH_DOT = 0.99;
+
 /** Unit direction and left normal (-dy, dx) of segment a->b. */
 function frame(a: Pt, b: Pt): { ux: number; uy: number; nx: number; ny: number } {
 	const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -140,12 +150,15 @@ function joinPoints(p: Pt, f1: ReturnType<typeof frame>, f2: ReturnType<typeof f
 		return [b]; // Straight on.
 	}
 	const outer = cross * o < 0;
+	if (!outer && meetInside) {
+		const den2 = f1.ux * f2.uy - f1.uy * f2.ux;
+		const t2 = ((b.x - a.x) * f2.uy - (b.y - a.y) * f2.ux) / den2;
+		return [{ x: a.x + f1.ux * t2, y: a.y + f1.uy * t2 }];
+	}
+	if (pen.join === 2 && f1.ux * f2.ux + f1.uy * f2.uy > ROUND_SMOOTH_DOT) {
+		return [a]; // A round join through a turn under about 8 degrees is a smooth vertex: only the incoming offset point, on both sides.
+	}
 	if (!outer) {
-		if (meetInside) {
-			const den2 = f1.ux * f2.uy - f1.uy * f2.ux;
-			const t2 = ((b.x - a.x) * f2.uy - (b.y - a.y) * f2.ux) / den2;
-			return [{ x: a.x + f1.ux * t2, y: a.y + f1.uy * t2 }];
-		}
 		return [a, b];
 	}
 	if (pen.join === 2) {

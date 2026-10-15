@@ -6,12 +6,13 @@
  *  - `gpx-pen-compound-center-*`: compound arrays {0, .3, .6, 1} and {0, .2, .4, .6, .8, 1} on the same figures. Exact in both modes now: the
  *    inner side of every band meets at the point where the offset lines cross (the overlapping end points of an open polyline left spikes
  *    at the corners of a closed figure; 1,423 aliased and 6,790 antialiased pixels differed before).
- *  - `gpx-pen-inset-<join>-*`: Inset alignment. GDI+ strokes the ring between the figure and the figure offset inward by the whole width, not
- *    the band swept along each edge, which put a spike outside every acute corner of a polygon (1,581 to 1,976 aliased pixels differ
- *    before). The corners of the inner boundary are where the offset lines meet; at a reflex vertex it takes the pen's join. A pen that fills
- *    the figure completely leaves no hole. The aliased sheets fall to 52, 119 and 458 differing pixels for miter, bevel and round joins; the
- *    antialiased ones keep about 8,600 pixels (one antialiasing sample along the curved edges, both outer and inner; the centered control is
- *    exact, so it is the inset's own flattening) and the round join keeps 90 pixels per width on the rounded path.
+ *  - `gpx-pen-inset-<join>-*`: Inset alignment. GDI+ draws the pen at twice its width, centered, and clips it to the figure with its hard
+ *    (aliased) clip: the aliased sheets are exact for all three joins (the ring model before: 52, 119 and 458 differing pixels; the band
+ *    swept along each edge before that: 1,581 to 1,976). Antialiased, it fills the outline of the surviving pixels, a polygon on whole-pixel
+ *    coordinates with some staircase corners cut (`emf-plus-inset-outline.ts`, `emf-plus-inset-outline.fixture.test.ts`): 6 differing
+ *    pixels on each sheet, at the bottom corner of the triangle's hole (two pixels that only touch at a corner), against 8,573 to 8,944
+ *    before. The round join needed one more rule (`ROUND_SMOOTH_DOT` in `emf-plus-widen.ts`): the straight edge next to a turn of under
+ *    about 8 degrees sits 1/16 pixel inside.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -23,12 +24,12 @@ const EXPECTED: Record<string, number> = {
 	'gpx-pen-center-miter-aa': 0,
 	'gpx-pen-compound-center-aliased': 0,
 	'gpx-pen-compound-center-aa': 0,
-	'gpx-pen-inset-miter-aliased': 52,
-	'gpx-pen-inset-bevel-aliased': 119,
-	'gpx-pen-inset-round-aliased': 458,
-	'gpx-pen-inset-miter-aa': 8573,
-	'gpx-pen-inset-bevel-aa': 8649,
-	'gpx-pen-inset-round-aa': 8944,
+	'gpx-pen-inset-miter-aliased': 0,
+	'gpx-pen-inset-bevel-aliased': 0,
+	'gpx-pen-inset-round-aliased': 0,
+	'gpx-pen-inset-miter-aa': 6,
+	'gpx-pen-inset-bevel-aa': 6,
+	'gpx-pen-inset-round-aa': 6,
 };
 
 describe('EMF+ pens on closed figures', () => {

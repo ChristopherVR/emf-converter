@@ -34,7 +34,7 @@
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
 #   bicubic-arithmetic, bicubic-independent, wide-pen-axis-probe,
 #   wide-pen-axis-directions, dashed-pen-axis-probe, general-matrix-pen-probe,
-#   nib-matrix-pen-probe, rotated-pen-vector-probe, bezier-flatten,
+#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, round-join-probe, bezier-flatten,
 #   illuminant-cubes, chroma-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
@@ -900,6 +900,18 @@ if ($Which -eq 'general-matrix-pen-probe') {
     Add-Type -Path (Join-Path $here 'GeneralMatrixPenProbe.cs')
     [GeneralMatrixPenProbe]::Run($outDir)
     [GeneralMatrixPenProbe]::RunJoins($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'inset-outline-probe') {
+    Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
+    [InsetOutlineProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'round-join-probe') {
+    Add-Type -Path (Join-Path $here 'RoundJoinProbe.cs') -ReferencedAssemblies System.Drawing
+    [RoundJoinProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

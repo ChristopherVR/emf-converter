@@ -58,6 +58,7 @@ import { applyPlusWorldTransform, brushPaint, plusWorldMatrix } from './emf-plus
 import { customCapGeometry } from './emf-plus-custom-cap';
 import { nominalLineCoverage, recordNominalFigures, type NominalFigure } from './emf-plus-nominal-line';
 import { widenFigures, type DevicePen } from './emf-plus-widen';
+import { insetStrokeCoverage } from './emf-plus-inset-outline';
 import { mulMatrix } from './emf-plus-brush-gradient';
 import { isSvgContext } from './svg-context';
 import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
@@ -408,12 +409,17 @@ function strokeGdiplus(
 		return poly.flatMap((p) => [toPlusFix(m[0] * p.x + m[2] * p.y + m[4]), toPlusFix(m[1] * p.x + m[3] * p.y + m[5])]);
 	};
 	let fix: FixFigure[];
+	let insetFigures: FixFigure[] | null = null;
 	if (hasCustomCap(pen)) {
 		fix = customCapOutline(figures, width, devicePen, pen).map(toFix);
 	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash && !(((pen.startCap ?? 0) | (pen.endCap ?? 0) | (pen.dashCap ?? 0)) & 0xf0)) {
 		return strokeNominal(rCtx, pen, sampler, buildPath, device, size, antialias, closedFigure);
 	} else {
-		fix = widenFigures(figures, devicePen).map(toFix);
+		// An Inset stroke on closed figures is the pen at twice its width, centered, clipped to the figure (see emf-plus-inset-outline.ts);
+		// a half-pixel offset with antialiasing keeps the older ring model.
+		const insetClip = devicePen.inset && !devicePen.dash && !devicePen.compound && figures.every((f) => f.closed) && !(antialias && isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0));
+		fix = widenFigures(figures, insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2 } : devicePen).map(toFix);
+		insetFigures = insetClip ? figures.map((f) => toFix(Array.from({ length: f.pts.length >> 1 }, (_, i) => ({ x: f.pts[2 * i], y: f.pts[2 * i + 1] })))) : null;
 	}
 	const box = figuresBox(fix, size);
 	if (!box) {
@@ -422,7 +428,8 @@ function strokeGdiplus(
 	if (box.w * box.h > 16_000_000) {
 		return false;
 	}
-	const coverage = rasterizePlusFill(fix, false, antialias, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), box);
+	const half = isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0);
+	const coverage = insetFigures ? insetStrokeCoverage(fix, insetFigures, antialias, half, box) : rasterizePlusFill(fix, false, antialias, half, box);
 	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
 }
 
