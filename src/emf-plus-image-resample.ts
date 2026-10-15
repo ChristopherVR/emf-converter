@@ -882,7 +882,19 @@ function mirroredBias(spec: DeferredImageResample, scale: number, fractionalEdge
  * rounding of the matrix inverse that the width alone does not fix. The plain rounding is kept.
  */
 function hqStep(scale: number): number {
-	return Math.round(65536 / scale);
+	return scale < 1 ? hqReductionStep(65536 / scale) : Math.round(65536 / scale);
+}
+
+/**
+ * The 16.16 step of a reduced axis (scale below one) from its unrounded reciprocal. Native steps a reduction up
+ * from a fraction of about 0.47 instead of 0.5: the reciprocals 124,830.48 (21/40) and 90,394.48 (29/40) step by
+ * 124,831 and 90,395 where 73,156.47 (43/48) and every fraction up to 0.40 step down, in 62 reduction sweeps of
+ * both kernels on both axes (`hq-reduction-grid`, see "Round 8" in outstanding-work.md). The threshold is fitted
+ * between 0.469 and 0.477; an upscale keeps the plain rounding (1.37x, 47,836.496, steps down).
+ */
+const HQ_REDUCTION_STEP_NUDGE = 0.027;
+function hqReductionStep(reciprocal: number): number {
+	return Math.floor(reciprocal + 0.5 + HQ_REDUCTION_STEP_NUDGE);
 }
 
 /** The tent's running integral at `u = j / 128` kernel units, over 65536 (`512 j - 2 j^2` on `|j| < 128`). */
@@ -903,18 +915,22 @@ interface HqTaps {
 
 /**
  * The taps of a reduced axis (scale below one) of a high-quality draw, from the native noise captures. Each
- * texel edge `e` (relative to the source origin) lands in destination space at `s' (e - P)`, where `s' = 65536 /
- * step` and `P = (k step + offset) / 65536` is the position of destination pixel `k`; that offset, in 1/128
- * destination pixel, is rounded down, and a texel's weight is the difference of the kernel's running integral at
- * its two edges' rounded offsets: the cubic's measured half-grid table ({@link hqCubicCdf}), the tent's exact
- * integral at whole grid points. All 9,012 noise values of the sweep from 0.9x to 0.25x match, except two tent
- * values at 0.4x where an offset falls exactly on the end of the kernel.
+ * texel edge `e` (relative to the source origin) lands in destination space at `s' (e - P)`, where `P = (k step +
+ * offset) / 65536` is the position of destination pixel `k`; native computes it in 16.16 fixed point, `(edge distance in
+ * 1/65536 texel) * s16 / 2^25` floored to 1/128 destination pixel (see `s16` below), and a texel's weight is the
+ * difference of the kernel's running integral at its two edges' bins: the cubic's measured half-grid table
+ * ({@link hqCubicCdf}), the tent's exact integral at whole grid points. The 148 draws of `hq-reduction-grid` match
+ * except 25 values (see `emf-plus-hq-reduction-grid.fixture.test.ts`); before the fixed-point form, floating point
+ * edges were a bin off at every tie (73 of the 148 draws exact).
  *
  * `originBins` is the source origin in 1/128 texel (a whole number).
  */
 function hqReductionTaps(cubic: boolean, scale: number, step: number, position: (k: number) => number, origin: number, from: number, to: number): HqTaps[] {
 	const taps: HqTaps[] = [];
-	const s = Math.fround(scale);
+	// Native weighs the edges in 16.16 fixed point: `x = (edge distance in 1/65536 texel) * s16 / 2^25`, floored, in
+	// 1/128 destination pixel. The tent's multiplier is the rounded reciprocal of the step; the cubic's is an even
+	// number, twice the rounded half scale (centre-based edges `centre -/+ s16 / 2`). Both fit the native sweeps.
+	const s16 = cubic ? 2 * Math.round(Math.fround(scale) * 32768) : Math.round(2 ** 32 / step);
 	const radius = (cubic ? 2 : 1) * (step / 65536) + 1;
 	for (let k = from; k <= to; k++) {
 		const p = position(k);
@@ -925,7 +941,7 @@ function hqReductionTaps(cubic: boolean, scale: number, step: number, position: 
 		let prev = Number.NaN;
 		for (let t = first; t <= last + 1; t++) {
 			// 128 u at texel edge t - 1/2, u = s (e - origin - P) in destination pixels.
-			const q = 128 * s * (t - 0.5 - origin - p / 65536);
+			const q = (((t - 0.5 - origin) * 65536 - p) * s16) / 2 ** 25;
 			const edge = Math.floor(q);
 			const cdf = cubic ? hqCubicCdf(edge) : hqTentCdf(edge);
 			if (t > first) {
@@ -992,14 +1008,26 @@ function resampleHqAxisAligned(
 	const edge1 = edge0 + m[0] * spec.srcW;
 	// A mirrored draw snaps its left edge (the far end of the source rectangle) to the 1/16 grid, not the right one.
 	const rawLeft = spec.toDevice[0] * (spec.srcX + spec.srcW) + spec.toDevice[4] - shift;
+	// The unsnapped left edge, with the float32 rounding native applies to the matrix (toward minus infinity).
+	const rawLeftEdge = mirrorU ? rawLeft : down32(down32(Math.fround(spec.toDevice[0]) * spec.srcX) + down32(spec.toDevice[4])) - shift;
 	const left = mirrorU ? Math.round(rawLeft * SUBPIXEL_GRID) / SUBPIXEL_GRID : Math.min(edge0, edge1);
 	const top = m[3] * spec.srcY + m[5] - shift;
 	const right = mirrorU ? left + scaleU * spec.srcW : Math.max(edge0, edge1);
 	const bottom = top + m[3] * spec.srcH;
-	const xFirst = Math.ceil(left - COVERAGE_NUDGE_X);
-	const xLast = Math.ceil(right - COVERAGE_NUDGE_X) - 1;
-	const yFirst = Math.ceil(top - COVERAGE_NUDGE_Y);
-	const yLast = Math.ceil(bottom - COVERAGE_NUDGE_Y) - 1;
+	// A left edge within 1/32 pixel above a whole pixel rounds (half down, on the 1/16 grid) onto it, yet native still
+	// leaves that pixel out: the first covered pixel and the last follow the unsnapped edge. The step of such an
+	// edge is shifted too (see offsetU); an edge within 1/32 below a whole pixel snaps up onto it.
+	const gridLeft = mirrorU ? 0.5 : Math.ceil(rawLeftEdge * SUBPIXEL_GRID - 0.5) / SUBPIXEL_GRID;
+	const snapsDown = !mirrorU && Number.isInteger(gridLeft) && rawLeftEdge - gridLeft > 1e-5;
+	const snapsUp = !mirrorU && Number.isInteger(gridLeft) && gridLeft - rawLeftEdge > 1e-5;
+	const xFirst = snapsDown ? Math.ceil(rawLeftEdge - COVERAGE_NUDGE_X) : Math.ceil(left - COVERAGE_NUDGE_X);
+	const xLast = (snapsDown ? Math.ceil(rawLeftEdge + scaleU * spec.srcW - COVERAGE_NUDGE_X) : Math.ceil(right - COVERAGE_NUDGE_X)) - 1;
+	// The top edge behaves like the left one: an edge within 1/32 pixel above a whole row leaves that row out.
+	const rawTop = down32(down32(Math.fround(spec.toDevice[3]) * spec.srcY) + down32(spec.toDevice[5])) - shift;
+	const gridTop = Math.ceil(rawTop * SUBPIXEL_GRID - 0.5) / SUBPIXEL_GRID;
+	const topSnapsDown = Number.isInteger(gridTop) && rawTop - gridTop > 1e-5;
+	const yFirst = topSnapsDown ? Math.ceil(rawTop - COVERAGE_NUDGE_Y) : Math.ceil(top - COVERAGE_NUDGE_Y);
+	const yLast = (topSnapsDown ? Math.ceil(rawTop + m[3] * spec.srcH - COVERAGE_NUDGE_Y) : Math.ceil(bottom - COVERAGE_NUDGE_Y)) - 1;
 	const cx0 = Math.max(0, xFirst);
 	const cy0 = Math.max(0, yFirst);
 	const cx1 = Math.min(surface.w - 1, xLast);
@@ -1022,21 +1050,32 @@ function resampleHqAxisAligned(
 		// step depends on the other's scale in the last bit.
 		const fr = Math.fround;
 		const reciprocal = fr(1 / fr(nominal[0] * nominal[1]));
-		stepU = Math.round(65536 * fr(nominal[1] * reciprocal));
-		stepV = Math.round(65536 * fr(nominal[0] * reciprocal));
+		const rounded = (value: number, scale: number): number => (scale < 1 ? hqReductionStep(value) : Math.round(value));
+		stepU = rounded(65536 * fr(nominal[1] * reciprocal), scaleU);
+		stepV = rounded(65536 * fr(nominal[0] * reciprocal), scaleV);
 	}
-	const rawLeftEdge = mirrorU ? rawLeft : spec.toDevice[0] * spec.srcX + spec.toDevice[4] - shift;
 	// The phase offset follows the unsnapped edge (a 3.4 origin steps from 0.6, not from the snapped 0.625).
 	const dxRaw = xFirst - rawLeftEdge;
 	const dx = dxRaw < 1e-5 ? 0 : dxRaw;
-	const dy = Math.max(0, yFirst - top);
+	const dy = Math.max(0, yFirst - rawTop);
 	if (mirrorU && (spec.halfPixelOffset || !integral(spec.srcX) || !integral(spec.srcW))) {
 		return undefined;
 	}
 	// A mirrored draw reads the flipped source from its far end: pixel k sits at the flipped position
 	// (source width - one texel) - (covered pixels - k) steps.
 	const mirroredPixels = xLast - xFirst + 1 + dx;
-	const offsetU = !mirrorU && dx > 1e-9 ? Math.round((1 - dx) * stepU) : 0;
+	// Native steps the first covered pixel 1 - dx steps in; an edge that snapped onto a whole pixel steps from the
+	// whole pixel instead: one step further when it snapped down, one step less when it snapped up.
+	const fraction = rawLeftEdge - Math.floor(rawLeftEdge);
+	const offsetU = mirrorU
+		? 0
+		: snapsDown
+			? Math.round((1 + fraction) * stepU)
+			: snapsUp
+				? Math.round((fraction - 1) * stepU)
+				: dx > 1e-9
+					? Math.round((1 - dx) * stepU)
+					: 0;
 	const offsetV = dy > 1e-9 ? Math.round(dy * stepV) : 0;
 	const filterU = axisFilter(kernel, scaleU, false);
 	const filterV = axisFilter(kernel, scaleV, false);

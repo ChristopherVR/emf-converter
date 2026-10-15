@@ -223,7 +223,7 @@ describe('axis-aligned high-quality phase arithmetic (native noise captures)', (
 		}
 	}
 
-	it('reproduces the tent and the cubic exactly for every upscale, and every reduction but two values', () => {
+	it('reproduces the tent and the cubic exactly for every upscale, and every reduction but one value', () => {
 		const stats: Record<string, { n: number; px: number; bad: number; max: number }> = {};
 		for (const c of noise.slice(1)) {
 			const row = Buffer.from(c.row, 'base64');
@@ -248,11 +248,11 @@ describe('axis-aligned high-quality phase arithmetic (native noise captures)', (
 				}
 			}
 		}
-		// Reductions follow the same rule in destination space; two bilinear values at 0.4x (a texel edge exactly at the end of the kernel) are off by a level.
+		// Reductions follow the same rule in destination space; one bilinear value at 0.4x (a texel edge exactly at the end of the kernel) is off by a level.
 		expect(stats).toEqual({
 			'k6 upscale': { n: 17, px: 46569, bad: 0, max: 0 },
 			'k7 upscale': { n: 17, px: 46569, bad: 0, max: 0 },
-			'k6 reduction': { n: 8, px: 4536, bad: 2, max: 1 },
+			'k6 reduction': { n: 8, px: 4536, bad: 1, max: 1 },
 			'k7 reduction': { n: 8, px: 4536, bad: 0, max: 0 },
 		});
 	});
