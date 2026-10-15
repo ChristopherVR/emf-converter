@@ -8,5 +8,10 @@
   { "name": "textx-rotalign-world", "w": 606, "h": 520, "ox": 0, "oy": 0 },
   { "name": "textx-eto-mono", "w": 360, "h": 250, "ox": 0, "oy": 0 },
   { "name": "textx-eto-aa", "w": 360, "h": 250, "ox": 0, "oy": 0 },
-  { "name": "rotate-text-25deg", "w": 201, "h": 140, "ox": 0, "oy": 0 }
+  { "name": "rotate-text-25deg", "w": 201, "h": 140, "ox": 0, "oy": 0 },
+  { "name": "textx-arial-cleartype", "w": 1209, "h": 602, "ox": 0, "oy": 0 },
+  { "name": "textx-arial-q0-default", "w": 1209, "h": 602, "ox": 0, "oy": 0 },
+  { "name": "textx-arial-q1-draft", "w": 1209, "h": 602, "ox": 0, "oy": 0 },
+  { "name": "textx-arial-q2-proof", "w": 1209, "h": 602, "ox": 0, "oy": 0 },
+  { "name": "textx-arial-ctnatural", "w": 1209, "h": 602, "ox": 0, "oy": 0 }
 ]

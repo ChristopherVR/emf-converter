@@ -459,12 +459,12 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
 	fontCase('textx-arial-aa', 'emf', 0.0016), // measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-arial-cleartype', 'emf', 0.0330), // measured 3.297%, 4.491% before the vertical smoothing and exact blend, 4.648% before the storage 8 rule, 4.693% before the ClearType dropout control, 5.163% before the size-specific SHPIX and DELTAP rules
-	fontCase('textx-arial-ctnatural', 'emf', 0.1434), // measured 14.331%, 14.847% before the exact blend
+	fontCase('textx-arial-cleartype', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing), 4.491% before the vertical smoothing and exact blend, 4.648% before the storage 8 rule, 4.693% before the ClearType dropout control, 5.163% before the size-specific SHPIX and DELTAP rules
+	fontCase('textx-arial-ctnatural', 'emf', 0.0062), // measured 0.610% against native playback, 14.847% before the exact blend
 	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
-	fontCase('textx-arial-q0-default', 'emf', 0.0330), // measured 3.297%, 5.163% before the vertical smoothing and exact blend
-	fontCase('textx-arial-q1-draft', 'emf', 0.0330), // measured 3.297%
-	fontCase('textx-arial-q2-proof', 'emf', 0.0330), // measured 3.297%
+	fontCase('textx-arial-q0-default', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing), 5.163% before the vertical smoothing and exact blend
+	fontCase('textx-arial-q1-draft', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing)
+	fontCase('textx-arial-q2-proof', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing)
 	fontCase('textx-arial-styles-aa', 'emf', 0.0009), // measured 0.059%
 	fontCase('textx-arial-styles-mono', 'emf', 0.0006), // measured 0.027%
 	fontCase('textx-color-aa', 'emf', 0.017), // measured 1.352%
