@@ -1036,28 +1036,28 @@ const PEN_TRANSFORM_CASES: ParityCase[] = [
  * Comments give the share of pixels off at tolerance 0 before and now.
  */
 const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
-	levelExact('plus-effect-blur-r3-dual'),
+	exact('plus-effect-blur-r3-dual'),
 	exact('plus-effect-blur-r1'), // 0.102% before (0.051% beyond 8 levels)
-	levelExact('plus-effect-blur-r10'), // 1.633% before (1.358% beyond 8 levels), 0.038% one level off now
-	levelExact('plus-effect-blur-r10-expand'), // 28.235% before (17.602% beyond 8 levels), 0.051% one level off now
-	levelExact('plus-effect-blur-r2p5'), // 0.561% before (0.395% beyond 8 levels), 0.013% one level off now
-	levelExact('plus-effect-blur-r3'), // 0.682% before (0.446% beyond 8 levels), 0.013% one level off now
-	levelExact('plus-effect-blur-r3-expand'), // 8.323% before (4.619% beyond 8 levels), 0.013% one level off now
+	exact('plus-effect-blur-r10'), // 1.633% before (1.358% beyond 8 levels), exact now
+	exact('plus-effect-blur-r10-expand'), // 28.235% before (17.602% beyond 8 levels), exact now
+	exact('plus-effect-blur-r2p5'), // 0.561% before (0.395% beyond 8 levels), exact now
+	exact('plus-effect-blur-r3'), // 0.682% before (0.446% beyond 8 levels), exact now
+	exact('plus-effect-blur-r3-expand'), // 8.323% before (4.619% beyond 8 levels), exact now
 	// Residual along one edge of the rotated draw, where the effect draw shows through the recorded bitmap's faded edge.
 	{ name: 'plus-effect-blur-r3-rotate30', ext: 'emf', tolerance: 8, maxMismatch: 0.00012 }, // 2.555% before, 0.218% (0.010% since the blur's halo column is sampled)
-	levelExact('plus-effect-blur-r3-scale2'), // 5.696% before (0.045% beyond 8 levels), 5.539% one level off now
+	exact('plus-effect-blur-r3-scale2'), // 5.696% before (0.045% beyond 8 levels), exact now
 	exact('plus-effect-blur-r4-subrect'),
-	levelExact('plus-effect-blur-r4-subrect-expand'), // 4.884% before (2.448% beyond 8 levels), 0.023% one level off now
+	exact('plus-effect-blur-r4-subrect-expand'), // 4.884% before (2.448% beyond 8 levels), exact now
 	exact('plus-effect-brightnesscontrast-b0-c100'),
 	exact('plus-effect-brightnesscontrast-b0-c50'),
 	exact('plus-effect-brightnesscontrast-b0-cn100'),
 	exact('plus-effect-brightnesscontrast-b0-cn50'),
-	levelExact('plus-effect-brightnesscontrast-b30-c40'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-brightnesscontrast-b30-c40'), // 0.153% before, exact now
 	exact('plus-effect-brightnesscontrast-b50-c0'),
 	exact('plus-effect-brightnesscontrast-bn80-c0'),
 	exact('plus-effect-colorbalance-cr0-mg0-yb80'), // 0.153% before
 	exact('plus-effect-colorbalance-cr0-mgn40-yb0'),
-	levelExact('plus-effect-colorbalance-cr100-mg100-yb100'), // 0.153% before (0.153% beyond 8 levels), 0.153% one level off now
+	exact('plus-effect-colorbalance-cr100-mg100-yb100'), // 0.153% before (0.153% beyond 8 levels), exact now
 	exact('plus-effect-colorbalance-cr60-mg0-yb0'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-colorbalance-crn100-mg50-ybn20'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-colorcurve-blacksat-60'),
@@ -1078,26 +1078,26 @@ const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
 	exact('plus-effect-colorcurve-shadow-n50'),
 	exact('plus-effect-colorcurve-whitesat-200'),
 	exact('plus-effect-colorlut-alpha'),
-	levelExact('plus-effect-colorlut-mixed'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-colorlut-mixed'), // 0.153% before, exact now
 	exact('plus-effect-colorlut-posterize'),
 	exact('plus-effect-colormatrix-alpha-half'),
 	exact('plus-effect-colormatrix-grayscale'),
 	exact('plus-effect-colormatrix-invert'),
-	levelExact('plus-effect-colormatrix-sepia'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-colormatrix-sepia'), // 0.153% before, exact now
 	exact('plus-effect-colormatrix-swap-translate'),
 	exact('plus-effect-hsl-h0-s0-l50'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-hsl-h0-s0-ln50'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-hsl-h0-s60-l0'), // 0.153% before
 	exact('plus-effect-hsl-h0-sn100-l0'),
 	exact('plus-effect-hsl-h180-s0-l0'), // 0.153% before
-	levelExact('plus-effect-hsl-h30-sn30-l20'), // 0.153% before (0.153% beyond 8 levels), 0.153% one level off now
+	exact('plus-effect-hsl-h30-sn30-l20'), // 0.153% before (0.153% beyond 8 levels), exact now
 	exact('plus-effect-hsl-h90-s0-l0'), // 0.153% before
 	exact('plus-effect-hsl-hn120-s0-l0'), // 0.153% before
 	exact('plus-effect-levels-h100-m0-s20'),
-	levelExact('plus-effect-levels-h100-m50-s0'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-levels-h100-m50-s0'), // 0.153% before, exact now
 	exact('plus-effect-levels-h100-mn50-s0'), // 0.153% before
 	exact('plus-effect-levels-h80-m0-s0'),
-	levelExact('plus-effect-levels-h90-mn30-s10'), // 0.153% before, 0.153% one level off now
+	exact('plus-effect-levels-h90-mn30-s10'), // 0.153% before, exact now
 	exact('plus-effect-none-identity'),
 	exact('plus-effect-redeye-both'),
 	exact('plus-effect-redeye-left'),
@@ -1106,12 +1106,12 @@ const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
 	exact('plus-effect-sharpen-r1-a50'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-sharpen-r2-a0'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-sharpen-r3-a100'), // 0.128% before (0.115% beyond 8 levels)
-	levelExact('plus-effect-sharpen-r6-a30'), // 0.153% before (0.121% beyond 8 levels), 0.026% one level off now
+	exact('plus-effect-sharpen-r6-a30'), // 0.153% before (0.121% beyond 8 levels), exact now
 	exact('plus-effect-tint-h0-a50'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-tint-h120-a100'), // 0.153% before (0.153% beyond 8 levels)
 	exact('plus-effect-tint-h180-a100'), // 0.153% before (0.153% beyond 8 levels)
-	levelExact('plus-effect-tint-h60-an50'), // 0.153% before, 0.153% one level off now
-	levelExact('plus-effect-tint-hn90-a30'), // quantized hue leaves 96 boundary pixels one level off
+	exact('plus-effect-tint-h60-an50'), // 0.153% before, exact now
+	exact('plus-effect-tint-hn90-a30'), // 96 pixels one level off before (the half-transparent bar)
 ];
 
 const EMF_PLUS_ONLY_EFFECT_CASES: ParityCase[] = EMF_PLUS_EFFECT_CASES
@@ -1121,13 +1121,14 @@ const EMF_PLUS_ONLY_EFFECT_CASES: ParityCase[] = EMF_PLUS_EFFECT_CASES
 		name: c.name.replace('plus-effect-', 'plus-only-effect-'),
 		// Only recordings expose the effect directly, without Dual's baked
 		// fallback painting over it. These bounds measure the real algorithm.
-		tolerance: c.name.includes('-hsl-') ? (c.name === 'plus-effect-hsl-h0-s60-l0' || c.name === 'plus-effect-hsl-h30-sn30-l20' ? 1 : 0)
-			: c.name.includes('-tint-') ? 3 : c.name === 'plus-effect-sharpen-r3-a100' ? 2 : 1,
+		// The effect runs on the premultiplied playback bitmap
+		// (`premultipliedPlaybackSource`), so every recording but the rotated
+		// blur and red-eye is exact (the tolerance was 1 to 3 levels before).
+		tolerance: c.name.endsWith('-redeye-left') || c.name.endsWith('-redeye-both') || c.name.endsWith('-redeye-whole') ? 1 : c.tolerance,
 		maxMismatch: c.name.endsWith('-redeye-left') ? 0
 			: c.name.endsWith('-redeye-both') ? 0.00104
 			: c.name.endsWith('-redeye-whole') ? 0.00521
-			: c.name.includes('-hsl-') ? 0
-			: c.name === 'plus-effect-sharpen-r3-a100' ? 0.00013 : c.maxMismatch,
+			: c.maxMismatch,
 	}));
 
 describe('GDI ground-truth parity', () => {

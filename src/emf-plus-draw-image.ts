@@ -38,7 +38,11 @@
 import { canvasDrawImage, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { decodeBmpFile, payloadSize, sniffImageMime } from './emf-image-payload';
 import { mulMatrix } from './emf-plus-brush-gradient';
-import { applyImageEffectToRect, type EmfPlusImageEffect } from './emf-plus-image-effects';
+import {
+	applyImageEffectToRect,
+	premultipliedPlaybackSource,
+	type EmfPlusImageEffect,
+} from './emf-plus-image-effects';
 import { MAX_NESTED_METAFILE_DEPTH } from './emf-plus-image-predecode';
 import { resampleImage } from './emf-plus-image-resample';
 import { plusWorldMatrix } from './emf-plus-state-handlers';
@@ -361,7 +365,7 @@ export function effectedDraw(
 			? source
 			: null;
 	const region = applyImageEffectToRect(
-		src.rgba,
+		premultipliedPlaybackSource(src.rgba),
 		src.width,
 		src.height,
 		effect,
