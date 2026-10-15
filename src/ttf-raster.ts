@@ -64,10 +64,12 @@ interface Profile {
 	X: number;
 	offset: number;
 	countL: number;
+	/** Crossing of the previous scanline (NaN on a profile's first row). */
+	prevX: number;
 }
 
 function newProfile(): Profile {
-	return { flags: 0, start: 0, height: 0, xs: [], next: null, X: 0, offset: 0, countL: 0 };
+	return { flags: 0, start: 0, height: 0, xs: [], next: null, X: 0, offset: 0, countL: 0, prevX: NaN };
 }
 
 const UNKNOWN = 0;
@@ -453,6 +455,13 @@ class Raster {
 	 * curved edges with that rounding; FreeType's black rasterizer keeps the half and truncates at its own precision).
 	 */
 	roundImpliedPoints = false;
+	/**
+	 * Decides a pixel centre that lies exactly on an edge the way GDI's rotated glyphs do (native GetGlyphOutline bitmaps
+	 * of diagonal edges through pixel centres): the pixel is in when the contour runs downward there and out when it runs
+	 * upward, whatever the sweep direction (see {@link Raster.tieExcluded}).
+	 */
+	directedTies = false;
+	private flipped = false;
 
 	private decomposeContour(o: Outline, first: number, last: number, flipped: boolean): void {
 		const px = (i: number): number => this.scaled(flipped ? o.ys[i] : o.xs[i]);
@@ -528,6 +537,7 @@ class Raster {
 
 	/** Converts the whole outline to profiles; returns false when nothing is drawable. */
 	convert(o: Outline, flipped: boolean, minY: number, maxY: number): boolean {
+		this.flipped = flipped;
 		this.minY = minY;
 		this.maxY = maxY;
 		this.profiles = [];
@@ -599,6 +609,7 @@ class Raster {
 		};
 		const sortList = (list: Profile[]): void => {
 			for (const p of list) {
+				p.prevX = p.X;
 				p.X = p.xs[p.offset];
 				p.offset += p.flags & FLOW_UP ? 1 : -1;
 				p.height--;
@@ -625,10 +636,17 @@ class Raster {
 				const pr = right[i];
 				let x1 = pl.X;
 				let x2 = pr.X;
+				let skip1 = this.tieExcluded(pl);
+				let skip2 = this.tieExcluded(pr);
 				if (x1 > x2) {
-					const t = x1;
-					x1 = x2;
-					x2 = t;
+					[x1, x2] = [x2, x1];
+					[skip1, skip2] = [skip2, skip1];
+				}
+				if (skip1) {
+					x1 += 1;
+				}
+				if (skip2) {
+					x2 -= 1;
 				}
 				const e1 = this.floorP(x1);
 				const e2 = this.ceilP(x2);
@@ -657,6 +675,25 @@ class Raster {
 			left = left.filter((p) => p.height > 0);
 			right = right.filter((p) => p.height > 0);
 		}
+	}
+
+	/**
+	 * With `directedTies`, whether the pixel centre exactly on this profile's crossing is left out of the span: it is when
+	 * the contour runs upward there (y up) and in when it runs downward. In the sweep over columns a profile runs along +x
+	 * (FLOW_UP) or -x, and the direction in y follows from the slope of the crossing.
+	 */
+	private tieExcluded(p: Profile): boolean {
+		if (!this.directedTies || p.X % this.prec !== 0) {
+			return false;
+		}
+		if (!this.flipped) {
+			return (p.flags & FLOW_UP) !== 0;
+		}
+		const d = p.height > 0 ? p.xs[p.offset] - p.X : p.X - p.prevX;
+		if (d === 0 || Number.isNaN(d)) {
+			return false;
+		}
+		return ((p.flags & FLOW_UP) !== 0) === (d > 0);
 	}
 
 	get precision(): number {
@@ -885,7 +922,7 @@ interface PixelBox {
  * enables the measured smart-crossing precision only for a caller's verified
  * upright uniform realization; the default preserves previous arithmetic.
  */
-export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false, roundImpliedPoints = false): GlyphBitmap | null {
+export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false, roundImpliedPoints = false, directedTies = false): GlyphBitmap | null {
 	const box = fixedBox ?? monoBox(o);
 	if (!box) {
 		return null;
@@ -910,6 +947,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 	// ---- vertical sweep: scanlines are rows ----
 	const r = new Raster(dropout);
 	r.roundImpliedPoints = roundImpliedPoints;
+	r.directedTies = directedTies;
 	const P = r.precision;
 	const monoContour = stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) ?
 		MonoStubContours.create(local) : null;
@@ -990,6 +1028,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 	// ---- horizontal sweep: scanlines are columns (dropouts only) ----
 	if (dropout !== 2) {
 		const h = new Raster(dropout);
+		h.directedTies = directedTies;
 		if (h.convert(local, true, 0, (width - 1) * P)) {
 			h.sweep(
 				(col, x1, x2) => {

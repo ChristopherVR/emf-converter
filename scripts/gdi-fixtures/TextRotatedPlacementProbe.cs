@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -67,7 +68,7 @@ public static class TextRotatedPlacementProbe
     /// <summary>
     /// The rotated glyph as GDI draws it, separated from placement: for each glyph the 1-bit GGO_BITMAP bitmap (with its black
     /// box, origin and advance) and the GGO_NATIVE outline (1/64 pixel words) of the same glyph under the same rotation.
-    /// Output: rotated-glyph-bitmaps.json.gz, [{face, lfHeight, degrees, mode, glyph, bw, bh, ox, oy, cx, cy, rows, words}] where
+    /// Output: rotated-glyph-bitmaps.json.gz (GLYPH_OUTPUT renames it; GLYPH_CHARS, GLYPH_HEIGHTS and GLYPH_DEGREES narrow the sweep), [{face, lfHeight, degrees, mode, glyph, bw, bh, ox, oy, cx, cy, rows, words}] where
     /// rows is the bitmap as hex (each row padded to 4 bytes, top row first).
     /// </summary>
     public static void RunGlyphs(string dir)
@@ -76,12 +77,14 @@ public static class TextRotatedPlacementProbe
         IntPtr dc = CreateCompatibleDC(screen);
         var json = new StringBuilder("[");
         bool first = true;
-        string glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789&@%$";
+        string glyphs = Environment.GetEnvironmentVariable("GLYPH_CHARS") ?? "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789&@%$";
+        int[] glyphHeights = (Environment.GetEnvironmentVariable("GLYPH_HEIGHTS") ?? "-9,-12,-16,-20,-28,-40").Split(',').Select(int.Parse).ToArray();
+        int[] glyphDegrees = (Environment.GetEnvironmentVariable("GLYPH_DEGREES") ?? "5,10,25,30,45,60,85,100,135,170,200,225,300,350").Split(',').Select(int.Parse).ToArray();
         var one = new Fixed { value = 1 };
         var ident = new Mat2 { m11 = one, m22 = one };
         foreach (string face in new[] { "Arial", "Times New Roman", "Tahoma", "Courier New" })
-        foreach (int h in new[] { -9, -12, -16, -20, -28, -40 })
-        foreach (int deg in new[] { 5, 10, 25, 30, 45, 60, 85, 100, 135, 170, 200, 225, 300, 350 })
+        foreach (int h in glyphHeights)
+        foreach (int deg in glyphDegrees)
         foreach (string mode in new[] { "esc", "world" })
         {
             if (mode == "world" && (face != "Arial" || (h != -16 && h != -28))) continue;
@@ -118,7 +121,7 @@ public static class TextRotatedPlacementProbe
         }
         json.Append(']');
         DeleteDC(dc);
-        using (var file = File.Create(Path.Combine(dir, "rotated-glyph-bitmaps.json.gz")))
+        using (var file = File.Create(Path.Combine(dir, Environment.GetEnvironmentVariable("GLYPH_OUTPUT") ?? "rotated-glyph-bitmaps.json.gz")))
         using (var gz = new GZipStream(file, CompressionLevel.Optimal))
         {
             var bytes = new UTF8Encoding(false).GetBytes(json.ToString());
