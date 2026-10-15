@@ -752,11 +752,13 @@ export class HintedSize {
 
 	private computeFuncs(): void {
 		const gs = this.gs;
-		if (gs.fvx === 0x4000) {
+		if (!this.gdiMath && gs.fvx === 0x4000) {
 			this.fDotP = gs.pvx;
-		} else if (gs.fvy === 0x4000) {
+		} else if (!this.gdiMath && gs.fvy === 0x4000) {
 			this.fDotP = gs.pvy;
 		} else {
+			// GDI: no axis shortcut. fv = (16384, y) or (x, 16384) with a small other component still has a dot product
+			// that involves both projection components, and the clamp below depends on its sign.
 			this.fDotP = this.gdiMath
 				? dotFix14Split(gs.pvx, gs.pvy, gs.fvx, gs.fvy)
 				: Math.floor((gs.pvx * gs.fvx + gs.pvy * gs.fvy) / 16384);
@@ -854,6 +856,10 @@ export class HintedSize {
 		if (this.gdiMath) {
 			if (this.gs.fvIsPv || this.fDotP === 0x4000) {
 				return mulDiv(distance, f, 0x4000);
+			}
+			if (alongX && f === this.fDotP) {
+				// The projection vector lies along x (the dot product is the component itself): x moves by the distance.
+				return distance;
 			}
 			return alongX ? mulDivGdi(distance, f, this.fDotP) : mulDiv(distance, f, this.fDotP);
 		}
