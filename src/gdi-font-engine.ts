@@ -143,16 +143,16 @@ const FONT_SUBSTITUTES: Record<string, string> = {
  * rounded half up (measured on MS Sans Serif 13 and 20 px and Courier
  * 16 px cells).
  */
-function slantRows(b: GlyphBitmap): GlyphBitmap {
+function slantRows(b: GlyphBitmap, extra = 0): { bitmap: GlyphBitmap; shift: (row: number) => number } {
 	const span = b.height - 1;
 	const lean = Math.floor(span / 2);
-	const shift = (r: number): number => (span > 0 ? Math.floor(((span - r) * lean * 2 + span) / (2 * span)) : 0);
-	const width = b.width + lean;
+	const shift = (r: number): number => (span > 0 ? Math.floor(((span - r) * lean * 2 + span) / (2 * span)) : 0) + extra;
+	const width = b.width + lean + extra;
 	const data = new Uint8Array(width * b.height);
 	for (let y = 0; y < b.height; y++) {
 		data.set(b.data.subarray(y * b.width, (y + 1) * b.width), y * width + shift(y));
 	}
-	return { ...b, width, data };
+	return { bitmap: { ...b, width, data }, shift };
 }
 
 /**
@@ -162,6 +162,14 @@ function slantRows(b: GlyphBitmap): GlyphBitmap {
  * no smaller factor comes within a few pixels of.
  */
 const RASTER_STRETCH_COST = [0, 0, 120, 150, 250, 250, 1150, 1280, 1840];
+/**
+ * Extra cost, per squared extra factor, of stretching a face whose cell is at most `RASTER_TINY_CELL` pixels (Terminal's
+ * 4x6, Small Fonts' 3x5 and 3x6): GDI serves Terminal -30 from the 8x12 face doubled instead of the 4x6 face five times
+ * (24 pixel cell, not 30), and Small Fonts -15 (cell 15) from the 4x8 (6x13) face doubled (not the 3x6 (3x5) face
+ * tripled), while Small Fonts cell 18 does triple the 3x6 face. Fitted on the 2,900 `text-raster-mapper` rows.
+ */
+const RASTER_TINY_CELL = 6;
+const RASTER_TINY_STRETCH = 50;
 /** Largest horizontal stretch of a raster face. */
 const RASTER_MAX_X_SCALE = 5;
 
@@ -215,6 +223,8 @@ export interface GdiRealizedFont {
 	readonly underlineThickness: number;
 	readonly strikeoutPosition: number;
 	readonly strikeoutThickness: number;
+	/** Pixels the strike-out bar is shifted right (a slanted raster face leans it like a glyph row). */
+	readonly strikeoutShift?: number;
 	readonly mode: GdiTextMode;
 	readonly syntheticBold: boolean;
 	readonly syntheticItalic: boolean;
@@ -275,6 +285,7 @@ export class RasterRealizedFont implements GdiRealizedFont {
 	readonly strikeoutPosition: number;
 	readonly strikeoutThickness: number;
 	readonly mode: GdiTextMode = 'mono';
+	readonly strikeoutShift: number;
 	readonly syntheticBold: boolean;
 	readonly syntheticItalic = false;
 	readonly gridFit = true;
@@ -302,12 +313,19 @@ export class RasterRealizedFont implements GdiRealizedFont {
 		this.descent = (face.pixHeight - face.ascent) * n;
 		this.ppem = (face.pixHeight - face.internalLeading) * n;
 		this.ppemX = (face.pixHeight - face.internalLeading) * scaleX;
-		this.underlinePosition = -n;
-		this.underlineThickness = n;
-		// Measured: the strike-out bar starts (ascent - internal leading) / 3,
-		// rounded up, above the baseline (MS Sans Serif 13/16, Courier 13).
-		this.strikeoutPosition = Math.ceil(((face.ascent - face.internalLeading) * n) / 3);
-		this.strikeoutThickness = n;
+		// Decorations are laid out on the unstretched face and then stretched (`text-raster-styles`, every face and
+		// size): the bars are floor(cell / 12) source rows thick (at least one); the underline starts one source row
+		// below the baseline (two when it is thicker than one row) and is pulled up into the cell when it would
+		// leave it; the strike-out bar's top is ceil((ascent - internal leading) / 3) source rows above the baseline.
+		const sourceThickness = Math.max(1, Math.floor(face.pixHeight / 12));
+		this.underlineThickness = sourceThickness * n;
+		this.underlinePosition = -Math.min((sourceThickness >= 2 ? 2 : 1) * n, this.descent - this.underlineThickness);
+		const strikeRows = Math.ceil((face.ascent - face.internalLeading) / 3);
+		this.strikeoutPosition = strikeRows * n;
+		this.strikeoutThickness = this.underlineThickness;
+		// A slanted face leans the strike-out bar like a glyph row measured at the middle of its top source row.
+		const span = face.pixHeight - 1;
+		this.strikeoutShift = obliquify && span > 0 ? Math.max(0, Math.floor(((2 * strikeRows - 1) * Math.floor(span / 2) + span) / (2 * span))) : 0;
 		this.ttf = {
 			family: face.family,
 			weightClass: face.weight,
@@ -369,11 +387,24 @@ export class RasterRealizedFont implements GdiRealizedFont {
 				}
 			}
 			bitmap = { width: w * nx, height: h * n, left: 0, top: this.ascent, data };
-			// GDI slants first, then emboldens the slanted rows.
+			// GDI slants first, then emboldens the slanted rows. A bold slanted bitmap leans one pixel further when the
+			// face is stretched, and the smear into the column after the glyph's last one is lost where that column
+			// starts a byte of the packed row (`text-raster-styles`: all 196 bold italic captures of seven faces).
 			if (this.obliquify) {
-				bitmap = slantRows(bitmap);
-			}
-			if (this.syntheticBold) {
+				const unslanted = bitmap.width;
+				const slanted = slantRows(bitmap, this.syntheticBold && n > 1 ? 1 : 0);
+				bitmap = slanted.bitmap;
+				if (this.syntheticBold) {
+					const keep = embolden(bitmap, 1);
+					for (let y = 0; y < keep.height; y++) {
+						const lastColumn = unslanted + slanted.shift(y);
+						if (lastColumn % 8 === 0 && (lastColumn >= bitmap.width || !bitmap.data[y * bitmap.width + lastColumn])) {
+							keep.data[y * keep.width + lastColumn] = 0;
+						}
+					}
+					bitmap = keep;
+				}
+			} else if (this.syntheticBold) {
 				bitmap = embolden(bitmap, 1);
 			}
 		}
@@ -826,6 +857,7 @@ export class GdiFontCollection {
 					(d < 0 ? -d * 150 : d > 0 ? 290 + d * 340 : 0) +
 					RASTER_STRETCH_COST[n] +
 					(n > 1 ? (100 * (n - 1)) / unitOf(f) : 0) +
+					(f.pixHeight <= RASTER_TINY_CELL ? RASTER_TINY_STRETCH * (n - 1) * (n - 1) : 0) +
 					(Math.abs(f.weight - weight) * 3) / 10 +
 					n * 0.01 +
 					(f.vertRes === 96 ? 0 : 0.001);

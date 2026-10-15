@@ -49,7 +49,7 @@ describe('raster font mapper on a 144 dpi session', () => {
 	});
 	it.skipIf(!windowsFonts())('the converter given the fixture font set misses System and Fixedsys, which it never saw the 20 pixel faces of', () => {
 		expect(agreement(windowsFonts()!)).toEqual({
-			'MS Sans Serif': 119, 'MS Serif': 117, Courier: 118, 'Small Fonts': 117, System: 79, Terminal: 116, Fixedsys: 81, Helv: 119, 'Tms Rmn': 117, 'MS Shell Dlg': 117,
+			'MS Sans Serif': 119, 'MS Serif': 117, Courier: 118, 'Small Fonts': 119, System: 79, Terminal: 120, Fixedsys: 81, Helv: 119, 'Tms Rmn': 117, 'MS Shell Dlg': 117,
 		});
 	});
 	it.skipIf(!windowsFonts() || !extra())('at lfHeight 61 to 130 (where the 6x to 8x costs were fitted) it picks the native cell height at 919 of 980 heights and the width at 929', () => {
@@ -74,11 +74,11 @@ describe('raster font mapper on a 144 dpi session', () => {
 		}
 		// Before the vertical factors 6 to 8 were allowed (and the horizontal one capped at 5): 631 of the 980 heights. Fitting the three
 		// costs on the 490 negative heights alone gives 456 of the 490 positive ones (291 and 340 before), so the fit is not memorised.
-		expect(counts).toEqual({ regular: 980, height: 919, width: 929, both: 918, bold: 840, boldHeight: 818 });
+		expect(counts).toEqual({ regular: 980, height: 919, width: 929, both: 918, bold: 840, boldHeight: 824 });
 	});
 	it.skipIf(!windowsFonts() || !extra())('given 8514sys.fon and 8514fix.fon it picks the native cell height at 118 of 120 System and 117 of 120 Fixedsys heights', () => {
 		expect(agreement([...windowsFonts()!, ...extra()!])).toEqual({
-			'MS Sans Serif': 119, 'MS Serif': 117, Courier: 118, 'Small Fonts': 117, System: 118, Terminal: 116, Fixedsys: 117, Helv: 119, 'Tms Rmn': 117, 'MS Shell Dlg': 117,
+			'MS Sans Serif': 119, 'MS Serif': 117, Courier: 118, 'Small Fonts': 119, System: 118, Terminal: 120, Fixedsys: 117, Helv: 119, 'Tms Rmn': 117, 'MS Shell Dlg': 117,
 		});
 	});
 });

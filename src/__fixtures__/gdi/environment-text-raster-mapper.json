@@ -1,15 +1,15 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-08T07:40:12.8821655Z",
+    "capturedAt":  "2026-10-15T10:00:42.7574578Z",
     "groups":  "text-raster-mapper",
     "os":  "Microsoft Windows NT 10.0.26300.0",
-    "build":  9457,
+    "build":  9711,
     "architecture":  "AMD64",
     "runnerImage":  null,
     "runnerImageVersion":  null,
     "screenDpi":  [
-                      144,
-                      144
+                      96,
+                      96
                   ],
     "libraries":  [
                       {
@@ -19,18 +19,18 @@
                       },
                       {
                           "name":  "gdiplus.dll",
-                          "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
-                          "sha256":  "ce338c682031358a3f599430b6c7f3baa80a72ae392e8a885489bb02a5231a8c"
+                          "version":  "10.0.26100.9711 (WinBuild.160101.0800)",
+                          "sha256":  "a010137a9f89d49a484a0603f0e35a19195305002c857f313f857be662e1ab92"
                       },
                       {
                           "name":  "win32u.dll",
-                          "version":  "10.0.26100.9444 (WinBuild.160101.0800)",
-                          "sha256":  "9cd636e8a1b300e2f4b16f339d650eda71fa02b92b100e4b2f89ce7c04811767"
+                          "version":  "10.0.26100.9711 (WinBuild.160101.0800)",
+                          "sha256":  "d46a695db805e808efa63d1095ce3e1b6be9c0155dad405d444530efc1ed0362"
                       },
                       {
                           "name":  "mscms.dll",
                           "version":  "10.0.26100.1 (WinBuild.160101.0800)",
-                          "sha256":  "062d1ca19c5b7d076c11baa3fb41d23e3b05b37d3f5852a5d1fa14f86b95d528"
+                          "sha256":  "2f81079500f55cf0cf3e8b8d0e432e420ff4603505789f17adc6da1de0bc5ca2"
                       }
                   ],
     "fonts":  [
@@ -1157,12 +1157,12 @@
                   {
                       "name":  "ebrima.ttf",
                       "location":  "system",
-                      "sha256":  "1dcd304f0ba642dbc3c3f3ccb70c24e9fad7ada2e2d5d0061c7cacab86e8df92"
+                      "sha256":  "3c5ce79b86ef4e4dd5c61d9a976c89751fe3ec35ae15dd253f3fb0745f883ef9"
                   },
                   {
                       "name":  "ebrimabd.ttf",
                       "location":  "system",
-                      "sha256":  "a7bc75937950d0f217f79313631d81f5b92459c414a4099d6ea3c0c0262a716b"
+                      "sha256":  "08e47df2f8c6d1e94067b4e50680b232ff29c517bc1bff0c092c69f21c7549ca"
                   },
                   {
                       "name":  "ega40737.fon",
@@ -2637,42 +2637,42 @@
                   {
                       "name":  "segoeui.ttf",
                       "location":  "system",
-                      "sha256":  "8134dbcd09e7b123c9a7f229d49cffbcb01352cc72ea5e1076b65d0dca9f73cd"
+                      "sha256":  "704eada12961a27fd271f7d3b09e2066520e758390c1776744eff430fee30f6e"
                   },
                   {
                       "name":  "segoeuib.ttf",
                       "location":  "system",
-                      "sha256":  "aeb9e4a6ec5cc59f4d72df8189032d7dbb28f45161cf1552174818b5465dac4e"
+                      "sha256":  "b169e636719880976a97e94e3b1cb3dbe5f4a38eabc037bf9f2a9165154c3ad2"
                   },
                   {
                       "name":  "segoeuii.ttf",
                       "location":  "system",
-                      "sha256":  "be525b9a6d307d73c23908cd269be9be754210a9d93c0c1eaaa126d2a174290a"
+                      "sha256":  "f9feaeee8b20751c15700b4fb03571b335f52e91edece7fb7aa1ceaa6eeb0db7"
                   },
                   {
                       "name":  "segoeuil.ttf",
                       "location":  "system",
-                      "sha256":  "866557576dfc772395301b581eccef4c0daf1dbb75f9667f26784b260bce7da1"
+                      "sha256":  "0dbddf9e20b2dc0facd568c877aa1155b3597c09a7ca41d00ca580af25d1cc51"
                   },
                   {
                       "name":  "segoeuisl.ttf",
                       "location":  "system",
-                      "sha256":  "3432de66f335c7e3058154f7cbb13ef051195653a544b49b1992267e558b33ef"
+                      "sha256":  "288a8e3fcd0f6090881dcc469b557f55e0a85864abe1cc24330bb4f08105f69b"
                   },
                   {
                       "name":  "segoeuiz.ttf",
                       "location":  "system",
-                      "sha256":  "c886161fa6d102090ff992519b6fdc73057a0e838e9d40b27e187e9e61300a92"
+                      "sha256":  "f2ecff1a943929f07a7b872c948b1de57fe688ac7d0bab6fc9f624c95a97dbfe"
                   },
                   {
                       "name":  "seguibl.ttf",
                       "location":  "system",
-                      "sha256":  "be191c94a0c7172870c3c87a136bd5aa67cdca7bc091de89242fb64ecb0f8fae"
+                      "sha256":  "bdf29c9b7484c631f19d6ef436a63d15f8a1a82bc856f1a0f6906c41a097d2b1"
                   },
                   {
                       "name":  "seguibli.ttf",
                       "location":  "system",
-                      "sha256":  "51d300301197dfb0621a8d8b275274d408dd15a7edda4cc4a8f7666504d582cd"
+                      "sha256":  "6efcb158b0093bdeb6c308a93e10c2240e6510b99b756d9583cb59b7e219aaf9"
                   },
                   {
                       "name":  "seguiemj.ttf",
@@ -2687,22 +2687,22 @@
                   {
                       "name":  "seguili.ttf",
                       "location":  "system",
-                      "sha256":  "3cb01ed58922781a62af14e738cd96023957f60d8d6733920a8808614f477dd8"
+                      "sha256":  "07bbf002d8dccb6bf7db8e31207076bf357fe92b1e5f82a20d2c941d59ebeb96"
                   },
                   {
                       "name":  "seguisb.ttf",
                       "location":  "system",
-                      "sha256":  "2d9b22d71f72de2823fee5d9c8bc1b0fc32b2577c4c27b9ec6abdbb8df0e1731"
+                      "sha256":  "6c3fd894b19950b10c34bf64069ef821eaf2f58f959146306fee5b367472e501"
                   },
                   {
                       "name":  "seguisbi.ttf",
                       "location":  "system",
-                      "sha256":  "454295546b78810c95ffd7fc9d57890ed15a03b7cfd0d7e3485786400152b740"
+                      "sha256":  "16847ed882097cd1c0d45c63b6d75c3021f2133c64db03796f57dac198d0b2ad"
                   },
                   {
                       "name":  "seguisli.ttf",
                       "location":  "system",
-                      "sha256":  "4dc2db1870047663878da07fa5f8217e518ef875c8ad33287fcbad6aba5a7e73"
+                      "sha256":  "032eb41f836c3d6fd765dc4c287ea87f7f0c392a454ffc58d7e5fbe29d1fee86"
                   },
                   {
                       "name":  "seguisym.ttf",
@@ -3388,11 +3388,15 @@
     "references":  [
                        {
                            "name":  "raster-mapper.json",
-                           "sha256":  "65075076920555e02ee96288e0783f3bbe73bb9b47bcba6353d934a503e1f4e6"
+                           "sha256":  "c26a755e04d4335bc2a4d4514dc06f642459abe02607b29f7fa5d7d0d72f2fb9"
                        },
                        {
                            "name":  "raster-mapper-wide.json.gz",
-                           "sha256":  "f83aa0f2e69ad33e0f94301cbaaeb1bc78e118cdf1669a9d3bc9f3191a013379"
+                           "sha256":  "dca921a1a7dce6b3bc68372107de72c6710ce19d3fb0dac7f067c6ec94996ea5"
+                       },
+                       {
+                           "name":  "raster-mapper-widths.json.gz",
+                           "sha256":  "e97c59348c3b7221b72f99f0c9208a6a4d571912f04ffd1de0dbe4c6ff0d69ee"
                        }
                    ]
 }
