@@ -314,6 +314,12 @@ export interface HintEnvironment {
 	/** Symmetric (vertically smoothed) ClearType: GETINFO bit 15. */
 	symmetricSmoothing?: boolean;
 	/**
+	 * GDI+ grayscale text (AntiAlias, and AntiAliasGridFit at the sizes `gasp` smooths) runs the ClearType interpreter
+	 * and says so: native GETINFO reports ClearType (selector 64) and gray ClearType (selector 4096, result bit 19) but
+	 * not grayscale (selector 32), at every size (`gdi-getinfo-gdiplus.json.gz`).
+	 */
+	grayClearType?: boolean;
+	/**
 	 * Report the glyph as stretched to GETINFO (selector bit 2 -> result bit 9) and SCANCTRL although the x and y
 	 * scales are equal: Windows plays a recording's text through a horizontal world-transform stretch, which fonts
 	 * such as Segoe UI answer by switching grid-fitting off while the outline keeps the unstretched scale.
@@ -1104,6 +1110,17 @@ export class HintedSize {
 		return def.sizeTweak;
 	}
 
+	/**
+	 * Whether backward-compatible ClearType (and the GDI+ grayscale text that runs the same interpreter) shifts a point by
+	 * a SHPIX along y: it must be touched in y, and a generic per-size helper function (`isSizeTweak`) stops shifting once
+	 * IUP[y] has run. Arial Bold's W calls the helper after both IUPs to lower its two inner apexes by two pixels and raise
+	 * its centre by one at 26 to 58 ppem; native leaves all three where the interpolation put them (private fonts
+	 * `build-shpix-order-fonts.py`: a touched stem top moved by the helper after IUP[y] stays, after IUP[x] alone it moves).
+	 */
+	private shpixAlongY(p: number): boolean {
+		return (this.zp2.tags[p] & TOUCH_Y) !== 0 && !(this.iupy && this.inSizeTweak());
+	}
+
 	private inSizeTweak(): boolean {
 		const frame = this.callFrames[this.callFrames.length - 1];
 		return !!frame && HintedSize.isSizeTweak(frame.def);
@@ -1622,7 +1639,7 @@ export class HintedSize {
 						const keep =
 							!this.ctCompat() ||
 							this.inComposite ||
-							(gs.fvx === 0 && (this.zp2.tags[p] & TOUCH_Y) !== 0) ||
+							(gs.fvx === 0 && this.shpixAlongY(p)) ||
 							(gs.fvx !== 0 && !this.env.grayscale && !this.inSizeTweak());
 						if (keep) {
 							this.moveZp2(p, dx, dy, true);
@@ -1997,10 +2014,11 @@ export class HintedSize {
 				if (sel & 1) k = this.env.version;
 				if (sel & 2 && this.env.rotated) k |= 1 << 8;
 				if (sel & 4 && (this.stretched || this.env.reportStretched)) k |= 1 << 9;
-				if (sel & 32 && this.env.grayscale) k |= 1 << 12;
+				if (sel & 32 && this.env.grayscale && !this.env.grayClearType) k |= 1 << 12;
 				if (sel & 64 && this.env.clearType) k |= 1 << 13;
 				if (sel & 128 && this.env.clearType && this.env.compatibleWidths !== false) k |= 1 << 14;
 				if (sel & 256 && this.env.symmetricSmoothing) k |= 1 << 15;
+				if (sel & 4096 && this.env.grayClearType) k |= 1 << 19;
 				this.push(k);
 				return true;
 			}

@@ -45,10 +45,10 @@ const faceKey = (c: Capture): string => `${c.face}${['', ' bold', ' italic', ' b
  * becoming exact is an improvement to record here; one that stops being exact is a regression.
  */
 const EXACT_BITS =
-	'/73//b/1//XfzP//f+7993////yv+///Hbv//+f///837br/1vf/f3+76W/51f/3/7///+7//9//vf/ff3/9+79P/5/f3//77/dn//X///77+7///f7//+z9v3m+eXx+c/3utz+f/3/Xp/3P7n7X//eAb7/fl399u+Nd7s/nrLfXktd/L96/HyDk9Pb7////ffv//9z/+3nu/vc75+//37v+5e/9//fn+n//c9u/553v/+tW/e97zu+3//+v3//5x+/f/8f37/vj+/+/8/17v334vz/+//xvvn9vH1+//5/n9/nDU3v+Y2P/9Xb31zvvi96P9+v7zbrTeee/tyaRu2+/W/03fWyPyL/W/91j9zNgge95+MTOf/9/e///rvv//vv+//P/+7/8/v3//ff//7/9/8ff/3//j9v/5b/v/2b/p6+1Uf//3///r/9/////f/7fPe//P13//3/v/9/v9/////fv3/fy/ft++v//f+7933/u//v//////6//fv////1//X/b//h7///+5/5b////////9n3+bf8mf/L/vvfvX+v////73///+q/9f/+//+//b//v/9//7//7/9//7n/7v9b/+9/69/xd/1//9/I1';
+	'/73//b/1//XfzP//f+7993////yv+///Hbv//+f///837br/1v//f3+/6W/51//3/7///+7//9//vf/f/3/9+/9P/5//3//7//dn//3///7/+7////7//+39v/m+eXx+c/3utz+f/3/Xp/3P7v7X//fAb7/ft399u/Nd7s/vrLfXktd/L96/HyDk9Pb7////ffv//9z/+3nu/vc75+//37v+5e/9//fn+n//c9u/553v/+tW/e97zu+3//+v3//5x+/f/8f37/vj+/+/8/17v334vz/+//xvvn9vH1+//5/n9/nDU3v+Y2P/9Xb31zvvi96P9+v7zbrTeee/tyaRu2+/W/03fWyPyL/W/91j9zNgge95+MTOf/9/e///rvv//vv+//P/+7/8/v3//ff//7/9/8ff/3//j9v/5b/v/2b/p6+1Uf//3///r/9/////f/7fPe//P13//3/v/9/v9/////fv3/fy/ft++v//f+7933/u//v//////6//fv////1//X/b//h7///+5/5b////////9n3+bf8mf/L/vvfvX+v////73///+q/9f/+//+//b//v/9//7//7/9//7n/7v9b/+9/69/xd/1//9/I1';
 
 const EXACT_BY_FACE: Record<string, number> = {
-	'Arial': 314, 'Arial bold': 328, 'Arial italic': 264,
+	'Arial': 317, 'Arial bold': 337, 'Arial italic': 269,
 	'Times New Roman': 308, 'Times New Roman bold': 297, 'Times New Roman italic': 250,
 	'Tahoma': 317, 'Tahoma bold': 330, 'Segoe UI': 325, 'Segoe UI bold': 326,
 };
@@ -77,14 +77,15 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles'
 	// Arial, Times New Roman and Tahoma carry per-size tweaks (SHPIX shifts of a few sixty-fourths of a
 	// pixel along x, selected by the rendering mode the prep program stores) that native ClearType applies
 	// to the stems and curves; the generic per-size helper functions are not applied. Their y DELTAPs
-	// after IUP[y] are not applied either.
+	// after IUP[y] are not applied either, and neither are the helper functions' SHPIX shifts along y once IUP[y]
+	// has run (round 8: 17 more captures, Arial `k`, bold `x` and italic `S`).
 	it('matches the pinned exact captures of every face', () => {
 		const byFace: Record<string, number> = {};
 		for (let i = 0; i < captures.length; i++) {
 			byFace[faceKey(captures[i])] = (byFace[faceKey(captures[i])] ?? 0) + (exact[i] ? 1 : 0);
 		}
 		expect(byFace).toEqual(EXACT_BY_FACE);
-		expect(exact.filter(Boolean)).toHaveLength(3059);
+		expect(exact.filter(Boolean)).toHaveLength(3076);
 	});
 
 	it('loses no exact capture and gains none unrecorded', () => {

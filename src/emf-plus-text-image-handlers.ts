@@ -562,7 +562,14 @@ function drawPlusStringWithEngine(
 	// the format's tracking (1.03 for the default format, 1 for
 	// GenericTypographic; measured with MeasureString).
 	const tracking = format?.tracking ?? PLUS_DEFAULT_TRACKING;
-	const dx = unhinted ? codes.map((c) => realized.advance(realized.glyphIndex(c)) * tracking) : null;
+	// GDI+ ClearTypeGridFit spaces the glyphs of the default format by their ClearType-hinted advances rounded to whole
+	// pixels (`gdiplus-text-advances.fixture.test.ts`; the 75 default-format mixed-string captures fall from 38,484 to
+	// 13,112 differing pixels, none worse). GenericTypographic keeps the GDI widths: the same advances cut its 75
+	// captures from 39,867 to 22,277 pixels but worsen six (Arial 12 `GDI+ DrawString Ag 0123` from 61 to 308), whose
+	// end-of-run compensation is not modelled.
+	const ctGrid = !unhinted && realized.mode === 'cleartype' && !!realized.ctGridAdvance && !realized.syntheticItalic && tracking > 1;
+	const dx = unhinted ? codes.map((c) => realized.advance(realized.glyphIndex(c)) * tracking)
+		: ctGrid ? codes.map((c) => realized.ctGridAdvance!(realized.glyphIndex(c))) : null;
 	return paintPlusEngineRun(rCtx, ef, { codes, glyphIndices: false, x, y, dx, dy: null });
 }
 

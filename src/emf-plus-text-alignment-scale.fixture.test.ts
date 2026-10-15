@@ -106,7 +106,7 @@ for (const group of ['private', 'arial', 'heldout-private', 'heldout-arial', 'he
 				if (!limit.before[i]) expect(count, label).toBe(0);
 				exact += Number(count === 0); improved += Number(count < limit.before[i]);
 				const em = Math.fround(c.size * Math.fround(c.sy));
-				if ((!c.align && !c.line) || !Number.isInteger(em) || ((c.style & 2) && !(c.flags & 4))) {
+				if ((!c.align && !c.line) || !Number.isInteger(em) || ((c.style & 2) && !(c.flags & 4) && c.align !== 0)) {
 					expect(Buffer.from(actual).equals(Buffer.from(render(c, legacy))), `fallback ${label}`).toBe(true);
 				}
 			}

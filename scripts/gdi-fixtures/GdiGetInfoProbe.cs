@@ -1,5 +1,5 @@
 // What native GETINFO reports to a glyph program, per rasterizer: GDI ExtTextOut at ClearType, natural, default, draft,
-// antialiased and non-antialiased quality, and GDI+ DrawDriverString at ClearTypeGridFit and AntiAliasGridFit, for the private
+// antialiased and non-antialiased quality, and GDI+ DrawDriverString at SingleBitPerPixelGridFit, SingleBitPerPixel, AntiAliasGridFit, AntiAlias and ClearTypeGridFit, for the private
 // diagnostic font getinfo-a.ttf (build-getinfo-font.py). Each glyph raises its stem by a pixel when one GETINFO bit is set.
 // Captures are 48 x 64 RGB at 20 ppem with the baseline at (8, 48); `rows` is the number of ink rows (the stem is
 // 11 or 12 rows tall without the move, one more with it).
@@ -97,7 +97,7 @@ public static class GdiGetInfoProbe
             Check(GdipNewPrivateFontCollection(out collection));
             try {
                 Check(GdipPrivateAddFontFile(collection, fontFile));
-                foreach (int size in new[] { 20, 14 }) foreach (int hint in new[] { 3, 5 }) for (int i = 0; i < count; i++) {
+                foreach (int size in new[] { 20, 14 }) foreach (int hint in new[] { 1, 2, 3, 4, 5 }) for (int i = 0; i < count; i++) {
                     IntPtr image = IntPtr.Zero, graphics = IntPtr.Zero, family = IntPtr.Zero, font = IntPtr.Zero, brush = IntPtr.Zero;
                     try {
                         Check(GdipCreateBitmapFromScan0(W, H, 0, 0x26200a, IntPtr.Zero, out image));

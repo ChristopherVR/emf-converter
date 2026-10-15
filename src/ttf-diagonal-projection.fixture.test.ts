@@ -85,21 +85,23 @@ function compare(candidate: boolean[][], baseline: boolean[][]): { lost: string[
 describe.skipIf(!windowsFonts())('the per-product projection candidate against real-font GDI+ grayscale captures', () => {
 	// The body of a skipped describe still runs, so the baseline is only computed when the fonts are there.
 	const baseline = windowsFonts() ? exactness() : [];
-	it('the closed set is exact today: 2,400 coverage, 1,280 x-phase and 1,280 y-phase controls', () => {
+	it('the closed set is exact today: 2,400 closed coverage controls (2,528 exact), 1,408 x-phase and 1,408 y-phase controls', () => {
 		const closedCoverage = coverage.filter((c) => {
 			const char = String.fromCharCode(c.code);
 			return c.face === 'Segoe UI' || (c.face === 'Times New Roman' && 'IvSy028'.includes(char)) || (c.size === 40 && 'IgaS0148'.includes(char)) || (c.size === 16 && (c.hint === 3 ? char !== 'y' : 'Igay048'.includes(char)));
 		});
 		expect(closedCoverage).toHaveLength(2400);
-		// 2,464 = the 2,400 closed controls + 64 that the ClearType-era y DELTAP rule closed (Arial 16 `S` and `1` under AntiAlias, 32 each).
-		expect(baseline[0].filter(Boolean).length).toBe(2464);
-		expect(baseline[1].filter(Boolean).length).toBe(1280);
-		expect(baseline[2].filter(Boolean).length).toBe(1280);
+		// 2,528 = the 2,400 closed controls + 64 that the ClearType-era y DELTAP rule closed (Arial 16 `S` and `1` under AntiAlias,
+		// 32 each) + 64 that the helper SHPIX rule closed (Arial Bold 40 `W` under both gray hints, 32 each).
+		expect(baseline[0].filter(Boolean).length).toBe(2528);
+		expect(baseline[1].filter(Boolean).length).toBe(1408);
+		expect(baseline[2].filter(Boolean).length).toBe(1408);
 	});
-	it('loses thirty Arial 16 y captures (fifteen origins, two contrasts) and gains sixty-four Times New Roman Italic 22 a', () => {
+	it('loses thirty Arial 16 y captures (fifteen origins, two contrasts) and gains the Arial Bold 40 W and k (128) and Times New Roman Italic 22 a (64)', () => {
 		expect(compare(exactness(withProjection(perProduct)), baseline)).toEqual({
 			lost: ['Arial/16/y/hint4:30'],
-			gained: ['Times New Roman/22/a/italic/hint3:32', 'Times New Roman/22/a/italic/hint4:32'],
+			gained: ['Arial/40/W/hint3:32', 'Arial/40/W/hint4:32', 'Arial/40/k/hint3:32', 'Arial/40/k/hint4:32',
+				'Times New Roman/22/a/italic/hint3:32', 'Times New Roman/22/a/italic/hint4:32'],
 		});
 	});
 	it('the freedom-vector half of the candidate changes no capture', () => {
