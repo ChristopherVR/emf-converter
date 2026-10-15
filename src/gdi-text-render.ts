@@ -10,7 +10,7 @@
  * glyph bitmap is blitted at that origin, and the `OPAQUE` cell background,
  * `ETO_OPAQUE` rectangle, `ETO_CLIPPED` clip and underline/strike-out bars
  * are axis-aligned device rectangles. Antialiased glyphs are composited
- * with GDI's gamma-correct blend (see {@link GRAY_INV_GAMMA}) against the
+ * with GDI's grayscale blend (see {@link blendGrayChannel}) against the
  * pixels already on the canvas.
  *
  * @module gdi-text-render
@@ -19,6 +19,7 @@
 import { canvasDrawImage, canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mapFontFamily } from './emf-canvas-helpers';
 import { applyTextJustification } from './emf-gdi-text-layout';
+import { blendGrayChannel } from './gdi-gray-blend';
 import type { GdiFontCollection, GdiRealizedFont, LogFontSpec } from './gdi-font-engine';
 import { isSvgContext, type SvgContext } from './svg-context';
 import type { CanvasContext, DrawState, TransformMatrix } from './emf-types';
@@ -78,16 +79,6 @@ export interface GdiTextAdvance {
 	dy: number;
 }
 
-/**
- * The exponent GDI encodes grayscale-antialiased text with: a coverage
- * `a = k/16` mixes text `s` and background `d` in linear light and is
- * re-encoded with a truncating `floor(255 * v^0.43)`, i.e.
- * `v = floor(255 * (a*s^g + (1-a)*d^g)^(1/g))` with `1/g = 0.43`. This
- * reproduces all 16 grey levels of black-on-white ANTIALIASED_QUALITY
- * text (`textx-arial-aa`: 0, 77, 104, 124, ..., 233, 240, 255) exactly.
- */
-const GRAY_INV_GAMMA = 0.43;
-
 /** Black-on-white levels for coverage 0..16 (coverage 1 leaves the pixel alone). */
 const GRAY_BLACK_ON_WHITE = [255, 255, 240, 233, 225, 217, 208, 199, 189, 178, 167, 154, 140, 124, 104, 77, 0];
 
@@ -131,20 +122,6 @@ function blendOverUnknown(
 		out[o + c] = Math.round((onWhite[c] - 255 * (1 - a)) / a);
 	}
 	out[o + 3] = Math.round(a * 255);
-}
-
-/** Blends one channel of text `s` over background `d` at coverage `k` (0..16). */
-function blendGray(s: number, d: number, k: number): number {
-	if (k <= 1) {
-		return d;
-	}
-	if (k >= 16) {
-		return s;
-	}
-	const a = k / 16;
-	const g = 1 / GRAY_INV_GAMMA;
-	const v = a * Math.pow(s / 255, g) + (1 - a) * Math.pow(d / 255, g);
-	return Math.floor(255 * Math.pow(v, GRAY_INV_GAMMA) + 1e-9);
 }
 
 interface PlacedGlyph {
@@ -376,6 +353,44 @@ export function paintGdiTextRun(
 		}
 	}
 
+	// Text drawn together with its background fill blends differently from transparent text (see `gdi-gray-blend.ts`):
+	// OPAQUE mode always, and ETO_OPAQUE only when its rectangle contains the text cell and every glyph bitmap
+	// (measured by sweeping each edge of the rectangle across the cell; a smaller rectangle is filled first and the
+	// text drawn transparent over it).
+	let opaqueText = run.bkMode === 2;
+	if (!opaqueText && run.options & ETO_OPAQUE && run.rect && placed.length > 0) {
+		let l: number;
+		let t: number;
+		let r: number;
+		let b: number;
+		if (!m) {
+			const x0 = Math.round(run.x + startAlong);
+			const base = Math.round(run.y + baseDown);
+			l = Math.min(x0, x0 + Math.round(total));
+			r = Math.max(x0, x0 + Math.round(total));
+			t = base - font.ascent;
+			b = base + font.descent;
+		} else {
+			const corners = [
+				at(startAlong, baseDown - font.ascent),
+				at(startAlong + total, baseDown - font.ascent),
+				at(startAlong + total, baseDown + font.descent),
+				at(startAlong, baseDown + font.descent),
+			];
+			l = Math.min(...corners.map((c) => c.x));
+			r = Math.max(...corners.map((c) => c.x));
+			t = Math.min(...corners.map((c) => c.y));
+			b = Math.max(...corners.map((c) => c.y));
+		}
+		for (const g of placed) {
+			l = Math.min(l, g.x);
+			t = Math.min(t, g.y);
+			r = Math.max(r, g.x + g.bitmap.width);
+			b = Math.max(b, g.y + g.bitmap.height);
+		}
+		opaqueText = run.rect.left <= l && run.rect.top <= t && run.rect.right >= r && run.rect.bottom >= b;
+	}
+
 	if (isSvgContext(ctx)) {
 		if (clip) {
 			ctx.save();
@@ -389,10 +404,10 @@ export function paintGdiTextRun(
 			ctx.restore();
 		}
 		if (ctx.shadow) {
-			compositeGlyphs(ctx.shadow, placed, run.textColor, font.mode !== 'mono', clip);
+			compositeGlyphs(ctx.shadow, placed, run.textColor, font.mode !== 'mono', clip, opaqueText);
 		}
 	} else {
-		compositeGlyphs(ctx, placed, run.textColor, font.mode !== 'mono', clip);
+		compositeGlyphs(ctx, placed, run.textColor, font.mode !== 'mono', clip, opaqueText);
 	}
 
 	// Underline / strike-out bars span the run's advance.
@@ -487,6 +502,7 @@ function compositeGlyphs(
 	color: string,
 	gray: boolean,
 	clip: DeviceRect | null,
+	opaque = false,
 ): void {
 	if (placed.length === 0) {
 		return;
@@ -565,12 +581,12 @@ function compositeGlyphs(
 			rgba[o + 2] = b;
 			rgba[o + 3] = 255;
 		} else if (dst && dst[o + 3] === 255) {
-			rgba[o] = blendGray(r, dst[o], k);
-			rgba[o + 1] = blendGray(g, dst[o + 1], k);
-			rgba[o + 2] = blendGray(b, dst[o + 2], k);
+			rgba[o] = blendGrayChannel(r, dst[o], k, opaque);
+			rgba[o + 1] = blendGrayChannel(g, dst[o + 1], k, opaque);
+			rgba[o + 2] = blendGrayChannel(b, dst[o + 2], k, opaque);
 			rgba[o + 3] = 255;
 		} else if (dst) {
-			blendOverUnknown(rgba, o, [r, g, b], (s, d) => blendGray(s, d, k));
+			blendOverUnknown(rgba, o, [r, g, b], (s, d) => blendGrayChannel(s, d, k, opaque));
 		} else {
 			rgba[o] = r;
 			rgba[o + 1] = g;

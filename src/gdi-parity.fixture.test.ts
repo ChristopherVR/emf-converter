@@ -417,8 +417,8 @@ const TEXTURE_FILL_CASES: ParityCase[] = [exact('texture-fill-compressed')];
  * - non-antialiased (mono) text: under 0.03% on every sheet, a handful of
  *   single pixels per line where GDI's grid-fitting of a diagonal stroke
  *   differs from this interpreter by 1/64 pixel;
- * - grayscale (ANTIALIASED_QUALITY): the same, plus GDI's
- *   luminance-dependent contrast for coloured text (`textx-color-aa`);
+ * - grayscale (ANTIALIASED_QUALITY): the same (glyph coverage on mid and
+ *   large sizes); the colour blend is exact (`gdi-gray-blend.fixture.test.ts`);
  * - ClearType (also DEFAULT/DRAFT/PROOF_QUALITY, which Windows renders as
  *   ClearType): 3..10%, GDI's "compatible width" ClearType grid-fitting is
  *   approximated;
@@ -467,7 +467,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-arial-q2-proof', 'emf', 0.0646), // measured 5.163%
 	fontCase('textx-arial-styles-aa', 'emf', 0.0009), // measured 0.059%
 	fontCase('textx-arial-styles-mono', 'emf', 0.0006), // measured 0.027%
-	fontCase('textx-color-aa', 'emf', 0.017), // measured 1.352%
+	fontCase('textx-color-aa', 'emf', 0.0004), // measured 0.030% (1.322% before the native grayscale blend, round 7)
 	fontCase('textx-color-cleartype', 'emf', 0.0187), // measured 1.863%, 1.868% before the ClearType dropout control
 	fontCase('textx-color-mono', 'emf', 0.0004), // measured 0.005%
 	fontCase('textx-couriernew-aa', 'emf', 0.0004), // measured 0.010%
@@ -476,7 +476,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-couriernew-styles-mono', 'emf', 0.0005), // measured 0.012%
 	fontCase('textx-escapement-aa', 'emf', 0.0001), // measured 0.0079% against the native playback (0.212% against the direct drawing)
 	fontCase('textx-escapement-mono', 'emf', 0.0001), // measured 0.0079% against the native playback (0.212% against the direct drawing)
-	fontCase('textx-eto-aa', 'emf', 0.0008), // measured 0.076% over 8 levels (0.50% exact) against the native playback (0.499% against the direct drawing)
+	fontCase('textx-eto-aa', 'emf', 0.0008), // measured 0.076% over 8 levels (0.087% exact; 0.50% before the native opaque-text blend, round 7) against the native playback (0.499% against the direct drawing)
 	fontCase('textx-eto-mono', 'emf', 0.00013), // measured 0.012% against the native playback (0.435% against the direct drawing)
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-courier-cell', 'wmf', 0), // measured 0.000%
@@ -501,7 +501,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-terminal-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-fon-tmsrmn', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
-	fontCase('textx-opaque-aa', 'emf', 0.0004), // measured 0.001%
+	fontCase('textx-opaque-aa', 'emf', 0.0001), // measured 0.0015% over 8 levels (0.39% exact before the native opaque-text blend, round 7)
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
 	fontCase('textx-plus-antialias', 'emf', 0.0274), // nearest-quarter grayscale origins; remaining glyph hinting; measured 2.734%, 3.157% before the storage 8 rule, 3.210% before the y DELTAP rule
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0253), // measured 2.527%, 2.547% before the y DELTAP rule; GDI+ hinting and shades
