@@ -16,6 +16,7 @@ import {
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { mulMatrix } from './emf-plus-brush-gradient';
+import { down32 } from './float32-down';
 import { drawEmfPlusImageNow } from './emf-plus-draw-image';
 import { DRAWIMAGE_EFFECT_FLAG, type EmfPlusImageEffect } from './emf-plus-image-effects';
 import {
@@ -107,6 +108,7 @@ function imageResampleSpec(
 	isMetafile: boolean,
 	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
 	points: boolean,
+	nominalScale?: (sw: number, sh: number) => [number, number] | undefined,
 ): DeferredImageResample | undefined {
 	const { view } = rCtx;
 	const kernel = resampleKernelFor(rCtx.interpolationMode ?? 0);
@@ -129,6 +131,7 @@ function imageResampleSpec(
 		kernel,
 		halfPixelOffset: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0),
 		...(points ? { pointsForm: true } : {}),
+		...(nominalScale ? { nominalScale: nominalScale(srcW, srcH) } : {}),
 		...imageAttributesWrap(rCtx, view.getUint32(dataOff, true)),
 	};
 }
@@ -153,6 +156,7 @@ function drawOrDeferImage(
 	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
 	effect: EmfPlusImageEffect | null = null,
 	points = false,
+	nominalScale?: (sw: number, sh: number) => [number, number] | undefined,
 ): void {
 	if (!imgObj.data) {
 		return;
@@ -166,7 +170,7 @@ function drawOrDeferImage(
 		dh,
 		transform: plusWorldMatrix(rCtx),
 		isMetafile,
-		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld, points),
+		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld, points, nominalScale),
 	};
 	const { view } = rCtx;
 	const source = {
@@ -809,14 +813,18 @@ export function handleEmfPlusTextImageRecord(
 				if (imgObj && imgObj.kind === 'plus-image' && imgObj.data) {
 					// Store the fully-scaled transform (world × pageUnit × dpiScale ×
 					// base) so processDeferredImages can restore it directly.
+					// The scale is a float32 and its last bit matters twice (`hq-step-grid.json.gz`, 680 native
+					// high-quality draws at 1.37x and 1.55x): the extent of the quad follows the scale rounded
+					// toward minus infinity (a destination edge that is a whole number is not overshot by a column),
+					// and the 16.16 step of the draw comes from the nearest float32 scale (`nominalScale`).
 					drawOrDeferImage(rCtx, imgObj, dataOff, dx, dy, dw, dh, (sx, sy, sw, sh) => [
-						dw / sw,
+						down32(dw / sw),
 						0,
 						0,
-						dh / sh,
+						down32(dh / sh),
 						dx - (sx * dw) / sw,
 						dy - (sy * dh) / sh,
-					]);
+					], null, false, (sw, sh) => [Math.fround(dw / sw), Math.fround(dh / sh)]);
 				} else {
 					emfWarn(`DrawImage: SKIPPED, no valid image data for id=${imgId}`);
 				}
@@ -860,12 +868,14 @@ export function handleEmfPlusTextImageRecord(
 					// rectangle's top-left, top-right and bottom-left corners,
 					// so any rotation or shear is carried exactly here.
 					drawOrDeferImage(rCtx, imgObj, dataOff, dx, dy, dw, dh, (sx, sy, sw, sh) => {
-						const a = (p2x - p1x) / sw;
-						const b = (p2y - p1y) / sw;
-						const c = (p3x - p1x) / sh;
-						const d = (p3y - p1y) / sh;
+						const a = down32((p2x - p1x) / sw);
+						const b = down32((p2y - p1y) / sw);
+						const c = down32((p3x - p1x) / sh);
+						const d = down32((p3y - p1y) / sh);
 						return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
-					}, effect, true);
+					}, effect, true, p2y === p1y && p3x === p1x
+						? (sw, sh) => [Math.fround((p2x - p1x) / sw), Math.fround((p3y - p1y) / sh)]
+						: undefined);
 				} else {
 					const hasData = imgObj && imgObj.kind === 'plus-image' && imgObj.data;
 					emfWarn(

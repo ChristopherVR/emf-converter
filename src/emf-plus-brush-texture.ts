@@ -25,6 +25,7 @@
  */
 
 import { buildPattern, halfPixelDelta } from './emf-plus-brush-gradient';
+import { down32 } from './float32-down';
 import type { CanvasContext, EmfPlusGradientWrapMode, EmfPlusTexture, TransformMatrix } from './emf-types';
 
 /**
@@ -102,6 +103,23 @@ export function writeTextureColor(
 	const py = dy + off;
 	const cu = inv[0] * px + inv[2] * py + inv[4] - off;
 	const cv = inv[1] * px + inv[3] * py + inv[5] - off;
+	writeTextureColorAt(cu, cv, width, height, rgba, wrap, out, o);
+}
+
+/**
+ * {@link writeTextureColor} for a known texel-space position (`cu`, `cv`) of the pixel: the position the
+ * four-texel filter is centred on. The shared core of the exact and the stepped path.
+ */
+export function writeTextureColorAt(
+	cu: number,
+	cv: number,
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	wrap: EmfPlusGradientWrapMode,
+	out: Uint8ClampedArray,
+	o: number,
+): void {
 	// The epsilon keeps an exact texel position from flooring down through
 	// float noise in the inverse matrix.
 	const iu = Math.floor(cu + 1e-9);
@@ -156,6 +174,90 @@ export function writeTextureColor(
 	out[o + 1] = Math.round(Math.round(g) * 255 / a);
 	out[o + 2] = Math.round(Math.round(b) * 255 / a);
 	out[o + 3] = a;
+}
+
+/**
+ * The device-to-texture matrix as GDI+ forms it: every operation is a float32 one rounded toward minus infinity
+ * (checked against 4,000 native matrix inversions, shears included, with no exception).
+ */
+export function invertTextureMatrix(m: TransformMatrix): TransformMatrix | null {
+	const [a, b, c, d, e, f] = [m[0], m[1], m[2], m[3], m[4], m[5]].map(Math.fround);
+	const det = down32(down32(a * d) - down32(b * c));
+	if (!Number.isFinite(det) || det === 0) {
+		return null;
+	}
+	const r = down32(1 / det);
+	return [
+		down32(d * r),
+		down32(-b * r),
+		down32(-c * r),
+		down32(a * r),
+		down32(down32(down32(c * f) - down32(d * e)) * r),
+		down32(down32(down32(b * e) - down32(a * f)) * r),
+	];
+}
+
+/**
+ * Writes the brush colour of every pixel of a `w` x `h` rectangle at (`x0`, `y0`) into `out`, stepping the
+ * texel-space position across each row the way GDI+ does: the row's first position is formed from the
+ * float32 inverse matrix (round down), and every further pixel adds the matrix's x step in float32 rounded
+ * toward minus infinity, so the position drifts below the exact one by up to a float32 unit per pixel (about a
+ * level on a 0.45x reduction 150 pixels wide) instead of being recomputed per pixel. Rows are independent.
+ */
+export function writeTextureRect(
+	inv: TransformMatrix,
+	width: number,
+	height: number,
+	rgba: Uint8ClampedArray,
+	wrap: EmfPlusGradientWrapMode,
+	halfPixel: boolean,
+	x0: number,
+	y0: number,
+	w: number,
+	h: number,
+	out: Uint8ClampedArray,
+): void {
+	const us = new Float64Array(w);
+	const vs = new Float64Array(w);
+	for (let j = 0; j < h; j++) {
+		textureRowPositions(inv, halfPixel, x0, y0 + j, us, vs);
+		for (let i = 0; i < w; i++) {
+			writeTextureColorAt(us[i], vs[i], width, height, rgba, wrap, out, (j * w + i) * 4);
+		}
+	}
+}
+
+/**
+ * The texel-space positions GDI+ filters at along device row `y`, from pixel `x0`: `us.length` pixels. The first
+ * is formed from the float32 inverse matrix `inv` (see {@link invertTextureMatrix}) by products and sums that
+ * round toward minus infinity (`PixelOffsetMode` Half moves the point by half a pixel and the texel grid back),
+ * and each further pixel adds the matrix's x step the same way. Measured on native sweeps
+ * (`texture-coordinate.json.gz`); the positions drift below the exact ones by up to a float32 unit per pixel.
+ */
+export function textureRowPositions(
+	inv: TransformMatrix,
+	halfPixel: boolean,
+	x0: number,
+	y: number,
+	us: Float64Array,
+	vs: Float64Array,
+): void {
+	const off = halfPixel ? 0.5 : 0;
+	const [a, b, c, d, e, f] = inv;
+	const yw = y + off;
+	const xs = x0 + off;
+	let u = down32(down32(down32(a * xs) + down32(c * yw)) + e);
+	let v = down32(down32(down32(b * xs) + down32(d * yw)) + f);
+	if (off) {
+		u = down32(u - off);
+		v = down32(v - off);
+	}
+	for (let i = 0; i < us.length; i++) {
+		us[i] = u;
+		vs[i] = v;
+		u = down32(u + a);
+		v = down32(v + b);
+	}
 }
 
 const IDENTITY: TransformMatrix = [1, 0, 0, 1, 0, 0];

@@ -878,6 +878,13 @@ export interface DeferredImageResample {
 	 */
 	pointsForm?: boolean;
 	/**
+	 * The axis-aligned scale of a draw as GDI+ rounds it to float32 (nearest) before it inverts the matrix, which
+	 * is what the 16.16 step of a high-quality draw comes from. `toDevice` holds the same scale rounded toward
+	 * minus infinity (the extent of the quad), which differs in the last bit. Absent when the draw is not an
+	 * axis-aligned rectangle or points form.
+	 */
+	nominalScale?: [number, number];
+	/**
 	 * The draw's `ImageAttributes` WrapMode: a kernel tap outside the bitmap
 	 * wraps within it (Tile/TileFlipX/Y/XY) or reads `clampArgb` (Clamp),
 	 * as measured on the `gpx-image-attr-*` fixtures. Absent: a tap outside
