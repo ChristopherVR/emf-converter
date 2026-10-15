@@ -579,6 +579,90 @@ public static class CompatPlaybackProbe
 		ReleaseDC(IntPtr.Zero, screen);
 	}
 
+
+	/**
+	 * Native `GetPath` of a RoundRect record played back in `GM_COMPATIBLE` under maps that scale one axis only
+	 * (`compat-roundrect-sweep.json.gz`): per map and axis, 10 offsets of the box edge, 16 box extents (20 to 35 units) and 16 corner extents
+	 * (1 to 16) in both arc directions, a cosmetic pen. Each entry is `[dir, l, t, r, b, cw, ch, x0, y0, x3, y3, x4, y4, ...]`: the
+	 * record and the path's eight corner end points (the figure's points 0, 3, 4, 7, 8, 11, 12 and 15, which with the straight edges
+	 * between them fix the corner half extents and the box).
+	 */
+	public static void RoundRectSweep(string dir)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		string tmp = Path.Combine(Path.GetTempPath(), "rrsweep.emf");
+		// window extent, viewport extent of the scaled axis
+		int[][] scales = { new[] { 4, 3 }, new[] { 3, 4 }, new[] { 10, 7 }, new[] { 7, 10 }, new[] { 3, 5 }, new[] { 2, 3 }, new[] { 5, 3 } };
+		var js = new System.Text.StringBuilder("[");
+		bool firstMap = true;
+		foreach (var sc in scales)
+			for (int axis = 0; axis < 3; axis++)
+				for (int cw = 1; cw <= 2; cw++)
+				{
+					int arcDir = cw;
+					IntPtr mdc = CreateEnhMetaFileW(screen, tmp, ref frame, null);
+					SetMapMode(mdc, 8);
+					SetWindowExtEx(mdc, axis != 1 ? sc[0] : 1, axis != 0 ? sc[0] : 1, IntPtr.Zero);
+					SetViewportExtEx(mdc, axis != 1 ? sc[1] : 1, axis != 0 ? sc[1] : 1, IntPtr.Zero);
+					SetArcDirection(mdc, arcDir);
+					IntPtr p = CreatePen(0, 0, 0x202020);
+					IntPtr op = SelectObject(mdc, p);
+					for (int off = 0; off < 10; off++)
+						for (int h = 20; h < 36; h++)
+							for (int ch = 1; ch <= 16; ch++)
+							{
+								int a0 = 3 + off, a1 = a0 + h;
+								// the other axis: a fixed 40 by 12 unit box and corner
+								if (axis == 1) RoundRect(mdc, 3, a0, 43, a1, 12, ch);
+								else RoundRect(mdc, a0, 3, a1, 43, ch, 12);
+							}
+					SelectObject(mdc, op); DeleteObject(p);
+					IntPtr emf = CloseEnhMetaFile(mdc);
+					DeleteEnhMetaFile(emf);
+					IntPtr hemf = GetEnhMetaFileW(tmp);
+					IntPtr dc, bmp;
+					Surface(screen, out dc, out bmp);
+					var rect = new RECT { Right = W, Bottom = H };
+					var section = new System.Text.StringBuilder();
+					int count = 0;
+					EnumEnhMetaFile(dc, hemf, delegate(IntPtr hdc, IntPtr table, IntPtr rec, int n, IntPtr data)
+					{
+						int type = Marshal.ReadInt32(rec);
+						if (type == 44)
+						{
+							SaveDC(hdc);
+							BeginPath(hdc);
+							PlayEnhMetaFileRecord(hdc, table, rec, n);
+							EndPath(hdc);
+							SetGraphicsMode(hdc, 2); ModifyWorldTransform(hdc, IntPtr.Zero, 1);
+							SetMapMode(hdc, 8); SetWindowExtEx(hdc, 16, 16, IntPtr.Zero); SetViewportExtEx(hdc, 1, 1, IntPtr.Zero);
+							SetWindowOrgEx(hdc, 0, 0, IntPtr.Zero); SetViewportOrgEx(hdc, 0, 0, IntPtr.Zero);
+							int np = GetPath(hdc, null, null, 0);
+							var q = new Point[np]; var u = new byte[np];
+							if (np > 0) GetPath(hdc, q, u, np);
+							RestoreDC(hdc, -1);
+							if (count++ > 0) section.Append(',');
+							section.Append('[').Append(arcDir);
+							for (int k = 0; k < 6; k++) section.Append(',').Append(Marshal.ReadInt32(rec, 8 + 4 * k));
+							foreach (int k in new[] { 0, 3, 4, 7, 8, 11, 12, 15 }) section.Append(',').Append(np > k ? q[k].X : -1).Append(',').Append(np > k ? q[k].Y : -1);
+							section.Append(",").Append(np).Append("]");
+						}
+						PlayEnhMetaFileRecord(hdc, table, rec, n);
+						return 1;
+					}, IntPtr.Zero, ref rect);
+					DeleteEnhMetaFile(hemf); DeleteDC(dc); DeleteObject(bmp);
+					if (!firstMap) js.Append(',');
+					firstMap = false;
+					js.Append("{\"window\":").Append(sc[0]).Append(",\"viewport\":").Append(sc[1]).Append(",\"axis\":").Append(axis).Append(",\"dir\":").Append(arcDir).Append(",\"records\":[").Append(section).Append("]}");
+				}
+		var bytes = System.Text.Encoding.UTF8.GetBytes(js.Append(']').ToString());
+		using (var file = File.Create(Path.Combine(dir, "compat-roundrect-sweep.json.gz")))
+		using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress)) zip.Write(bytes, 0, bytes.Length);
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
 	public static void Run(string dir)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);
