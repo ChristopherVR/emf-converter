@@ -45,6 +45,7 @@
  */
 
 import { parseRasterFontFile, type RasterFace } from './fnt-font';
+import { pickRasterFace } from './raster-mapper';
 import { parseFontFile, type TtfFont } from './ttf-font';
 import { DEFAULT_DROPOUT_PPEM, HintedSize, type HintedGlyph } from './ttf-hinting';
 import { dropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
@@ -153,29 +154,6 @@ function slantRows(b: GlyphBitmap, extra = 0): { bitmap: GlyphBitmap; shift: (ro
 		data.set(b.data.subarray(y * b.width, (y + 1) * b.width), y * width + shift(y));
 	}
 	return { bitmap: { ...b, width, data }, shift };
-}
-
-/**
- * Raster-font stretch cost by whole-number vertical factor (see `pickRaster`). GDI stretches a bitmap face by up to 8
- * vertically but by at most 5 horizontally (`text-raster-mapper`, `raster-mapper-wide.json`: every native pick of a
- * face scaled above 5 has the width of a 5x stretch). Factors above 5 are costed so high that they serve only requests
- * no smaller factor comes within a few pixels of.
- */
-const RASTER_STRETCH_COST = [0, 0, 120, 150, 250, 250, 1150, 1280, 1840];
-/**
- * Extra cost, per squared extra factor, of stretching a face whose cell is at most `RASTER_TINY_CELL` pixels (Terminal's
- * 4x6, Small Fonts' 3x5 and 3x6): GDI serves Terminal -30 from the 8x12 face doubled instead of the 4x6 face five times
- * (24 pixel cell, not 30), and Small Fonts -15 (cell 15) from the 4x8 (6x13) face doubled (not the 3x6 (3x5) face
- * tripled), while Small Fonts cell 18 does triple the 3x6 face. Fitted on the 2,900 `text-raster-mapper` rows.
- */
-const RASTER_TINY_CELL = 6;
-const RASTER_TINY_STRETCH = 50;
-/** Largest horizontal stretch of a raster face. */
-const RASTER_MAX_X_SCALE = 5;
-
-/** A raster face's character height (cell minus internal leading). */
-function unitOf(f: RasterFace): number {
-	return Math.max(1, f.pixHeight - f.internalLeading);
 }
 
 /** Stock FontSubstitutes entries that point at raster (`.fon`) faces. */
@@ -842,60 +820,30 @@ export class GdiFontCollection {
 	}
 
 	/**
-	 * The raster size GDI's font mapper picks for a device height, as a face
-	 * and a whole-number stretch (1 to 5). Heights compare as character
-	 * heights for a negative lfHeight and cell heights for a positive one.
-	 * The cost model is fitted to GetTextMetrics over lfHeight -60..60 for
-	 * MS Sans Serif, MS Serif, Courier, Small Fonts, System and Terminal
-	 * (98% exact): 150 per pixel too small; 290 plus 340 per pixel too big;
-	 * a stretch cost by factor (120, 150, 250, 250 for 2x..5x and 1,150,
-	 * 1,280 and 1,840 for 6x..8x, the largest GDI uses) plus 100 per
-	 * extra factor divided by the face's character height (small faces
-	 * stretch less readily); ties go to the smaller stretch, then to the
-	 * 96 dpi face. A weight mismatch costs 3 per 10 units (so Terminal's
-	 * bold 8 pixel size serves regular requests).
+	 * The raster face and whole-number stretches GDI's font mapper picks for a height (character height when
+	 * negative, cell height when positive), `lfWidth` and weight; see `pickRasterFace`. `width` 0 keeps the face's
+	 * own proportions (horizontal factor equal to the vertical one, at most 5).
 	 */
-	private pickRaster(faces: RasterFace[], height: number, weight: number): { face: RasterFace; scale: number } | null {
-		const pool = faces;
-		if (pool.length === 0) {
+	private pickRaster(faces: RasterFace[], height: number, weight: number, width = 0): { face: RasterFace; scale: number; scaleX: number } | null {
+		if (faces.length === 0) {
 			return null;
 		}
 		if (height === 0) {
-			const sorted = pool.slice().sort((a, b) => a.pixHeight - b.pixHeight);
-			return { face: sorted.find((f) => f.points >= 10) ?? sorted[0], scale: 1 };
+			const sorted = faces.slice().sort((a, b) => a.pixHeight - b.pixHeight);
+			const face = sorted.find((f) => f.points >= 10) ?? sorted[0];
+			return { face, scale: 1, scaleX: 1 };
 		}
-		const target = Math.abs(height);
-		let best: { face: RasterFace; scale: number } | null = null;
-		let bestCost = Infinity;
-		for (const f of pool) {
-			const unit = height < 0 ? unitOf(f) : f.pixHeight;
-			for (let n = 1; n < RASTER_STRETCH_COST.length; n++) {
-				const d = unit * n - target;
-				const cost =
-					(d < 0 ? -d * 150 : d > 0 ? 290 + d * 340 : 0) +
-					RASTER_STRETCH_COST[n] +
-					(n > 1 ? (100 * (n - 1)) / unitOf(f) : 0) +
-					(f.pixHeight <= RASTER_TINY_CELL ? RASTER_TINY_STRETCH * (n - 1) * (n - 1) : 0) +
-					(Math.abs(f.weight - weight) * 3) / 10 +
-					n * 0.01 +
-					(f.vertRes === 96 ? 0 : 0.001);
-				if (cost < bestCost) {
-					bestCost = cost;
-					best = { face: f, scale: n };
-				}
-			}
-		}
-		return best;
+		const pick = pickRasterFace(faces, height, width, weight);
+		return pick ? { face: faces[pick.index], scale: pick.scaleY, scaleX: pick.scaleX } : null;
 	}
 
 	private realizeRaster(faces: RasterFace[], spec: LogFontSpec): GdiRealizedFont | null {
 		const weight = spec.weight || 400;
-		const pick = this.pickRaster(faces, spec.height, weight);
+		const pick = this.pickRaster(faces, spec.height, weight, spec.width > 0 ? spec.width : 0);
 		if (!pick) {
 			return null;
 		}
-		const { face, scale } = pick;
-		const scaleX = spec.width > 0 && face.avgWidth > 0 ? Math.max(1, Math.ceil(spec.width / face.avgWidth - 0.5)) : Math.min(scale, RASTER_MAX_X_SCALE);
+		const { face, scale, scaleX } = pick;
 		return new RasterRealizedFont(face, scale, weight >= 600 && face.weight < 600, scaleX, spec.italic && !face.italic);
 	}
 

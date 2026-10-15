@@ -49,10 +49,10 @@ describe('raster font mapper on a 144 dpi session', () => {
 	});
 	it.skipIf(!windowsFonts())('the converter given the fixture font set misses System and Fixedsys, which it never saw the 20 pixel faces of', () => {
 		expect(agreement(windowsFonts()!)).toEqual({
-			'MS Sans Serif': 119, 'MS Serif': 117, Courier: 118, 'Small Fonts': 119, System: 79, Terminal: 120, Fixedsys: 81, Helv: 119, 'Tms Rmn': 117, 'MS Shell Dlg': 117,
+			'MS Sans Serif': 120, 'MS Serif': 120, Courier: 120, 'Small Fonts': 120, System: 79, Terminal: 120, Fixedsys: 82, Helv: 120, 'Tms Rmn': 120, 'MS Shell Dlg': 117,
 		});
 	});
-	it.skipIf(!windowsFonts() || !extra())('at lfHeight 61 to 130 (where the 6x to 8x costs were fitted) it picks the native cell height at 919 of 980 heights and the width at 929', () => {
+	it.skipIf(!windowsFonts() || !extra())('at lfHeight 61 to 130 it picks the native cell height and width at all 980 heights and the bold cell height at all 840', () => {
 		// `raster-mapper-wide.json.gz`: the seven raster families at lfHeight -130..-61 and 61..130 (weight 400) and weight 700 at -60..60.
 		interface Wide { rows: Array<Row & { weight: number; tmAveCharWidth: number }> }
 		const wide: Wide = JSON.parse(gunzipSync(readFileSync(fixturePath('raster-mapper-wide.json.gz'))).toString());
@@ -72,13 +72,13 @@ describe('raster font mapper on a 144 dpi session', () => {
 				counts.boldHeight += heightOk ? 1 : 0;
 			}
 		}
-		// Before the vertical factors 6 to 8 were allowed (and the horizontal one capped at 5): 631 of the 980 heights. Fitting the three
-		// costs on the 490 negative heights alone gives 456 of the 490 positive ones (291 and 340 before), so the fit is not memorised.
-		expect(counts).toEqual({ regular: 980, height: 919, width: 929, both: 918, bold: 840, boldHeight: 824 });
+		// Before the mapper was rebuilt from the synthetic-family measurements (`src/raster-mapper.ts`) these were 919, 929, 918 and 824
+		// (631 heights before the vertical factors 6 to 8 were allowed).
+		expect(counts).toEqual({ regular: 980, height: 980, width: 980, both: 980, bold: 840, boldHeight: 840 });
 	});
-	it.skipIf(!windowsFonts() || !extra())('given 8514sys.fon and 8514fix.fon it picks the native cell height at 118 of 120 System and 117 of 120 Fixedsys heights', () => {
+	it.skipIf(!windowsFonts() || !extra())('given 8514sys.fon and 8514fix.fon it picks the native cell height at all 120 System and Fixedsys heights', () => {
 		expect(agreement([...windowsFonts()!, ...extra()!])).toEqual({
-			'MS Sans Serif': 119, 'MS Serif': 117, Courier: 118, 'Small Fonts': 119, System: 118, Terminal: 120, Fixedsys: 117, Helv: 119, 'Tms Rmn': 117, 'MS Shell Dlg': 117,
+			'MS Sans Serif': 120, 'MS Serif': 120, Courier: 120, 'Small Fonts': 120, System: 120, Terminal: 120, Fixedsys: 120, Helv: 120, 'Tms Rmn': 120, 'MS Shell Dlg': 117,
 		});
 	});
 });

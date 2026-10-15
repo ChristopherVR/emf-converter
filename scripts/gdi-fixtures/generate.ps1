@@ -41,7 +41,7 @@
 #   image-effect-narrow-blur, image-effect-hue, image-effect-tint,
 #   image-effect-tables, effect-alpha, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-translate16,
 #   dash-cut-tie-probe, scaled-dash-cap-probe, curve-end-reversal-probe,
-#   tiny-final-segment-probe, text-raster-variants, text-raster-mapper, text-raster-styles,
+#   tiny-final-segment-probe, text-raster-variants, text-raster-mapper, text-raster-synthetic, text-raster-styles,
 #   text-playback-hinting, text-signed-diagonal-hinting,
 #   text-signed-diagonal-coverage, path-gradient-slopes, path-gradient-fills,
 #   path-gradient-tips, path-gradient-corners, path-gradient-focus-ties,
@@ -271,6 +271,12 @@ if ($Which -eq 'text-recorded-advance') {
 if ($Which -eq 'text-raster-styles') {
     Add-Type -Path (Join-Path $here 'RasterStyleProbe.cs')
     [RasterStyleProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-raster-synthetic') {
+    Add-Type -Path (Join-Path $here 'RasterSyntheticMapperProbe.cs')
+    [RasterSyntheticMapperProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

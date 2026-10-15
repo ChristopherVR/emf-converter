@@ -67,13 +67,13 @@ describe('raster faces under bold, italic, underline and strike-out', () => {
 		});
 		expect(bad.map((c) => `${c.face} ${c.height} ${c.weight} i${c.italic} u${c.underline} s${c.strike} '${c.text}'`)).toEqual([]);
 	});
-	it.skipIf(!available())('are reproduced under lfWidth for 567 of 784 captures (the mapper picks the face with its own width rule)', () => {
+	it.skipIf(!available())('are reproduced under lfWidth for 746 of 784 captures (the other 38 are Terminal, whose native face set is larger than the fixture fonts)', () => {
 		const collection = new GdiFontCollection([...windowsFonts()!, ...extra()!], 'cleartype');
 		const good = styles.cases.filter((c) => c.width).filter((c) => {
 			const { mine, native } = compose(collection, c);
 			return same(mine, native);
 		});
-		expect(good).toHaveLength(567);
+		expect(good).toHaveLength(746);
 	});
 	it.skipIf(!available())('bold italic leans one pixel further on a stretched face and loses the smear into a byte boundary', () => {
 		const collection = new GdiFontCollection([...windowsFonts()!, ...extra()!], 'cleartype');
@@ -89,7 +89,7 @@ describe('raster faces under bold, italic, underline and strike-out', () => {
 });
 
 describe('raster font mapper under lfWidth', () => {
-	it.skipIf(!available())('agrees with the native cell height and average width on a pinned share of 5,880 lfWidth rows', () => {
+	it.skipIf(!available())('agrees with the native cell height and average width on 5,477 of 5,880 lfWidth rows (391 of the others are Terminal)', () => {
 		const collection = new GdiFontCollection([...windowsFonts()!, ...extra()!], 'cleartype');
 		let exact = 0;
 		let heightOnly = 0;
@@ -100,6 +100,6 @@ describe('raster font mapper under lfWidth', () => {
 			exact += h && font.face.avgWidth * font.scaleX === r.tmAveCharWidth ? 1 : 0;
 		}
 		expect(widths.rows).toHaveLength(5880);
-		expect({ exact, heightOnly }).toEqual({ exact: 3818, heightOnly: 4790 });
+		expect({ exact, heightOnly }).toEqual({ exact: 5477, heightOnly: 5726 });
 	});
 });
