@@ -127,6 +127,24 @@ function mulFix14(a: number, b: number): number {
 	return Math.floor((t + 0x2000 + (t < 0 ? -1 : 0)) / 16384);
 }
 
+/** GDI's 2.14 product: `(a * b + 0x2000) >> 14`, halves rounded up (an exact negative half rounds toward zero). */
+function mulFix14Up(a: number, b: number): number {
+	return Math.floor((a * b + 0x2000) / 16384);
+}
+
+/** GDI's projection: each product rounded alone (`gdiArithmetic`), not the rounded sum of both. */
+function dotFix14Split(ax: number, ay: number, bx: number, by: number): number {
+	return mulFix14Up(ax, bx) + mulFix14Up(ay, by);
+}
+
+/**
+ * GDI's division `(a * b + c / 2) / c`, truncated toward zero: the rounding term is always added, so a negative
+ * quotient is rounded toward zero from its half (-8.59 gives -8, -8.4 gives -7) while a positive one rounds to nearest.
+ */
+function mulDivGdi(a: number, b: number, c: number): number {
+	return Math.trunc((a * b + Math.floor(Math.abs(c) / 2)) / c) + 0;
+}
+
 const floor64 = (x: number): number => Math.floor(x / 64) * 64;
 const round64 = (x: number): number => floor64(x + 32);
 const ceil64 = (x: number): number => floor64(x + 63);
@@ -187,6 +205,8 @@ interface GraphicsState {
 	fvy: number;
 	dvx: number;
 	dvy: number;
+	/** The freedom vector was last set together with, or copied from, the projection vector (SVTCA, SFVTPV). */
+	fvIsPv: boolean;
 	loop: number;
 	minDist: number;
 	roundState: number;
@@ -220,6 +240,7 @@ function defaultGS(): GraphicsState {
 		fvy: 0,
 		dvx: 0x4000,
 		dvy: 0,
+		fvIsPv: true,
 		loop: 1,
 		minDist: 64,
 		roundState: 1,
@@ -281,6 +302,15 @@ export interface HintEnvironment {
 	clearType?: boolean;
 	/** ClearType with compatible (bi-level) advance widths: GETINFO bit 14. Default true under ClearType. */
 	compatibleWidths?: boolean;
+	/**
+	 * GDI's own arithmetic for projections, movements and IUP (monochrome and grayscale `GetGlyphOutline`, measured
+	 * against `GetGlyphOutline(GGO_NATIVE)` of instruction-prefix fonts, `PrefixHintProbe.cs`): a projection rounds
+	 * each coordinate's product alone before summing them; a movement along x, and IUP interpolation along both
+	 * axes, divides with `(a * b + c / 2) / c` truncated toward zero (so a negative quotient loses up to one unit
+	 * against round-half-away), while a movement along y rounds half away from zero. Not set for ClearType or GDI+,
+	 * which keep FreeType's combined rounding until measured.
+	 */
+	gdiArithmetic?: boolean;
 	/** Symmetric (vertically smoothed) ClearType: GETINFO bit 15. */
 	symmetricSmoothing?: boolean;
 	/**
@@ -369,6 +399,8 @@ export class HintedSize {
 	private zp1!: Zone;
 	private zp2!: Zone;
 	private fDotP = 0x4000;
+	/** `HintEnvironment.gdiArithmetic`. */
+	private readonly gdiMath: boolean;
 	private inPrep = false;
 	/** The projection vector was set by SPVTL (for the ClearType RDTG exception). */
 	private pvFromSpvtl = false;
@@ -383,6 +415,7 @@ export class HintedSize {
 	constructor(font: TtfFont, ppemX: number, ppemY: number, env: HintEnvironment, hinting = true) {
 		this.font = font;
 		this.env = env;
+		this.gdiMath = !!env.gdiArithmetic;
 		this.hinting = hinting;
 		const upem = font.unitsPerEm;
 		this.xScale = divFix(ppemX * 64, upem);
@@ -439,6 +472,7 @@ export class HintedSize {
 		const gs = this.gs;
 		gs.pvx = gs.fvx = gs.dvx = 0x4000;
 		gs.pvy = gs.fvy = gs.dvy = 0;
+		gs.fvIsPv = true;
 		gs.rp0 = gs.rp1 = gs.rp2 = 0;
 		gs.gep0 = gs.gep1 = gs.gep2 = 1;
 		gs.loop = 1;
@@ -723,7 +757,9 @@ export class HintedSize {
 		} else if (gs.fvy === 0x4000) {
 			this.fDotP = gs.pvy;
 		} else {
-			this.fDotP = Math.floor((gs.pvx * gs.fvx + gs.pvy * gs.fvy) / 16384);
+			this.fDotP = this.gdiMath
+				? dotFix14Split(gs.pvx, gs.pvy, gs.fvx, gs.fvy)
+				: Math.floor((gs.pvx * gs.fvx + gs.pvy * gs.fvy) / 16384);
 		}
 		if (Math.abs(this.fDotP) < 0x400) {
 			this.fDotP = 0x4000;
@@ -731,11 +767,11 @@ export class HintedSize {
 	}
 
 	private project(dx: number, dy: number): number {
-		return dotFix14(dx, dy, this.gs.pvx, this.gs.pvy);
+		return (this.gdiMath ? dotFix14Split : dotFix14)(dx, dy, this.gs.pvx, this.gs.pvy);
 	}
 
 	private dualProject(dx: number, dy: number): number {
-		return dotFix14(dx, dy, this.gs.dvx, this.gs.dvy);
+		return (this.gdiMath ? dotFix14Split : dotFix14)(dx, dy, this.gs.dvx, this.gs.dvy);
 	}
 
 	/** Dual projection of an orus (font unit) difference, scaled to 26.6. */
@@ -798,17 +834,28 @@ export class HintedSize {
 	private move(zone: Zone, p: number, distance: number): void {
 		const gs = this.gs;
 		if (gs.fvx !== 0) {
-			zone.curX[p] += this.moveAmt(distance, gs.fvx);
+			zone.curX[p] += this.moveAmt(distance, gs.fvx, true);
 			zone.tags[p] |= TOUCH_X;
 		}
 		if (gs.fvy !== 0) {
-			zone.curY[p] += this.moveAmt(distance, gs.fvy);
+			zone.curY[p] += this.moveAmt(distance, gs.fvy, false);
 			zone.tags[p] |= TOUCH_Y;
 		}
 	}
 
-	/** A projected distance converted to a move along one freedom-vector component. */
-	private moveAmt(distance: number, f: number): number {
+	/**
+	 * A projected distance converted to a move along one freedom-vector component. GDI moves along x with its
+	 * truncating division and along y with rounding half away from zero, except when the vectors are one (the
+	 * freedom vector was copied from the projection vector, or their rounded dot product is exactly 1.0): the move
+	 * is then the distance times the component over 1.0 on both axes.
+	 */
+	private moveAmt(distance: number, f: number, alongX: boolean): number {
+		if (this.gdiMath) {
+			if (this.gs.fvIsPv || this.fDotP === 0x4000) {
+				return mulDiv(distance, f, 0x4000);
+			}
+			return alongX ? mulDivGdi(distance, f, this.fDotP) : mulDiv(distance, f, this.fDotP);
+		}
 		return mulDiv(distance, f, this.fDotP);
 	}
 
@@ -1321,6 +1368,7 @@ export class HintedSize {
 					gs.fvx = ax;
 					gs.fvy = ay;
 				}
+				gs.fvIsPv = op < 2;
 				this.computeFuncs();
 				return true;
 			}
@@ -1355,6 +1403,7 @@ export class HintedSize {
 					gs.fvx = vx;
 					gs.fvy = vy;
 				}
+				gs.fvIsPv = false;
 				this.computeFuncs();
 				return true;
 			}
@@ -1374,6 +1423,7 @@ export class HintedSize {
 					gs.fvx = vx;
 					gs.fvy = vy;
 				}
+				gs.fvIsPv = false;
 				this.computeFuncs();
 				return true;
 			}
@@ -1388,6 +1438,7 @@ export class HintedSize {
 			case 0x0e:
 				gs.fvx = gs.pvx;
 				gs.fvy = gs.pvy;
+				gs.fvIsPv = true;
 				this.computeFuncs();
 				return true;
 			case 0x0f:
@@ -2247,9 +2298,13 @@ export class HintedSize {
 		gs.loop = 1;
 	}
 
-	/** IP's orus projection: unscaled when both axes share one scale (only the ratio matters). */
+	/**
+	 * IP's orus projection: unscaled when both axes share one scale (only the ratio matters). Under GDI arithmetic
+	 * it is unscaled for a stretched font too (native's Tahoma, Arial, Times New Roman, Courier New and Segoe UI
+	 * condensed IP results follow the ratio of font-unit projections).
+	 */
 	private dualProjectOrusRaw(dx: number, dy: number): number {
-		if (this.xScale === this.yScale) {
+		if (this.xScale === this.yScale || this.gdiMath) {
 			return this.dualProject(dx, dy);
 		}
 		return this.dualProject(mulFix(dx, this.xScale), mulFix(dy, this.yScale));
@@ -2279,7 +2334,7 @@ export class HintedSize {
 				point++;
 				while (point <= endPoint) {
 					if (z.tags[point] & mask) {
-						iupInterpolate(orgs, curs, orus, curTouched + 1, point - 1, curTouched, point);
+						iupInterpolate(orgs, curs, orus, curTouched + 1, point - 1, curTouched, point, this.gdiMath);
 						curTouched = point;
 					}
 					point++;
@@ -2292,9 +2347,9 @@ export class HintedSize {
 						}
 					}
 				} else {
-					iupInterpolate(orgs, curs, orus, curTouched + 1, endPoint, curTouched, firstTouched);
+					iupInterpolate(orgs, curs, orus, curTouched + 1, endPoint, curTouched, firstTouched, this.gdiMath);
 					if (firstTouched > 0) {
-						iupInterpolate(orgs, curs, orus, firstPoint, firstTouched - 1, curTouched, firstTouched);
+						iupInterpolate(orgs, curs, orus, firstPoint, firstTouched - 1, curTouched, firstTouched, this.gdiMath);
 					}
 				}
 			}
@@ -2369,6 +2424,7 @@ export class HintedSize {
 		}
 		[gs.pvx, gs.pvy] = this.normalize(A, B);
 		this.pvFromSpvtl = false;
+		gs.fvIsPv = false;
 		this.computeFuncs();
 	}
 
@@ -2439,6 +2495,7 @@ function iupInterpolate(
 	p2: number,
 	ref1: number,
 	ref2: number,
+	gdiMath: boolean,
 ): void {
 	if (p1 > p2) {
 		return;
@@ -2478,7 +2535,7 @@ function iupInterpolate(
 		} else {
 			// A direct MulDiv on font units: FreeType's 16.16 ratio
 			// (DivFix then MulFix) rounds differently from GDI here.
-			x = cur1 + mulDiv(orus[i] - orus1, cur2 - cur1, orus2 - orus1);
+			x = cur1 + (gdiMath ? mulDivGdi : mulDiv)(orus[i] - orus1, cur2 - cur1, orus2 - orus1);
 		}
 		curs[i] = x;
 	}

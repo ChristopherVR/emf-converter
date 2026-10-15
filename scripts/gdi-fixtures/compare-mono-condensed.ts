@@ -1,5 +1,8 @@
 /** Compare native system-font captures with a frozen pre-change mono raster.
  * bun scripts/gdi-fixtures/compare-mono-condensed.ts <pre-change ttf-raster.ts>
+ * bun scripts/gdi-fixtures/compare-mono-condensed.ts --tighten
+ *   keeps each committed `before` and lowers each ceiling to the current mismatch (never raises one), so a hinting
+ *   improvement is pinned without needing the frozen source again.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -9,8 +12,10 @@ import { dropoutMode, type GlyphBitmap } from '../../src/ttf-raster';
 import { windowsFonts } from '../../src/__fixtures__/gdi-parity-harness';
 
 const directory = 'src/__fixtures__/gdi/';
-if (!process.argv[2]) throw new Error('Pass the frozen pre-change ttf-raster.ts source.');
-const baseline = (await import(resolve(process.argv[2]))).rasterizeMono;
+if (!process.argv[2]) throw new Error('Pass the frozen pre-change ttf-raster.ts source, or --tighten.');
+const tighten = process.argv[2] === '--tighten';
+const previous = tighten ? JSON.parse(gunzipSync(readFileSync(directory + 'mono-condensed-bounds.json.gz')).toString()) : null;
+const baseline = tighten ? null : (await import(resolve(process.argv[2]))).rasterizeMono;
 const captures = JSON.parse(gunzipSync(readFileSync(directory + 'mono-condensed.json.gz')).toString());
 const collection = new GdiFontCollection(windowsFonts()!);
 const samples = (bitmap: GlyphBitmap | null): Set<string> => {
@@ -37,8 +42,11 @@ for (const c of captures) {
 		const actual = samples(bitmap);
 		return [...new Set([...actual, ...reference])].filter((p) => actual.has(p) !== reference.has(p)).length;
 	};
-	const before = difference(baseline(outline, mode)), after = difference(font.glyph(index).bitmap);
 	const key = `${c.face}:${c.ppem}:${c.width}:${c.weight}:${+c.italic}:${c.code}`;
+	const before = tighten ? previous.bounds[key][0] : difference(baseline(outline, mode));
+	const current = difference(font.glyph(index).bitmap);
+	const after = tighten ? Math.min(previous.bounds[key][1], current) : current;
+	if (tighten && current > previous.bounds[key][1]) throw new Error(`${key} is above its committed ceiling (${current} > ${previous.bounds[key][1]})`);
 	bounds[key] = [before, after];
 	stats.total++; stats.beforeExact += +(before === 0); stats.afterExact += +(after === 0);
 	stats.beforePixels += before; stats.afterPixels += after;

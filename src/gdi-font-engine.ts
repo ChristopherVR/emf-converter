@@ -466,7 +466,7 @@ export class RealizedFont implements GdiRealizedFont {
 		this.hinted = new HintedSize(ttf, ppemX, ppem,
 			gdiPlus && mode === 'gray'
 				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false }
-				: { version: 35, grayscale: mode !== 'mono' }, gridFit || (gdiPlus && mode === 'gray'));
+				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus && !syntheticItalic }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
 	}
 
@@ -635,7 +635,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// realised font. Stretched or transformed glyphs retain the previous
 			// arithmetic: native condensed controls expose an unresolved interaction
 			// with their hinted outlines (mono-condensed.json.gz).
-			const smartGrid = this.ppemX === this.ppem && !m && !this.syntheticItalic && !subX && !subY;
+			const smartGrid = (this.ppemX === this.ppem || !this.gdiPlus) && !m && !this.syntheticItalic && !subX && !subY;
 			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType), undefined, true, smartGrid);
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
@@ -976,8 +976,10 @@ export class GdiFontCollection {
  * negative value; for a positive (cell) height, the largest `VDMX` ppem
  * whose yMax - yMin fits, else `height * unitsPerEm / (winAscent +
  * winDescent)` rounded, then stepped down while that ppem's own cell
- * (`VDMX`, or the rounded win metrics) is still taller than requested (measured against
- * `GetTextMetrics` for five faces at every cell height 5..72: exact).
+ * (`VDMX`, or `(winAscent + winDescent) * ppem / unitsPerEm` rounded once) is still taller than requested. The result
+ * is the em height `tmHeight - tmInternalLeading` of the native font at all 117 cell heights 4..120 of Arial, Times
+ * New Roman, Courier New, Segoe UI and Tahoma (rounding ascent and descent separately put Segoe UI at 6 for cell 9
+ * and three faces one off at cells 4 to 6; those realised glyph images differ).
  */
 export function resolvePpem(font: TtfFont, height: number): number {
 	if (height < 0) {
@@ -1009,7 +1011,7 @@ export function resolvePpem(font: TtfFont, height: number): number {
 		const e = vd?.find((v) => v.ppem === ppem);
 		const cell = e
 			? e.yMax - e.yMin
-			: Math.round((font.winAscent * ppem) / upem) + Math.round((font.winDescent * ppem) / upem);
+			: Math.round(((font.winAscent + font.winDescent) * ppem) / upem);
 		if (cell <= h) {
 			break;
 		}

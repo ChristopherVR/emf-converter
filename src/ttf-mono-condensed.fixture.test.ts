@@ -48,17 +48,17 @@ describe.skipIf(!fontFiles)('native uniformly realised and stretched mono glyphs
 		}
 		expect(exact).toBeGreaterThanOrEqual(evidence.stats.afterExact);
 	});
-	it('keeps condensed Tahoma x on the established arithmetic without a font exception', () => {
+	it('rasterises the hinted condensed Tahoma x exactly with smart crossings', () => {
 		const c = captures.find((c) => c.face === 'Tahoma' && c.ppem === 11 && c.width === 4 && c.weight === 400 && !c.italic && c.code === 120)!;
 		const collection = new GdiFontCollection(fontFiles!);
 		const font = collection.realize({ face: c.face, height: -c.ppem, width: c.width, weight: c.weight, italic: c.italic,
 			charSet: 1, pitchAndFamily: 0, quality: 3, unhinted: false, gdiPlus: false }) as any;
 		const index = font.glyphIndex(c.code), outline = font.outline(index);
 		expect(font.ppemX).toBe(9);
-		expect(difference(font.glyph(index).bitmap, c)).toBeLessThanOrEqual(1);
-		// Diagnostic counterexample: applying the uniform smart refinement to
-		// this hinted stretched outline produces three wrong samples. This is
-		// evidence for the conservative scope, not a renderer fallback lookup.
-		expect(difference(rasterizeMono(outline, 5, undefined, true, true), c)).toBe(3);
+		expect(difference(font.glyph(index).bitmap, c)).toBe(0);
+		// Applying the smart refinement to this stretched glyph was a counterexample (3 samples wrong) while its
+		// hinted outline still differed from native's (stretched IP used scaled font units); with GDI's hinting
+		// arithmetic the outline is native's and the refinement is exact.
+		expect(difference(rasterizeMono(outline, 5, undefined, true, true), c)).toBe(0);
 	});
 });
