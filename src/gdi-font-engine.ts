@@ -180,7 +180,10 @@ const RASTER_SUBSTITUTES: Record<string, string> = {
  * GDI's synthetic-italic shear, 0x5700 / 65536 (about 18.8 degrees),
  * applied to the hinted outline (x += y * shear, rounded to 1/64); the
  * advance widths are unchanged (measured with GGO_NATIVE on Tahoma, which
- * has no italic face).
+ * has no italic face). A stretched font (`lfWidth`) shears by that factor times
+ * the unrounded horizontal stretch, `lfWidth * unitsPerEm / xAvgCharWidth / ppem`
+ * (Tahoma at 17 px with lfWidth 7 and 15: 0.9264 and 1.9852, not the 16/17 and
+ * 34/17 of the rounded `ppemX` the outline is grid-fitted at; 1,500 points).
  */
 const ITALIC_SHEAR = 0x5700 / 65536;
 
@@ -411,6 +414,8 @@ export class RealizedFont implements GdiRealizedFont {
 	private readonly hdmx: Uint8Array | undefined;
 	/** lfWidth of a horizontally stretched font (0 = not stretched). */
 	private readonly stretchWidth: number;
+	/** The synthetic-italic shear, scaled by the unrounded horizontal stretch of a stretched font. */
+	private readonly italicShear: number;
 	private readonly outlines = new Map<number, HintedGlyph>();
 	private readonly glyphs = new Map<string, GdiGlyph>();
 
@@ -430,6 +435,7 @@ export class RealizedFont implements GdiRealizedFont {
 		this.gridFit = gridFit;
 		this.fractionalOrigins = gdiPlus ? mode === 'gray' ? 'xy' : mode === 'cleartype' ? 'x' : undefined : undefined;
 		this.stretchWidth = ppemX !== ppem ? stretchWidth : 0;
+		this.italicShear = this.stretchWidth > 0 && ttf.xAvgCharWidth > 0 ? (ITALIC_SHEAR * ((this.stretchWidth * ttf.unitsPerEm) / ttf.xAvgCharWidth)) / ppem : ITALIC_SHEAR;
 		this.ppem = ppem;
 		this.ppemX = ppemX;
 		this.mode = mode;
@@ -466,7 +472,7 @@ export class RealizedFont implements GdiRealizedFont {
 		this.hinted = new HintedSize(ttf, ppemX, ppem,
 			gdiPlus && mode === 'gray'
 				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false }
-				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus && !syntheticItalic }, gridFit || (gdiPlus && mode === 'gray'));
+				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
 	}
 
@@ -614,7 +620,7 @@ export class RealizedFont implements GdiRealizedFont {
 				let x = base.xs[i];
 				const y = base.ys[i];
 				if (this.syntheticItalic) {
-					x += y * ITALIC_SHEAR;
+					x += y * this.italicShear;
 				}
 				if (m) {
 					// Outline space is y up; the matrix is in device (y down) space.
@@ -631,11 +637,10 @@ export class RealizedFont implements GdiRealizedFont {
 		}
 		let bitmap: GlyphBitmap | null;
 		if (this.mode === 'mono') {
-			// 26.6 smart-crossing selection is verified for an upright uniformly
-			// realised font. Stretched or transformed glyphs retain the previous
-			// arithmetic: native condensed controls expose an unresolved interaction
-			// with their hinted outlines (mono-condensed.json.gz).
-			const smartGrid = (this.ppemX === this.ppem || !this.gdiPlus) && !m && !this.syntheticItalic && !subX && !subY;
+			// 26.6 smart-crossing selection is verified against GDI's monochrome bitmaps for upright, stretched and
+			// sheared glyphs once their outlines follow GDI's hinting arithmetic (mono-condensed.json.gz: 970 to
+			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
+			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
 			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType), undefined, true, smartGrid);
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
