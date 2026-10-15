@@ -718,24 +718,23 @@ export class HintedSize {
 
 	private computeFuncs(): void {
 		const gs = this.gs;
-		if (gs.fvx === 0x4000) {
-			this.fDotP = gs.pvx;
-		} else if (gs.fvy === 0x4000) {
-			this.fDotP = gs.pvy;
+		if (gs.fvx === gs.pvx && gs.fvy === gs.pvy) {
+			// Freedom vector equal to the projection vector: a move is exactly the distance, however the 2.14 products round.
+			this.fDotP = 0x4000;
 		} else {
-			this.fDotP = Math.floor((gs.pvx * gs.fvx + gs.pvy * gs.fvy) / 16384);
+			this.fDotP = mulFix14(gs.pvx, gs.fvx) + mulFix14(gs.pvy, gs.fvy);
 		}
 		if (Math.abs(this.fDotP) < 0x400) {
-			this.fDotP = 0x4000;
+			this.fDotP = this.fDotP < 0 ? -0x4000 : 0x4000;
 		}
 	}
 
 	private project(dx: number, dy: number): number {
-		return dotFix14(dx, dy, this.gs.pvx, this.gs.pvy);
+		return mulFix14(dx, this.gs.pvx) + mulFix14(dy, this.gs.pvy);
 	}
 
 	private dualProject(dx: number, dy: number): number {
-		return dotFix14(dx, dy, this.gs.dvx, this.gs.dvy);
+		return mulFix14(dx, this.gs.dvx) + mulFix14(dy, this.gs.dvy);
 	}
 
 	/** Dual projection of an orus (font unit) difference, scaled to 26.6. */
@@ -798,18 +797,27 @@ export class HintedSize {
 	private move(zone: Zone, p: number, distance: number): void {
 		const gs = this.gs;
 		if (gs.fvx !== 0) {
-			zone.curX[p] += this.moveAmt(distance, gs.fvx);
+			zone.curX[p] += this.moveAmt(distance, gs.fvx, true);
 			zone.tags[p] |= TOUCH_X;
 		}
 		if (gs.fvy !== 0) {
-			zone.curY[p] += this.moveAmt(distance, gs.fvy);
+			zone.curY[p] += this.moveAmt(distance, gs.fvy, false);
 			zone.tags[p] |= TOUCH_Y;
 		}
 	}
 
 	/** A projected distance converted to a move along one freedom-vector component. */
-	private moveAmt(distance: number, f: number): number {
-		return mulDiv(distance, f, this.fDotP);
+	private moveAmt(distance: number, f: number, xAxis: boolean): number {
+		const c = this.fDotP;
+		if (c === 0x4000 || !xAxis) {
+			return mulDiv(distance, f, c);
+		}
+		if (f === c) {
+			return distance;
+		}
+		// x components divide in truncating integer arithmetic after adding half the divisor's magnitude, so
+		// negative quotients round toward zero at every half (measured on private fonts, GetGlyphOutline).
+		return Math.trunc((distance * f + Math.abs(Math.trunc(c / 2))) / c);
 	}
 
 	private moveOrig(zone: Zone, p: number, distance: number): void {
@@ -1099,6 +1107,7 @@ export class HintedSize {
 				throw new HintError('too long');
 			}
 			const op = cur[ip];
+			if ((globalThis as any).__trace) (globalThis as any).__trace(op, this, ip, cur === code);
 			let next = ip + HintedSize.insLength(cur, ip);
 			switch (op) {
 				// ---- control flow handled inline ----
@@ -2141,6 +2150,7 @@ export class HintedSize {
 			}
 		}
 		const cur = this.project(this.zp1.curX[p] - this.zp0.curX[gs.rp0], this.zp1.curY[p] - this.zp0.curY[gs.rp0]);
+		if ((globalThis as any).__log) (globalThis as any).__log({ op: 'MDRP', p, orgDist, distance, curDist: cur, fDotP: this.fDotP, pvx: gs.pvx, pvy: gs.pvy, fvx: gs.fvx, fvy: gs.fvy, dvx: gs.dvx, dvy: gs.dvy, x: this.zp1.curX[p], y: this.zp1.curY[p], rx: this.zp0.curX[gs.rp0], ry: this.zp0.curY[gs.rp0], ox: this.zp1.orusX[p], oy: this.zp1.orusY[p], orx: this.zp0.orusX[gs.rp0], ory: this.zp0.orusY[gs.rp0], sx: this.xScale, sy: this.yScale, cvtDist: distance });
 		this.move(this.zp1, p, distance - cur);
 		gs.rp1 = gs.rp0;
 		gs.rp2 = p;
@@ -2194,6 +2204,7 @@ export class HintedSize {
 				distance = -this.minDistance();
 			}
 		}
+		if ((globalThis as any).__log) (globalThis as any).__log({ op: 'MIRP', p, cvtDist, orgDist, curDist, distance, fDotP: this.fDotP, pvx: gs.pvx, pvy: gs.pvy, fvx: gs.fvx, fvy: gs.fvy, dvx: gs.dvx, dvy: gs.dvy, x: this.zp1.curX[p], y: this.zp1.curY[p], rx: this.zp0.curX[gs.rp0], ry: this.zp0.curY[gs.rp0] });
 		this.move(this.zp1, p, distance - curDist);
 		gs.rp1 = gs.rp0;
 		if (op & 16) gs.rp0 = p;
@@ -2478,7 +2489,8 @@ function iupInterpolate(
 		} else {
 			// A direct MulDiv on font units: FreeType's 16.16 ratio
 			// (DivFix then MulFix) rounds differently from GDI here.
-			x = cur1 + mulDiv(orus[i] - orus1, cur2 - cur1, orus2 - orus1);
+			x = cur1 + Math.trunc(((orus[i] - orus1) * (cur2 - cur1) + Math.trunc((orus2 - orus1) / 2)) / (orus2 - orus1));
+			if ((globalThis as any).__log) (globalThis as any).__log({ op: 'IUP', p: i, orusI: orus[i], orus1, orus2, orgI: orgs[i], org1, org2, cur1, cur2, x, ref1, ref2 });
 		}
 		curs[i] = x;
 	}
