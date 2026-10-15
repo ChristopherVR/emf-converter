@@ -9,15 +9,17 @@ import { applyRedEyeCorrection } from './emf-plus-image-effects';
  *
  * - fallback: one red pixel on grey, in nine area shapes and image offsets. Inside the circle of radius
  *   (w + h) / 6 around the area's middle the pixel is the centroid and the centre; outside it the centre
- *   is the middle (the falloff there is at least 0.33 (1 - u), linear: 709 of 709 exact, from 571).
+ *   is the centroid of the area's darkness `255 - luma`, here the middle of a uniform grey field (the falloff there is
+ *   at least 0.33 (1 - u), linear: 709 of 709 exact, from 571).
  * - luma: a left and a right class in one area. The centroid weight of a red pixel is its redness over
  *   the integer luma round((9 G + 2 B) / 11), 1 for luma 0.
  * - carry: two or three areas in one call. The previous area's centroid (image pixel-index coordinates, before
  *   any fallback) is added once to the next area's weighted sums; an area without red passes it on unchanged.
- * - strength: a two-valued field. The radial strength steps when the luma spread (30th to 70th
- *   percentile) exceeds 25, 40 and 80.
+ * - strength: a two-valued field. The radial strength (1/4, 1/2, 0.66, 3/4) steps when the luma spread (30th to 70th
+ *   percentile) exceeds 25, 40 and 80: 30 of 30 fields exact.
  * - highlight: a pixel whose luma is the area's one largest and 40 above the 70th percentile is
- *   corrected completely and leaves at most 5 x distance^2 levels of redness around it.
+ *   corrected completely and leaves at most 5 x distance^2 levels of redness around it, when it lies inside the
+ *   corrected disc.
  * - state: the last call is an all-pure-red area; its strength is the strength the call(s) before it
  *   left behind (not reproduced: it depends on history, not on the area).
  */
@@ -73,16 +75,16 @@ describe('native red-eye stage controls', () => {
 	it('puts a lone red pixel at the centre in the sector at 90 degrees and the radius at the nearest edge (412 exact)', () => {
 		expect(summary((c) => c.group === 'fallback' && insideFallbackCircle(c.name))).toEqual({ n: 412, exact: 412, maxPixels: 0, totalPixels: 0, maxLevel: 0 });
 	});
-	it('falls back to the area middle outside the circle, with a falloff of at least 0.33 (1 - u) (709 of 709 exact, from 571)', () => {
+	it('falls back to a stand-in centre outside the circle (the darkness-weighted centroid, here the middle of a uniform grey field), with a falloff of at least 0.33 (1 - u) (709 of 709 exact, from 571)', () => {
 		expect(summary((c) => c.group === 'fallback' && !insideFallbackCircle(c.name))).toEqual({ n: 709, exact: 709, maxPixels: 0, totalPixels: 0, maxLevel: 0 });
 	});
-	it('weights the centroid by redness over the integer luma (118 of 120 exact)', () => {
-		expect(summary((c) => c.group === 'luma')).toEqual({ n: 120, exact: 118, maxPixels: 4, totalPixels: 6, maxLevel: 1 });
+	it('weights the centroid by redness over the integer luma (120 of 120 exact)', () => {
+		expect(summary((c) => c.group === 'luma')).toEqual({ n: 120, exact: 120, maxPixels: 0, totalPixels: 0, maxLevel: 0 });
 	});
 	it('carries the previous area\'s centroid (pixel-index coordinates) once into the next, over areas without red (13 of 14 exact)', () => {
 		expect(summary((c) => c.group === 'carry')).toEqual({ n: 14, exact: 13, maxPixels: 1, totalPixels: 1, maxLevel: 1 });
 	});
-	it('steps the strength at luma spreads above 25, 40 and 80 (the centre pixel is exact in 28 of 30 fields)', () => {
+	it('steps the strength at luma spreads above 25, 40 and 80 (30 of 30 fields exact, the third strength is 0.66)', () => {
 		const strength = cases.filter((c) => c.group === 'strength');
 		let exactCentre = 0;
 		for (const c of strength) {
@@ -93,13 +95,11 @@ describe('native red-eye stage controls', () => {
 			if (actual[k] === expected[k] && actual[k + 1] === expected[k + 1] && actual[k + 2] === expected[k + 2]) exactCentre++;
 		}
 		expect(strength).toHaveLength(30);
-		expect(exactCentre).toBe(28);
-		// A random 51 x 51 field has rounding-sized residuals elsewhere; they are pinned, not closed.
-		expect(summary((c) => c.group === 'strength')).toEqual({ n: 30, exact: 12, maxPixels: 65, totalPixels: 449, maxLevel: 8 });
+		expect(exactCentre).toBe(30);
+		expect(summary((c) => c.group === 'strength')).toEqual({ n: 30, exact: 30, maxPixels: 0, totalPixels: 0, maxLevel: 0 });
 	});
-	it('corrects a highlight completely and pulls its surroundings in (58 of 81 exact, from 47)', () => {
-		// The residuals left are one-pixel rounding and axis ties (axis cells of a symmetric scene, whose centroid uses the previous weights), pinned.
-		expect(summary((c) => c.group === 'highlight')).toEqual({ n: 81, exact: 58, maxPixels: 9, totalPixels: 93, maxLevel: 29 });
+	it('corrects a highlight completely and pulls its surroundings in (81 of 81 exact, from 47), when the catch-light lies inside the corrected disc', () => {
+		expect(summary((c) => c.group === 'highlight')).toEqual({ n: 81, exact: 81, maxPixels: 0, totalPixels: 0, maxLevel: 0 });
 		// A pixel (255, 60, b) in a (255, 60, 0) field is a highlight from b = 217 (luma 89 against the 70th percentile 49):
 		// its red and blue meet (no redness is left), natively and here. At b = 216 (rise 39) it keeps its redness.
 		const centre = (name: string) => {

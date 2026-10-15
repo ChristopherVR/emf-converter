@@ -9,20 +9,19 @@ import { applyRedEyeCorrection } from './emf-plus-image-effects';
  * corner, next to a corner and at the middle of each edge. A corner pixel moves the centroid off the pixel centre on both
  * axes, an edge pixel on one axis only.
  *
- * - Off the pixel centre on both axes (the four corners and the two pixels next to the corner: 42 scenes) native is exactly
- *   the luma-weight model in 40; the two others (pattern 1, blue 3, nudged at (30, 0) and (0, 30)) hold a pupil of luma 1
- *   and a ring whose weight 197 / 3 is not exactly representable.
+ * - The centroid is formed in float32 arithmetic that truncates toward zero, row by row over pixel indices (the same arithmetic
+ *   as the rest of the effect), so its noise decides which side of an axis the pixels exactly on it fall: with it all 77 scenes
+ *   are exact (59 with the earlier special cases, which approximated that noise with other weights).
  * - The pixels exactly on the horizontal axis through the centroid (dy = 0), both sides and the centre pixel, form ONE sector
- *   group with the right-hand pixels of the 0 to 6 degree sector (the left axis counts as angle 0, not 180). The model uses
- *   that, with the luma weights, for symmetric scenes whose float32 centroid is exactly the pixel centre (all weights exactly
- *   representable); the others keep the previous weights, and are the residual below: pattern 2 (the centroid sum carries
- *   float noise), the blue 3 ring (197 / 3) and one pixel in six that is the faint pixel's own edge.
+ *   group with the right-hand pixels of the 0 to 6 degree sector (the left axis counts as angle 0, not 180).
+ * - The pixel at the end of a centred axis lies exactly on the radius in exact arithmetic: it is corrected (its truncated
+ *   float32 distance is below the radius) but not counted in its sector (its squared distance is not below the squared radius).
  */
 interface Step { token: string; width: number; height: number; source: string; output: string }
 const records: Array<{ spec: string; runs: Step[][] }> = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/redeye-nudge.json.gz', import.meta.url))).toString());
 
 describe('native red-eye symmetric scenes nudged by one faint pixel', () => {
-	it('is exact in 59 of 77 scenes', () => {
+	it('is exact in 77 of 77 scenes', () => {
 		const inexact: string[] = [];
 		let exact = 0;
 		for (const r of records) {
@@ -35,7 +34,7 @@ describe('native red-eye symmetric scenes nudged by one faint pixel', () => {
 			else inexact.push(`${r.spec}:${pixels}`);
 		}
 		expect(records).toHaveLength(77);
-		expect(exact).toBe(59);
-		expect(inexact).toEqual(['Y31:1:2:15:30:1', 'Y31:1:2:30:15:1', 'Y31:4:2:15:30:1', 'Y31:4:2:30:15:1', 'Y31:5:2:15:30:1', 'Y31:5:2:30:15:1', 'Y31:1:8:15:30:1', 'Y31:1:8:30:15:1', 'Y31:2:8:15:15:3', 'Y31:2:8:0:15:47', 'Y31:2:8:30:15:22', 'Y31:1:3:15:15:69', 'Y31:1:3:30:0:13', 'Y31:1:3:0:30:13', 'Y31:1:3:15:0:32', 'Y31:1:3:15:30:33', 'Y31:1:3:0:15:65', 'Y31:1:3:30:15:53']);
+		expect(exact).toBe(77);
+		expect(inexact).toEqual([]);
 	});
 });
