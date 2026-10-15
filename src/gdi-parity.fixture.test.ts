@@ -828,7 +828,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
 	recordCase('gpx-rec-beziers', 0.0005), // measured 0.019%
 	recordCase('gpx-rec-beziers-aa', 0.0005), // measured 0.025%
 	recordCase('gpx-rec-curve', 0),
-	recordCase('gpx-rec-curve-aa', 0.0005), // measured 0.013%
+	recordCase('gpx-rec-curve-aa', 0),
 	recordCase('gpx-rec-closedcurve', 0),
 	recordCase('gpx-rec-closedcurve-aa', 0),
 	recordCase('gpx-rec-compressed', 0),
@@ -851,8 +851,8 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
 	recordCase('gpx-rec-tsclip', 0),
 	recordCase('gpx-rec-tsclip-state', 0),
 	recordCase('gpx-rec-tsgraphics', 0),
-	recordCase('gpx-rec-customcap', 0.0005), // measured 0.013%
-	recordCase('gpx-rec-customcap-aa', 0.001), // measured 0.051%
+	recordCase('gpx-rec-customcap', 0),
+	recordCase('gpx-rec-customcap-aa', 0),
 ];
 
 /**

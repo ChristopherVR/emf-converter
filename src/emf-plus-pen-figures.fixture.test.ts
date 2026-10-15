@@ -9,8 +9,8 @@
  *  - `gpx-pen-inset-<join>-*`: Inset alignment. GDI+ draws the pen at twice its width, centered, and clips it to the figure with its hard
  *    (aliased) clip: the aliased sheets are exact for all three joins (the ring model before: 52, 119 and 458 differing pixels; the band
  *    swept along each edge before that: 1,581 to 1,976). Antialiased, it fills the outline of the surviving pixels, a polygon on whole-pixel
- *    coordinates with some staircase corners cut (`emf-plus-inset-outline.ts`, `emf-plus-inset-outline.fixture.test.ts`): 6 differing
- *    pixels on each sheet, at the bottom corner of the triangle's hole (two pixels that only touch at a corner), against 8,573 to 8,944
+ *    coordinates with some staircase corners cut (`emf-plus-inset-outline.ts`, `emf-plus-inset-outline.fixture.test.ts`): exact now (6 differing
+ *    pixels on each sheet before the hole-tip rule: a hole that touches itself at a corner is traced as separate holes), against 8,573 to 8,944
  *    before. The round join needed one more rule (`ROUND_SMOOTH_DOT` in `emf-plus-widen.ts`): the straight edge next to a turn of under
  *    about 8 degrees sits 1/16 pixel inside.
  */
@@ -27,9 +27,22 @@ const EXPECTED: Record<string, number> = {
 	'gpx-pen-inset-miter-aliased': 0,
 	'gpx-pen-inset-bevel-aliased': 0,
 	'gpx-pen-inset-round-aliased': 0,
-	'gpx-pen-inset-miter-aa': 6,
-	'gpx-pen-inset-bevel-aa': 6,
-	'gpx-pen-inset-round-aa': 6,
+	'gpx-pen-inset-miter-aa': 0,
+	'gpx-pen-inset-bevel-aa': 0,
+	'gpx-pen-inset-round-aa': 0,
+	// Round 8: dashed (flat and round dash caps), nominal-width (0.5 to 1.6 px), PixelOffsetMode Half, and overlapping figures in one path.
+	'gpx-pen-inset-dash-aliased': 28,
+	'gpx-pen-inset-dash-aa': 136,
+	'gpx-pen-inset-dashround-aliased': 113,
+	'gpx-pen-inset-dashround-aa': 445,
+	'gpx-pen-inset-thin-aliased': 0,
+	'gpx-pen-inset-thin-aa': 0,
+	'gpx-pen-inset-half-aliased': 0,
+	'gpx-pen-inset-half-aa': 0,
+	'gpx-pen-inset-multi-aliased': 2,
+	'gpx-pen-inset-multi-aa': 133,
+	'gpx-pen-inset-multiwind-aliased': 0,
+	'gpx-pen-inset-multiwind-aa': 0,
 };
 
 describe('EMF+ pens on closed figures', () => {

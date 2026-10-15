@@ -34,7 +34,7 @@
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
 #   bicubic-arithmetic, bicubic-independent, wide-pen-axis-probe,
 #   wide-pen-axis-directions, dashed-pen-axis-probe, general-matrix-pen-probe,
-#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, round-join-probe, bezier-flatten,
+#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, inset-contacts-probe, cap-widen-probe, round-join-probe, bezier-flatten,
 #   illuminant-cubes, chroma-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
@@ -931,6 +931,25 @@ if ($Which -eq 'general-matrix-pen-probe') {
 if ($Which -eq 'inset-outline-probe') {
     Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
     [InsetOutlineProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'inset-cases-probe') {
+    Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
+    [InsetOutlineProbe]::RunCases($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'inset-contacts-probe') {
+    Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
+    $count = if ($env:INSET_CONTACT_COUNT) { [int]$env:INSET_CONTACT_COUNT } else { 300 }
+    [InsetOutlineProbe]::RunContacts($outDir, $count, 'inset-contacts.json.gz')
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'cap-widen-probe') {
+    Add-Type -Path (Join-Path $here 'CapWidenProbe.cs') -ReferencedAssemblies System.Drawing
+    [CapWidenProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
