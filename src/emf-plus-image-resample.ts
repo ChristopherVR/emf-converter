@@ -553,7 +553,13 @@ export function resampleImage(
 	if (spec.kernel === 'nearest' && !spec.wrap) {
 		return resampleNearest(rgba, width, height, spec, surface);
 	}
-	let m = keepOrigin ? spec.toDevice : snapToDeviceGrid(spec);
+	// A plain Bilinear or Bicubic draw of a rotated or sheared quad is covered like NearestNeighbor: the destination
+	// parallelogram's corners (not otherwise snapped, so the origin keeps its fraction) scan-converted by the aliased
+	// fill rule (the 64 independent shear and rotation Bicubic captures: 136 differing pixels with the origin
+	// snapped to 1/16 and the parallelogram tested per pixel, 44 with this).
+	const rasterCovered = !keepOrigin && (spec.kernel === 'bilinear' || spec.kernel === 'bicubic') &&
+		(spec.toDevice[1] !== 0 || spec.toDevice[2] !== 0);
+	let m = keepOrigin || rasterCovered ? spec.toDevice : snapToDeviceGrid(spec);
 	let kernel = spec.kernel;
 	const hq = kernel === 'hq-bilinear' || kernel === 'hq-bicubic';
 	if (hq && (m[1] !== 0 || m[2] !== 0) && Math.abs(m[1]) <= AXIS_ALIGNED_SHEAR * Math.abs(m[0]) && Math.abs(m[2]) <= AXIS_ALIGNED_SHEAR * Math.abs(m[3])) {
@@ -564,12 +570,11 @@ export function resampleImage(
 	if (hq && !axisAligned && !keepOrigin) {
 		m = snapOriginKeepCorners(spec);
 	}
-	// Native DrawImage's axis-aligned Bicubic path uses integer colour
-	// intermediates, and so does the plain Bicubic pass of a rotated
-	// high-quality draw (`plainRotated`). A directly requested rotated or
-	// sheared Bicubic draw keeps the float convolution: the independent
-	// captures (modes 2 and 3) do not support the integer arithmetic there
-	// at every scale.
+	// Native DrawImage's Bicubic path uses integer colour intermediates, whatever the transform. The axis-aligned
+	// path and the plain Bicubic pass of a rotated high-quality draw (`plainRotated`) step the position in nearest
+	// 16.16; a directly requested rotated or sheared draw steps it in float32 rounded toward minus infinity, as
+	// Bilinear does (the 64 independent shear and rotation captures: 10,296 differing pixels with the float
+	// convolution, 136 with this).
 	let plainRotated = plainRotatedPass;
 	// Native unit-scale draws copy near-integral texels when each axis' translation is within 1/64 of a whole
 	// number (see `unitCopyOffset` for the two ends). Public captures cover both axes, fractional destination
@@ -586,7 +591,7 @@ export function resampleImage(
 		const near = nearSourceExtent(extentU, spec.srcW) || nearSourceExtent(extentV, spec.srcH);
 		return resampleRotatedTwoStage(rgba, width, height, spec, surface, m, kernel, near);
 	}
-	const integerBicubic = kernel === 'bicubic' && (axisAligned || plainRotated);
+	const integerBicubic = kernel === 'bicubic';
 	if (hq && axisAligned && !premultSource) {
 		const phased = resampleHqAxisAligned(rgba, width, height, spec, surface, m, premultOut);
 		if (phased !== undefined) {
@@ -640,6 +645,15 @@ export function resampleImage(
 	if (!(w > 0 && h > 0) || w * h > MAX_RESAMPLE_PIXELS) {
 		return null;
 	}
+	const rasterCoverage = rasterCovered
+		? rasterizePlusFill([[
+			[spec.srcX, spec.srcY],
+			[spec.srcX + spec.srcW, spec.srcY],
+			[spec.srcX + spec.srcW, spec.srcY + spec.srcH],
+			[spec.srcX, spec.srcY + spec.srcH],
+		].flatMap(([u, v]) => [toPlusFix(m[0] * u + m[2] * v + m[4]), toPlusFix(m[1] * u + m[3] * v + m[5])])],
+		false, false, !!spec.halfPixelOffset, { x: bx0, y: by0, w, h })
+		: null;
 	// Device pixels per source texel along each source axis.
 	const scaleU = Math.hypot(m[0], m[1]);
 	const scaleV = Math.hypot(m[2], m[3]);
@@ -678,7 +692,7 @@ export function resampleImage(
 	// The second pass of a rotated high-quality draw is left on the per-pixel model: its intermediate bitmap's
 	// own origin is already snapped, and measured against 600 native rotated captures the stepper trades
 	// as many pixels as it fixes there.
-	const steppedInv = kernel === 'bilinear' && !plainRotatedPass ? invertTextureMatrix(m) : null;
+	const steppedInv = !plainRotatedPass && (kernel === 'bilinear' || (kernel === 'bicubic' && !axisAligned)) ? invertTextureMatrix(m) : null;
 	for (let j = 0; j < h; j++) {
 		const py = by0 + j + o;
 		let start = -1;
@@ -700,19 +714,48 @@ export function resampleImage(
 			const cy = py + COVERAGE_NUDGE_Y;
 			const eu = inv[0] * cx + inv[2] * cy + inv[4];
 			const ev = inv[1] * cx + inv[3] * cy + inv[5];
-			if (eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax) {
+			if (rasterCoverage ? !rasterCoverage[j * w + i] : eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax) {
 				continue;
 			}
-			if (integerBicubic) {
-				// The first covered pixel starts a nearest-16.16 row stepper.
-				// Kernel phases truncate to 1/64; y is reinitialised each row.
+			if (steppedInv) {
 				if (start < 0) {
 					start = i;
-					su = Math.round(u * FIX16);
-					sv = Math.round(v * FIX16);
+					stepAt = i;
+					// The position is measured from the device position of the source rectangle's corner, taken from
+					// the unsnapped matrix (native sweeps of the origin by 2^-16 pixel move the phase continuously,
+					// only coverage follows the 1/16 grid), and the corner itself is added after the float32
+					// products (the inverse's translation is not used: it loses a 1/4096 texel phase).
+					const ox = Math.fround(spec.toDevice[0] * spec.srcX + spec.toDevice[2] * spec.srcY + spec.toDevice[4]);
+					const oy = Math.fround(spec.toDevice[1] * spec.srcX + spec.toDevice[3] * spec.srcY + spec.toDevice[5]);
+					const dx0 = down32(px - ox);
+					const dy0 = down32(py - oy);
+					stepU = down32(down32(down32(steppedInv[0] * dx0) + down32(steppedInv[2] * dy0)) + Math.fround(spec.srcX));
+					stepV = down32(down32(down32(steppedInv[1] * dx0) + down32(steppedInv[3] * dy0)) + Math.fround(spec.srcY));
 				}
-				u = Math.floor((su + (i - start) * bicubicDu) / (FIX16 / 64)) / 64;
-				v = Math.floor((sv + (i - start) * bicubicDv) / (FIX16 / 64)) / 64;
+				for (; stepAt < i; stepAt++) {
+					stepU = down32(stepU + steppedInv[0]);
+					stepV = down32(stepV + steppedInv[1]);
+				}
+				u = stepU;
+				v = stepV;
+			}
+			if (integerBicubic) {
+				if (steppedInv) {
+					// A rotated or sheared Bicubic draw steps its position in float32 (above) and truncates the
+					// kernel phase to 1/64.
+					u = Math.floor(u * 64) / 64;
+					v = Math.floor(v * 64) / 64;
+				} else {
+					// The first covered pixel starts a nearest-16.16 row stepper.
+					// Kernel phases truncate to 1/64; y is reinitialised each row.
+					if (start < 0) {
+						start = i;
+						su = Math.round(u * FIX16);
+						sv = Math.round(v * FIX16);
+					}
+					u = Math.floor((su + (i - start) * bicubicDu) / (FIX16 / 64)) / 64;
+					v = Math.floor((sv + (i - start) * bicubicDv) / (FIX16 / 64)) / 64;
+				}
 				if (unitBicubicCopy) {
 					u = Math.round(u);
 					v = Math.round(v);
@@ -744,28 +787,6 @@ export function resampleImage(
 					integerBicubic, premultSource, kernel === 'bilinear',
 				);
 			};
-			if (steppedInv) {
-				if (start < 0) {
-					start = i;
-					stepAt = i;
-					// The position is measured from the device position of the source rectangle's corner, taken from
-					// the unsnapped matrix (native sweeps of the origin by 2^-16 pixel move the phase continuously,
-					// only coverage follows the 1/16 grid), and the corner itself is added after the float32
-					// products (the inverse's translation is not used: it loses a 1/4096 texel phase).
-					const ox = Math.fround(spec.toDevice[0] * spec.srcX + spec.toDevice[2] * spec.srcY + spec.toDevice[4]);
-					const oy = Math.fround(spec.toDevice[1] * spec.srcX + spec.toDevice[3] * spec.srcY + spec.toDevice[5]);
-					const dx0 = down32(px - ox);
-					const dy0 = down32(py - oy);
-					stepU = down32(down32(down32(steppedInv[0] * dx0) + down32(steppedInv[2] * dy0)) + Math.fround(spec.srcX));
-					stepV = down32(down32(down32(steppedInv[1] * dx0) + down32(steppedInv[3] * dy0)) + Math.fround(spec.srcY));
-				}
-				for (; stepAt < i; stepAt++) {
-					stepU = down32(stepU + steppedInv[0]);
-					stepV = down32(stepV + steppedInv[1]);
-				}
-				u = stepU;
-				v = stepV;
-			}
 			if (kernel === 'bilinear') {
 				// Quantize each fractional coordinate once, keeping the two tent shares complementary.
 				// Native DrawImage and TextureBrush use nearest 11-bit fractions, also under mirrors.

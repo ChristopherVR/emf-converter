@@ -115,10 +115,11 @@ describe('native texture-brush source coordinates', () => {
 		expect(captures).toHaveLength(16);
 	});
 
-	// Flips not reproduced, of 3,600 to 5,100 recorded per sweep. Without the stepper (every position computed
-	// directly from the matrix) 40% to 60% of the flips of a reduction are missed and all of them past x = 60 at a
-	// large offset; each miss left is a single draw (one float32 unit of 2^-k). The sweeps that start at a negative
-	// coordinate (0, 3, 5, 7, 8) and Half (9, 10) keep a few: the first position's rounding is not exact there.
+	// Flips not reproduced, of 2,747 to 5,216 recorded per sweep (61,916 in all). Without the stepper (every position
+	// computed per pixel from the double-precision inverse) 34,903 of them are missed (1,608 to 3,856 per sweep, none
+	// for the identity matrix); with it 1,959 are, each a
+	// single draw (one float32 unit of 2^-k) at the start of the row. The sweeps that start at a negative coordinate
+	// (0, 3, 5, 7, 8) and Half (9, 10) keep most of them: the first position's rounding is not exact there.
 	const bounds = [224, 27, 0, 96, 0, 40, 0, 616, 104, 496, 335, 0, 0, 0, 0, 21];
 	for (const [index, c] of captures.entries()) {
 		it(`sweep ${index}: ${c.matrix.join(',')} at ${c.x0}, half ${c.half}, geometry ${c.geo}`, () => {
