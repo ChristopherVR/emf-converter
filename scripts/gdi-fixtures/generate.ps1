@@ -16,7 +16,7 @@
 #   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, arc-small-probe, arc-huge-probe, chord-closing-probe,
-#   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-coverage,
+#   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-rotated-placement, playback-references, text-coverage,
 #   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-gdi-cleartype-blend, text-gdi-cleartype-raster, text-gdi-cleartype-compat, text-gdi-getinfo, text-shpix, text-iup, text-alignrp, text-msirp,
 #   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
 #   text-origin-phases, text-origin-vertical-phases,
@@ -292,6 +292,16 @@ if ($Which -eq 'text-rotated-matrix') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'text-rotated-placement') {
+    Add-Type -Path (Join-Path $here 'TextRotatedPlacementProbe.cs')
+    [TextRotatedPlacementProbe]::Run($outDir)
+    [TextRotatedPlacementProbe]::RunAligned($outDir)
+    [TextRotatedPlacementProbe]::Run($outDir, $true)
+    [TextRotatedPlacementProbe]::RunAligned($outDir, $true)
+    [TextRotatedPlacementProbe]::RunGlyphs($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'playback-extents') {
     Add-Type -Path (Join-Path $here 'PlaybackExtentProbe.cs') -ReferencedAssemblies System.Drawing
     $cases = Get-Content -LiteralPath (Join-Path $outDir 'playback-extents.json') -Raw | ConvertFrom-Json
@@ -333,6 +343,32 @@ if ($Which -eq 'playback-extents') {
         Join-Path $outDir ($_.name + '.wide.png')
     })
     & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-extents.json') -Groups $Which -Files $files
+    return
+}
+if ($Which -eq 'playback-references') {
+    # Native PlayEnhMetaFile of recordings whose playback is not their direct drawing (`<name>.playback.png`, one fresh
+    # process per case as in `playback-extents`). The recording keeps GDI's rounded advances and the compatible-mode
+    # exScale / eyScale, so only the playback is what a metafile viewer has to reproduce. The directly drawn original
+    # stays `<name>.png`.
+    Add-Type -Path (Join-Path $here 'PlaybackExtentProbe.cs') -ReferencedAssemblies System.Drawing
+    $cases = Get-Content -LiteralPath (Join-Path $outDir 'playback-references.json') -Raw | ConvertFrom-Json
+    if ($PlaybackCase) {
+        $case = @($cases | Where-Object { $_.name -eq $PlaybackCase })
+        if ($case.Count -ne 1) { throw "Unknown playback reference case: $PlaybackCase" }
+        $case = $case[0]
+        [void][PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $false, $false, $false, '.playback.png')
+        return
+    }
+    foreach ($case in $cases) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-references -PlaybackCase $case.name -OutDir $outDir
+        if ($LASTEXITCODE -ne 0) { throw "Playback reference capture failed: $($case.name)" }
+    }
+    $files = @((Join-Path $outDir 'playback-references.json')) + @($cases | ForEach-Object {
+        Join-Path $outDir ($_.name + '.emf')
+        Join-Path $outDir ($_.name + '.png')
+        Join-Path $outDir ($_.name + '.playback.png')
+    })
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $outDir 'environment-playback-references.json') -Groups $Which -Files $files
     return
 }
 if ($Which -eq 'playback-extent-survey') {
