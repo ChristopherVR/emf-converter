@@ -17,7 +17,7 @@
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, arc-small-probe, arc-huge-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-coverage,
-#   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-shpix, text-iup, text-alignrp, text-msirp,
+#   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-gdi-cleartype-blend, text-gdi-cleartype-raster, text-shpix, text-iup, text-alignrp, text-msirp,
 #   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
 #   text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
@@ -226,6 +226,18 @@ if ($Which -eq 'text-shpix') {
 if ($Which -eq 'text-cleartype-sizes') {
     Add-Type -Path (Join-Path $here 'TextClearTypeSizeProbe.cs') -ReferencedAssemblies System.Drawing
     [TextClearTypeSizeProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-gdi-cleartype-blend') {
+    Add-Type -Path (Join-Path $here 'GdiClearTypeBlendProbe.cs')
+    [GdiClearTypeBlendProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-gdi-cleartype-raster') {
+    Add-Type -Path (Join-Path $here 'GdiClearTypeRasterProbe.cs')
+    [GdiClearTypeRasterProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
