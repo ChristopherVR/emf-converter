@@ -6,7 +6,7 @@
  *  - `compat-playback-<map>-<pen>`: 36 mixed shapes (Ellipse, Arc, Chord, Pie, Rectangle, RoundRect, Polygon, lines, a clockwise
  *    Chord) under map modes 1:1, 4:3, 10:7, 3:4, 2:1 and 3:2 by 1:1, with a null, cosmetic, 3 and 7 pixel plain, 5 and 9 pixel
  *    geometric and dotted pen. Counts below are differing pixels of 126,000 (before the playback rules: 133,868 over the 102
- *    sheets in all, after: 259).
+ *    sheets in all, after: none).
  *  - `compat-rects-<map>-<pen>`: 315 Rectangles each at every fractional phase of ten maps (4:3, 10:7, 3:4, 7:3, 5:4, 1:2, the 4:3
  *    map with window and viewport origins, 1:2 with origins, and world scales 3/4 and 4/3) under a cosmetic, null and dotted pen:
  *    a cosmetic or dotted pen puts every edge of the outline and the fill at `ceil(device coordinate)`.
@@ -27,15 +27,7 @@ const pens = ['null', 'cosmetic', 'wide3', 'wide7', 'geo5', 'geosq9', 'dash'];
 const sweeps = ['r43', 'r107', 'r34', 'r73', 'r54', 'r12', 'r43o', 'r12o', 'w43', 'w34'];
 
 /** Differing pixels per sheet; every sheet not listed is pixel-exact. */
-const residual: Record<string, number> = {
-	'compat-playback-r107-cosmetic': 2,
-	'compat-playback-r107-wide7': 3,
-	'compat-playback-r32x11-cosmetic': 1,
-	'compat-playback-r34-dash': 1,
-	'compat-playback-r34-geo5': 1,
-	'compat-playback-r34-geosq9': 14,
-	'compat-playback-r34-null': 2,
-};
+const residual: Record<string, number> = {};
 
 const sheets = [
 	...maps.flatMap((m) => pens.map((p) => `compat-playback-${m}-${p}`)),

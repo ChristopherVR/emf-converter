@@ -183,7 +183,7 @@ export function roundRectDeviceBeziers(box: FixBox, cw: number, ch: number, reco
 	const mirrorX = isAxisBox(box) && box.exx < 0;
 	const mirrorY = isAxisBox(box) && box.eyy < 0;
 	const clockwise = recordedClockwise !== mirrorY;
-	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch, compatible, clockwise, mirrorX);
+	const q = roundRectCorners(f.l, f.t, f.r, f.b, cw, ch, compatible, clockwise, mirrorX, isAxisBox(box) ? box.cornerRatio : undefined);
 	const map = frameMapper(box, f.l, f.t, f.r - f.l, f.b - f.t);
 	const pts: number[] = [];
 	for (let i = 0; i < q.length; i += 2) {

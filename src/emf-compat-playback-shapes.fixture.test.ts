@@ -129,9 +129,9 @@ describe('shapes played back under mirrored maps against native GetPath', () => 
 			if (mine.length === native.length && mine.every((v, i) => v === native[i])) exact[key]++;
 		}
 		// 216 shapes per kind and mirroring (72 for each of the three pens). Arc, Chord, Pie, Ellipse and Rectangle are exact everywhere;
-		// a RoundRect has the corner-size rounding of the unmirrored case unexplained under the non-dyadic maps (the 24 pixels of
-		// `compat-playback-*`), and an inside-frame pen under a mirrored x is not mirrored yet.
+		// a RoundRect is exact for the cosmetic and plain pens under every map (the corner half extent is the half box times the call's corner over box ratio,
+		// see `roundRectCorners`), and an inside-frame pen under a mirrored x is not mirrored yet (72 of 216 for each of x and xy).
 		const perfect = Object.fromEntries(['arc', 'chord', 'pie', 'ellipse', 'rect'].flatMap((k) => MIRRORS.map((m) => [`${k} ${m}`, 216])));
-		expect(exact).toEqual({ ...perfect, 'roundrect none': 196, 'roundrect x': 109, 'roundrect y': 187, 'roundrect xy': 103 });
+		expect(exact).toEqual({ ...perfect, 'roundrect none': 216, 'roundrect x': 144, 'roundrect y': 216, 'roundrect xy': 144 });
 	});
 });

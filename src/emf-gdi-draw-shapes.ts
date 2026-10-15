@@ -652,6 +652,11 @@ function handleRoundRect(rCtx: EmfGdiReplayCtx, dataOff: number, recSize: number
 			cw = Math.floor((Math.min(cornerFixW, Math.abs(unframed.exx)) * Math.abs(drawBox.exx)) / Math.abs(unframed.exx));
 			ch = Math.floor((Math.min(cornerFixH, Math.abs(unframed.eyy)) * Math.abs(drawBox.eyy)) / Math.abs(unframed.eyy));
 		}
+		if (!inset && drawBox.exx === unframed.exx && drawBox.eyy === unframed.eyy && cornerW !== 0 && cornerH !== 0 && r !== l && b !== t && !hasWorldRotation(rCtx)) {
+			// GDI scales the half box by the call's corner over box ratio, in single precision (native GetPath of 71,680
+			// RoundRects played back under seven scales and both arc directions; see `roundRectCorners`).
+			drawBox.cornerRatio = [Math.fround(Math.min(Math.abs(cornerW), Math.abs(r - l)) / Math.abs(r - l)), Math.fround(Math.min(Math.abs(cornerH), Math.abs(b - t)) / Math.abs(b - t))];
+		}
 		// A wide or cosmetic pen keeps the corner unscaled on the record's box in every graphics mode: PlayEnhMetaFile draws a RoundRect
 		// record the same whether the application recorded it in GM_COMPATIBLE (the record then stores the call's right and bottom less
 		// one) or in GM_ADVANCED (native GetPath after playback, 400 shapes per mode, emf-roundrect-mode-paths.json.gz). The scaling a

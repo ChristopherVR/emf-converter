@@ -663,6 +663,76 @@ public static class CompatPlaybackProbe
 		ReleaseDC(IntPtr.Zero, screen);
 	}
 
+	/**
+	 * The same RoundRect boxes recorded in three ways and played back, native `GetPath` of each (`compat-roundrect-modes.json.gz`): a
+	 * `GM_COMPATIBLE` map (the record stores the call's right and bottom less one, so the call is made one unit larger), a
+	 * `GM_ADVANCED` map, and `GM_ADVANCED` with an identity map and a float world scale. Per scale (window x, viewport x), mode, and
+	 * box (left 3 + 0..9, extent 12..39, corners 1 to 20): [left, right, corner, the eight corner end points x, y, point count].
+	 */
+	public static void RoundRectModes(string dir)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		string tmp = Path.Combine(Path.GetTempPath(), "rrmodes.emf");
+		int[][] scales = { new[] { 3, 4 }, new[] { 10, 11 }, new[] { 16, 21 }, new[] { 3, 5 } };
+		var js = new System.Text.StringBuilder("[");
+		bool first = true;
+		foreach (var sc in scales)
+			for (int mode = 0; mode < 3; mode++)
+			{
+				IntPtr mdc = CreateEnhMetaFileW(screen, tmp, ref frame, null);
+				if (mode == 0) { SetMapMode(mdc, 8); SetWindowExtEx(mdc, sc[0], 1, IntPtr.Zero); SetViewportExtEx(mdc, sc[1], 1, IntPtr.Zero); }
+				else if (mode == 1) { SetGraphicsMode(mdc, 2); SetMapMode(mdc, 8); SetWindowExtEx(mdc, sc[0], 1, IntPtr.Zero); SetViewportExtEx(mdc, sc[1], 1, IntPtr.Zero); }
+				else { SetGraphicsMode(mdc, 2); var xf = new Xform { M11 = (float)sc[1] / sc[0], M22 = 1 }; SetWorldTransform(mdc, ref xf); }
+				IntPtr p = CreatePen(0, 0, 0x202020);
+				IntPtr op = SelectObject(mdc, p);
+				for (int off = 0; off < 10; off++)
+					for (int w = 12; w < 40; w++)
+						for (int c = 1; c <= 20; c++) RoundRect(mdc, 3 + off, 3, 3 + off + w + (mode == 0 ? 1 : 0), 43, c, 12);
+				SelectObject(mdc, op); DeleteObject(p);
+				IntPtr emf = CloseEnhMetaFile(mdc);
+				DeleteEnhMetaFile(emf);
+				IntPtr hemf = GetEnhMetaFileW(tmp);
+				IntPtr dc, bmp;
+				Surface(screen, out dc, out bmp);
+				var rect = new RECT { Right = W, Bottom = H };
+				var section = new System.Text.StringBuilder();
+				int count = 0;
+				EnumEnhMetaFile(dc, hemf, delegate(IntPtr hdc, IntPtr table, IntPtr rec, int n, IntPtr data)
+				{
+					if (Marshal.ReadInt32(rec) == 44)
+					{
+						SaveDC(hdc);
+						BeginPath(hdc);
+						PlayEnhMetaFileRecord(hdc, table, rec, n);
+						EndPath(hdc);
+						SetGraphicsMode(hdc, 2); ModifyWorldTransform(hdc, IntPtr.Zero, 1);
+						SetMapMode(hdc, 8); SetWindowExtEx(hdc, 16, 16, IntPtr.Zero); SetViewportExtEx(hdc, 1, 1, IntPtr.Zero);
+						SetWindowOrgEx(hdc, 0, 0, IntPtr.Zero); SetViewportOrgEx(hdc, 0, 0, IntPtr.Zero);
+						int np = GetPath(hdc, null, null, 0);
+						var q = new Point[np]; var u = new byte[np];
+						if (np > 0) GetPath(hdc, q, u, np);
+						RestoreDC(hdc, -1);
+						if (count++ > 0) section.Append(',');
+						section.Append('[').Append(Marshal.ReadInt32(rec, 8)).Append(',').Append(Marshal.ReadInt32(rec, 16)).Append(',').Append(Marshal.ReadInt32(rec, 24));
+						foreach (int k in new[] { 0, 3, 4, 7, 8, 11, 12, 15 }) section.Append(',').Append(np > k ? q[k].X : -1).Append(',').Append(np > k ? q[k].Y : -1);
+						section.Append(',').Append(np).Append(']');
+					}
+					PlayEnhMetaFileRecord(hdc, table, rec, n);
+					return 1;
+				}, IntPtr.Zero, ref rect);
+				DeleteEnhMetaFile(hemf); DeleteDC(dc); DeleteObject(bmp);
+				if (!first) js.Append(',');
+				first = false;
+				js.Append("{\"window\":").Append(sc[0]).Append(",\"viewport\":").Append(sc[1]).Append(",\"mode\":").Append(mode).Append(",\"records\":[").Append(section).Append("]}");
+			}
+		var bytes = System.Text.Encoding.UTF8.GetBytes(js.Append(']').ToString());
+		using (var file = File.Create(Path.Combine(dir, "compat-roundrect-modes.json.gz")))
+		using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress)) zip.Write(bytes, 0, bytes.Length);
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
 	public static void Run(string dir)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);
