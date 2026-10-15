@@ -87,7 +87,7 @@ function missedFlips(c: Capture): number {
 describe('native Matrix.Invert (matrix-invert.json.gz)', () => {
 	// 4,000 random float32 matrices (half of them sheared): every element of the inverse is the float32 result of
 	// operations that all round toward minus infinity, det = a d - b c, r = 1 / det, then d r, -b r, -c r, a r and
-	// ((c f - d e) r, (b e - a f) r). Rounding to nearest matches 898 to 1,500 of 2,000 axis-aligned ones.
+	// ((c f - d e) r, (b e - a f) r). Rounding to nearest matches 898 of 2,000 axis-aligned linear elements.
 	it('is reproduced bit for bit', () => {
 		const rows: number[][] = JSON.parse(gunzipSync(readFileSync(
 			new URL('./__fixtures__/gdi/matrix-invert.json.gz', import.meta.url),

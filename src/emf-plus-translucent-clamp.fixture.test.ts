@@ -10,7 +10,7 @@
  *   Bilinear, plain Bicubic and HighQualityBilinear reproduce every pixel that way; HighQualityBicubic does not yet.
  * - A SourceOver draw onto a premultiplied surface is a plain 32-bit add of the source pixel and the backdrop times
  *   `(255 - alpha) / 255` rounded per channel, carries included: 6,578 of 6,578 touched pixels. A channel above its
- *   alpha therefore carries into the next channel and, when the blue one does, wraps the alpha itself (alpha 0 with
+ *   alpha therefore carries into the next channel and, when the red one (the last colour channel) does, wraps the alpha itself (alpha 0 with
  *   colour). That is not representable in a canvas, which stores premultiplied bytes at most equal to the alpha, so
  *   the converter saturates (see `EdgeMode.literal`).
  */
