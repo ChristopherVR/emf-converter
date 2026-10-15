@@ -291,7 +291,7 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 		// GDI+ grayscale origins snap to the nearest quarter pixel before
 		// sampling (independent x/y 1/64-pixel native controls). ClearType snaps
 		// x to its nearest sixth-pixel sample; monochrome origins snap to pixels.
-		const fractionalX = !font.gridFit || font.fractionalOrigins;
+		const fractionalX = !!font.fractionalOrigins;
 		const ox = fractionalX ? Math.floor(origin.x) : Math.round(origin.x);
 		const subX = !fractionalX ? 0
 			: font.fractionalOrigins === 'xy' ? Math.round((origin.x - ox) * 4) * 16
