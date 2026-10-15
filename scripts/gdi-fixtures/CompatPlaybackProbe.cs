@@ -343,9 +343,10 @@ public static class CompatPlaybackProbe
 	}
 
 	[DllImport("gdi32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetEnhMetaFileW(string file);
+	[DllImport("gdi32.dll")] static extern bool WidenPath(IntPtr dc);
 
 	/** The native path of every Arc, Chord, Pie, Ellipse, RoundRect and Rectangle record of a recorded sheet, played one by one as in `PathPlayback`: a JSON array of `{type, rec, played}`. */
-	public static string SheetPaths(string emfFile)
+	public static string SheetPaths(string emfFile, bool widen = false)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);
 		IntPtr emf = GetEnhMetaFileW(emfFile);
@@ -363,6 +364,7 @@ public static class CompatPlaybackProbe
 				BeginPath(hdc);
 				PlayEnhMetaFileRecord(hdc, table, rec, n);
 				EndPath(hdc);
+				if (widen) WidenPath(hdc);
 				string played = PathJson(hdc, true);
 				int ints = (Marshal.ReadInt32(rec, 4) - 8) / 4;
 				var recJson = new System.Text.StringBuilder("[");
