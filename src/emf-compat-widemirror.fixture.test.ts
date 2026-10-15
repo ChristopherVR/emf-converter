@@ -11,9 +11,10 @@
  * Before this, the mirrored sheets differed in 410 to 681 pixels each (`p3`, 455 for lines, 536 for ellipses, 637 for triangles);
  * the unmirrored sheets were already exact.
  *
- * What is left: the dots (`dot`, zero-length lines) of `p3` and `p4` (98 and 196 pixels on the mirrored sheets, 98 on the
- * unmirrored `p3` sheet): at a whole-pixel centre the native 1 x 3 bar excludes the vertex of the nib on the pixel centre where
- * the converter includes it, and a few `p4` ends.
+ * Dots (`dot`, zero-length lines; 98 pixels on each `p3` sheet, 196 on `p4-m`) and the 3 to 14 end pixels of the line sheets were
+ * one rule: a dot whose rounded device position is a whole pixel on both axes has a nib pulled in by one FIX
+ * (`gdi-dot-nib.fixture.test.ts`; the line sheets hold such zero-length figures too). What is left is the 5 pixels of the polygon
+ * sheets below.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -23,21 +24,9 @@ const kinds = ['line', 'hline', 'vline', 'poly3', 'poly4', 'ellipse', 'dot'];
 
 /** Differing pixels per sheet; every sheet not listed is pixel-exact. */
 const residual: Record<string, number> = {
-	'compat-widemirror-line-p3-m': 3,
-	'compat-widemirror-line-p3-u': 3,
-	'compat-widemirror-line-p4-m': 6,
-	'compat-widemirror-hline-p3-m': 4,
-	'compat-widemirror-hline-p3-u': 4,
-	'compat-widemirror-hline-p4-m': 8,
-	'compat-widemirror-vline-p3-m': 7,
-	'compat-widemirror-vline-p3-u': 7,
-	'compat-widemirror-vline-p4-m': 14,
 	'compat-widemirror-poly3-p3-m': 2,
 	'compat-widemirror-poly3-p4-m': 1,
 	'compat-widemirror-poly4-p4-m': 2,
-	'compat-widemirror-dot-p3-m': 98,
-	'compat-widemirror-dot-p3-u': 98,
-	'compat-widemirror-dot-p4-m': 196,
 };
 
 const sheets = kinds.flatMap((k) => ['p3', 'p4'].flatMap((p) => ['m', 'u'].map((m) => `compat-widemirror-${k}-${p}-${m}`)));

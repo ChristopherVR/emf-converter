@@ -346,7 +346,7 @@ public static class CompatPlaybackProbe
 	[DllImport("gdi32.dll")] static extern bool WidenPath(IntPtr dc);
 
 	/** The native path of every Arc, Chord, Pie, Ellipse, RoundRect and Rectangle record of a recorded sheet, played one by one as in `PathPlayback`: a JSON array of `{type, rec, played}`. */
-	public static string SheetPaths(string emfFile, bool widen = false)
+	public static string SheetPaths(string emfFile, bool widen = false, bool lines = false)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);
 		IntPtr emf = GetEnhMetaFileW(emfFile);
@@ -358,7 +358,7 @@ public static class CompatPlaybackProbe
 		EnumEnhMetaFile(dc, emf, delegate(IntPtr hdc, IntPtr table, IntPtr rec, int n, IntPtr data)
 		{
 			int type = Marshal.ReadInt32(rec);
-			if (type >= 42 && type <= 47)
+			if ((type >= 42 && type <= 47) || (lines && type == 54))
 			{
 				SaveDC(hdc);
 				BeginPath(hdc);
@@ -508,6 +508,158 @@ public static class CompatPlaybackProbe
 					Save(bits, Path.Combine(dir, name + ".png"));
 					DeleteEnhMetaFile(emf); DeleteDC(dc); DeleteObject(bmp);
 				}
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	/**
+	 * Native `WidenPath` of a zero-length `LineTo` (a dot) of a wide plain pen at every sub-pixel device position, under the nib of the
+	 * `compat-widemirror` sheets (a 2 by 3 pixel nib: pen width 64 logical units, x scale 1/32 pixel and y scale 3/64 pixel per unit, or the
+	 * 4-unit nib 1/24 and 1/16; the x extent negated for `m`). A logical step is half a FIX in x and 0.75 (p3) or 1 (p4) FIX in y, so the
+	 * grid covers every fractional device position: `compat-dot-grid.json.gz`, one object per variant `{v, dots: [{rec, played}]}` (recorded and
+	 * played back, `SheetPaths` with `lines`).
+	 */
+	public static void DotGrid(string dir)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		var js = new System.Text.StringBuilder("[");
+		string tmp = Path.Combine(Path.GetTempPath(), "dotgrid.emf");
+		// name, map mode, window x, window y, viewport x, viewport y, pen width, grid x, grid y, base x, base y
+		object[][] variants = {
+			new object[] { "p3u", 8, 32, 64, 1, 3, 64, 32, 64, 2400, 3000 },
+			new object[] { "p3m", 8, 32, 64, -1, 3, 64, 32, 64, 2400, 3000 },
+			new object[] { "p4u", 8, 24, 16, 1, 1, 64, 48, 16, 2400, 3000 },
+			new object[] { "p4m", 8, 24, 16, -1, 1, 64, 48, 16, 2400, 3000 },
+			new object[] { "id2", 1, 1, 1, 1, 1, 2, 1, 1, 50, 50 },
+			new object[] { "id3", 1, 1, 1, 1, 1, 3, 1, 1, 50, 50 },
+			new object[] { "id4", 1, 1, 1, 1, 1, 4, 1, 1, 50, 50 },
+			new object[] { "id5", 1, 1, 1, 1, 1, 5, 1, 1, 50, 50 },
+			new object[] { "id8", 1, 1, 1, 1, 1, 8, 1, 1, 50, 50 },
+			new object[] { "id12", 1, 1, 1, 1, 1, 12, 1, 1, 50, 50 },
+			new object[] { "x2y1w3", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50 },
+			new object[] { "x2y1w4", 8, 1, 1, 2, 1, 4, 1, 1, 50, 50 },
+			new object[] { "x1y2w3", 8, 1, 1, 1, 2, 3, 1, 1, 50, 50 },
+			new object[] { "x2y3w3", 8, 1, 1, 2, 3, 3, 1, 1, 50, 50 },
+			new object[] { "x3y2w3", 8, 3, 1, 2, 1, 3, 3, 1, 50, 50 },
+			new object[] { "L-id3-h", 1, 1, 1, 1, 1, 3, 1, 1, 50, 50, 20, 0 },
+			new object[] { "L-id3-d", 1, 1, 1, 1, 1, 3, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-id4-h", 1, 1, 1, 1, 1, 4, 1, 1, 50, 50, 20, 0 },
+			new object[] { "L-id4-d", 1, 1, 1, 1, 1, 4, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-id2-d", 1, 1, 1, 1, 1, 2, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-x2y1w3-d", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-x2y1w3-h", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50, 20, 0 },
+			new object[] { "L-x2y1w3-v", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50, 0, 20 },
+		};
+		for (int v = 0; v < variants.Length; v++)
+		{
+			var vr = variants[v];
+			int mode = (int)vr[1], wx = (int)vr[2], wy = (int)vr[3], vx = (int)vr[4], vy = (int)vr[5], pw = (int)vr[6], gx = (int)vr[7], gy = (int)vr[8], bx = (int)vr[9], by = (int)vr[10];
+			IntPtr mdc = CreateEnhMetaFileW(screen, tmp, ref frame, null);
+			SetMapMode(mdc, mode);
+			if (mode == 8) { SetWindowExtEx(mdc, wx, wy, IntPtr.Zero); SetViewportExtEx(mdc, vx, vy, IntPtr.Zero); }
+			if (vx < 0) SetViewportOrgEx(mdc, W, 0, IntPtr.Zero);
+			IntPtr p = CreatePen(0, pw, 0x202020);
+			IntPtr op = SelectObject(mdc, p);
+			for (int i = 0; i < gx; i++)
+				for (int j = 0; j < gy; j++)
+				{
+					int lx = bx + i, ly = by + j;
+					MoveToEx(mdc, lx, ly, IntPtr.Zero); LineTo(mdc, lx + (vr.Length > 11 ? (int)vr[11] : 0), ly + (vr.Length > 12 ? (int)vr[12] : 0));
+				}
+			SelectObject(mdc, op); DeleteObject(p);
+			IntPtr emf = CloseEnhMetaFile(mdc);
+			DeleteEnhMetaFile(emf);
+			if (v > 0) js.Append(',');
+			js.Append("{\"v\":\"").Append((string)vr[0]).Append("\",\"map\":[").Append(mode).Append(',').Append(wx).Append(',').Append(wy).Append(',').Append(vx).Append(',').Append(vy).Append(',').Append(pw).Append("],\"dots\":").Append(SheetPaths(tmp, true, true)).Append('}');
+		}
+		var bytes = System.Text.Encoding.UTF8.GetBytes(js.Append(']').ToString());
+		using (var file = File.Create(Path.Combine(dir, "compat-dot-grid.json.gz")))
+		using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress)) zip.Write(bytes, 0, bytes.Length);
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+
+	/**
+	 * Native `GetPath` of a RoundRect record played back in `GM_COMPATIBLE` under maps that scale one axis only
+	 * (`compat-roundrect-sweep.json.gz`): per map and axis, 10 offsets of the box edge, 16 box extents (20 to 35 units) and 16 corner extents
+	 * (1 to 16) in both arc directions, a cosmetic pen. Each entry is `[dir, l, t, r, b, cw, ch, x0, y0, x3, y3, x4, y4, ...]`: the
+	 * record and the path's eight corner end points (the figure's points 0, 3, 4, 7, 8, 11, 12 and 15, which with the straight edges
+	 * between them fix the corner half extents and the box).
+	 */
+	public static void RoundRectSweep(string dir)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		string tmp = Path.Combine(Path.GetTempPath(), "rrsweep.emf");
+		// window extent, viewport extent of the scaled axis
+		int[][] scales = { new[] { 4, 3 }, new[] { 3, 4 }, new[] { 10, 7 }, new[] { 7, 10 }, new[] { 3, 5 }, new[] { 2, 3 }, new[] { 5, 3 } };
+		var js = new System.Text.StringBuilder("[");
+		bool firstMap = true;
+		foreach (var sc in scales)
+			for (int axis = 0; axis < 3; axis++)
+				for (int cw = 1; cw <= 2; cw++)
+				{
+					int arcDir = cw;
+					IntPtr mdc = CreateEnhMetaFileW(screen, tmp, ref frame, null);
+					SetMapMode(mdc, 8);
+					SetWindowExtEx(mdc, axis != 1 ? sc[0] : 1, axis != 0 ? sc[0] : 1, IntPtr.Zero);
+					SetViewportExtEx(mdc, axis != 1 ? sc[1] : 1, axis != 0 ? sc[1] : 1, IntPtr.Zero);
+					SetArcDirection(mdc, arcDir);
+					IntPtr p = CreatePen(0, 0, 0x202020);
+					IntPtr op = SelectObject(mdc, p);
+					for (int off = 0; off < 10; off++)
+						for (int h = 20; h < 36; h++)
+							for (int ch = 1; ch <= 16; ch++)
+							{
+								int a0 = 3 + off, a1 = a0 + h;
+								// the other axis: a fixed 40 by 12 unit box and corner
+								if (axis == 1) RoundRect(mdc, 3, a0, 43, a1, 12, ch);
+								else RoundRect(mdc, a0, 3, a1, 43, ch, 12);
+							}
+					SelectObject(mdc, op); DeleteObject(p);
+					IntPtr emf = CloseEnhMetaFile(mdc);
+					DeleteEnhMetaFile(emf);
+					IntPtr hemf = GetEnhMetaFileW(tmp);
+					IntPtr dc, bmp;
+					Surface(screen, out dc, out bmp);
+					var rect = new RECT { Right = W, Bottom = H };
+					var section = new System.Text.StringBuilder();
+					int count = 0;
+					EnumEnhMetaFile(dc, hemf, delegate(IntPtr hdc, IntPtr table, IntPtr rec, int n, IntPtr data)
+					{
+						int type = Marshal.ReadInt32(rec);
+						if (type == 44)
+						{
+							SaveDC(hdc);
+							BeginPath(hdc);
+							PlayEnhMetaFileRecord(hdc, table, rec, n);
+							EndPath(hdc);
+							SetGraphicsMode(hdc, 2); ModifyWorldTransform(hdc, IntPtr.Zero, 1);
+							SetMapMode(hdc, 8); SetWindowExtEx(hdc, 16, 16, IntPtr.Zero); SetViewportExtEx(hdc, 1, 1, IntPtr.Zero);
+							SetWindowOrgEx(hdc, 0, 0, IntPtr.Zero); SetViewportOrgEx(hdc, 0, 0, IntPtr.Zero);
+							int np = GetPath(hdc, null, null, 0);
+							var q = new Point[np]; var u = new byte[np];
+							if (np > 0) GetPath(hdc, q, u, np);
+							RestoreDC(hdc, -1);
+							if (count++ > 0) section.Append(',');
+							section.Append('[').Append(arcDir);
+							for (int k = 0; k < 6; k++) section.Append(',').Append(Marshal.ReadInt32(rec, 8 + 4 * k));
+							foreach (int k in new[] { 0, 3, 4, 7, 8, 11, 12, 15 }) section.Append(',').Append(np > k ? q[k].X : -1).Append(',').Append(np > k ? q[k].Y : -1);
+							section.Append(",").Append(np).Append("]");
+						}
+						PlayEnhMetaFileRecord(hdc, table, rec, n);
+						return 1;
+					}, IntPtr.Zero, ref rect);
+					DeleteEnhMetaFile(hemf); DeleteDC(dc); DeleteObject(bmp);
+					if (!firstMap) js.Append(',');
+					firstMap = false;
+					js.Append("{\"window\":").Append(sc[0]).Append(",\"viewport\":").Append(sc[1]).Append(",\"axis\":").Append(axis).Append(",\"dir\":").Append(arcDir).Append(",\"records\":[").Append(section).Append("]}");
+				}
+		var bytes = System.Text.Encoding.UTF8.GetBytes(js.Append(']').ToString());
+		using (var file = File.Create(Path.Combine(dir, "compat-roundrect-sweep.json.gz")))
+		using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress)) zip.Write(bytes, 0, bytes.Length);
 		ReleaseDC(IntPtr.Zero, screen);
 	}
 

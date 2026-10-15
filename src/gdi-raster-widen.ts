@@ -881,8 +881,17 @@ class Outliner {
 		if (this.opts.cap !== 'round') {
 			return;
 		}
+		// A dot exactly on a whole device pixel is drawn with a nib pulled in by one FIX (native WidenPath of 15 pens and maps,
+		// `compat-dot-grid.json.gz`): every vertex but the pen's first and its opposite (the top and bottom of an ellipse) moves
+		// one FIX towards the centre along each axis it is off the centre. At any other position, and for a line, the nib is whole.
+		const whole = p[0] % 16 === 0 && p[1] % 16 === 0;
+		const matrix = this.opts.matrix;
+		const diagonal = !this.opts.deviceNib || !matrix || (matrix[1] === 0 && matrix[2] === 0);
+		const digital = !this.opts.deviceNib && (this.opts.height === undefined || this.opts.height === this.opts.width) && this.opts.width < HOBBY_LIMIT;
 		for (let k = 0; k < this.n; k++) {
-			this.push(p, this.pen[k]);
+			const q = this.pen[k];
+			const fixed = digital ? k === 0 || k === this.n / 2 : q[0] === 0;
+			this.push(p, whole && diagonal && !fixed ? [q[0] - Math.sign(q[0]), q[1] - Math.sign(q[1])] : q);
 		}
 		this.flush();
 	}

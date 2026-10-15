@@ -50,7 +50,8 @@
 #   redeye-stages, redeye-sequence (internal), halftone-transitions,
 #   path-gradient-focus-corners, path-gradient-focus-edges, path-gradient-focus-thresholds,
 #   path-gradient-focus-slants, path-gradient-tile-rotations, compat-playback-paths-probe,
-#   compat-playback-shapes-probe, compat-playback-mirror-probe
+#   compat-playback-shapes-probe, compat-playback-mirror-probe, compat-widemirror-probe,
+#   compat-dot-grid-probe, compat-roundrect-sweep-probe
 #
 # Each case writes <name>.emf (or .wmf) plus <name>.png: the same drawing
 # calls painted straight onto a 32bpp bitmap by Windows itself, or GDI+'s
@@ -110,9 +111,9 @@ if ($Which -eq 'emf-roundrect-mode-probe') {
     Complete-Fixtures
     return
 }
-if ($Which -eq 'compat-playback-paths-probe' -or $Which -eq 'compat-playback-shapes-probe' -or $Which -eq 'compat-playback-mirror-probe' -or $Which -eq 'compat-widemirror-probe') {
+if ($Which -eq 'compat-playback-paths-probe' -or $Which -eq 'compat-playback-shapes-probe' -or $Which -eq 'compat-playback-mirror-probe' -or $Which -eq 'compat-widemirror-probe' -or $Which -eq 'compat-dot-grid-probe' -or $Which -eq 'compat-roundrect-sweep-probe') {
     Add-Type -Path (Join-Path $here 'CompatPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
-    if ($Which -eq 'compat-playback-paths-probe') { [CompatPlaybackProbe]::PathPlayback($outDir) } elseif ($Which -eq 'compat-widemirror-probe') { [CompatPlaybackProbe]::WideMirror($outDir) } elseif ($Which -eq 'compat-playback-mirror-probe') { [CompatPlaybackProbe]::RunMirrored($outDir); [CompatPlaybackProbe]::RectSweepMirrored($outDir) } else { [CompatPlaybackProbe]::PathPlaybackShapes($outDir) }
+    if ($Which -eq 'compat-playback-paths-probe') { [CompatPlaybackProbe]::PathPlayback($outDir) } elseif ($Which -eq 'compat-widemirror-probe') { [CompatPlaybackProbe]::WideMirror($outDir) } elseif ($Which -eq 'compat-dot-grid-probe') { [CompatPlaybackProbe]::DotGrid($outDir) } elseif ($Which -eq 'compat-roundrect-sweep-probe') { [CompatPlaybackProbe]::RoundRectSweep($outDir) } elseif ($Which -eq 'compat-playback-mirror-probe') { [CompatPlaybackProbe]::RunMirrored($outDir); [CompatPlaybackProbe]::RectSweepMirrored($outDir) } else { [CompatPlaybackProbe]::PathPlaybackShapes($outDir) }
     Complete-Fixtures
     return
 }
