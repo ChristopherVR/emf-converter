@@ -223,9 +223,11 @@ function suppressC1Glyph(run: GdiTextRun, index: number): boolean {
  * TA_* alignment along and across the baseline, and every glyph bitmap at
  * an integer device origin.
  */
-function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
+export function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 	const n = run.codes.length;
 	const glyphs = run.codes.map((c) => (run.glyphIndices ? c : font.glyphIndex(c)));
+	// Along a baseline that is not an axis GDI accumulates the unrounded linear advances.
+	const diagonal = !!run.matrix && Math.abs(run.matrix[0]) > 1e-9 && Math.abs(run.matrix[1]) > 1e-9 && !!font.rotatedLinearAdvance;
 	// Advances along the baseline (device, may be fractional under scaling).
 	let adv: number[] = [];
 	for (let i = 0; i < n; i++) {
@@ -235,7 +237,9 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 				: run.dx && i < run.dx.length
 				? run.dx[i]
 				: run.matrix
-					? font.rotatedAdvance(glyphs[i])
+					? diagonal
+						? font.rotatedLinearAdvance!(glyphs[i])
+						: font.rotatedAdvance(glyphs[i])
 					: font.advance(glyphs[i]),
 		);
 	}
@@ -259,19 +263,36 @@ function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout {
 	const uy = m ? m[1] : 0;
 	const vx = m ? m[2] : 0;
 	const vy = m ? m[3] : 1;
-	const at = (along: number, down: number): { x: number; y: number } => ({
-		x: run.x + ux * along + vx * down,
-		y: run.y + uy * along + vy * down,
-	});
-
-	// Horizontal alignment moves the start along the baseline.
-	const hAlign = run.textAlign & 0x06;
+	// A diagonal baseline projects the accumulated advance onto the device axes in 28.4 fixed point.
+	const fix = diagonal ? (v: number): number => Math.round(v * 16) / 16 : (v: number): number => v;
+	// A diagonal baseline works in 28.4 fixed point: the alignment offset is the run's total advance vector (rounded to
+	// 1/16 pixel; for TA_CENTER halved with truncation toward zero), the glyph's accumulated advance and the vertical
+	// (ascent or descent) offset are projected separately, and the three are added.
 	let startAlong = 0;
+	let startX = 0;
+	let startY = 0;
+	const hAlign = run.textAlign & 0x06;
 	if (hAlign === 0x06) {
-		startAlong = -Math.ceil(total / 2);
+		startAlong = diagonal ? -total / 2 : -Math.ceil(total / 2);
 	} else if (hAlign === 0x02) {
 		startAlong = -total;
 	}
+	if (diagonal && hAlign) {
+		const vector = (c: number): number => {
+			const n = Math.round(c * total * 16);
+			return (hAlign === 0x06 ? -Math.trunc(n / 2) : -n) / 16;
+		};
+		startX = vector(ux);
+		startY = vector(uy);
+	}
+	const at = (along: number, down: number): { x: number; y: number } =>
+		diagonal
+			? {
+					x: run.x + startX + fix(ux * (along - startAlong)) + fix(vx * down),
+					y: run.y + startY + fix(uy * (along - startAlong)) + fix(vy * down),
+				}
+			: { x: run.x + ux * along + vx * down, y: run.y + uy * along + vy * down };
+
 	// Vertical alignment moves the baseline across it.
 	const vAlign = run.textAlign & 0x18;
 	// At a non-axis angle GDI realises the font with rotated metrics.
