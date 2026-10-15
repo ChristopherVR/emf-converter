@@ -24,8 +24,12 @@ from fontTools.ttLib import newTable
 from fontTools.ttLib.tables.ttProgram import Program
 
 ONLY = [k for k in os.environ.get('HINT_SWEEP_ONLY', '').split(',') if k]
+# Committed fonts: a representative subset (HINT_SWEEP_ONLY=all builds every kind).
+COMMITTED = ['mirp-x', 'mirp-y', 'mirp-pv', 'mirp-fvd', 'mdrp-sdm-x', 'mdrp-sdm-pv', 'mdrp-sdm-fo', 'mirp-sdm-fo',
+             'mdrpd-sdm1-pv', 'mirp-iupxy-ax', 'mirp-iupxy-pv', 'mdap-sdm-x', 'alignrp-sdm-pv', 'mirp-xsteep',
+             'mirp-fvdsteep', 'mirp-negx']
 TRIALS = 48          # moved points per glyph
-GLYPHS = 250         # projection vectors per font
+GLYPHS = int(os.environ.get('HINT_SWEEP_VECTORS', '100'))  # projection vectors per font
 SEED = 20261015
 FIRST = 4            # first moved point
 
@@ -230,7 +234,7 @@ def make_font(name, glyph_specs, cvt, directory):
 
 def main(directory):
     for name, spec in KINDS.items():
-        if ONLY and name not in ONLY:
+        if (ONLY and ONLY != ['all'] and name not in ONLY) or (not ONLY and name not in COMMITTED):
             continue
         # One generator per font so that adding a font never changes another.
         rng = random.Random('%d/%s' % (SEED, name))

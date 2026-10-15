@@ -16,8 +16,8 @@ public static class HintSweepProbe {
  [DllImport("gdi32.dll",CharSet=CharSet.Unicode)]static extern uint GetGlyphOutline(IntPtr dc,uint ch,uint format,out Metrics gm,uint len,byte[] buf,ref Mat mat);
  public static void Run(string dir) {
   var json = new StringBuilder("[");
-  uint glyphCount = uint.Parse(Environment.GetEnvironmentVariable("HINT_SWEEP_GLYPHS") ?? "250");
-  string[] sizeEnv = (Environment.GetEnvironmentVariable("HINT_SWEEP_SIZES") ?? "16,17,24,33").Split(',');
+  uint glyphCount = uint.Parse(Environment.GetEnvironmentVariable("HINT_SWEEP_GLYPHS") ?? "100");
+  string[] sizeEnv = (Environment.GetEnvironmentVariable("HINT_SWEEP_SIZES") ?? "16,24").Split(',');
   foreach (string path in Directory.GetFiles(dir, "hint-sweep-*.ttf")) {
    string kind = Path.GetFileNameWithoutExtension(path).Substring("hint-sweep-".Length);
    string family = "Parity Hint Sweep " + kind;

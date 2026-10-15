@@ -529,7 +529,7 @@ export class RealizedFont implements GdiRealizedFont {
 			return o;
 		}
 		const gi = index < this.ttf.numGlyphs ? index : NOTDEF;
-		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus });
+		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus, gdiArithmetic: !this.gdiPlus });
 		const u = this.ctSize.hintGlyph(gi);
 		const natural = (this.ttf.hMetrics(gi).advance * this.ppemX) / this.ttf.unitsPerEm;
 		const k = !this.naturalWidths && natural > 0 ? this.advance(index) / natural : 1;

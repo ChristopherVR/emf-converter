@@ -17,11 +17,10 @@ import { windowsFonts } from './__fixtures__/gdi-parity-harness';
  *  - Rasterizing GDI's own hinted outline with the converter's grayscale scan converter reproduces GDI's bitmap for
  *    most glyphs (92 of 94 around 20 px, 64 to 78 of 94 at 72 px): scan conversion is not where Arial, Times New Roman,
  *    Tahoma and Courier New differ.
- *  - The converter's hinted outlines differ from GDI's in 5 to 25 percent of glyphs, by one to three 1/64 pixels on
- *    points set along diagonal projection vectors (`MDRP`, `MIRP`, `SHPIX`, `IUP` after `SDPVTL`); every glyph with a
- *    diagonal stroke is affected at nearly every size. Rounding variants of the vector normalisation, `mulDiv`, the dot
- *    product, the scaling of points and of the CVT, and original-versus-current points in `SPVTL`/`SDPVTL`/`MDRP` were
- *    each scored against this capture and none improved it.
+ *  - The converter's hinted outlines now equal GDI's in 93 to 94 of 94 glyphs for Arial, Times New Roman, Tahoma and
+ *    Courier New at every size (72 to 78 before round 7 T): GDI's projection rounds each product alone, a move along x
+ *    divides with truncation after adding half the divisor, IUP does the same (`gdiArithmetic`, found with the
+ *    single-instruction sweeps of `ttf-hint-sweep.fixture.test.ts`).
  *  - Segoe UI's bitmaps match the converter in 56 to 91 of 94 glyphs but its `GGO_NATIVE` outlines are not the outlines its
  *    bitmaps come from, so only the bitmap comparison is pinned for it.
  */
@@ -130,28 +129,28 @@ describe.skipIf(!hasFonts)('GDI grayscale glyph bitmaps of real fonts (GGO_GRAY4
 	// face|size -> [glyphs, bitmaps equal, native outline rasterized equal, hinted outlines equal]: floors, measured 15 October 2026.
 	// (Segoe UI's GGO_NATIVE outlines are not the outlines its bitmaps come from; Courier New below 40 px is monochrome.)
 	const expected: Record<string, [number, number, number, number]> = {
-		'Arial|18': [94,73,91,72],
-		'Arial|24': [94,70,92,70],
-		'Arial|32': [94,74,91,73],
-		'Arial|48': [94,58,78,71],
-		'Arial|72': [94,45,64,73],
-		'Times New Roman|18': [94,75,93,71],
-		'Times New Roman|24': [94,78,94,75],
-		'Times New Roman|32': [94,73,90,71],
-		'Times New Roman|48': [94,69,86,72],
-		'Times New Roman|72': [94,53,73,71],
-		'Tahoma|18': [94,79,94,74],
-		'Tahoma|24': [94,71,92,73],
-		'Tahoma|32': [94,72,91,74],
-		'Tahoma|48': [94,66,83,75],
-		'Tahoma|72': [94,58,75,75],
+		'Arial|18': [94,73,91,94],
+		'Arial|24': [94,70,92,94],
+		'Arial|32': [94,74,91,94],
+		'Arial|48': [94,58,78,94],
+		'Arial|72': [94,45,64,93],
+		'Times New Roman|18': [94,75,93,93],
+		'Times New Roman|24': [94,78,94,93],
+		'Times New Roman|32': [94,73,90,93],
+		'Times New Roman|48': [94,69,86,93],
+		'Times New Roman|72': [94,53,73,93],
+		'Tahoma|18': [94,79,94,94],
+		'Tahoma|24': [94,71,92,94],
+		'Tahoma|32': [94,72,91,94],
+		'Tahoma|48': [94,66,83,94],
+		'Tahoma|72': [94,58,75,94],
 		'Segoe UI|18': [94,90,16,15],
 		'Segoe UI|24': [94,88,15,16],
 		'Segoe UI|32': [94,79,19,16],
 		'Segoe UI|48': [94,78,18,16],
 		'Segoe UI|72': [94,56,15,17],
-		'Courier New|48': [94,70,89,74],
-		'Courier New|72': [94,56,73,74],
+		'Courier New|48': [94,70,89,94],
+		'Courier New|72': [94,56,73,93],
 	};
 	it('pins the capture', () => {
 		const sizes = new Set(data.map((r) => `${r.face}|${r.size}`));

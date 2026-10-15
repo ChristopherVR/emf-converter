@@ -1153,7 +1153,6 @@ export class HintedSize {
 				throw new HintError('too long');
 			}
 			const op = cur[ip];
-			if ((globalThis as any).__trace) (globalThis as any).__trace(op, this, ip, cur === code);
 			let next = ip + HintedSize.insLength(cur, ip);
 			switch (op) {
 				// ---- control flow handled inline ----
@@ -2200,7 +2199,6 @@ export class HintedSize {
 			}
 		}
 		const cur = this.project(this.zp1.curX[p] - this.zp0.curX[gs.rp0], this.zp1.curY[p] - this.zp0.curY[gs.rp0]);
-		if ((globalThis as any).__log) (globalThis as any).__log({ op: 'MDRP', p, orgDist, distance, curDist: cur, fDotP: this.fDotP, pvx: gs.pvx, pvy: gs.pvy, fvx: gs.fvx, fvy: gs.fvy, dvx: gs.dvx, dvy: gs.dvy, x: this.zp1.curX[p], y: this.zp1.curY[p], rx: this.zp0.curX[gs.rp0], ry: this.zp0.curY[gs.rp0], ox: this.zp1.orusX[p], oy: this.zp1.orusY[p], orx: this.zp0.orusX[gs.rp0], ory: this.zp0.orusY[gs.rp0], sx: this.xScale, sy: this.yScale, cvtDist: distance });
 		this.move(this.zp1, p, distance - cur);
 		gs.rp1 = gs.rp0;
 		gs.rp2 = p;
@@ -2254,7 +2252,6 @@ export class HintedSize {
 				distance = -this.minDistance();
 			}
 		}
-		if ((globalThis as any).__log) (globalThis as any).__log({ op: 'MIRP', p, cvtDist, orgDist, curDist, distance, fDotP: this.fDotP, pvx: gs.pvx, pvy: gs.pvy, fvx: gs.fvx, fvy: gs.fvy, dvx: gs.dvx, dvy: gs.dvy, x: this.zp1.curX[p], y: this.zp1.curY[p], rx: this.zp0.curX[gs.rp0], ry: this.zp0.curY[gs.rp0] });
 		this.move(this.zp1, p, distance - curDist);
 		gs.rp1 = gs.rp0;
 		if (op & 16) gs.rp0 = p;
