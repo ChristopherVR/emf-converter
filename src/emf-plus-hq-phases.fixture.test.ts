@@ -119,19 +119,19 @@ describe('axis-aligned high-quality draws against native noise captures', () => 
 		// `bad` counts values (24 rows x 3 channels x the destination width) off by any amount.
 		expect(tally).toEqual({
 			'bicubic plain upscale': { n: 9, exact: 9, bad: 0 },
-			'bicubic plain reduction': { n: 9, exact: 6, bad: 326 },
+			'bicubic plain reduction': { n: 9, exact: 9, bad: 0 },
 			'bicubic plain fractional origin': { n: 5, exact: 4, bad: 32 },
 			'bicubic plain sub-rectangle': { n: 4, exact: 2, bad: 19849 },
 			'bicubic mirror upscale': { n: 9, exact: 7, bad: 145 },
-			'bicubic mirror reduction': { n: 9, exact: 6, bad: 689 },
+			'bicubic mirror reduction': { n: 9, exact: 6, bad: 396 },
 			'bicubic mirror fractional origin': { n: 5, exact: 5, bad: 0 },
 			'bicubic mirror sub-rectangle': { n: 4, exact: 4, bad: 0 },
 			'bilinear plain upscale': { n: 9, exact: 9, bad: 0 },
-			'bilinear plain reduction': { n: 9, exact: 6, bad: 85 },
+			'bilinear plain reduction': { n: 9, exact: 8, bad: 10 },
 			'bilinear plain fractional origin': { n: 5, exact: 4, bad: 23 },
 			'bilinear plain sub-rectangle': { n: 4, exact: 2, bad: 16228 },
 			'bilinear mirror upscale': { n: 9, exact: 7, bad: 108 },
-			'bilinear mirror reduction': { n: 9, exact: 6, bad: 354 },
+			'bilinear mirror reduction': { n: 9, exact: 6, bad: 359 },
 			'bilinear mirror fractional origin': { n: 5, exact: 5, bad: 0 },
 			'bilinear mirror sub-rectangle': { n: 4, exact: 4, bad: 0 },
 		});

@@ -28,7 +28,7 @@
 #   focus-contours, redeye-independent, redeye-state, redeye-fresh,
 #   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, vertical-focus-line, playback-extents, playback-extent-survey,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
-#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-step-grid, hq-half-length, bicubic-boundary,
+#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-step-grid, hq-reduction-grid, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
 #   halftone-kernel, halftone-arrangement, halftone-selection, halftone-boundary,
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
@@ -597,6 +597,12 @@ if ($Which -eq 'hq-crop-height') {
 if ($Which -eq 'hq-step-grid') {
     Add-Type -Path (Join-Path $here 'HighQualityStepGridProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityStepGridProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-reduction-grid') {
+    Add-Type -Path (Join-Path $here 'HighQualityReductionGridProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityReductionGridProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
