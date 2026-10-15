@@ -1,0 +1,12 @@
+[
+  { "name": "textx-escapement-mono", "w": 420, "h": 420, "ox": 0, "oy": 0 },
+  { "name": "textx-escapement-aa", "w": 420, "h": 420, "ox": 0, "oy": 0 },
+  { "name": "textx-world-mono", "w": 360, "h": 360, "ox": 0, "oy": 0 },
+  { "name": "textx-world-aa", "w": 360, "h": 360, "ox": 0, "oy": 0 },
+  { "name": "textx-rotalign-esc", "w": 606, "h": 520, "ox": 0, "oy": 0 },
+  { "name": "textx-rotalign-esc-small", "w": 600, "h": 520, "ox": 0, "oy": 0 },
+  { "name": "textx-rotalign-world", "w": 606, "h": 520, "ox": 0, "oy": 0 },
+  { "name": "textx-eto-mono", "w": 360, "h": 250, "ox": 0, "oy": 0 },
+  { "name": "textx-eto-aa", "w": 360, "h": 250, "ox": 0, "oy": 0 },
+  { "name": "rotate-text-25deg", "w": 201, "h": 140, "ox": 0, "oy": 0 }
+]

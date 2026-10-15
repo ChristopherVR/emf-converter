@@ -118,6 +118,16 @@ export async function renderFixture(file: string, options: EmfConvertOptions = {
 interface PlaybackExtent { name: string; ox: number; oy: number }
 const playbackExtents: PlaybackExtent[] = JSON.parse(readFileSync(fixturePath('playback-extents.json'), 'utf8'));
 
+/**
+ * Recordings whose native playback is not the drawing the original PNG captured (`playback-references.json`,
+ * `generate.ps1 playback-references`): GDI records rounded advances and the compatible-mode scales, so a metafile viewer
+ * can only reproduce the playback (`<name>.playback.png`).
+ */
+const playbackReferences: PlaybackExtent[] = JSON.parse(readFileSync(fixturePath('playback-references.json'), 'utf8'));
+export function hasPlaybackReference(name: string): boolean {
+	return playbackReferences.some((c) => c.name === name);
+}
+
 /** Prefer validated expanded playback when requested; legacy tests keep their original captures. */
 export async function loadReference(name: string, extended = false): Promise<Rgba> {
 	const extent = extended ? playbackExtents.find((c) => c.name === name) : undefined;
@@ -125,6 +135,13 @@ export async function loadReference(name: string, extended = false): Promise<Rgb
 		const image = await decodePng(readFileSync(fixturePath(`${name}.extent.png`)));
 		image.originX = extent.ox;
 		image.originY = extent.oy;
+		return image;
+	}
+	const playback = extended ? playbackReferences.find((c) => c.name === name) : undefined;
+	if (playback) {
+		const image = await decodePng(readFileSync(fixturePath(`${name}.playback.png`)));
+		image.originX = playback.ox;
+		image.originY = playback.oy;
 		return image;
 	}
 	return decodePng(readFileSync(fixturePath(`${name}.png`)));
@@ -212,7 +229,7 @@ export async function compareFixture(
 	if (!rendered) {
 		return null;
 	}
-	return diffImages(rendered, await loadReference(name), tolerance);
+	return diffImages(rendered, await loadReference(name, hasPlaybackReference(name)), tolerance);
 }
 
 /**

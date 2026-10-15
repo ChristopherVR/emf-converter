@@ -226,6 +226,8 @@ export interface GdiRealizedFont {
 	/** GDI+ design advance: apply tracking in font units before device scaling. */
 	designAdvance?(index: number, tracking: number): number;
 	rotatedAdvance(index: number): number;
+	/** Unrounded linear advance, which GDI accumulates along a non-axis baseline. */
+	rotatedLinearAdvance?(index: number): number;
 	/**
 	 * tmAscent / tmDescent of the font realised at a non-axis angle
 	 * (escapement or world rotation), which TA_TOP / TA_BOTTOM use there;
@@ -577,6 +579,12 @@ export class RealizedFont implements GdiRealizedFont {
 	rotatedAdvance(index: number): number {
 		const { advance } = this.ttf.hMetrics(index < this.ttf.numGlyphs ? index : NOTDEF);
 		return Math.round((advance * this.ppemX) / this.ttf.unitsPerEm) + (this.syntheticBold ? 1 : 0);
+	}
+
+	/** The unrounded linear advance GDI accumulates (in 28.4 fixed point) along a non-axis baseline. */
+	rotatedLinearAdvance(index: number): number {
+		const { advance } = this.ttf.hMetrics(index < this.ttf.numGlyphs ? index : NOTDEF);
+		return (advance * this.ppemX) / this.ttf.unitsPerEm + (this.syntheticBold ? 1 : 0);
 	}
 
 	/**
