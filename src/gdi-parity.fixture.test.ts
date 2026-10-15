@@ -480,7 +480,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-eto-mono', 'emf', 0.00013), // measured 0.012% against the native playback (0.435% against the direct drawing)
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-courier-cell', 'wmf', 0), // measured 0.000%
-	fontCase('textx-fon-courier-styles', 'wmf', 0.0035), // measured 0.347% (the lfWidth 12 line at -11: the mapper picks the 9x16 face)
+	fontCase('textx-fon-courier-styles', 'wmf', 0), // measured 0.000% (0.347% before the mapper was rebuilt from synthetic-family measurements: the lfWidth 12 line at -11 picked the 8x13 face)
 	fontCase('textx-fon-fixedsys', 'emf', 0), // measured 0.000% (1.664% before the too-big raster stretch cost became 340 per pixel: the -33 line)
 	fontCase('textx-fon-fixedsys-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-fon-helv', 'emf', 0), // measured 0.000%
