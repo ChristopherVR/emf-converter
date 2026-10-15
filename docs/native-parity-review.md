@@ -99,6 +99,22 @@ Final validation for this batch: **217 test files and 7,229 tests pass**. Librar
 
 For complex shaping, [HarfBuzz](https://harfbuzz.github.io/shaping-and-shape-plans.html) is a promising portable component rather than a complete layout replacement: [bidi segmentation, fallback and paragraphs remain separate](https://harfbuzz.github.io/what-harfbuzz-doesnt-do.html). The [JavaScript/WASM binding](https://github.com/harfbuzz/harfbuzzjs) could initialize before the converter's async entry point, but its ESM/WASM packaging needs browser and CJS validation. A next proof of concept should preserve font-byte/TTC-face identity, feed shaped glyph IDs and explicit offsets into the raster engine, and represent contextual glyphs correctly in SVG. Generated CC0 Arabic substitutions and Latin combining marks should be checked against native Uniscribe glyph positions and GDI+ DrawString/DriverString output before enabling that path. No shaping dependency is added in this batch.
 
+## Round 7 (15 October 2026)
+
+Twelve workstreams, each starting from a native probe that isolates one stage, were merged together and measured as one tree. Against the same 870 report comparisons as the baseline at `ebac1db` (v4.20.3), **752 are RGB-exact, up from 646**. 174 comparisons improve, none worsens, and the mismatched pixels over those comparisons fall from 269,403 to 78,594. With the 28 new mirrored wide-pen sheets the report covers 898 comparisons, 777 exact and 769 with complete ink coverage. There are no render failures, no omitted reference ink, and 9 comparisons with rendered ink beyond the captured reference (11 before). Some text comparisons now use native playback references (`playback-references.json`), because a metafile records GDI's rounded advances and the directly drawn PNGs cannot be reproduced from the recording.
+
+Native rules recovered in this round (details in [Limitations](./limitations.md) and [Outstanding work](./outstanding-work.md)):
+
+- **EMF+ image effects** run on the premultiplied playback bitmap; the shared 96-pixel residual of about 30 effect fixtures and the blur and sharpen residuals are closed.
+- **EMF+ sampling coordinates** step in float32 rounded toward minus infinity, with a float32 inverse matrix; translucent clamp colours are literal premultiplied bytes; rotated plain Bicubic uses the integer pipeline.
+- **EMF+ Inset pens** are a double-width stroke clipped to the figure, antialiased through a pixel-staircase outline; round joins through turns under about 8 degrees are smooth.
+- **SourceCopy gradients** use GDI+'s truncating unpremultiply and coverage-scaled edges.
+- **GDI geometry**: the matrix nib for wide pens under unequal maps that mirror x, the dot nib at whole-pixel positions, and the RoundRect corner half extent `round(hb * c / w)`; every unmirrored `compat-playback` sheet is exact.
+- **Text**: GDI's per-product projection, move and IUP arithmetic (hinted GGO_NATIVE outlines match for 1,591 of 1,598 compared glyphs), rotated layout from linear 28.4 advances, the exact GDI grayscale and ClearType blends, ClearType vertical smoothing and gasp rules, natural ClearType widths, the raster font mapper, bold italic and decorations of raster fonts, and whole-pixel GDI+ SingleBitPerPixel origins.
+- **CMYK JPEG**: the Windows ICM ink-position map, integer tetrahedral weights, 8-bit rule and exact nodes; all eight CMYK/YCCK references are exact. This adds about 83 KB to the bundle.
+
+Validation: 237 test files and 7,747 tests pass, together with library and documentation type checks, the package build and the browser-package check. No existing tolerance was widened. Open items, with their negative results, include GDI+ ClearType and grayscale text (which keep the previous hinting arithmetic), default-quality GDI ClearType stems, high-quality Bicubic rows, the path-gradient Gouraud tie (a candidate that trades named fixtures against independent captures is not shipped), red-eye process state and lfWidth raster-face selection.
+
 ## Open-source alternatives
 
 | Project | Useful role | Limitation for this converter |
