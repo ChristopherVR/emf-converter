@@ -82,7 +82,7 @@ describe('native playback references (playback-references.json)', () => {
 	const originalVsPlayback: Record<string, number> = {
 		'textx-escapement-mono': 359, 'textx-escapement-aa': 359, 'textx-world-mono': 285, 'textx-world-aa': 362,
 		'textx-rotalign-esc': 1454, 'textx-rotalign-esc-small': 581, 'textx-rotalign-world': 1354, 'textx-eto-mono': 377, 'textx-eto-aa': 377,
-		'rotate-text-25deg': 23,
+		'rotate-text-25deg': 23, 'wmf-embedded-emf': 16,
 	};
 	it('are loaded for exactly the recordings whose playback is not their direct drawing', () => {
 		for (const name of Object.keys(originalVsPlayback)) expect(hasPlaybackReference(name), name).toBe(true);

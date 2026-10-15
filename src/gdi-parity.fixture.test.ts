@@ -761,8 +761,7 @@ const SMOOTHING_CASES: ParityCase[] = [
  * measured 4.9% to 100% of pixels off. Now `wmf-shapes`, `wmf-shapes-twips`,
  * `wmf-pixels*` and the PS_INSIDEFRAME rectangle, ellipse and RoundRect
  * sweeps, including the inside-frame Chord, Pie and Arc, are pixel-exact;
- * the residuals are `wmf-nonplaceable-viewport` and `wmf-embedded-emf` (the EMF path's
- * own wide-pen residual).
+ * the residual is `wmf-nonplaceable-viewport` (`wmf-embedded-emf` is exact against the native playback of its recovered EMF).
  */
 const wmf = (name: string, maxMismatch = 0): ParityCase => ({ name, ext: 'wmf', tolerance: 0, maxMismatch });
 
@@ -803,7 +802,7 @@ const WMF_RECORD_CASES: ParityCase[] = [
 	wmf('wmf-escapes'),
 	wmf('wmf-layout-rtl'),
 	wmf('wmf-layout-rtl-lines'),
-	wmf('wmf-embedded-emf', 0.0006), // measured 0.058%
+	wmf('wmf-embedded-emf'), // 0 against the native playback of the recovered EMF (the direct drawing differs by 16 RoundRect corner pixels)
 ];
 
 /**
