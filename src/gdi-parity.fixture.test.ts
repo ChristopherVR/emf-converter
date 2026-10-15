@@ -480,7 +480,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-eto-mono', 'emf', 0.00013), // measured 0.012% against the native playback (0.435% against the direct drawing)
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-courier-cell', 'wmf', 0), // measured 0.000%
-	fontCase('textx-fon-courier-styles', 'wmf', 0.0044), // measured 0.350%
+	fontCase('textx-fon-courier-styles', 'wmf', 0.0035), // measured 0.347% (the lfWidth 12 line at -11: the mapper picks the 9x16 face)
 	fontCase('textx-fon-fixedsys', 'emf', 0), // measured 0.000% (1.664% before the too-big raster stretch cost became 340 per pixel: the -33 line)
 	fontCase('textx-fon-fixedsys-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-fon-helv', 'emf', 0), // measured 0.000%
@@ -488,16 +488,16 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-mssansserif', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-mssansserif-aa', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-mssansserif-cell', 'wmf', 0), // measured 0.000%
-	fontCase('textx-fon-mssansserif-styles', 'emf', 0.0005), // measured 0.018%
+	fontCase('textx-fon-mssansserif-styles', 'emf', 0), // measured 0.000% (0.016% before the bold italic and strike-out rules)
 	fontCase('textx-fon-msserif', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-msserif-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-fon-msshelldlg', 'emf', 0.0006), // measured 0.021%
 	fontCase('textx-fon-msshelldlg-cell', 'wmf', 0.0005), // measured 0.013%
-	fontCase('textx-fon-smallfonts', 'emf', 0.0046), // measured 0.368%
-	fontCase('textx-fon-smallfonts-cell', 'wmf', 0.0048), // measured 0.382%
+	fontCase('textx-fon-smallfonts', 'emf', 0), // measured 0.000% (0.208% before the tiny-face stretch cost)
+	fontCase('textx-fon-smallfonts-cell', 'wmf', 0), // measured 0.000% (0.380% before the tiny-face stretch cost)
 	fontCase('textx-fon-system', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-system-cell', 'wmf', 0), // measured 0.000%
-	fontCase('textx-fon-terminal', 'emf', 0.0208), // measured 1.661%
+	fontCase('textx-fon-terminal', 'emf', 0), // measured 0.000% (0.756% before the tiny-face stretch cost: Terminal -30)
 	fontCase('textx-fon-terminal-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-fon-tmsrmn', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%

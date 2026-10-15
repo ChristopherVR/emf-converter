@@ -9,7 +9,7 @@
  * are reported; comparisons cover the common device area, including its edges.
  * Set GDI_DUMP=<dir> to also write each converter render as a PNG.
  */
-import { existsSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { diffImages, fixturePath, inkOutside, loadReference, renderFixture, windowsFonts } from '../../src/__fixtures__/gdi-parity-harness';
@@ -40,7 +40,11 @@ async function main(): Promise<void> {
 			continue;
 		}
 		total++;
-		const rendered = await renderFixture(f, options);
+		// The `.regen` raster-face captures were drawn on a 120 dpi session whose font set holds the 8514 System and Fixedsys faces.
+		const fontDir = process.env.GDI_FIXTURE_FONTS ?? join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts');
+		const extra = name.endsWith('.regen') ? ['8514sys.fon', '8514fix.fon'].map((x) => join(fontDir, x)) : [];
+		const renderOptions = fonts && extra.length > 0 && extra.every((p) => existsSync(p)) ? { fonts: [...fonts, ...extra.map((p) => readFileSync(p))] } : options;
+		const rendered = await renderFixture(f, renderOptions);
 		if (!rendered) {
 			failed++;
 			rows.push(`${name.padEnd(40)} RENDER FAILED`);

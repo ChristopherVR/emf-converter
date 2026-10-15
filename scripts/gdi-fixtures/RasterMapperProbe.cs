@@ -78,6 +78,42 @@ public static class RasterMapperProbe
         }
     }
 
+    /**
+     * lfWidth rows for the mapper fit: seven raster families at 21 character heights and every lfWidth from 1 to 40 (weight
+     * 400, upright). Output: raster-mapper-widths.json.gz, rows {face, height, width, tmHeight, tmAveCharWidth, tmMaxCharWidth}.
+     */
+    public static void Widths(string dir)
+    {
+        string[] faces = { "MS Sans Serif", "MS Serif", "Courier", "Small Fonts", "System", "Terminal", "Fixedsys" };
+        int[] heights = { -6, -8, -9, -10, -11, -12, -13, -14, -15, -16, -18, -20, -22, -24, -27, -30, -33, -36, -40, -44, -52 };
+        IntPtr screen = GetDC(IntPtr.Zero);
+        IntPtr dc = CreateCompatibleDC(screen);
+        var json = new StringBuilder("{\"logPixelsX\":");
+        json.Append(GetDeviceCaps(screen, 88)).Append(",\"rows\":[");
+        bool first = true;
+        foreach (string face in faces)
+        foreach (int h in heights)
+        for (int w = 1; w <= 40; w++)
+        {
+            var lf = new LogFont { h = h, w = w, weight = 400, cs = 1, face = face, q = 3 };
+            IntPtr font = CreateFontIndirectW(ref lf);
+            IntPtr old = SelectObject(dc, font);
+            if (!first) json.Append(',');
+            first = false;
+            json.Append("{\"face\":\"").Append(face).Append("\",\"height\":").Append(h).Append(",\"width\":").Append(w).Append(',').Append(Metrics(dc)).Append('}');
+            SelectObject(dc, old); DeleteObject(font);
+        }
+        json.Append("]}");
+        DeleteDC(dc);
+        ReleaseDC(IntPtr.Zero, screen);
+        using (var file = File.Create(Path.Combine(dir, "raster-mapper-widths.json.gz")))
+        using (var gz = new GZipStream(file, CompressionLevel.Optimal))
+        {
+            var bytes = new UTF8Encoding(false).GetBytes(json.ToString());
+            gz.Write(bytes, 0, bytes.Length);
+        }
+    }
+
     public static void Run(string dir)
     {
         string[] faces = { "MS Sans Serif", "MS Serif", "Courier", "Small Fonts", "System", "Terminal", "Fixedsys", "Helv", "Tms Rmn", "MS Shell Dlg" };

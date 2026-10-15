@@ -397,16 +397,16 @@ export function paintGdiTextRun(
 
 	// Underline / strike-out bars span the run's advance.
 	if ((run.underline || run.strikeOut) && total !== 0) {
-		const bars: Array<[number, number]> = [];
+		const bars: Array<[number, number, number]> = [];
 		if (run.underline) {
-			bars.push([font.underlinePosition, Math.max(1, font.underlineThickness)]);
+			bars.push([font.underlinePosition, Math.max(1, font.underlineThickness), 0]);
 		}
 		if (run.strikeOut) {
-			bars.push([font.strikeoutPosition, Math.max(1, font.strikeoutThickness)]);
+			bars.push([font.strikeoutPosition, Math.max(1, font.strikeoutThickness), font.strikeoutShift ?? 0]);
 		}
-		for (const [pos, thick] of bars) {
+		for (const [pos, thick, lean] of bars) {
 			if (!m) {
-				const x0 = Math.round(run.x + startAlong);
+				const x0 = Math.round(run.x + startAlong) + lean;
 				const top = Math.round(run.y + baseDown) - pos;
 				const l = Math.min(x0, x0 + Math.round(total));
 				const r = Math.max(x0, x0 + Math.round(total));
