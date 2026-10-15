@@ -3,10 +3,13 @@
 // one vertex. Captured as whole images so the interpolation along the nested contours' edges is readable.
 using System; using System.Collections.Generic; using System.Drawing; using System.Drawing.Drawing2D; using System.Drawing.Imaging; using System.Runtime.InteropServices; using System.IO; using System.IO.Compression; using System.Text; using System.Globalization;
 public static class PathGradientVertexProbe {
+ public static string Dest="parg";
+ static PixelFormat PF{get{return Dest=="argb"?PixelFormat.Format32bppArgb:PixelFormat.Format32bppPArgb;}}
+ static string Suffix{get{return Dest=="argb"?"-argb":"";}}
  static string F(float v){return v.ToString("R",CultureInfo.InvariantCulture);}
  static uint U(Color c){return unchecked((uint)c.ToArgb());}
  static string Bytes(Bitmap bitmap){
-  var bits=bitmap.LockBits(new Rectangle(0,0,bitmap.Width,bitmap.Height),ImageLockMode.ReadOnly,PixelFormat.Format32bppPArgb);
+  var bits=bitmap.LockBits(new Rectangle(0,0,bitmap.Width,bitmap.Height),ImageLockMode.ReadOnly,PF);
   try{int w=bitmap.Width,h=bitmap.Height;byte[] d=new byte[w*4*h];for(int y=0;y<h;y++)Marshal.Copy(IntPtr.Add(bits.Scan0,y*bits.Stride),d,y*w*4,w*4);return Convert.ToBase64String(d);}
   finally{bitmap.UnlockBits(bits);}
  }
@@ -14,13 +17,13 @@ public static class PathGradientVertexProbe {
  static void One(StringBuilder json,string name,int W,int H,PointF[] pts,Color[] colors,PointF center,Color centerColor,float world){OneX(json,name,W,H,pts,colors,center,centerColor,world,0,0,0);}
  // fx/fy: FocusScales (0 = none); rot: degrees of world rotation about the image centre (applied before the scale)
  static void OneX(StringBuilder json,string name,int W,int H,PointF[] pts,Color[] colors,PointF center,Color centerColor,float world,float fx,float fy,float rot){
-  using(var bitmap=new Bitmap(W,H,PixelFormat.Format32bppPArgb))using(var path=new GraphicsPath()){
+  using(var bitmap=new Bitmap(W,H,PF))using(var path=new GraphicsPath()){
    path.AddPolygon(pts);
    using(var brush=new PathGradientBrush(path)){
     brush.CenterPoint=center;brush.CenterColor=centerColor;brush.SurroundColors=colors;
     if(fx>0||fy>0)brush.FocusScales=new PointF(fx,fy);
     using(var g=Graphics.FromImage(bitmap)){
-     g.CompositingMode=CompositingMode.SourceCopy;g.SmoothingMode=SmoothingMode.None;g.PixelOffsetMode=PixelOffsetMode.None;g.Clear(Color.Transparent);
+     g.CompositingMode=(Dest=="argb"?CompositingMode.SourceOver:CompositingMode.SourceCopy);g.SmoothingMode=SmoothingMode.None;g.PixelOffsetMode=PixelOffsetMode.None;g.Clear(Color.Transparent);
      if(rot!=0){g.TranslateTransform(W/2f,H/2f);g.RotateTransform(rot);g.TranslateTransform(-W/2f,-H/2f);}
      if(world!=1)g.ScaleTransform(world,world);
      g.FillRectangle(brush,-W/world,-H/world,3*W/world,3*H/world);
@@ -96,6 +99,6 @@ public static class PathGradientVertexProbe {
     OneX(json,set+i,64,64,pts,cols,new PointF(cx,cy),centre,world,fx,fy,rot);
    }
   }
-  var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());using(var file=File.Create(Path.Combine(directory,"path-gradient-vertices.json.gz")))using(var gzip=new GZipStream(file,CompressionMode.Compress))gzip.Write(bytes,0,bytes.Length);
+  var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());using(var file=File.Create(Path.Combine(directory,"path-gradient-vertices"+Suffix+".json.gz")))using(var gzip=new GZipStream(file,CompressionMode.Compress))gzip.Write(bytes,0,bytes.Length);
  }
 }

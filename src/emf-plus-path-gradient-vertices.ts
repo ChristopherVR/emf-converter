@@ -29,6 +29,11 @@
  * rotated polygons 96-99%. The residual is rounding ties and the pixels of a
  * vertex's own row. A focus, Blend or preset curve keeps the previous model.
  *
+ * The span is not a stepped delta in native (round 8, `PathGradientSpanProbe.cs`): a single precision form that
+ * weights the two end colours separately, every operation rounded toward minus infinity, reproduces more of the
+ * captures (99.24%) but exceeds the ceilings of 14 per-vertex alpha controls, so it lives in
+ * `__fixtures__/path-gradient-vertices-candidate.ts` and is not used here.
+ *
  * @module emf-plus-path-gradient-vertices
  */
 
