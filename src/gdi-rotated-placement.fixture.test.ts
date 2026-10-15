@@ -66,14 +66,14 @@ describe.skipIf(!windowsFonts())('rotated glyph placement against native TextOut
 	it('places every glyph of a recorded (Dx) rotated run on its native origin', () => {
 		const r = classify(load('rotated-placement-dx.json.gz'), true);
 		expect(r.placement).toBe(0);
-		expect(r.exact).toBeGreaterThanOrEqual(3320);
+		expect(r.exact).toBeGreaterThanOrEqual(3731);
 		expect(r.glyphs).toBe(4200);
 	}, 120_000);
 
-	it('places a directly drawn rotated run from unrounded linear advances (50 of 4,340 glyphs off by a pixel, 2,100 before)', () => {
+	it('places a directly drawn rotated run from unrounded linear advances (32 of 4,200 glyphs off by a pixel, 2,100 before; rotated glyph shapes exact for 3,695)', () => {
 		const r = classify(load('rotated-placement.json.gz'), false);
-		expect(r.placement).toBeLessThanOrEqual(50);
-		expect(r.exact).toBeGreaterThanOrEqual(3262);
+		expect(r.placement).toBeLessThanOrEqual(32);
+		expect(r.exact).toBeGreaterThanOrEqual(3695);
 	}, 120_000);
 });
 

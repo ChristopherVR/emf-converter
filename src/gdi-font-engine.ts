@@ -36,10 +36,11 @@
  * - **Rotation**: escapement and rotated world transforms rotate the
  *   grid-fitted outline; at non-axis angles the glyph is grid-fitted with
  *   GETINFO's "rotated" bit set and advances are the rounded linear
- *   widths, as GDI does. GDI additionally rounds its rotated scaling
- *   matrix (the larger of ppem * cos and ppem * sin to whole pixels, the
- *   rotation scaled by the ratio: `roundedRotationMatrix`); the remaining
- *   rotated-text differences are single edge pixels.
+ *   widths, as GDI does. A font that forces integer ppem (every stock
+ *   font) is hinted unrotated at round(ppem * max(|cos|, |sin|)) and then
+ *   rotated by the matrix over its major component (`rotationMatrix`;
+ *   `roundedRotationMatrix` serves the matrices that are not rotations);
+ *   the remaining rotated-text differences are single edge pixels.
  *
  * @module gdi-font-engine
  */
@@ -238,7 +239,7 @@ export interface GdiRealizedFont {
 	advance(index: number): number;
 	/** GDI+ design advance: apply tracking in font units before device scaling. */
 	designAdvance?(index: number, tracking: number): number;
-	rotatedAdvance(index: number): number;
+	rotatedAdvance(index: number, halfTurn?: boolean): number;
 	/** Unrounded linear advance, which GDI accumulates along a non-axis baseline. */
 	rotatedLinearAdvance?(index: number): number;
 	/**
@@ -248,6 +249,11 @@ export interface GdiRealizedFont {
 	 */
 	readonly rotatedAscent?: number;
 	readonly rotatedDescent?: number;
+	/**
+	 * tmAscent / tmDescent of the font realised with the baseline direction `(ux, uy)` (device, y down), for any angle
+	 * but zero: a quarter turn and a half turn have metrics of their own. Undefined where the upright metrics apply.
+	 */
+	rotatedMetrics?(ux: number, uy: number): { ascent: number; descent: number } | undefined;
 	glyph(index: number, m?: readonly [number, number, number, number], subX?: number, subY?: number): GdiGlyph;
 	charForGlyph(index: number): number;
 }
@@ -442,8 +448,8 @@ export class RealizedFont implements GdiRealizedFont {
 	readonly gridFit: boolean;
 	readonly fractionalOrigins?: 'x' | 'xy';
 	private readonly hinted: HintedSize;
-	private rotatedSize: HintedSize | null = null;
-	private readonly rotOutlines = new Map<number, HintedGlyph>();
+	private readonly rotatedSizes = new Map<number, HintedSize>();
+	private readonly rotOutlines = new Map<string, HintedGlyph>();
 	private readonly hdmx: Uint8Array | undefined;
 	/** lfWidth of a horizontally stretched font (0 = not stretched). */
 	private readonly stretchWidth: number;
@@ -491,11 +497,12 @@ export class RealizedFont implements GdiRealizedFont {
 			this.descent = scale(ttf.winDescent);
 		}
 		// Rotated (non-axis) realisations report the head bounding box, scaled
-		// and padded: floor(yMax * ppem / upem + 1.27) (measured exact for
-		// Arial and Times New Roman lfHeight -10..-24 at 25 and 45 degrees,
-		// both ascent and descent; the fitted pad lies in [1.254, 1.288)).
-		this.rotatedAscent = Math.floor((ttf.headYMax * ppem) / upem + 1.27);
-		this.rotatedDescent = Math.floor((-ttf.headYMin * ppem) / upem + 1.27);
+		// and padded by 1/64 em: floor(yMax * ppem / upem + ppem / 64 + 0.964)
+		// (`GetTextMetrics` of Arial, Times New Roman, Tahoma, Courier New
+		// and Segoe UI at lfHeight -8..-60: all 530 ascents and descents at
+		// 25 degrees; the pad's last digits move by 0.005 with the angle).
+		this.rotatedAscent = Math.floor((ttf.headYMax * ppem) / upem + ppem / 64 + 0.964);
+		this.rotatedDescent = Math.floor((-ttf.headYMin * ppem) / upem + ppem / 64 + 0.964);
 		this.underlinePosition = scale(ttf.underlinePosition);
 		this.underlineThickness = scale(ttf.underlineThickness);
 		this.strikeoutPosition = scale(ttf.strikeoutPosition);
@@ -507,6 +514,30 @@ export class RealizedFont implements GdiRealizedFont {
 				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false }
 				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
+	}
+
+	/**
+	 * `GetTextMetrics` ascent / descent of the font realised at the baseline direction `(ux, uy)`: the head box with a
+	 * pad at non-axis angles ({@link RealizedFont.rotatedAscent}); at a quarter turn the `OS/2` win box padded the same
+	 * way, at a half turn it rounded (all 530 ascents and descents of five faces at lfHeight -8..-60 for 90, 180 and
+	 * 270 degrees, escapement and world rotation alike). Undefined for an upright baseline.
+	 */
+	rotatedMetrics(ux: number, uy: number): { ascent: number; descent: number } | undefined {
+		if (Math.abs(ux) > 1e-9 && Math.abs(uy) > 1e-9) {
+			return { ascent: this.rotatedAscent, descent: this.rotatedDescent };
+		}
+		if (ux > 0.5) {
+			return undefined;
+		}
+		const { winAscent, winDescent, unitsPerEm } = this.ttf;
+		if (ux < -0.5) {
+			return { ascent: Math.round((winAscent * this.ppem) / unitsPerEm), descent: Math.round((winDescent * this.ppem) / unitsPerEm) };
+		}
+		const pad = this.ppem / 64 + 0.969;
+		return {
+			ascent: Math.floor((winAscent * this.ppem) / unitsPerEm + pad),
+			descent: Math.floor((winDescent * this.ppem) / unitsPerEm + pad),
+		};
 	}
 
 	/** Glyph index for a character code (UTF-16 code unit or code point). */
@@ -574,16 +605,26 @@ export class RealizedFont implements GdiRealizedFont {
 		return o;
 	}
 
-	private rotatedOutline(index: number): HintedGlyph {
-		let g = this.rotOutlines.get(index);
+	/**
+	 * The outline GDI grid-fits for a glyph drawn at a non-axis angle. `hintPpem` is the whole-pixel ppem GDI hints at
+	 * (the rounded major component of the rotated scale, see {@link rotationHintPpem}); 0 keeps the font's own size.
+	 */
+	private rotatedOutline(index: number, hintPpem = 0): HintedGlyph {
+		const key = `${hintPpem}|${index}`;
+		let g = this.rotOutlines.get(key);
 		if (!g) {
-			this.rotatedSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, {
-				version: 35,
-				grayscale: this.mode !== 'mono',
-				rotated: true,
-			});
-			g = this.rotatedSize.hintGlyph(index < this.ttf.numGlyphs ? index : NOTDEF);
-			this.rotOutlines.set(index, g);
+			let size = this.rotatedSizes.get(hintPpem);
+			if (!size) {
+				size = new HintedSize(this.ttf, hintPpem || this.ppemX, hintPpem || this.ppem, {
+					version: 35,
+					grayscale: this.mode !== 'mono',
+					rotated: true,
+					gdiArithmetic: !this.gdiPlus,
+				});
+				this.rotatedSizes.set(hintPpem, size);
+			}
+			g = size.hintGlyph(index < this.ttf.numGlyphs ? index : NOTDEF);
+			this.rotOutlines.set(key, g);
 		}
 		return g;
 	}
@@ -618,9 +659,13 @@ export class RealizedFont implements GdiRealizedFont {
 	 * advance, rounded (measured: the Dx GDI records for Times New Roman at
 	 * 30 and 90 degrees).
 	 */
-	rotatedAdvance(index: number): number {
+	rotatedAdvance(index: number, halfTurn = false): number {
 		const { advance } = this.ttf.hMetrics(index < this.ttf.numGlyphs ? index : NOTDEF);
-		return Math.round((advance * this.ppemX) / this.ttf.unitsPerEm) + (this.syntheticBold ? 1 : 0);
+		const linear = (advance * this.ppemX) / this.ttf.unitsPerEm;
+		// Along a quarter-turn baseline the linear advance is first taken to 26.6 and then rounded half up (Times New Roman
+		// at 9 px: E 5.4976 -> 6, H 6.4995 -> 7, the widths GDI records); along a half turn a plain round (E -> 5, H -> 6).
+		// All 840 widths at 90, 180 and 270 degrees of rotated-placement*.json.gz (and, rounded the same way, the 3,360 non-axis ones).
+		return (halfTurn ? Math.round(linear) : Math.floor((Math.round(linear * 64) + 32) / 64)) + (this.syntheticBold ? 1 : 0);
 	}
 
 	/** The unrounded linear advance GDI accumulates (in 28.4 fixed point) along a non-axis baseline. */
@@ -645,8 +690,11 @@ export class RealizedFont implements GdiRealizedFont {
 		// bit set, which makes the stock fonts skip their stem hints (and
 		// enable dropout control), as GDI does; 90/180/270 degrees keep the
 		// upright hinting (measured exact against the escapement fixtures).
-		const src = skew ? this.rotatedOutline(index) : this.outline(index);
-		if (skew && m) {
+		const rotation = skew && m && !this.gdiPlus && this.ppemX === this.ppem ? rotationMatrix(m, this.ppem, (this.ttf.headFlags & 8) !== 0) : null;
+		const src = skew ? this.rotatedOutline(index, rotation ? rotation.ppem : 0) : this.outline(index);
+		if (skew && m && rotation) {
+			m = rotation.matrix;
+		} else if (skew && m) {
 			// GDI scales a rotated glyph by the font matrix rounded to whole
 			// pixels per em (ppem*cos and ppem*sin each rounded), so a 16 px
 			// glyph at 25 degrees is drawn about 16.5 px tall (measured with
@@ -685,7 +733,8 @@ export class RealizedFont implements GdiRealizedFont {
 			// sheared glyphs once their outlines follow GDI's hinting arithmetic (mono-condensed.json.gz: 970 to
 			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
-			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType), undefined, true, smartGrid, !this.gdiPlus && !m);
+			const dropout = dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType);
+			bitmap = rasterizeMono(o, dropout, undefined, true, smartGrid, !this.gdiPlus && (!m || !!skew), !!skew && !this.gdiPlus);
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
@@ -730,6 +779,44 @@ export function roundedRotationMatrix(m: readonly [number, number, number, numbe
 	}
 	const p = ppem;
 	return [Math.round(m[0] * p) / p, Math.round(m[1] * p) / p, Math.round(m[2] * p) / p, Math.round(m[3] * p) / p];
+}
+
+/**
+ * How GDI grid-fits and scales a glyph under a pure rotation `m` (`RotationMatrixProbe.cs`, private fonts read through
+ * `GetGlyphOutline(GGO_NATIVE)`; `rotation-matrix.json.gz`). A font with `head.flags` bit 3 (force integer ppem; every
+ * stock font here) is hinted unrotated at the whole-pixel ppem `round(ppem * max(|cos|, |sin|))` and then multiplied by
+ * the rotation over its major component: 1 on the major diagonal and, on the minor ones, `A / B` with
+ * `A = round(min(|cos|, |sin|) * ppem * 32)` and `B = round(max(|cos|, |sin|) * ppem * 32)` (not the exact tangent: the
+ * ratio of two components rounded to a coarse grid, which moves a far point by up to a pixel). A font without the flag
+ * is hinted at its own ppem and rotated exactly. Returns null when `m` is not a pure rotation.
+ */
+export function rotationMatrix(
+	m: readonly [number, number, number, number],
+	ppem: number,
+	integerPpem: boolean,
+): { ppem: number; matrix: [number, number, number, number] } | null {
+	const isRotation = Math.abs(m[0] - m[3]) < 1e-6 && Math.abs(m[1] + m[2]) < 1e-6;
+	if (!isRotation || ppem <= 0) {
+		return null;
+	}
+	if (!integerPpem) {
+		return { ppem: 0, matrix: [m[0], m[1], m[2], m[3]] };
+	}
+	const major = Math.max(Math.abs(m[0]), Math.abs(m[1]));
+	const minor = Math.min(Math.abs(m[0]), Math.abs(m[1]));
+	const majorFixed = Math.round(major * ppem * 32);
+	const target = Math.floor((majorFixed + 16) / 32);
+	if (target < 1) {
+		return null;
+	}
+	// The ratio is a 16.16 number (the integers k / 65536 read off the far points of the private fonts).
+	const q = Math.round((Math.round(minor * ppem * 32) / majorFixed) * 65536) / 65536;
+	const xMajor = Math.abs(m[0]) >= Math.abs(m[1]);
+	const sg = (v: number): number => (v < 0 ? -1 : 1);
+	return {
+		ppem: target,
+		matrix: xMajor ? [sg(m[0]), sg(m[1]) * q, sg(m[2]) * q, sg(m[3])] : [sg(m[0]) * q, sg(m[1]), sg(m[2]), sg(m[3]) * q],
+	};
 }
 
 /** GDI's bitmap emboldening: each row OR-ed (max-ed) with itself shifted one pixel right. */

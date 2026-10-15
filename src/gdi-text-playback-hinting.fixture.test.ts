@@ -162,10 +162,10 @@ describe('dx recorded for rotated text', () => {
 		}
 		expect(seen).toBe(1);
 	});
-	it.skipIf(!windowsFonts())('leaves one pixel against the playback (the original, a direct drawing, differs by 24 from the converter): the rotated glyph matrix is rounded as GDI does', async () => {
+	it.skipIf(!windowsFonts())('is exact against the playback (the original, a direct drawing, differs by 23 from the converter): the rotated glyph is hinted at the rounded major ppem and rotated as GDI does', async () => {
 		const rendered = await renderFixture('rotate-text-25deg.emf', { fonts: windowsFonts()! });
 		expect(rendered).not.toBeNull();
-		expect(diffImages(rendered!, await loadReference('rotate-text-25deg'), 0, 0).mismatched).toBe(24);
-		expect(diffImages(rendered!, await loadReference('rotate-text-25deg.wide'), 0, 0).mismatched).toBe(1);
+		expect(diffImages(rendered!, await loadReference('rotate-text-25deg'), 0, 0).mismatched).toBe(23);
+		expect(diffImages(rendered!, await loadReference('rotate-text-25deg.wide'), 0, 0).mismatched).toBe(0);
 	});
 });
