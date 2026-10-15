@@ -447,9 +447,19 @@ class Raster {
 		this.lastY = y3;
 	}
 
+	/**
+	 * GDI rounds the on-curve point implied between two off-curve points to the 26.6 grid, halves up, before scan
+	 * converting (native `GetGlyphOutline(GGO_BITMAP)` of 4,415 real-font glyphs: 207 to 75 wrong pixel decisions at
+	 * curved edges with that rounding; FreeType's black rasterizer keeps the half and truncates at its own precision).
+	 */
+	roundImpliedPoints = false;
+
 	private decomposeContour(o: Outline, first: number, last: number, flipped: boolean): void {
 		const px = (i: number): number => this.scaled(flipped ? o.ys[i] : o.xs[i]);
 		const py = (i: number): number => this.scaled(flipped ? o.xs[i] : o.ys[i]);
+		const mid = (a: number, b: number): number => this.scaled(Math.floor((a + b + 1) / 2));
+		const rx = (i: number): number => (flipped ? o.ys[i] : o.xs[i]);
+		const ry = (i: number): number => (flipped ? o.xs[i] : o.ys[i]);
 		let startX = px(first);
 		let startY = py(first);
 		const lastX = px(last);
@@ -462,8 +472,13 @@ class Raster {
 				startY = lastY;
 				limit--;
 			} else {
-				startX = Math.trunc((startX + lastX) / 2);
-				startY = Math.trunc((startY + lastY) / 2);
+				if (this.roundImpliedPoints) {
+					startX = mid(rx(first), rx(last));
+					startY = mid(ry(first), ry(last));
+				} else {
+					startX = Math.trunc((startX + lastX) / 2);
+					startY = Math.trunc((startY + lastY) / 2);
+				}
 			}
 			point--;
 		}
@@ -477,6 +492,8 @@ class Raster {
 			}
 			let cx = px(point);
 			let cy = py(point);
+			let cxRaw = rx(point);
+			let cyRaw = ry(point);
 			let closed = false;
 			while (true) {
 				if (point < limit) {
@@ -487,9 +504,15 @@ class Raster {
 						this.conicTo(cx, cy, x, y);
 						break;
 					}
-					this.conicTo(cx, cy, Math.trunc((cx + x) / 2), Math.trunc((cy + y) / 2));
+					if (this.roundImpliedPoints) {
+						this.conicTo(cx, cy, mid(cxRaw, rx(point)), mid(cyRaw, ry(point)));
+					} else {
+						this.conicTo(cx, cy, Math.trunc((cx + x) / 2), Math.trunc((cy + y) / 2));
+					}
 					cx = x;
 					cy = y;
+					cxRaw = rx(point);
+					cyRaw = ry(point);
 					continue;
 				}
 				this.conicTo(cx, cy, startX, startY);
@@ -862,7 +885,7 @@ interface PixelBox {
  * enables the measured smart-crossing precision only for a caller's verified
  * upright uniform realization; the default preserves previous arithmetic.
  */
-export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false): GlyphBitmap | null {
+export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false, roundImpliedPoints = false): GlyphBitmap | null {
 	const box = fixedBox ?? monoBox(o);
 	if (!box) {
 		return null;
@@ -886,6 +909,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 
 	// ---- vertical sweep: scanlines are rows ----
 	const r = new Raster(dropout);
+	r.roundImpliedPoints = roundImpliedPoints;
 	const P = r.precision;
 	const monoContour = stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) ?
 		MonoStubContours.create(local) : null;
@@ -1082,7 +1106,7 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, d
  * overshoot exemption), and every 4x4 block of samples is counted, giving a
  * coverage of 0..16 per pixel (`data`).
  */
-export function rasterizeGray(o: Outline, dropout = 2): GlyphBitmap | null {
+export function rasterizeGray(o: Outline, dropout = 2, roundImpliedPoints = false): GlyphBitmap | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -1112,7 +1136,7 @@ export function rasterizeGray(o: Outline, dropout = 2): GlyphBitmap | null {
 		onCurve: o.onCurve,
 		endPts: o.endPts,
 	};
-	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * k, xMax: box.xMax * k, yMin: box.yMin * k, yMax: box.yMax * k }, false);
+	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * k, xMax: box.xMax * k, yMin: box.yMin * k, yMax: box.yMax * k }, false, false, roundImpliedPoints);
 	if (!hi) {
 		return null;
 	}
