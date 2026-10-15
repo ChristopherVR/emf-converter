@@ -762,7 +762,8 @@ export class HintedSize {
 				: Math.floor((gs.pvx * gs.fvx + gs.pvy * gs.fvy) / 16384);
 		}
 		if (Math.abs(this.fDotP) < 0x400) {
-			this.fDotP = 0x4000;
+			// GDI keeps the sign (a freedom vector nearly perpendicular to the projection vector moves the other way)
+			this.fDotP = this.gdiMath && this.fDotP < 0 ? -0x4000 : 0x4000;
 		}
 	}
 
@@ -2377,6 +2378,17 @@ export class HintedSize {
 		const day = zp1.curY[a1] - zp1.curY[a0];
 		const dx = zp0.curX[b0] - zp1.curX[a0];
 		const dy = zp0.curY[b0] - zp1.curY[a0];
+		if (this.gdiMath && (dbx === 0 || dby === 0) && dax * -dby + day * dbx !== 0) {
+			// GDI intersects with a horizontal or vertical second line exactly (239 of 240 native results are the
+			// rounded rational intersection; the FreeType formula below gets 151); other lines keep the formula,
+			// whose native counterpart is still unknown (431 of 960 random lines).
+			const den = dax * -dby + day * dbx;
+			const num = dx * -dby + dy * dbx;
+			zp2.curX[p] = zp1.curX[a0] + mulDiv(num, dax, den);
+			zp2.curY[p] = zp1.curY[a0] + mulDiv(num, day, den);
+			zp2.tags[p] |= TOUCH_X | TOUCH_Y;
+			return;
+		}
 		const disc = mulDiv(dax, -dby, 0x40) + mulDiv(day, dbx, 0x40);
 		const dot = mulDiv(dax, dbx, 0x40) + mulDiv(day, dby, 0x40);
 		if (19 * Math.abs(disc) > Math.abs(dot)) {
