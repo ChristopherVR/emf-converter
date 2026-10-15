@@ -235,7 +235,7 @@ export function fillPlusPath(rCtx: EmfPlusReplayCtx, flags: number, brush: numbe
 /** Strokes an EMF+ path object with a pen (DrawPath, StrokeFillPath). */
 export function strokePlusPath(rCtx: EmfPlusReplayCtx, pen: EmfPlusPen | null, pathObj: EmfPlusPath): void {
 	// replayEmfPlusPath issues its own beginPath().
-	strokePlusGeometry(rCtx, pen, (c) => replayEmfPlusPath(c, pathObj), pathObj.points, isClosedPath(pathObj.types));
+	strokePlusGeometry(rCtx, pen, (c) => replayEmfPlusPath(c, pathObj), pathObj.points, isClosedPath(pathObj.types), pathObj.fillRule === 'evenodd');
 }
 
 /**

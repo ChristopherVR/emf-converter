@@ -153,6 +153,8 @@ export function strokePlusGeometry(
 	buildPath: (c: CanvasContext) => void,
 	points: ReadonlyArray<{ x: number; y: number }> | null,
 	closedFigure: boolean = false,
+	/** The path's fill mode is Alternate: the clip of an Inset pen is the even-odd interior of the figures (a GraphicsPath default). */
+	evenOddClip: boolean = false,
 ): void {
 	const { ctx } = rCtx;
 	const resolved = resolvePenTransform(pen);
@@ -202,7 +204,7 @@ export function strokePlusGeometry(
 			const size = surfaceSize(ctx);
 			const device = plusWorldMatrix(rCtx);
 			const scale = maxStretch(nib ? mulMatrix(device, nib) : device);
-			if (mode !== 'canvas' && size && strokeGdiplus(rCtx, pen, nib, sampler, buildPath, device, size, mode, closedFigure)) {
+			if (mode !== 'canvas' && size && strokeGdiplus(rCtx, pen, nib, sampler, buildPath, device, size, mode, closedFigure, evenOddClip)) {
 				return;
 			}
 			// Custom caps are not a Canvas stroke: the mask is GDI+'s whole
@@ -378,6 +380,7 @@ function strokeGdiplus(
 	size: { w: number; h: number },
 	mode: 'aliased' | 'gdiplus-aa',
 	closedFigure: boolean,
+	evenOddClip: boolean = false,
 ): boolean {
 	if (!nib) {
 		// Only a similarity (uniform scale and rotation): a pen stays round.
@@ -415,11 +418,7 @@ function strokeGdiplus(
 	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash && !(((pen.startCap ?? 0) | (pen.endCap ?? 0) | (pen.dashCap ?? 0)) & 0xf0)) {
 		return strokeNominal(rCtx, pen, sampler, buildPath, device, size, antialias, closedFigure);
 	} else {
-		// An Inset stroke on closed figures is the pen at twice its width, centered, clipped to the figure (see emf-plus-inset-outline.ts);
-		// a half-pixel offset with antialiasing keeps the older ring model.
-		const insetClip = devicePen.inset && !devicePen.dash && !devicePen.compound && figures.every((f) => f.closed) && !(antialias && isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0));
-		fix = widenFigures(figures, insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2 } : devicePen).map(toFix);
-		insetFigures = insetClip ? figures.map((f) => toFix(Array.from({ length: f.pts.length >> 1 }, (_, i) => ({ x: f.pts[2 * i], y: f.pts[2 * i + 1] })))) : null;
+		({ fix, insetFigures } = widenedPen(figures, devicePen, toFix));
 	}
 	const box = figuresBox(fix, size);
 	if (!box) {
@@ -429,8 +428,30 @@ function strokeGdiplus(
 		return false;
 	}
 	const half = isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0);
-	const coverage = insetFigures ? insetStrokeCoverage(fix, insetFigures, antialias, half, box) : rasterizePlusFill(fix, false, antialias, half, box);
+	const coverage = insetFigures ? insetStrokeCoverage(fix, insetFigures, antialias, half, box, evenOddClip) : rasterizePlusFill(fix, false, antialias, half, box);
 	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
+}
+
+/**
+ * The device polygons GDI+ fills for a plain (not custom-capped, not nominal-width) pen on `figures`, as `toFix` maps them to 28.4, and, for an
+ * Inset pen on closed figures, the figures themselves (the clip). An Inset stroke on closed figures is the pen at twice its width, centered, clipped
+ * to the figure (see emf-plus-inset-outline.ts); dashed, the dash lengths stay in the pen's own width and the dash offset is taken in the doubled
+ * one. A dashed Inset pen with Round or Triangle dash caps is the band along the inside of each edge (caps centred on it) instead, clipped to the
+ * figure all the same.
+ */
+export function widenedPen(
+	figures: ReadonlyArray<DeviceFigure>,
+	devicePen: DevicePen,
+	toFix: (poly: ReadonlyArray<{ x: number; y: number }>) => number[],
+): { fix: FixFigure[]; insetFigures: FixFigure[] | null } {
+	const insetClosed = devicePen.inset && !devicePen.compound && figures.every((f) => f.closed);
+	const insetClip = insetClosed && (!devicePen.dash || devicePen.dashCap === 0);
+	const fix = widenFigures(
+		figures,
+		insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2, dashOffset: devicePen.dashOffset * 2 } : devicePen,
+	).map(toFix);
+	const insetFigures = insetClosed ? figures.map((f) => toFix(Array.from({ length: f.pts.length >> 1 }, (_, i) => ({ x: f.pts[2 * i], y: f.pts[2 * i + 1] })))) : null;
+	return { fix, insetFigures };
 }
 
 /**

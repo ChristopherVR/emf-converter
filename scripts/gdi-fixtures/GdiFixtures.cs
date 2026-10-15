@@ -2404,6 +2404,61 @@ public static class GdiFixtures
 		}
 	}
 
+	/**
+	 * More Inset pens on the same figures (group `emfplus-pens`): dashed with flat and with round dash caps, pens of 1.5 pixels or less
+	 * (drawn as nominal-width lines), PixelOffsetMode Half, and paths of two or three overlapping closed polygons (the default Alternate fill
+	 * mode, and Winding). `gpx-pen-inset-<dash|dashround|thin|half|multi|multiwind>-<aa|aliased>`.
+	 */
+	static void GpxPenInsetExtraCases()
+	{
+		const int W = 500, H = 480;
+		float[] widths = { 3f, 6f, 9f, 14f };
+		float[] thin = { 0.5f, 1f, 1.5f, 1.6f };
+		foreach (bool aa in new[] { false, true })
+		{
+			string suffix = aa ? "aa" : "aliased";
+			foreach (string kind in new[] { "dash", "dashround", "thin", "half" })
+				GpCase("gpx-pen-inset-" + kind + "-" + suffix, W, H, delegate (Graphics g)
+				{
+					g.SmoothingMode = aa ? SmoothingMode.AntiAlias : SmoothingMode.None;
+					if (kind == "half") g.PixelOffsetMode = PixelOffsetMode.Half;
+					g.FillRectangle(Brushes.White, 0, 0, W, H);
+					for (int col = 0; col < 4; col++)
+						using (var pen = new Pen(Color.FromArgb(255, 20, 110, 200), kind == "thin" ? thin[col] : widths[col]))
+						{
+							pen.Alignment = PenAlignment.Inset; pen.LineJoin = col % 2 == 0 ? LineJoin.Miter : LineJoin.Round;
+							if (kind == "dash" || kind == "dashround")
+							{
+								pen.DashStyle = col < 2 ? DashStyle.Dash : DashStyle.DashDot;
+								pen.DashCap = kind == "dash" ? DashCap.Flat : DashCap.Round;
+								pen.DashOffset = col % 2 == 1 ? 0.5f : 0f;
+							}
+							for (int row = 0; row < 6; row++) GpxPenFigureShapes(g, col, row, pen);
+						}
+				});
+			foreach (FillMode mode in new[] { FillMode.Alternate, FillMode.Winding })
+				GpCase("gpx-pen-inset-multi" + (mode == FillMode.Winding ? "wind" : "") + "-" + suffix, W, H, delegate (Graphics g)
+				{
+					g.SmoothingMode = aa ? SmoothingMode.AntiAlias : SmoothingMode.None;
+					g.FillRectangle(Brushes.White, 0, 0, W, H);
+					for (int col = 0; col < 4; col++)
+						using (var pen = new Pen(Color.FromArgb(255, 20, 110, 200), widths[col]))
+						{
+							pen.Alignment = PenAlignment.Inset; pen.LineJoin = col % 2 == 0 ? LineJoin.Miter : LineJoin.Bevel;
+							for (int row = 0; row < 3; row++)
+								using (var path = new GraphicsPath(mode))
+								{
+									float x = 10 + col * 120, y = 8 + row * 156;
+									path.AddPolygon(new PointF[] { new PointF(x + 10, y + 8), new PointF(x + 80, y + 20), new PointF(x + 50, y + 90) });
+									path.AddPolygon(new PointF[] { new PointF(x + 30, y + 40), new PointF(x + 100, y + 30), new PointF(x + 90, y + 120), new PointF(x + 20, y + 110) });
+									if (row == 2) path.AddEllipse(x + 25, y + 50, 70, 60);
+									g.DrawPath(pen, path);
+								}
+						}
+				});
+		}
+	}
+
 	static void GpxPenTextCases()
 	{
 		const int W = 160, H = 100;
@@ -6576,6 +6631,6 @@ public static class GdiFixtures
 		if (which == "emf-insideframe") { EmfInsideFrameCases(); }
 		if (which == "emf-cliprgn") { EmfClipRgnMappedCase(); }
 		if (which == "all" || which == "emfplus-effects") { EmfPlusEffectCases(); }
-		if (which == "emfplus-pens") { GpxPenFigureCases(); }
+		if (which == "emfplus-pens") { GpxPenFigureCases(); GpxPenInsetExtraCases(); }
 	}
 }

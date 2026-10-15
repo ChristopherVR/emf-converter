@@ -146,6 +146,90 @@ public static class InsetOutlineProbe
         Console.WriteLine("inset-outline.json.gz: " + count + " cases");
     }
 
+    // Inset cases beyond the plain solid pen on one polygon: `inset-cases.json.gz`,
+    // [{ kind ("dash", "thin", "half", "multi", "dashc"), join, width, dash (DashStyle), dashCap, dashOffset, offset (PixelOffsetMode), (widen, types: the
+    // GraphicsPath.Widen outline, with INSET_CASES_WIDEN=1) figures (arrays of x, y
+    // pairs), aliased, aa }] drawn with DrawPath of a path of closed polygons and an Inset pen:
+    //  - dash: 4 widths x DashStyle Dash, Dot, DashDot, DashDotDot and a custom pattern, Flat and Round dash caps;
+    //  - thin: widths 0.5 to 2 (a pen of 1.5 pixels or less is drawn as a nominal-width line);
+    //  - half: PixelOffsetMode Half (and Default as control) with widths 2 to 6;
+    //  - multi: two or three overlapping closed polygons in one path;
+    //  - dashc: the dash cases with a Center pen (control).
+    public static void RunCases(string dir)
+    {
+        seed = 2468;
+        var json = new StringBuilder("[");
+        int n = 0;
+        var styles = new[] { DashStyle.Dash, DashStyle.Dot, DashStyle.DashDot, DashStyle.DashDotDot, DashStyle.Custom };
+        for (int i = 0; i < 440; i++)
+        {
+            string kind = i < 120 ? "dash" : i < 200 ? "thin" : i < 280 ? "half" : i < 360 ? "multi" : "dashc";
+            var figures = new List<PointF[]>();
+            int count = kind == "multi" ? 2 + (i % 2) : 1;
+            for (int f = 0; f < count; f++)
+            {
+                int shape = (i + f) % 4;
+                figures.Add(shape == 0 ? Triangle() : shape == 1 ? Star() : Flattened(shape == 2 ? 0 : 2));
+            }
+            float width = kind == "thin" ? new[] { 0.5f, 1f, 1.25f, 1.5f, 1.6f, 2f }[i % 6] : new[] { 2f, 3f, 5f, 6f }[i % 4];
+            var join = (LineJoin)(i % 3);
+            var style = kind == "dash" || kind == "dashc" ? styles[(i / 4) % styles.Length] : DashStyle.Solid;
+            var cap = (kind == "dash" || kind == "dashc") && (i / 20) % 2 == 1 ? DashCap.Round : DashCap.Flat;
+            float dashOffset = (kind == "dash" || kind == "dashc") ? new[] { 0f, 0.5f, 1.25f }[(i / 8) % 3] : 0f;
+            var offset = kind == "half" ? (i % 2 == 0 ? PixelOffsetMode.Half : PixelOffsetMode.Default) : PixelOffsetMode.Default;
+            string rowsAliased = null, rowsAa = null, widenJson = "";
+            foreach (bool aa in new[] { false, true })
+            {
+                using (var b = new Bitmap(Size, Size, PixelFormat.Format32bppArgb))
+                using (var g = Graphics.FromImage(b))
+                using (var pen = new Pen(Color.Black, width))
+                using (var path = new GraphicsPath())
+                {
+                    g.SmoothingMode = aa ? SmoothingMode.AntiAlias : SmoothingMode.None;
+                    g.PixelOffsetMode = offset;
+                    g.Clear(Color.White);
+                    if (kind != "dashc") pen.Alignment = PenAlignment.Inset;
+                    pen.LineJoin = join;
+                    if (style == DashStyle.Custom) { pen.DashPattern = new[] { 2f, 1f, 0.5f, 1.5f }; }
+                    else pen.DashStyle = style;
+                    pen.DashCap = cap; pen.DashOffset = dashOffset;
+                    foreach (var fig in figures) path.AddPolygon(fig);
+                    g.DrawPath(pen, path);
+                    if (aa) rowsAa = Rows(b); else rowsAliased = Rows(b);
+                    if (aa && Environment.GetEnvironmentVariable("INSET_CASES_WIDEN") == "1")
+                    {
+                        var wp = (GraphicsPath)path.Clone();
+                        wp.Widen(pen);
+                        var pts = wp.PathPoints; var ty = wp.PathTypes;
+                        var wsb = new StringBuilder(",\"widen\":[");
+                        for (int j = 0; j < pts.Length; j++) { if (j > 0) wsb.Append(','); wsb.Append(F(pts[j].X)).Append(',').Append(F(pts[j].Y)); }
+                        wsb.Append("],\"types\":[");
+                        for (int j = 0; j < ty.Length; j++) { if (j > 0) wsb.Append(','); wsb.Append((int)ty[j]); }
+                        widenJson = wsb.Append(']').ToString();
+                    }
+                }
+            }
+            if (n++ > 0) json.Append(',');
+            json.Append("{\"kind\":\"").Append(kind).Append("\",\"join\":").Append((int)join).Append(",\"width\":").Append(F(width)).Append(",\"dash\":").Append((int)style).Append(",\"dashCap\":").Append((int)cap).Append(",\"dashOffset\":").Append(F(dashOffset)).Append(",\"offset\":").Append((int)offset).Append(",\"figures\":[");
+            for (int f = 0; f < figures.Count; f++)
+            {
+                if (f > 0) json.Append(',');
+                json.Append('[');
+                for (int j = 0; j < figures[f].Length; j++) { if (j > 0) json.Append(','); json.Append(F(figures[f][j].X)).Append(',').Append(F(figures[f][j].Y)); }
+                json.Append(']');
+            }
+            json.Append("],\"aliased\":").Append(rowsAliased).Append(",\"aa\":").Append(rowsAa).Append(widenJson).Append('}');
+        }
+        json.Append(']');
+        using (var file = File.Create(Path.Combine(dir, "inset-cases.json.gz")))
+        using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+        {
+            var bytes = Encoding.UTF8.GetBytes(json.ToString());
+            zip.Write(bytes, 0, bytes.Length);
+        }
+        Console.WriteLine("inset-cases.json.gz: " + n + " cases");
+    }
+
     // Contact survey: many random polygons (triangles, random self-crossing polygons, stars) with an Inset pen of a random width 1.6 to 9 and a
     // random join, aliased and antialiased, to see how GDI+ pairs set pixels that touch only at a corner.
     // `inset-contacts.json.gz`: [{ join, width, src, aliased, aa }].

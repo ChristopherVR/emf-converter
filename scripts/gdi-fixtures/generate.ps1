@@ -910,6 +910,12 @@ if ($Which -eq 'inset-outline-probe') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'inset-cases-probe') {
+    Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
+    [InsetOutlineProbe]::RunCases($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'inset-contacts-probe') {
     Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
     $count = if ($env:INSET_CONTACT_COUNT) { [int]$env:INSET_CONTACT_COUNT } else { 300 }

@@ -30,6 +30,19 @@ const EXPECTED: Record<string, number> = {
 	'gpx-pen-inset-miter-aa': 0,
 	'gpx-pen-inset-bevel-aa': 0,
 	'gpx-pen-inset-round-aa': 0,
+	// Round 8: dashed (flat and round dash caps), nominal-width (0.5 to 1.6 px), PixelOffsetMode Half, and overlapping figures in one path.
+	'gpx-pen-inset-dash-aliased': 28,
+	'gpx-pen-inset-dash-aa': 136,
+	'gpx-pen-inset-dashround-aliased': 113,
+	'gpx-pen-inset-dashround-aa': 445,
+	'gpx-pen-inset-thin-aliased': 0,
+	'gpx-pen-inset-thin-aa': 0,
+	'gpx-pen-inset-half-aliased': 0,
+	'gpx-pen-inset-half-aa': 0,
+	'gpx-pen-inset-multi-aliased': 2,
+	'gpx-pen-inset-multi-aa': 577,
+	'gpx-pen-inset-multiwind-aliased': 0,
+	'gpx-pen-inset-multiwind-aa': 562,
 };
 
 describe('EMF+ pens on closed figures', () => {

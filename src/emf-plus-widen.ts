@@ -221,13 +221,14 @@ function capPoints(p: Pt, f: ReturnType<typeof frame>, o1: number, o2: number, c
 			// corner), where one would be rounded to 28.4 off the edge.
 			return [at(o2, half), at(o1, half)];
 		case 2: {
-			if (Math.abs(o1 + o2) > 1e-9) {
-				return [at(o2, 0), at(o1, 0)];
-			}
-			const a0 = Math.atan2(f.ny, f.nx) + (o2 < 0 ? Math.PI : 0);
+			// A band that does not straddle the line (an Inset pen's) is capped round about its own centre line.
+			const c = (o1 + o2) / 2;
+			const r = Math.abs(o2 - o1) / 2;
+			const centre = Math.abs(c) > 1e-9 ? at(c, 0) : p;
+			const a0 = Math.atan2(f.ny, f.nx) + (o2 < c ? Math.PI : 0);
 			// From the o2 side, round the front (along +u), to the o1 side.
-			const sweep = o2 > 0 ? -Math.PI : Math.PI;
-			return [at(o2, 0), ...arcPoints(p, Math.abs(o2), a0, sweep), at(o1, 0)];
+			const sweep = o2 > c ? -Math.PI : Math.PI;
+			return [at(o2, 0), ...arcPoints(centre, r, a0, sweep), at(o1, 0)];
 		}
 		case 3:
 			return [at(o2, 0), at((o1 + o2) / 2, half), at(o1, 0)];
@@ -279,7 +280,9 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt
 	// fourth corner).
 	const path = closed ? [pts[pts.length - 1], ...pts] : pts;
 	// Phase: where in the pattern the figure starts.
-	let phase = ((pen.dashOffset % total) + total) % total;
+	// A closed figure keeps the straight part at the END of each dash (the caps then reach half a width beyond the start), the other way round
+	// from an open line (measured on dashed Round and Triangle caps of closed polygons: the whole pattern sits one pen width later).
+	let phase = (((pen.dashOffset - (closed ? shorten : 0)) % total) + total) % total;
 	let idx = 0;
 	while (phase >= dash[idx]) {
 		phase -= dash[idx];
