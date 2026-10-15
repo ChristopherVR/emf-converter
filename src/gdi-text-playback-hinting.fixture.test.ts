@@ -64,9 +64,10 @@ describe.skipIf(!windowsFonts())('the converter draws the direct shapes', () => 
 	const expected: Record<string, [number, number]> = {
 		// Native direct-drawing references: collapsed-box dropout placement
 		// closes another eight pixels per sheet (cell 169/4215, em 80/80 before); GDI's own hinting arithmetic and the
-		// single-rounding cell height (Segoe UI cell 9 is 7 ppem) took the cell sheet to 61/4107 and the em sheet to 58/58.
-		'textpb-segoeui-cell-q3': [61, 4107],
-		'textpb-segoeui-em-q3': [58, 58],
+		// single-rounding cell height (Segoe UI cell 9 is 7 ppem) and the rounded implied on-curve points took the cell
+		// sheet to 45/4095 and the em sheet to 19/19.
+		'textpb-segoeui-cell-q3': [45, 4095],
+		'textpb-segoeui-em-q3': [19, 19],
 	};
 	it('matches the direct drawing on the nine flagged heights, not the playback', async () => {
 		for (const [name, [direct, played]] of Object.entries(expected)) {

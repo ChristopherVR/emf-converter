@@ -641,7 +641,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// sheared glyphs once their outlines follow GDI's hinting arithmetic (mono-condensed.json.gz: 970 to
 			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
-			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType), undefined, true, smartGrid);
+			bitmap = rasterizeMono(o, dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType), undefined, true, smartGrid, !this.gdiPlus && !m);
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
@@ -655,7 +655,7 @@ export class RealizedFont implements GdiRealizedFont {
 			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&
 				this.ttf.weightClass < 600 && this.ttf.family.toLowerCase() === 'courier new'
 				? rasterizeCourierGray(o, dropout)
-				: rasterizeGray(o, dropout);
+				: rasterizeGray(o, dropout, !this.gdiPlus && !m);
 		}
 		if (bitmap && this.syntheticBold) {
 			bitmap = embolden(bitmap, this.mode === 'mono' ? 1 : 16);
