@@ -523,10 +523,15 @@ export class RealizedFont implements GdiRealizedFont {
 			return o;
 		}
 		const gi = index < this.ttf.numGlyphs ? index : NOTDEF;
-		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus });
+		// GDI's ClearType follows the font's `gasp`: a size whose range has no GASP_GRIDFIT is drawn from the unhinted,
+		// unscaled outline (Arial up to 8 ppem: 483 of the 573 differing pixels of the 8 px row become 45).
+		const gridFit = this.gdiPlus || clearTypeGridFits(this.ttf, this.ppem);
+		// CLEARTYPE_NATURAL_QUALITY runs the programs without GETINFO's compatible-widths bit: its glyphs match native at
+		// 9 to 17 px (Arial lines of `textx-arial-ctnatural.wide.png`: 2,100 differing pixels fall to 270 in lines 1 to 8).
+		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus && !this.naturalWidths }, gridFit);
 		const u = this.ctSize.hintGlyph(gi);
 		const natural = (this.ttf.hMetrics(gi).advance * this.ppemX) / this.ttf.unitsPerEm;
-		const k = !this.naturalWidths && natural > 0 ? this.advance(index) / natural : 1;
+		const k = !this.naturalWidths && natural > 0 && gridFit ? this.advance(index) / natural : 1;
 		o = { xs: Array.from(u.xs, (v) => v * k), ys: u.ys, onCurve: u.onCurve, endPts: u.endPts };
 		this.ctOutlines.set(index, o);
 		return o;
@@ -650,7 +655,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
 			// never runs SCANCTRL gets none (the private diagonal, opcode and vector fonts pin that).
 			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
-			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout);
+			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout, !this.gdiPlus && clearTypeSmoothsVertically(this.ttf, this.ppem));
 		} else {
 			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
 			// GDI+ AntiAlias widens regular/italic Courier New by one grayscale
@@ -1077,20 +1082,51 @@ function clearTypeSpread(ttf: TtfFont): ClearTypeSpread | undefined {
 	return { left: 1, right: ttf.weightClass >= 600 ? 1 : 2 };
 }
 
+/** Whether the `gasp` range holding `ppem` asks for grid-fitting (GASP_GRIDFIT); a font without `gasp` does. */
+function clearTypeGridFits(ttf: TtfFont, ppem: number): boolean {
+	const range = ttf.gasp.find((r) => ppem <= r.maxPpem);
+	return range ? (range.behavior & 1) !== 0 : true;
+}
+
+/** GDI ClearType with symmetric smoothing samples five rows per pixel, weighted 1 2 3 2 1 (see `rasterizeClearType`). */
+const CLEARTYPE_ROWS = 5;
+const CLEARTYPE_ROW_WEIGHTS = [1, 2, 3, 2, 1];
+
+/**
+ * Whether GDI's ClearType smooths vertically at this size: the `gasp` range holding the ppem has GASP_SYMMETRIC_SMOOTHING
+ * (8), or the font has no `gasp` (the private program-free fonts of `gdi-cleartype-raster.json.gz`). Arial's ranges are
+ * 1 to 8 (10: smoothing, no grid-fit), 9 to 17 (5: grid-fit, no smoothing) and 18 up (15), and the rows of
+ * `textx-arial-q0-default` change character exactly at 8, 9 and 18 (Segoe UI: 8, 9 and 20).
+ */
+function clearTypeSmoothsVertically(ttf: TtfFont, ppem: number): boolean {
+	if (ttf.gasp.length === 0) {
+		return true;
+	}
+	const range = ttf.gasp.find((r) => ppem <= r.maxPpem);
+	return range ? (range.behavior & 8) !== 0 : false;
+}
+
 /**
  * ClearType rasterisation as GDI does it: the outline is sampled at 6x
- * horizontally (2 samples per R/G/B subpixel, one row per pixel), each
+ * horizontally (2 samples per R/G/B subpixel), each
  * subpixel's coverage is averaged with its two neighbours (a 3-tap box
  * filter across subpixels), giving one 0..255 alpha per colour channel.
+ * With `vertical` (symmetric smoothing) each pixel row is sampled at five
+ * rows, weighted 1 2 3 2 1 (`gdi-cleartype-raster.json.gz`: bars, slanted
+ * edges and bars with both edges fractional at 32 ppem, all 1,070 exact;
+ * otherwise one sample row per pixel).
  * Fitted to the edge profiles of `textx-arial-cleartype` (an Arial stem at
  * 72 px reproduces to within 1 level per channel). GDI+ truncates the
  * coverage instead of rounding it (native baseline-controlled captures).
  * A `spread` widens every sample row first (see `clearTypeSpread`); `dropout` is the scan converter's dropout mode.
  */
-function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpread, dropout = 2): GlyphBitmap | null {
+function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpread, dropout = 2, vertical = false): GlyphBitmap | null {
 	const S = CLEARTYPE_OVERSAMPLE / 3;
 	// The stub rule has no overshoot exception here: native excludes the stubs it exempts (13 of 13 determined cases).
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, 1, 1, dropout, false);
+	const KY = vertical ? CLEARTYPE_ROWS : 1;
+	const WT = vertical ? CLEARTYPE_ROW_WEIGHTS : [1];
+	const WSUM = WT.reduce((a, c) => a + c, 0);
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false);
 	if (!r) {
 		return null;
 	}
@@ -1102,7 +1138,8 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 	const data = new Uint8Array(n * height);
 	for (let y = 0; y < height; y++) {
 		sub.fill(0);
-		const row = y * hi.width;
+		for (let yy = 0; yy < KY; yy++) {
+		const row = (y * KY + yy) * hi.width;
 		for (let x = 0; x < hi.width; x++) {
 			let on = hi.data[row + x] !== 0;
 			if (spread && !on) {
@@ -1112,8 +1149,9 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 				}
 			}
 			if (on) {
-				sub[Math.floor(x / S)] += 1;
+				sub[Math.floor(x / S)] += WT[yy] ?? 1;
 			}
+		}
 		}
 		for (let j = 0; j < n; j++) {
 			const before = j > 0 ? sub[j - 1] : 0;
@@ -1123,7 +1161,7 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 			if (spread && acc === 1 && sub[j] === 0 && ((j % 3 === 0 && before === 1) || ((j + 1) % 3 === 0 && after === 1))) {
 				acc = 0;
 			}
-			data[y * n + j] = (truncate ? Math.floor : Math.round)((255 * acc) / (3 * S));
+			data[y * n + j] = (truncate ? Math.floor : Math.round)((255 * acc) / (3 * S * WSUM));
 		}
 	}
 	return { width, height, left: box.xMin, top: box.yMax, data, channels: 3 };

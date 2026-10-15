@@ -459,16 +459,16 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
 	fontCase('textx-arial-aa', 'emf', 0.0016), // measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-arial-cleartype', 'emf', 0.0450), // measured 4.491%, 4.648% before the storage 8 rule, 4.693% before the ClearType dropout control, 5.163% before the size-specific SHPIX and DELTAP rules
-	fontCase('textx-arial-ctnatural', 'emf', 0.1856), // measured 14.847%
+	fontCase('textx-arial-cleartype', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing), 4.491% before the vertical smoothing and exact blend, 4.648% before the storage 8 rule, 4.693% before the ClearType dropout control, 5.163% before the size-specific SHPIX and DELTAP rules
+	fontCase('textx-arial-ctnatural', 'emf', 0.0062), // measured 0.610% against native playback, 14.847% before the exact blend
 	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
-	fontCase('textx-arial-q0-default', 'emf', 0.0646), // measured 5.163%
-	fontCase('textx-arial-q1-draft', 'emf', 0.0646), // measured 5.163%
-	fontCase('textx-arial-q2-proof', 'emf', 0.0646), // measured 5.163%
+	fontCase('textx-arial-q0-default', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing), 5.163% before the vertical smoothing and exact blend
+	fontCase('textx-arial-q1-draft', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing)
+	fontCase('textx-arial-q2-proof', 'emf', 0.0157), // measured 1.566% against native playback (3.297% against the direct drawing)
 	fontCase('textx-arial-styles-aa', 'emf', 0.0009), // measured 0.059%
 	fontCase('textx-arial-styles-mono', 'emf', 0.0006), // measured 0.027%
 	fontCase('textx-color-aa', 'emf', 0.017), // measured 1.352%
-	fontCase('textx-color-cleartype', 'emf', 0.0187), // measured 1.863%, 1.868% before the ClearType dropout control
+	fontCase('textx-color-cleartype', 'emf', 0.0129), // measured 1.280% (1.863% before the exact blend), 1.868% before the ClearType dropout control
 	fontCase('textx-color-mono', 'emf', 0.0004), // measured 0.005%
 	fontCase('textx-couriernew-aa', 'emf', 0.0004), // measured 0.010%
 	fontCase('textx-couriernew-cell-mono', 'emf', 0.0005), // measured 0.011%
@@ -514,7 +514,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-rotalign-world', 'emf', 0.00012), // measured 0.0109% against the native playback (0.537% before)
 	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
 	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
-	fontCase('textx-segoeui-cleartype', 'emf', 0.0367), // measured 3.670%, 3.694% before the ClearType dropout control, 4.041% before the y DELTAP rule
+	fontCase('textx-segoeui-cleartype', 'emf', 0.0300), // measured 2.992% (3.670% before the vertical smoothing and exact blend), 3.694% before the ClearType dropout control, 4.041% before the y DELTAP rule
 	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
 	fontCase('textx-tahoma-aa', 'emf', 0.0013), // measured 0.092%

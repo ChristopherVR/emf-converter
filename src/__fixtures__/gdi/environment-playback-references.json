@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-15T09:46:01.7374865Z",
+    "capturedAt":  "2026-10-15T10:10:27.6315440Z",
     "groups":  "playback-references",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9711,
@@ -3388,7 +3388,7 @@
     "references":  [
                        {
                            "name":  "playback-references.json",
-                           "sha256":  "ca71adf9e2433643526c41311b30468f1d6f0e6416f33b1cb4b83d4cd1dd38d4"
+                           "sha256":  "24c43b42d196d8a19619e65615c7fef4e279b78fa595d6e7f7cb99ba76a0163a"
                        },
                        {
                            "name":  "rotate-text-25deg.emf",
@@ -3401,6 +3401,66 @@
                        {
                            "name":  "rotate-text-25deg.png",
                            "sha256":  "aceb8a3adc8b01e75c8a07b6e4e08ccb712652f72cb4a374333adb9fa7c1ac8f"
+                       },
+                       {
+                           "name":  "textx-arial-cleartype.emf",
+                           "sha256":  "0aa1202ba36f894810621f2cbb1f3887fb51f1847f5939003ff65270d2092e34"
+                       },
+                       {
+                           "name":  "textx-arial-cleartype.playback.png",
+                           "sha256":  "80bb53709d062071d7b11c7f78499d0bd48e99c28ad43043b772be9d5fc85ff6"
+                       },
+                       {
+                           "name":  "textx-arial-cleartype.png",
+                           "sha256":  "35fbc45dedd1aeb149f75ec5d2497e179994aca6ce417088c1f2cf3ea104dc83"
+                       },
+                       {
+                           "name":  "textx-arial-ctnatural.emf",
+                           "sha256":  "7e886609358ad9e8783f7b0edbc94737ec46519fa455fea95e0f79e707162851"
+                       },
+                       {
+                           "name":  "textx-arial-ctnatural.playback.png",
+                           "sha256":  "724a9e927e0c1a6bd50fc700fff01c6fa25265f832af38c9324c136c5f8bbfc0"
+                       },
+                       {
+                           "name":  "textx-arial-ctnatural.png",
+                           "sha256":  "ff9052875941a6e7822f3d3cc369ec29b808bf9ca6d786236d117823166cb352"
+                       },
+                       {
+                           "name":  "textx-arial-q0-default.emf",
+                           "sha256":  "1ba5dc64c6b488d3809f755f7fc7c5c49bd1757fc051bd393297f09dd892eaa5"
+                       },
+                       {
+                           "name":  "textx-arial-q0-default.playback.png",
+                           "sha256":  "80bb53709d062071d7b11c7f78499d0bd48e99c28ad43043b772be9d5fc85ff6"
+                       },
+                       {
+                           "name":  "textx-arial-q0-default.png",
+                           "sha256":  "35fbc45dedd1aeb149f75ec5d2497e179994aca6ce417088c1f2cf3ea104dc83"
+                       },
+                       {
+                           "name":  "textx-arial-q1-draft.emf",
+                           "sha256":  "1b66aad67cbc22e6a7c098738f322d4d0e073d9684d071a3ac7a1f1d7225a368"
+                       },
+                       {
+                           "name":  "textx-arial-q1-draft.playback.png",
+                           "sha256":  "80bb53709d062071d7b11c7f78499d0bd48e99c28ad43043b772be9d5fc85ff6"
+                       },
+                       {
+                           "name":  "textx-arial-q1-draft.png",
+                           "sha256":  "35fbc45dedd1aeb149f75ec5d2497e179994aca6ce417088c1f2cf3ea104dc83"
+                       },
+                       {
+                           "name":  "textx-arial-q2-proof.emf",
+                           "sha256":  "079036e9bef78d04c93650f131a8bd2137b0e9c812681af22ebcdc385ca68db8"
+                       },
+                       {
+                           "name":  "textx-arial-q2-proof.playback.png",
+                           "sha256":  "80bb53709d062071d7b11c7f78499d0bd48e99c28ad43043b772be9d5fc85ff6"
+                       },
+                       {
+                           "name":  "textx-arial-q2-proof.png",
+                           "sha256":  "35fbc45dedd1aeb149f75ec5d2497e179994aca6ce417088c1f2cf3ea104dc83"
                        },
                        {
                            "name":  "textx-escapement-aa.emf",

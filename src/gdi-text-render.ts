@@ -714,22 +714,32 @@ export function drawGdiTextCall(
 }
 
 /**
- * The gamma GDI blends ClearType channels with (fitted to black-on-white
- * ClearType stems: `255 * (1 - a)^(1/1.2)` reproduces them to 1 level).
+ * GDI's ClearType blend (`gdi-cleartype-blend.json.gz`: 6.87 million native channel values over 128 text/background
+ * colour pairs, Arial 12 to 40 px, ClearType, ClearType natural and default quality, are all reproduced). A
+ * channel's coverage is one of seven levels `k / 6`. The text colour and the destination are decoded through a
+ * gamma 1.2 table (the system's font-smoothing contrast, 1200, divided by 1000) rounded to 8 bits, mixed as
+ * `(decode[text] * k + decode[dst] * (6 - k)) / 6` rounded half up, and encoded through the inverse table.
+ * A pixel with no coverage in any channel is untouched; one fully covered in all three takes the text colour;
+ * every other pixel runs all three channels through the tables, so an uncovered channel of a partly covered
+ * pixel round-trips (a 64 background becomes 65).
  */
 const CLEARTYPE_GAMMA = 1.2;
+const CT_DECODE = Uint8Array.from({ length: 256 }, (_, x) => Math.floor(255 * Math.pow(x / 255, CLEARTYPE_GAMMA) + 0.5));
+const CT_ENCODE = Uint8Array.from({ length: 256 }, (_, x) => Math.floor(255 * Math.pow(x / 255, 1 / CLEARTYPE_GAMMA) + 0.5));
 
-/** Blends one channel of ClearType text `s` over `d` at subpixel coverage `a` (0..1). */
+/** Blends one channel of ClearType text `s` over `d` at coverage level `k` (0..6) of a partly covered pixel. */
+export function blendCtLevel(s: number, d: number, k: number): number {
+	return CT_ENCODE[Math.floor((CT_DECODE[s] * k + CT_DECODE[d] * (6 - k) + 3) / 6)];
+}
+
+/** The coverage level (0..6) of a ClearType channel alpha (0..255). */
+function ctLevel(alpha: number): number {
+	return Math.round((alpha * 6) / 255);
+}
+
+/** Blends one channel of ClearType text `s` over `d` at subpixel coverage `a` (0..1) of a partly covered pixel. */
 function blendCt(s: number, d: number, a: number): number {
-	if (a <= 0) {
-		return d;
-	}
-	if (a >= 1) {
-		return s;
-	}
-	const g = CLEARTYPE_GAMMA;
-	const v = a * Math.pow(s / 255, g) + (1 - a) * Math.pow(d / 255, g);
-	return Math.round(255 * Math.pow(v, 1 / g));
+	return blendCtLevel(s, d, ctLevel(a * 255));
 }
 
 /** Composites ClearType (per-channel alpha) glyph bitmaps against the destination. */
@@ -783,9 +793,22 @@ function compositeClearType(
 			blendOverUnknown(rgba, o, rgb, (s, d, c) => blendCt(s, d, cov[c]));
 			continue;
 		}
-		rgba[o] = blendCt(rgb[0], dst[o], a0 / 255);
-		rgba[o + 1] = blendCt(rgb[1], dst[o + 1], a1 / 255);
-		rgba[o + 2] = blendCt(rgb[2], dst[o + 2], a2 / 255);
+		const k0 = ctLevel(a0);
+		const k1 = ctLevel(a1);
+		const k2 = ctLevel(a2);
+		if (k0 === 6 && k1 === 6 && k2 === 6) {
+			rgba[o] = rgb[0];
+			rgba[o + 1] = rgb[1];
+			rgba[o + 2] = rgb[2];
+		} else if (k0 || k1 || k2) {
+			rgba[o] = blendCtLevel(rgb[0], dst[o], k0);
+			rgba[o + 1] = blendCtLevel(rgb[1], dst[o + 1], k1);
+			rgba[o + 2] = blendCtLevel(rgb[2], dst[o + 2], k2);
+		} else {
+			rgba[o] = dst[o];
+			rgba[o + 1] = dst[o + 1];
+			rgba[o + 2] = dst[o + 2];
+		}
 		rgba[o + 3] = 255;
 	}
 	canvasPutImageData(layer.ctx, createImageDataCompat(rgba, w, h), 0, 0);
