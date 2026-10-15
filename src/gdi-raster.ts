@@ -573,6 +573,12 @@ export interface FixBox {
 	 * the box, which GDI rounds into the path's edge end points (see `roundRectDeviceBeziers`).
 	 */
 	cornerExact?: [number, number];
+	/**
+	 * A RoundRect on a map that scales (not an inside-frame pen): the call's corner extent over its box extent per axis, as a
+	 * single precision ratio in 0 to 1. GDI scales the half box (rounded up; down for the vertical half of a counter-clockwise
+	 * shape) by it and rounds to whole FIX (see {@link roundRectCorners}).
+	 */
+	cornerRatio?: [number, number];
 	/** An odd inside-frame width on a Rectangle: native `GetPath` puts its bottom edge a FIX left of the top's. */
 	halfXRect?: boolean;
 	/** The box was pulled in by an inside-frame pen (see {@link arcBeziers} for what that changes for arcs). */
@@ -726,9 +732,22 @@ export function roundRectCorners(
 	clockwise = false,
 	/** The horizontal controls round down (a shape on a map that mirrors x). */
 	floorH = false,
+	/**
+	 * The call's corner extent over its box extent per axis (single precision, 0 to 1). The half extent is then the half box
+	 * (rounded up, or down for the vertical half of a counter-clockwise shape) times the ratio, rounded in single precision to
+	 * the nearest FIX: native `GetPath` of 71,680 RoundRects played back under seven scales is exact (the corner extent in
+	 * device units is not what GDI halves).
+	 */
+	ratio?: [number, number],
 ): number[] {
 	const w = r - l;
 	const h = b - t;
+	if (ratio) {
+		const scaled = (half: number, k: number): number => Math.floor(Math.fround(half * k) + 0.5);
+		const hbx = floorH ? Math.floor(w / 2) : Math.ceil(w / 2);
+		cw = 2 * Math.min(scaled(hbx, ratio[0]), hbx);
+		ch = 2 * Math.min(scaled(clockwise ? Math.ceil(h / 2) : Math.floor(h / 2), ratio[1]), clockwise ? Math.ceil(h / 2) : Math.floor(h / 2));
+	}
 	let ew = Math.min(Math.abs(cw), w);
 	let eh = Math.min(Math.abs(ch), h);
 	if (ew === 0 || eh === 0) {
