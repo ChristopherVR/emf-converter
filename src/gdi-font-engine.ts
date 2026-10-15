@@ -215,6 +215,8 @@ export interface GdiRealizedFont {
 	readonly fractionalOrigins?: 'x' | 'xy';
 	glyphIndex(code: number): number;
 	advance(index: number): number;
+	/** GDI+ ClearTypeGridFit's DrawString advance: the ClearType phantom-point advance rounded (TrueType faces only). */
+	ctGridAdvance?(index: number): number;
 	/** GDI+ design advance: apply tracking in font units before device scaling. */
 	designAdvance?(index: number, tracking: number): number;
 	rotatedAdvance(index: number, halfTurn?: boolean): number;
@@ -428,6 +430,9 @@ export class RealizedFont implements GdiRealizedFont {
 	private readonly hinted: HintedSize;
 	private readonly rotatedSizes = new Map<number, HintedSize>();
 	private readonly rotOutlines = new Map<string, HintedGlyph>();
+	/** GDI's own interpreter run, whose phantom point GDI+ grid-fit grayscale layout takes its advances from. */
+	private readonly advanceSize: HintedSize | null = null;
+	private readonly advanceOutlines = new Map<number, HintedGlyph>();
 	private readonly hdmx: Uint8Array | undefined;
 	/** lfWidth of a horizontally stretched font (0 = not stretched). */
 	private readonly stretchWidth: number;
@@ -489,9 +494,15 @@ export class RealizedFont implements GdiRealizedFont {
 		// AntiAlias also runs these programs, while keeping linear advances.
 		this.hinted = new HintedSize(ttf, ppemX, ppem,
 			gdiPlus && mode === 'gray'
-				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false }
+				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false, grayClearType: true }
 				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
+		if (gdiPlus && mode === 'gray' && gridFit) {
+			// AntiAliasGridFit spaces its glyphs by the widths GDI itself reports (`GetCharWidth32` at the same height:
+			// Arial Bold 40 px W 39, I 10, v 21 and w 31, where the ClearType interpreter's phantom points round to 38,
+			// 11, 22 and 32), while the shapes come from the ClearType interpreter above.
+			this.advanceSize = new HintedSize(ttf, ppemX, ppem, { version: 35, grayscale: true, gdiArithmetic: true }, true);
+		}
 	}
 
 	/**
@@ -607,7 +618,7 @@ export class RealizedFont implements GdiRealizedFont {
 		return g;
 	}
 
-	/** Integer advance width of glyph `index`, as GetCharWidth32 reports it. */
+	/** Integer advance width of glyph `index`, as GetCharWidth32 reports it (GDI+ ClearType: its hinted phantom advance rounded). */
 	advance(index: number): number {
 		const hd = this.hdmx;
 		let base: number;
@@ -619,10 +630,27 @@ export class RealizedFont implements GdiRealizedFont {
 			base = Math.round((advance * this.stretchWidth) / this.ttf.xAvgCharWidth);
 		} else if (!this.gridFit) {
 			base = this.outline(index).linearAdvance / 64;
+		} else if (this.advanceSize) {
+			let g = this.advanceOutlines.get(index);
+			if (!g) {
+				g = this.advanceSize.hintGlyph(index < this.ttf.numGlyphs ? index : NOTDEF);
+				this.advanceOutlines.set(index, g);
+			}
+			base = hd && index < hd.length ? hd[index] : Math.round(g.advance / 64);
 		} else {
 			base = hd && index < hd.length ? hd[index] : Math.round(this.outline(index).advance / 64);
 		}
 		return base + (this.syntheticBold ? 1 : 0);
+	}
+
+	/**
+	 * GDI+ ClearTypeGridFit's DrawString advance: the ClearType interpreter's phantom-point advance rounded to a whole
+	 * pixel (Arial 40 px bold, `text-cleartype-advances`: all 93 integer-advance glyphs; the GDI widths above match 79).
+	 */
+	ctGridAdvance(index: number): number {
+		const gi = index < this.ttf.numGlyphs ? index : NOTDEF;
+		this.ctOutline(gi);
+		return Math.round(this.ctSize!.hintGlyph(gi).advance / 64) + (this.syntheticBold ? 1 : 0);
 	}
 
 	/** GDI+ rounds tracked hmtx advances to font units before device scaling. */

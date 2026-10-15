@@ -18,8 +18,9 @@ import { gdiTextCoverage } from './gdi-text-render';
  * rounds the sum of the two products of a 26.6 distance and a 2.14 vector component (`combined`); GDI's own
  * outlines round each product on its own (`per-product`). In state B the per-product arithmetic reproduces about
  * twice as many of the differing images as the combined one, and state A reproduces with neither; in the committed
- * `text-coverage` captures the combined arithmetic is ahead. A stateless converter cannot match both, so the
- * per-product candidate (excluded because it loses 30 committed Arial 16 `y` captures) stays excluded.
+ * `text-coverage` captures the combined arithmetic was ahead (94 to 64) until round 8, when the helper SHPIX rule and
+ * the gray ClearType GETINFO answers moved the per-product count to 192. A stateless converter cannot match both, so
+ * the per-product candidate (still excluded: it loses 30 committed Arial 16 `y` captures) stays excluded.
  */
 const json = (name: string): any => JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}`, import.meta.url))).toString());
 const perProduct = (x: number, y: number, vx: number, vy: number) => Math.floor((x * vx + 8192) / 16384) + Math.floor((y * vy + 8192) / 16384);
@@ -61,7 +62,7 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 		return image;
 	}
 
-	it('text-real-glyphs: 2,492 of 31,584 captures differ between the 06:21 and 07:35 UTC runs; per-product matches 1,645 of the later images, combined 825, and the earlier run matches combined 62 times and per-product never', () => {
+	it('text-real-glyphs: 2,492 of 31,584 captures differ between the 06:21 and 07:35 UTC runs; per-product matches 1,691 of the later images, combined 851, and the earlier run matches combined 65 times and per-product never', () => {
 		const states = json('text-native-states.json.gz');
 		expect(states.total).toBe(31584);
 		expect(states.differing).toHaveLength(2492);
@@ -86,10 +87,10 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 		// for combined A/B and per-product B. The monochrome contour rule
 		// adds one further Tahoma per-product B match; other faces are unchanged.
 		// The references and the divergent projection-call evidence stay fixed.
-		expect(matches).toEqual({ 'combined A-0621Z': 62, 'combined B-0735Z': 825, 'perProduct B-0735Z': 1645 });
+		expect(matches).toEqual({ 'combined A-0621Z': 65, 'combined B-0735Z': 851, 'perProduct B-0735Z': 1691 });
 	});
 
-	it('text-coverage: 606 of 3,328 committed captures differ from a fresh capture; per-product matches 350 of the fresh images, combined 128, and the committed ones 64 and 94', () => {
+	it('text-coverage: 606 of 3,328 committed captures differ from a fresh capture; per-product matches 350 of the fresh images, combined 128, and the committed ones 192 and 94', () => {
 		const restate = json('text-coverage-restate.json.gz');
 		expect(restate.total).toBe(3328);
 		expect(restate.differing).toHaveLength(606);
@@ -103,6 +104,6 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 				for (const which of ['committed', 'fresh'] as const) if (mine.equals(Buffer.from(d[which], 'base64'))) matches[`${kind} ${which}`] = (matches[`${kind} ${which}`] ?? 0) + 1;
 			}
 		}
-		expect(matches).toEqual({ 'combined committed': 94, 'perProduct committed': 64, 'combined fresh': 128, 'perProduct fresh': 350 });
+		expect(matches).toEqual({ 'combined committed': 94, 'perProduct committed': 192, 'combined fresh': 128, 'perProduct fresh': 350 });
 	});
 });

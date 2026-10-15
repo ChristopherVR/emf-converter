@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-15T10:15:36.6646521Z",
+    "capturedAt":  "2026-10-15T22:51:29.0099359Z",
     "groups":  "text-gdi-getinfo",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9711,
@@ -8,8 +8,8 @@
     "runnerImage":  null,
     "runnerImageVersion":  null,
     "screenDpi":  [
-                      96,
-                      96
+                      144,
+                      144
                   ],
     "libraries":  [
                       {
@@ -3388,7 +3388,7 @@
     "references":  [
                        {
                            "name":  "gdi-getinfo.json.gz",
-                           "sha256":  "5ba99828bb64772ee27086bbcc7a368765de7e0c006918bc2dd1a79f271a46bc"
+                           "sha256":  "6f1f95114367f4e85885667ae3179b7657b05fd57f26f289182dfe4496a87639"
                        }
                    ]
 }

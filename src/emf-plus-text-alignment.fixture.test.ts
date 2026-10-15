@@ -129,8 +129,9 @@ for (const group of ['private', 'arial', 'segoe', 'arial-italic', 'courier-itali
 					expect(bounds.ceilings[index], label).toBe(bounds.before[index]);
 					unchangedNear++;
 				}
-				// Default italic black-box fitting is deliberately outside the aligned engine path.
-				if ((c.style & 2) && !(c.flags & 4)) expect(bounds.ceilings[index], label).toBe(bounds.before[index]);
+				// Default italic black-box fitting is deliberately outside the aligned engine path, except for the
+				// vertical-only alignments (near horizontally), which it does not move (round 8).
+				if ((c.style & 2) && !(c.flags & 4) && c.align !== 0) expect(bounds.ceilings[index], label).toBe(bounds.before[index]);
 			}
 			expect(unchangedNear).toBe(48);
 			expect(exact).toBeGreaterThanOrEqual(bounds.minimumExact);
