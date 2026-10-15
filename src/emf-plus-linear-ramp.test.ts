@@ -199,3 +199,35 @@ describe('SVG output of a linear gradient', () => {
 		expect(stops.length).toBeGreaterThanOrEqual(65);
 	});
 });
+
+describe('unpremultiply (native SourceCopy gradient pixels)', () => {
+	it('reproduces the straight channels GDI+ stores for 700 random two-colour ramps', () => {
+		const rows = JSON.parse(gunzipSync(readFileSync(fixturePath('gradient-unpremultiply.json.gz'))).toString()) as { s: number; e: number; px: string }[];
+		expect(rows).toHaveLength(700);
+		let checked = 0;
+		let alphaOnly = 0;
+		for (const row of rows) {
+			const table = buildLinearRampTable(ramp({ startArgb: row.s, endArgb: row.e }), { x: 0, y: 0, w: 70, h: 1 });
+			const px = Buffer.from(row.px, 'base64');
+			const du = Math.round((table.intervals / 70) * 65536);
+			const out = new Uint8ClampedArray(4);
+			for (let x = 0; x < 70; x++) {
+				out.fill(0);
+				writeRampColor(table, x * du, out, 0, true);
+				expect(out[3]).toBe(px[x * 4 + 3]);
+				if (out[3] === 0) {
+					alphaOnly++;
+					continue;
+				}
+				for (let c = 0; c < 3; c++) {
+					if (out[c] !== px[x * 4 + c]) {
+						throw new Error('row ' + checked + ' x ' + x + ' channel ' + c + ': ' + out[c] + ' != ' + px[x * 4 + c]);
+					}
+				}
+				checked++;
+			}
+		}
+		expect(checked + alphaOnly).toBe(49000);
+		expect(checked).toBe(49000);
+	});
+});

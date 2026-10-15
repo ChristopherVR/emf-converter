@@ -317,6 +317,17 @@ export function foldRampCoordinate(u: number, intervals: number, wrap: EmfPlusGr
 }
 
 /**
+ * GDI+'s straight channel for a premultiplied one `p` under alpha `a` (1..254): `p` times the truncated 16-bit reciprocal
+ * `255 / a`, floored. Measured on the straight pixels a `SourceCopy` gradient stores in a 32bpp ARGB bitmap
+ * (`gradient-unpremultiply.json.gz`: 700 random two-colour ramps, 49,000 pixels, all exact; a fixed-point reciprocal of 15
+ * to 24 bits fits equally, nearest rounding 6,269 of them, the exact floor 46,564 — it differs wherever `p * 255 / a` is
+ * a whole number, which the truncated reciprocal then undershoots by one).
+ */
+export function unpremultiply(p: number, a: number): number {
+	return Math.min(255, Math.floor((p * Math.floor((255 * 65536) / a)) / 65536));
+}
+
+/**
  * Writes the table's colour at folded 16.16 coordinate `u` (see
  * {@link foldRampCoordinate}) into `out` at `o` as straight RGBA. A
  * coordinate in the second (mirrored) period reads knot `2N - j` for knot
@@ -324,7 +335,7 @@ export function foldRampCoordinate(u: number, intervals: number, wrap: EmfPlusGr
  * blends it by the same 8 fraction bits (mirroring the coordinate itself
  * instead would round those bits the other way). Pure.
  */
-export function writeRampColor(table: LinearRampTable, u: number, out: Uint8ClampedArray, o: number): void {
+export function writeRampColor(table: LinearRampTable, u: number, out: Uint8ClampedArray, o: number, truncate = false): void {
 	const n = table.intervals;
 	const k = Math.floor(u / FIX_ONE);
 	const f = Math.floor(u / 256) & 0xff;
@@ -339,9 +350,24 @@ export function writeRampColor(table: LinearRampTable, u: number, out: Uint8Clam
 	}
 	for (let ch = 0; ch < 3; ch++) {
 		const p = (kn[i0 + ch] * (256 - f) + kn[i1 + ch] * f + 128) >> 8;
-		out[o + ch] = a === 255 ? p : Math.round((p * 255) / a);
+		out[o + ch] = a === 255 ? p : truncate ? unpremultiply(p, a) : Math.round((p * 255) / a);
 	}
 	out[o + 3] = a;
+}
+
+/** {@link writeRampColor} without the conversion to straight channels: the interpolated premultiplied RGBA (alpha 0 leaves `out` untouched). Pure. */
+export function writeRampPremultiplied(table: LinearRampTable, u: number, out: Uint8ClampedArray, o: number): void {
+	const n = table.intervals;
+	const k = Math.floor(u / FIX_ONE);
+	const f = Math.floor(u / 256) & 0xff;
+	const j0 = k <= n ? k : 2 * n - k;
+	const j1 = k + 1 <= n ? k + 1 : Math.max(0, 2 * n - k - 1);
+	const kn = table.knots;
+	const i0 = Math.min(n, j0) * 4;
+	const i1 = Math.min(n, j1) * 4;
+	for (let ch = 0; ch < 4; ch++) {
+		out[o + ch] = (kn[i0 + ch] * (256 - f) + kn[i1 + ch] * f + 128) >> 8;
+	}
 }
 
 /**
@@ -355,7 +381,8 @@ export function linearRampSampler(
 	grad: EmfPlusLinearGradient,
 	device: TransformMatrix,
 	halfPixel: boolean,
-): ((x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void) | null {
+	truncate = false,
+): DeviceRampSampler | null {
 	const rect = grad.rect;
 	const ramp = linearRampOf(grad);
 	if (!rect || !ramp || !(Math.abs(rect.w) > 1e-9)) {
@@ -388,12 +415,28 @@ export function linearRampSampler(
 	const du = Math.round(ia * scale * FIX_ONE);
 	const dv = Math.round(ic * scale * FIX_ONE);
 	const u00 = Math.round((ia * off + ic * off + ie - rect.x) * scale * FIX_ONE);
-	return (x0, y0, w, h, out) => {
+	const sampler = (x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray): void => {
 		for (let j = 0; j < h; j++) {
 			let u = u00 + x0 * du + (y0 + j) * dv;
 			for (let i = 0; i < w; i++, u += du) {
-				writeRampColor(table, foldRampCoordinate(u, n, grad.wrapMode), out, (j * w + i) * 4);
+				writeRampColor(table, foldRampCoordinate(u, n, grad.wrapMode), out, (j * w + i) * 4, truncate);
 			}
 		}
 	};
+	if (truncate) {
+		// SourceCopy scales a partly covered pixel's premultiplied channels, which the straight output cannot give back exactly.
+		(sampler as DeviceRampSampler).premultiplied = (x0, y0, w, h, out) => {
+			for (let j = 0; j < h; j++) {
+				let u = u00 + x0 * du + (y0 + j) * dv;
+				for (let i = 0; i < w; i++, u += du) {
+					writeRampPremultiplied(table, foldRampCoordinate(u, n, grad.wrapMode), out, (j * w + i) * 4);
+				}
+			}
+		};
+	}
+	return sampler;
 }
+
+type DeviceRampSampler = ((x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void) & {
+	premultiplied?: (x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void;
+};

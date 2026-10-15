@@ -37,7 +37,7 @@ import { hatchSampler } from './emf-plus-brush-hatch';
 import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
 import { writeTextureColor } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
-import { linearRampSampler } from './emf-plus-linear-ramp';
+import { linearRampSampler, unpremultiply } from './emf-plus-linear-ramp';
 import { applyPlusWorldTransform, deviceToCanvasMatrix, plusCanvasShift, plusWorldMatrix } from './emf-plus-state-handlers';
 import { flatteningContext } from './emf-plus-flatten';
 import { figuresBox, rasterizePlusFill, recordPlusFigures, type FixFigure } from './emf-plus-raster';
@@ -65,7 +65,10 @@ const CLAMP_EDGE_BIAS = 1e-4;
  * at (`x0`, `y0`) into `out` (non-premultiplied RGBA, row-major, pre-zeroed;
  * pixels the brush does not paint are left transparent).
  */
-export type DeviceBrushSampler = (x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void;
+export type DeviceBrushSampler = ((x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void) & {
+	/** The same pixels as premultiplied RGBA, for a brush that holds them that way (a linear gradient under SourceCopy). */
+	premultiplied?: (x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void;
+};
 
 /** Full affine inverse, or `null` for a singular matrix. */
 export function invertAffine(m: TransformMatrix): TransformMatrix | null {
@@ -428,7 +431,7 @@ export function brushSampler(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): DeviceB
 	// GDI+'s table knots already, see effectiveLinearStops); a raster fill
 	// reproduces GDI+'s fixed-point per-pixel interpolation as well.
 	if (obj.gradient && obj.gradient.type === 'linear' && !isSvgContext(rCtx.ctx)) {
-		return linearRampSampler(obj.gradient, device, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0));
+		return linearRampSampler(obj.gradient, device, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), rCtx.ext?.compositingMode === 1);
 	}
 	return null;
 }
@@ -842,11 +845,23 @@ export function gdiplusBlendPixels(data: Uint8ClampedArray, dst: Uint8ClampedArr
  * destination either: GDI+ writes the brush colour with its alpha scaled
  * by the coverage, so an edge over an opaque background comes out
  * translucent (measured on `gpx-rec-compositing-aa`: a half-covered edge
- * of a 128-alpha brush holds alpha 64 whatever was beneath). `dst` is
+ * of a 128-alpha brush holds alpha 64 whatever was beneath). Its colour is
+ * scaled in premultiplied form: the premultiplied channels `p` (the
+ * brush's own when `premultiplied` is given, otherwise `round(c * a / 255)`)
+ * become `round(p * k / 32)`, the alpha `round(a * k / 32)`, and the stored
+ * straight channel is that over the alpha through {@link unpremultiply}
+ * (measured on the 121 edge pixels of the 128-alpha ellipse of
+ * `gpx-rec-compositing-aa`, all exact; keeping the straight colour matched
+ * 10 and was one level off in the rest). `dst` is
  * unused, kept for symmetry with {@link gdiplusBlendPixels}. Returns
  * `data`. Pure.
  */
-export function sourceCopyPixels(data: Uint8ClampedArray, dst: Uint8ClampedArray, coverage: Uint8ClampedArray): Uint8ClampedArray {
+export function sourceCopyPixels(
+	data: Uint8ClampedArray,
+	dst: Uint8ClampedArray,
+	coverage: Uint8ClampedArray,
+	premultiplied: Uint8ClampedArray | null = null,
+): Uint8ClampedArray {
 	void dst;
 	for (let p = 0; p < coverage.length; p++) {
 		const o = p * 4;
@@ -856,7 +871,15 @@ export function sourceCopyPixels(data: Uint8ClampedArray, dst: Uint8ClampedArray
 		} else if (cv !== 255) {
 			// Samples inside (coverage = round(k * 255 / 32) is one-to-one).
 			const k = Math.round((cv * 32) / 255);
-			data[o + 3] = Math.round((data[o + 3] * k) / 32);
+			const a = data[o + 3];
+			const scaled = Math.round((a * k) / 32);
+			if (scaled > 0 && scaled < 255) {
+				for (let c = 0; c < 3; c++) {
+					const pm = premultiplied ? premultiplied[o + c] : Math.round((data[o + c] * a) / 255);
+					data[o + c] = unpremultiply(Math.round((pm * k) / 32), scaled);
+				}
+			}
+			data[o + 3] = scaled;
 		}
 	}
 	return data;
@@ -938,7 +961,12 @@ export function compositeBrushCoverage(
 	sampler(box.x, box.y, box.w, box.h, data);
 	if (channels === 1 && rCtx.ext?.compositingMode === 1 && typeof ctx.getImageData === 'function') {
 		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
-		return sourceCopyComposite(rCtx, box, sourceCopyPixels(data, dst, coverage), coverage);
+		let premultiplied: Uint8ClampedArray | null = null;
+		if (sampler.premultiplied) {
+			premultiplied = new Uint8ClampedArray(box.w * box.h * 4);
+			sampler.premultiplied(box.x, box.y, box.w, box.h, premultiplied);
+		}
+		return sourceCopyComposite(rCtx, box, sourceCopyPixels(data, dst, coverage, premultiplied), coverage);
 	}
 	if (channels === 1 && gdiplusBlend && typeof ctx.getImageData === 'function') {
 		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;

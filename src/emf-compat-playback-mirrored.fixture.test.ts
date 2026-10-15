@@ -5,7 +5,7 @@
  *  - `compat-playback-m<x|y|xy>-<map>-<pen>`: the 36 mixed shapes of `compat-playback-*` (Ellipse, Arc, Chord, Pie, Rectangle,
  *    RoundRect, Polygon, lines and a clockwise Chord) under a negative viewport x extent, y extent or both (the viewport origin at
  *    the far edge), for the 1:1, 10:7, 3:4 and 3:2 by 1:1 maps and a null, cosmetic, plain 3, geometric round 5 and dotted pen:
- *    60 sheets. Differing pixels of 126,000 per sheet below; before the mirroring rules 399,930 over the 60 sheets, now 410.
+ *    60 sheets. Differing pixels of 126,000 per sheet below; before the mirroring rules 399,930 over the 60 sheets, now 55.
  *  - `compat-rects-m<x|y|xy>-<sweep>-<pen>` and `compat-ellipses-m...`: 315 Rectangles or null/cosmetic/dotted-pen Ellipses at
  *    every fractional phase of the 4:3, 10:7, 3:4 and 1:2 maps mirrored the same three ways, 72 sheets (150,507 differing pixels
  *    before, none now).
@@ -16,10 +16,10 @@
  * to `ceil(device coordinate)` in any orientation, a drawn Rectangle is traversed in device order whichever way the map mirrors
  * (a dotted outline shows it), and a RoundRect is the logical shape mapped (its horizontal controls round down under a mirrored x).
  *
- * What is left (410 pixels): a wide pen under the anisotropic 3:2 by 1:1 map that mirrors x puts a diagonal edge pixel of
- * polygons, lines, ellipses and arcs on the other side (169 and 166 pixels on `wide3`, the plain 3 unit pen: the nib's
- * perpendicular rounding is not mirror symmetric), and the RoundRect corner under the non-dyadic maps (a handful of pixels, as
- * unmirrored; the RoundRect half-width under a mirrored x is a FIX off in about one shape of five).
+ * What is left (55 pixels): the RoundRect corner under the non-dyadic maps (a handful of pixels, as unmirrored; the RoundRect
+ * half-width under a mirrored x is a FIX off in about one shape of five). The wide plain pen under the 3:2 by 1:1 map that mirrors
+ * x was 169 and 166 pixels on `wide3` (and 12 on `geo5`): an unequal-scale pen is an elliptical nib and the mirrored map gives
+ * it the matrix nib (`penPolygonMatrix`, see `emf-compat-widemirror.fixture.test.ts`), now 2 pixels.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -37,8 +37,7 @@ const residual: Record<string, number> = {
 	'compat-playback-mx-r34-geo5': 2,
 	'compat-playback-mx-r34-dash': 7,
 	'compat-playback-mx-r32x11-cosmetic': 4,
-	'compat-playback-mx-r32x11-wide3': 169,
-	'compat-playback-mx-r32x11-geo5': 12,
+	'compat-playback-mx-r32x11-wide3': 2,
 	'compat-playback-my-r107-cosmetic': 1,
 	'compat-playback-my-r107-geo5': 1,
 	'compat-playback-my-r34-geo5': 4,
@@ -51,8 +50,7 @@ const residual: Record<string, number> = {
 	'compat-playback-mxy-r34-wide3': 6,
 	'compat-playback-mxy-r34-dash': 3,
 	'compat-playback-mxy-r32x11-cosmetic': 4,
-	'compat-playback-mxy-r32x11-wide3': 166,
-	'compat-playback-mxy-r32x11-geo5': 12,
+	'compat-playback-mxy-r32x11-wide3': 2,
 };
 
 const sheets = [
@@ -61,9 +59,9 @@ const sheets = [
 ];
 
 describe('GM_COMPATIBLE drawing under mirrored maps, recorded and played back natively', () => {
-	it('covers 132 sheets and 410 differing pixels', () => {
+	it('covers 132 sheets and 55 differing pixels', () => {
 		expect(sheets).toHaveLength(132);
-		expect(Object.values(residual).reduce((a, b) => a + b, 0)).toBe(410);
+		expect(Object.values(residual).reduce((a, b) => a + b, 0)).toBe(55);
 	});
 	for (const name of sheets) {
 		it(`${name}: ${residual[name] ?? 0} differing pixels`, async () => {

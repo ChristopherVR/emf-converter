@@ -426,8 +426,11 @@ export function penWidenOptions(rCtx: EmfGdiReplayCtx, opts: { rectangle?: boole
 	const rotatedOrSheared = Math.abs(matrix[1]) >= 1e-6 || Math.abs(matrix[2]) >= 1e-6;
 	// A quarter turn (the diagonal is zero) keeps the uniform device-space pen.
 	const quarterTurn = Math.abs(matrix[0]) < 1e-9 && Math.abs(matrix[3]) < 1e-9;
+	// A map that mirrors x under unequal axis scales also takes the matrix nib: native playback of a wide plain pen (`CreatePen`,
+	// 3 and 4 units under the 3:2 by 1:1 map and its x mirror, `compat-widemirror-*`) shows the nib's polygon is the one the matrix
+	// builds (`penPolygonMatrix`), not the unmirrored ellipse flattening (the mirrored `wide3` sheets fall from 169 and 166 differing pixels to 2).
 	const general =
-		!rCtx.wholeDevicePixels && rotatedOrSheared && !quarterTurn && Math.abs(det) > 1e-9 && state.penWidth * Math.sqrt(Math.abs(det)) * 16 >= 1;
+		!rCtx.wholeDevicePixels && ((rotatedOrSheared && !quarterTurn) || (ellipse && matrix[0] < 0)) && Math.abs(det) > 1e-9 && state.penWidth * Math.sqrt(Math.abs(det)) * 16 >= 1;
 	// A world scale (not one logical unit per device pixel, not GM_COMPATIBLE's whole device pixels): GDI converts a segment's device
 	// vector back to logical units and normalises a square cap's extension by it cut to the nearest whole unit (native
 	// WidenPath: 323 lines under eight scales, every swept arc under four), with the pen's nib at its width in FIX: the whole-pixel
@@ -616,8 +619,7 @@ export function paintRasterPath(rCtx: EmfGdiReplayCtx, path: GdiRasterPath, opts
 		if (!penIsWidened(rCtx)) {
 			return false;
 		}
-		const polys = widenPath(filled ? withoutCurveTangents(path) : path, penWidenOptions(rCtx, opts));
-		paintSpansDeferred(rCtx, fillPolygonSpans(polys, true), { kind: 'solid', rgb: rgbOf(state.penColor) }, state.rop2);
+		const polys = widenPath(filled ? withoutCurveTangents(path) : path, penWidenOptions(rCtx, opts));		paintSpansDeferred(rCtx, fillPolygonSpans(polys, true), { kind: 'solid', rgb: rgbOf(state.penColor) }, state.rop2);
 		return true;
 	}
 	const pattern = cosmeticStyle(state.penFlags ?? state.penStyle, state.penUserStyle);
