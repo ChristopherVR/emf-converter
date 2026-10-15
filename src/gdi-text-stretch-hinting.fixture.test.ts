@@ -137,7 +137,7 @@ describe.skipIf(!haveFonts)('the two reaction rules against the capture (needs t
 		expect(score('Segoe UI Light', 'window', 'cell')).toEqual([5259, 5330]);
 		expect(score('Verdana', 'window', 'cell')).toEqual([5234, 5330]);
 		expect(score('Comic Sans MS', 'window', 'cell')).toEqual([5171, 5330]);
-		expect(score('Lucida Console', 'window', 'cell')).toEqual([4975, 5330]);
+		expect(score('Lucida Console', 'window', 'cell')).toEqual([5024, 5330]);
 	});
 	it('"integer" predicts every Calibri em-height outcome and all but 23 of its 5,330 cell-height outcomes (none when enlarging)', () => {
 		expect(score('Calibri', 'integer', 'em')).toEqual([5330, 5330]);
