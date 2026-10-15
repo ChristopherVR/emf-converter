@@ -346,7 +346,7 @@ public static class CompatPlaybackProbe
 	[DllImport("gdi32.dll")] static extern bool WidenPath(IntPtr dc);
 
 	/** The native path of every Arc, Chord, Pie, Ellipse, RoundRect and Rectangle record of a recorded sheet, played one by one as in `PathPlayback`: a JSON array of `{type, rec, played}`. */
-	public static string SheetPaths(string emfFile, bool widen = false)
+	public static string SheetPaths(string emfFile, bool widen = false, bool lines = false)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);
 		IntPtr emf = GetEnhMetaFileW(emfFile);
@@ -358,7 +358,7 @@ public static class CompatPlaybackProbe
 		EnumEnhMetaFile(dc, emf, delegate(IntPtr hdc, IntPtr table, IntPtr rec, int n, IntPtr data)
 		{
 			int type = Marshal.ReadInt32(rec);
-			if (type >= 42 && type <= 47)
+			if ((type >= 42 && type <= 47) || (lines && type == 54))
 			{
 				SaveDC(hdc);
 				BeginPath(hdc);
@@ -508,6 +508,74 @@ public static class CompatPlaybackProbe
 					Save(bits, Path.Combine(dir, name + ".png"));
 					DeleteEnhMetaFile(emf); DeleteDC(dc); DeleteObject(bmp);
 				}
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
+	/**
+	 * Native `WidenPath` of a zero-length `LineTo` (a dot) of a wide plain pen at every sub-pixel device position, under the nib of the
+	 * `compat-widemirror` sheets (a 2 by 3 pixel nib: pen width 64 logical units, x scale 1/32 pixel and y scale 3/64 pixel per unit, or the
+	 * 4-unit nib 1/24 and 1/16; the x extent negated for `m`). A logical step is half a FIX in x and 0.75 (p3) or 1 (p4) FIX in y, so the
+	 * grid covers every fractional device position: `compat-dot-grid.json.gz`, one object per variant `{v, dots: [{rec, played}]}` (recorded and
+	 * played back, `SheetPaths` with `lines`).
+	 */
+	public static void DotGrid(string dir)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		var js = new System.Text.StringBuilder("[");
+		string tmp = Path.Combine(Path.GetTempPath(), "dotgrid.emf");
+		// name, map mode, window x, window y, viewport x, viewport y, pen width, grid x, grid y, base x, base y
+		object[][] variants = {
+			new object[] { "p3u", 8, 32, 64, 1, 3, 64, 32, 64, 2400, 3000 },
+			new object[] { "p3m", 8, 32, 64, -1, 3, 64, 32, 64, 2400, 3000 },
+			new object[] { "p4u", 8, 24, 16, 1, 1, 64, 48, 16, 2400, 3000 },
+			new object[] { "p4m", 8, 24, 16, -1, 1, 64, 48, 16, 2400, 3000 },
+			new object[] { "id2", 1, 1, 1, 1, 1, 2, 1, 1, 50, 50 },
+			new object[] { "id3", 1, 1, 1, 1, 1, 3, 1, 1, 50, 50 },
+			new object[] { "id4", 1, 1, 1, 1, 1, 4, 1, 1, 50, 50 },
+			new object[] { "id5", 1, 1, 1, 1, 1, 5, 1, 1, 50, 50 },
+			new object[] { "id8", 1, 1, 1, 1, 1, 8, 1, 1, 50, 50 },
+			new object[] { "id12", 1, 1, 1, 1, 1, 12, 1, 1, 50, 50 },
+			new object[] { "x2y1w3", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50 },
+			new object[] { "x2y1w4", 8, 1, 1, 2, 1, 4, 1, 1, 50, 50 },
+			new object[] { "x1y2w3", 8, 1, 1, 1, 2, 3, 1, 1, 50, 50 },
+			new object[] { "x2y3w3", 8, 1, 1, 2, 3, 3, 1, 1, 50, 50 },
+			new object[] { "x3y2w3", 8, 3, 1, 2, 1, 3, 3, 1, 50, 50 },
+			new object[] { "L-id3-h", 1, 1, 1, 1, 1, 3, 1, 1, 50, 50, 20, 0 },
+			new object[] { "L-id3-d", 1, 1, 1, 1, 1, 3, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-id4-h", 1, 1, 1, 1, 1, 4, 1, 1, 50, 50, 20, 0 },
+			new object[] { "L-id4-d", 1, 1, 1, 1, 1, 4, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-id2-d", 1, 1, 1, 1, 1, 2, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-x2y1w3-d", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50, 20, 7 },
+			new object[] { "L-x2y1w3-h", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50, 20, 0 },
+			new object[] { "L-x2y1w3-v", 8, 1, 1, 2, 1, 3, 1, 1, 50, 50, 0, 20 },
+		};
+		for (int v = 0; v < variants.Length; v++)
+		{
+			var vr = variants[v];
+			int mode = (int)vr[1], wx = (int)vr[2], wy = (int)vr[3], vx = (int)vr[4], vy = (int)vr[5], pw = (int)vr[6], gx = (int)vr[7], gy = (int)vr[8], bx = (int)vr[9], by = (int)vr[10];
+			IntPtr mdc = CreateEnhMetaFileW(screen, tmp, ref frame, null);
+			SetMapMode(mdc, mode);
+			if (mode == 8) { SetWindowExtEx(mdc, wx, wy, IntPtr.Zero); SetViewportExtEx(mdc, vx, vy, IntPtr.Zero); }
+			if (vx < 0) SetViewportOrgEx(mdc, W, 0, IntPtr.Zero);
+			IntPtr p = CreatePen(0, pw, 0x202020);
+			IntPtr op = SelectObject(mdc, p);
+			for (int i = 0; i < gx; i++)
+				for (int j = 0; j < gy; j++)
+				{
+					int lx = bx + i, ly = by + j;
+					MoveToEx(mdc, lx, ly, IntPtr.Zero); LineTo(mdc, lx + (vr.Length > 11 ? (int)vr[11] : 0), ly + (vr.Length > 12 ? (int)vr[12] : 0));
+				}
+			SelectObject(mdc, op); DeleteObject(p);
+			IntPtr emf = CloseEnhMetaFile(mdc);
+			DeleteEnhMetaFile(emf);
+			if (v > 0) js.Append(',');
+			js.Append("{\"v\":\"").Append((string)vr[0]).Append("\",\"map\":[").Append(mode).Append(',').Append(wx).Append(',').Append(wy).Append(',').Append(vx).Append(',').Append(vy).Append(',').Append(pw).Append("],\"dots\":").Append(SheetPaths(tmp, true, true)).Append('}');
+		}
+		var bytes = System.Text.Encoding.UTF8.GetBytes(js.Append(']').ToString());
+		using (var file = File.Create(Path.Combine(dir, "compat-dot-grid.json.gz")))
+		using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress)) zip.Write(bytes, 0, bytes.Length);
 		ReleaseDC(IntPtr.Zero, screen);
 	}
 
