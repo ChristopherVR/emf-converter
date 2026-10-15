@@ -180,11 +180,12 @@ describe('hatch brushes', () => {
 });
 
 describe('sourceCopyPixels', () => {
-	it('keeps the brush colour and scales its alpha by the coverage, dropping the destination', () => {
+	it('scales the premultiplied colour and alpha by the coverage, dropping the destination', () => {
 		const data = new Uint8ClampedArray([200, 40, 40, 128, 200, 40, 40, 128, 200, 40, 40, 128]);
 		const dst = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255]);
 		sourceCopyPixels(data, dst, new Uint8ClampedArray([255, 128, 0]));
-		expect(Array.from(data)).toStrictEqual([200, 40, 40, 128, 200, 40, 40, 64, 200, 40, 40, 0]);
+		// Native (gpx-rec-compositing-aa, 121 edge pixels of this brush): half coverage gives premultiplied (50, 10, 10) over alpha 64.
+		expect(Array.from(data)).toStrictEqual([200, 40, 40, 128, 199, 39, 39, 64, 200, 40, 40, 0]);
 	});
 });
 

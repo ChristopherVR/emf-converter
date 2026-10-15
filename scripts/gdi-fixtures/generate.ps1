@@ -442,6 +442,12 @@ if ($Which -eq 'path-gradient-large') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'gradient-unpremultiply-probe') {
+    Add-Type -Path (Join-Path $here 'GradientUnpremultiplyProbe.cs') -ReferencedAssemblies System.Drawing
+    [GradientUnpremultiplyProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-edges') {
     Add-Type -Path (Join-Path $here 'PathGradientEdgeProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientEdgeProbe]::Run($outDir)

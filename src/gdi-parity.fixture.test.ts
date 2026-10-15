@@ -114,8 +114,8 @@ const LINEAR_TILE_CASES: ParityCase[] = [
  * light held in 10 bits), translucent end colours (their exact half-level
  * knots rounding down), and `PixelOffsetMode` Half: every pixel equal to
  * GDI+'s. `gpx-lin-blend-ellipse` (four blend factors, rotated, on an
- * aliased ellipse) is exact too. `gpx-lin-sigma` keeps a few pixels one
- * level off where a blend knot lands exactly on a half level.
+ * aliased ellipse) is exact too. `gpx-lin-sigma` keeps two pixels one
+ * level off (a ramp coordinate 1 in 65,536 short of a table-fraction boundary; the coefficient rounding that would fix them breaks others).
  */
 const LINEAR_RAMP_CASES: ParityCase[] = [
 	exact('gpx-lin-preset5-small'),
@@ -841,8 +841,8 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
 	recordCase('gpx-rec-container', 0),
 	recordCase('gpx-rec-container-page', 0),
 	recordCase('gpx-rec-save-restore', 0),
-	recordCase('gpx-rec-compositing', 0),
-	recordCase('gpx-rec-compositing-aa', 0),
+	exact('gpx-rec-compositing'),
+	exact('gpx-rec-compositing-aa'),
 	recordCase('gpx-rec-hatch', 0),
 	recordCase('gpx-rec-hatch-origin', 0),
 	recordCase('gpx-rec-hatch-rotated', 0),
