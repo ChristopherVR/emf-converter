@@ -22,7 +22,10 @@
  * - an isolated rectangle (a pixel, or a thin run of pixels) loses its bottom left corner, and its bottom right one when it is a single
  *   pixel wide and more than one tall.
  *
- * Where two pixels touch only at a corner the loops are traced apart, which is not always what GDI+ does (a few pixels at a sharp tip).
+ * Where two set pixels touch only at a corner the loops are traced apart (the unset pixels are joined), with one exception measured on 3,000
+ * random Inset polygons (`inset-contacts.json.gz`, `inset-contacts-probe`): a hole whose own loop touches itself at such a corner (the
+ * last pixel of a hole, or any dead end) is traced as separate holes. GDI+ pairs the corner that way at all 791 contacts with a self-touching hole where the two pairings differ,
+ * and never at a contact between two different loops or on an outer loop, except one in about 3,700 where the pairings differ (`splitAtRepeats`).
  *
  * @module emf-plus-inset-outline
  */
@@ -124,7 +127,12 @@ export function traceMaskLoops(mask: ArrayLike<number>, w: number, h: number): C
 				to = next;
 			}
 			if (loop.length >= 4) {
-				loops.push(loop);
+				if (signedArea(loop) < 0) {
+					// A hole that touches itself at a corner is traced as separate holes (see the module comment).
+					loops.push(...splitAtRepeats(loop));
+				} else {
+					loops.push(loop);
+				}
 			}
 		}
 	}
@@ -146,6 +154,38 @@ export function insetMaskOutline(mask: ArrayLike<number>, w: number, h: number, 
 			}
 			return flat;
 		});
+}
+
+/** The shoelace area of a loop in pixel units (y down): positive for the clockwise outer loops, negative for holes. */
+function signedArea(loop: Corner[]): number {
+	let a = 0;
+	for (let i = 0; i < loop.length; i++) {
+		const p = loop[i], q = loop[(i + 1) % loop.length];
+		a += p.x * q.y - q.x * p.y;
+	}
+	return a / 2;
+}
+
+/** Splits a loop at every vertex it visits twice into the loops between the visits. */
+function splitAtRepeats(loop: Corner[]): Corner[][] {
+	const out: Corner[][] = [];
+	const stack: Corner[] = [];
+	const at = new Map<string, number>();
+	for (const c of loop) {
+		const key = `${c.x},${c.y}`;
+		const k = at.get(key);
+		if (k !== undefined) {
+			const cycle = stack.splice(k);
+			for (const d of cycle) {
+				at.delete(`${d.x},${d.y}`);
+			}
+			out.push(cycle);
+		}
+		at.set(key, stack.length);
+		stack.push(c);
+	}
+	out.push(stack);
+	return out;
 }
 
 function mergeCollinear(loop: Corner[]): Corner[] {

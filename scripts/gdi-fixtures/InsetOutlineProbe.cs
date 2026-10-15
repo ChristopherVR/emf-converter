@@ -145,4 +145,44 @@ public static class InsetOutlineProbe
         }
         Console.WriteLine("inset-outline.json.gz: " + count + " cases");
     }
+
+    // Contact survey: many random polygons (triangles, random self-crossing polygons, stars) with an Inset pen of a random width 1.6 to 9 and a
+    // random join, aliased and antialiased, to see how GDI+ pairs set pixels that touch only at a corner.
+    // `inset-contacts.json.gz`: [{ join, width, src, aliased, aa }].
+    public static void RunContacts(string dir, int count, string name)
+    {
+        seed = 987654321;
+        var json = new StringBuilder("[");
+        for (int i = 0; i < count; i++)
+        {
+            PointF[] pts;
+            int kind = i % 3;
+            if (kind == 0) pts = Triangle();
+            else if (kind == 1)
+            {
+                int n = 4 + (int)(Rnd() * 6);
+                pts = new PointF[n];
+                for (int a = 0; a < n; a++) pts[a] = new PointF((float)(10 + Rnd() * 110), (float)(10 + Rnd() * 110));
+            }
+            else pts = Star();
+            float width = (float)(1.6 + Rnd() * 7.4);
+            LineJoin join = (LineJoin)(int)(Rnd() * 3);
+            if (i > 0) json.Append(',');
+            json.Append("{\"join\":").Append((int)join).Append(",\"width\":").Append(F(width)).Append(",\"src\":[");
+            for (int j = 0; j < pts.Length; j++) { if (j > 0) json.Append(','); json.Append(F(pts[j].X)).Append(',').Append(F(pts[j].Y)); }
+            json.Append("],\"aliased\":");
+            using (var b = Draw(pts, width, join, false)) json.Append(Rows(b));
+            json.Append(",\"aa\":");
+            using (var b = Draw(pts, width, join, true)) json.Append(Rows(b));
+            json.Append('}');
+        }
+        json.Append(']');
+        using (var file = File.Create(Path.Combine(dir, name)))
+        using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+        {
+            var bytes = Encoding.UTF8.GetBytes(json.ToString());
+            zip.Write(bytes, 0, bytes.Length);
+        }
+        Console.WriteLine(name + ": " + count + " cases");
+    }
 }

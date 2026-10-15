@@ -30,8 +30,8 @@ interface Case {
 }
 
 const SIZE = 130;
-const EXPECTED_AA_EXACT = 107;
-const EXPECTED_AA_TOTAL = 186;
+const EXPECTED_AA_EXACT = 114;
+const EXPECTED_AA_TOTAL = 130;
 const EXPECTED_WIDEN_TOTAL = 0;
 const cases: Case[] = JSON.parse(gunzipSync(readFileSync(fixturePath('inset-outline.json.gz'))).toString());
 
@@ -152,5 +152,25 @@ describe('insetMaskOutline', () => {
 		expect(outline(['...#####', '...#####', '...#####', '..######', '..######', '..######', '.#######', '.#######', '.#######']).map((l) => l.join(','))).toEqual([
 			'3,0,8,0,8,9,1,9,1,6,2,3',
 		]);
+	});
+});
+
+describe('Inset stroke outline: corner contacts (inset-contacts.json.gz)', () => {
+	// 300 random polygons (triangles, self-crossing polygons, stars) with an Inset pen of width 1.6 to 9 (`inset-contacts-probe`). The
+	// pairing of set pixels that touch only at a corner: a hole that touches itself is traced as separate holes (3,000 cases surveyed: every
+	// differing contact of that kind is paired so; the other contacts keep their set pixels apart).
+	const contacts: Array<{ aliased: Rows; aa: Rows }> = JSON.parse(gunzipSync(readFileSync(fixturePath('inset-contacts.json.gz'))).toString());
+	const box = { x: 0, y: 0, w: SIZE, h: SIZE };
+	const diffs = contacts.map((c) => {
+		const out = rasterizePlusFill(insetMaskOutline(bitmap(c.aliased), SIZE, SIZE, 0, 0), false, true, false, box);
+		return differing(new Uint8Array(out), bitmap(c.aa));
+	});
+
+	it('is the captured set', () => {
+		expect(contacts.length).toBe(300);
+	});
+
+	it('reproduces the antialiased outline on most cases (556 pixels differ, from 945 with every contact traced apart)', () => {
+		expect({ exact: diffs.filter((n) => n === 0).length, total: diffs.reduce((s, n) => s + n, 0) }).toEqual({ exact: 249, total: 556 });
 	});
 });
