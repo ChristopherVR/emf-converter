@@ -38,30 +38,51 @@ export interface Corner {
 }
 
 /**
- * The coverage (0..255 over `box`) of an Inset stroke on closed figures: `strokeFix`, the figures' stroke at twice the pen's width, centered
- * (28.4 device polygons), clipped to the pixels of `figureFix` (the figures themselves) as GDI+'s hard clip does; antialiased, the
- * outline of the surviving pixels is filled instead (see the module comment). `evenOdd` takes the clip as the even-odd interior of the figures
+ * The coverage (0..255 over `box`) of an Inset stroke on closed figures: `strokeGroups`, the stroke at twice the pen's width, centered (28.4
+ * device polygons, one group per figure), clipped to the pixels of `figureFix` (the figures themselves) as GDI+'s hard clip does; antialiased,
+ * the outline of the surviving pixels is filled instead (see the module comment), the outline of each figure's own pixels (measured on 80 paths
+ * of two or three overlapping figures: 3,251 pixels differ against 6,719 for the outline of all the pixels together). `evenOdd` takes the clip as the even-odd interior of the figures
  * (the Alternate fill mode of a GraphicsPath, its default; a polygon or a Winding path clips by the nonzero interior): measured on 80 paths of
  * two or three overlapping closed polygons, a pixel is kept when it lies in an odd number of the figures and in the stroke (49 of 80 exact,
  * from 9 with the nonzero interior). `half` (PixelOffsetMode Half) moves the samples of the aliased mask half a pixel; the antialiased outline is
  * on the device pixels of that mask and is not moved again (exact on 40 of 40 paths, from none when it was).
  */
 export function insetStrokeCoverage(
-	strokeFix: ReadonlyArray<FixFigure>,
+	strokeGroups: ReadonlyArray<ReadonlyArray<FixFigure>>,
 	figureFix: ReadonlyArray<FixFigure>,
 	antialias: boolean,
 	half: boolean,
 	box: { x: number; y: number; w: number; h: number },
 	evenOdd: boolean = false,
 ): Uint8ClampedArray {
-	const coverage = rasterizePlusFill(strokeFix, false, false, half, box);
 	const inside = rasterizePlusFill(figureFix, evenOdd, false, half, box);
-	for (let i = 0; i < coverage.length; i++) {
-		if (inside[i] === 0) {
-			coverage[i] = 0;
+	const masks = strokeGroups.map((group) => {
+		const mask = rasterizePlusFill(group, false, false, half, box);
+		for (let i = 0; i < mask.length; i++) {
+			if (inside[i] === 0) {
+				mask[i] = 0;
+			}
 		}
+		return mask;
+	});
+	if (!antialias) {
+		const out = masks[0] ?? new Uint8ClampedArray(box.w * box.h);
+		for (let k = 1; k < masks.length; k++) {
+			for (let i = 0; i < out.length; i++) {
+				if (masks[k][i] !== 0) {
+					out[i] = 255;
+				}
+			}
+		}
+		return out;
 	}
-	return antialias ? rasterizePlusFill(insetMaskOutline(coverage, box.w, box.h, box.x, box.y), false, true, false, box) : coverage;
+	return rasterizePlusFill(
+		masks.flatMap((mask) => insetMaskOutline(mask, box.w, box.h, box.x, box.y)),
+		false,
+		true,
+		false,
+		box,
+	);
 }
 
 /**

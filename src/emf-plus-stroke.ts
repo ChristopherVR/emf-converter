@@ -412,13 +412,14 @@ function strokeGdiplus(
 		return poly.flatMap((p) => [toPlusFix(m[0] * p.x + m[2] * p.y + m[4]), toPlusFix(m[1] * p.x + m[3] * p.y + m[5])]);
 	};
 	let fix: FixFigure[];
+	let groups: FixFigure[][] = [];
 	let insetFigures: FixFigure[] | null = null;
 	if (hasCustomCap(pen)) {
 		fix = customCapOutline(figures, width, devicePen, pen).map(toFix);
 	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash && !(((pen.startCap ?? 0) | (pen.endCap ?? 0) | (pen.dashCap ?? 0)) & 0xf0)) {
 		return strokeNominal(rCtx, pen, sampler, buildPath, device, size, antialias, closedFigure);
 	} else {
-		({ fix, insetFigures } = widenedPen(figures, devicePen, toFix));
+		({ fix, groups, insetFigures } = widenedPen(figures, devicePen, toFix));
 	}
 	const box = figuresBox(fix, size);
 	if (!box) {
@@ -428,7 +429,7 @@ function strokeGdiplus(
 		return false;
 	}
 	const half = isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0);
-	const coverage = insetFigures ? insetStrokeCoverage(fix, insetFigures, antialias, half, box, evenOddClip) : rasterizePlusFill(fix, false, antialias, half, box);
+	const coverage = insetFigures ? insetStrokeCoverage(groups, insetFigures, antialias, half, box, evenOddClip) : rasterizePlusFill(fix, false, antialias, half, box);
 	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
 }
 
@@ -443,15 +444,15 @@ export function widenedPen(
 	figures: ReadonlyArray<DeviceFigure>,
 	devicePen: DevicePen,
 	toFix: (poly: ReadonlyArray<{ x: number; y: number }>) => number[],
-): { fix: FixFigure[]; insetFigures: FixFigure[] | null } {
+): { fix: FixFigure[]; groups: FixFigure[][]; insetFigures: FixFigure[] | null } {
 	const insetClosed = devicePen.inset && !devicePen.compound && figures.every((f) => f.closed);
 	const insetClip = insetClosed && (!devicePen.dash || devicePen.dashCap === 0);
-	const fix = widenFigures(
-		figures,
-		insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2, dashOffset: devicePen.dashOffset * 2 } : devicePen,
-	).map(toFix);
+	const widenPen = insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2, dashOffset: devicePen.dashOffset * 2 } : devicePen;
+	// One group of polygons per figure: the antialiased outline of an Inset stroke is taken for each figure's own pixels.
+	const groups = insetClosed ? figures.map((f) => widenFigures([f], widenPen).map(toFix)) : [widenFigures(figures, widenPen).map(toFix)];
+	const fix = groups.flat();
 	const insetFigures = insetClosed ? figures.map((f) => toFix(Array.from({ length: f.pts.length >> 1 }, (_, i) => ({ x: f.pts[2 * i], y: f.pts[2 * i + 1] })))) : null;
-	return { fix, insetFigures };
+	return { fix, groups, insetFigures };
 }
 
 /**

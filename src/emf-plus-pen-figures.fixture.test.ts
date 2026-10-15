@@ -40,9 +40,9 @@ const EXPECTED: Record<string, number> = {
 	'gpx-pen-inset-half-aliased': 0,
 	'gpx-pen-inset-half-aa': 0,
 	'gpx-pen-inset-multi-aliased': 2,
-	'gpx-pen-inset-multi-aa': 577,
+	'gpx-pen-inset-multi-aa': 133,
 	'gpx-pen-inset-multiwind-aliased': 0,
-	'gpx-pen-inset-multiwind-aa': 562,
+	'gpx-pen-inset-multiwind-aa': 0,
 };
 
 describe('EMF+ pens on closed figures', () => {

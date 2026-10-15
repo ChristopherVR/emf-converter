@@ -55,7 +55,7 @@ function render(c: Case, antialias: boolean): Uint8Array {
 	if (!box) {
 		return out;
 	}
-	const cov = insetStrokeCoverage(fix, figure, antialias, false, box);
+	const cov = insetStrokeCoverage([fix], figure, antialias, false, box);
 	for (let y = 0; y < box.h; y++) {
 		for (let x = 0; x < box.w; x++) {
 			out[(box.y + y) * SIZE + box.x + x] = cov[y * box.w + x];

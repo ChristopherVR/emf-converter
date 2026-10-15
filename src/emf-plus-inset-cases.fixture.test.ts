@@ -82,13 +82,13 @@ function render(c: Case, antialias: boolean): Uint8ClampedArray {
 		compound: null,
 		inset: c.kind !== 'dashc',
 	};
-	const { fix, insetFigures } = widenedPen(figures, pen, (poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
+	const { fix, groups, insetFigures } = widenedPen(figures, pen, (poly) => poly.flatMap((p) => [toPlusFix(p.x), toPlusFix(p.y)]));
 	const area = figuresBox(fix, { w: SIZE, h: SIZE });
 	const out = new Uint8ClampedArray(SIZE * SIZE);
 	if (!area) {
 		return out;
 	}
-	const cov = insetFigures ? insetStrokeCoverage(fix, insetFigures, antialias, half, area, true) : rasterizePlusFill(fix, false, antialias, half, area);
+	const cov = insetFigures ? insetStrokeCoverage(groups, insetFigures, antialias, half, area, true) : rasterizePlusFill(fix, false, antialias, half, area);
 	for (let y = 0; y < area.h; y++) {
 		for (let x = 0; x < area.w; x++) {
 			out[(area.y + y) * SIZE + area.x + x] = cov[y * area.w + x];
@@ -148,7 +148,7 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 
 	it('paths of overlapping closed figures: the even-odd interior is the clip', () => {
 		const multi = cases.filter((c) => c.kind === 'multi');
-		expect(score(multi)).toEqual({ aliased: [49, 721], aa: [2, 6719] });
+		expect(score(multi)).toEqual({ aliased: [49, 721], aa: [6, 3251] });
 	});
 
 	it('control: dashed Center pens, flat and round dash caps', () => {
