@@ -22,8 +22,10 @@ it('reports native GETINFO bits: ClearType and compatible widths belong to GDI q
 		expect(set('gdiplus', 5, size, 'compat')).toBe(false);
 		expect(set('gdi', 4, size, 'gray')).toBe(size === 20);
 		expect(set('gdi', 5, size, 'gray')).toBe(false);
-		// GDI's own ClearType reports symmetric smoothing (bit 18, selector 2048); GDI+ does not. The converter does not
-		// report it: switching it on made the Arial controls worse (11,327 to 14,955 differing pixels at ClearType quality).
+		// GDI's own ClearType reports symmetric smoothing (bit 18, selector 2048); GDI+ does not. The converter reports it
+		// for GDI ClearType at the sizes whose `gasp` range has GASP_SYMMETRIC_SMOOTHING (every size of a font without
+		// `gasp`, like this private font): reporting it at every size made the Arial controls worse (11,327 to 14,955
+		// differing pixels at ClearType quality), reporting it by range makes natural quality exact (round 8).
 		expect(set('gdi', 5, size, 'symsmooth')).toBe(true);
 		expect(set('gdiplus', 5, size, 'symsmooth')).toBe(false);
 		for (const mode of [0, 5, 6]) {

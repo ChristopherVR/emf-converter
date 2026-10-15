@@ -314,6 +314,11 @@ export interface HintEnvironment {
 	/** Symmetric (vertically smoothed) ClearType: GETINFO bit 15. */
 	symmetricSmoothing?: boolean;
 	/**
+	 * GETINFO selector 2048 -> bit 18: the size's `gasp` range asks for symmetric smoothing (GDI ClearType reports it
+	 * from the range, for natural and compatible-width quality alike; GDI+ does not report it).
+	 */
+	smoothingBit18?: boolean;
+	/**
 	 * Report the glyph as stretched to GETINFO (selector bit 2 -> result bit 9) and SCANCTRL although the x and y
 	 * scales are equal: Windows plays a recording's text through a horizontal world-transform stretch, which fonts
 	 * such as Segoe UI answer by switching grid-fitting off while the outline keeps the unstretched scale.
@@ -2001,6 +2006,7 @@ export class HintedSize {
 				if (sel & 64 && this.env.clearType) k |= 1 << 13;
 				if (sel & 128 && this.env.clearType && this.env.compatibleWidths !== false) k |= 1 << 14;
 				if (sel & 256 && this.env.symmetricSmoothing) k |= 1 << 15;
+				if (sel & 2048 && this.env.smoothingBit18) k |= 1 << 18;
 				this.push(k);
 				return true;
 			}
