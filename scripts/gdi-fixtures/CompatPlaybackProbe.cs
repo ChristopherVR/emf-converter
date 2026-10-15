@@ -460,6 +460,55 @@ public static class CompatPlaybackProbe
 		ReleaseDC(IntPtr.Zero, screen);
 	}
 
+	/** Wide-pen sweep under the 3:2 by 1:1 map and its x mirror: 300 cells of one random polyline, polygon or ellipse each. `compat-widemirror-<kind>-p<width>-<m|u>`: the same logical shapes with the viewport x extent negated. */
+	public static void WideMirror(string dir)
+	{
+		IntPtr screen = GetDC(IntPtr.Zero);
+		double mmX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8), mmY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);
+		var frame = new RECT { Right = (int)Math.Round(W * mmX), Bottom = (int)Math.Round(H * mmY) };
+		string[] kinds = { "line", "poly3", "poly4", "ellipse", "hline", "vline", "dot" };
+		int[] penWidths = { 3, 4 };
+		for (int kind = 0; kind < kinds.Length; kind++)
+			foreach (int pw in penWidths)
+				for (int mirror = 0; mirror < 2; mirror++)
+				{
+					string name = "compat-widemirror-" + kinds[kind] + "-p" + pw + "-" + (mirror == 1 ? "m" : "u");
+					IntPtr mdc = CreateEnhMetaFileW(screen, Path.Combine(dir, name + ".emf"), ref frame, null);
+					PatBlt(mdc, 0, 0, W, H, 0x00FF0062);
+					SetMapMode(mdc, 8);
+					SetWindowExtEx(mdc, 3, 1, IntPtr.Zero);
+					SetViewportExtEx(mdc, mirror == 1 ? -2 : 2, 1, IntPtr.Zero);
+					if (mirror == 1) SetViewportOrgEx(mdc, W, 0, IntPtr.Zero);
+					SetBkMode(mdc, 1);
+					IntPtr p = CreatePen(0, pw, 0x202020), br = CreateSolidBrush(0x60A0F0);
+					IntPtr op = SelectObject(mdc, p), ob = SelectObject(mdc, br);
+					var rnd = new Random(77 + kind);
+					for (int i = 0; i < 20 * 15; i++)
+					{
+						int col = i % 20, row = i / 20;
+						int lx0 = col * 31 + 3, ly0 = row * 20 + 3;
+						int[] pts = new int[8];
+						for (int k = 0; k < 4; k++) { pts[2 * k] = lx0 + rnd.Next(0, 25); pts[2 * k + 1] = ly0 + rnd.Next(0, 14); }						if (kind == 0) { MoveToEx(mdc, pts[0], pts[1], IntPtr.Zero); LineTo(mdc, pts[2], pts[3]); }
+						else if (kind == 6) { MoveToEx(mdc, pts[0], pts[1], IntPtr.Zero); LineTo(mdc, pts[0], pts[1]); }
+						else if (kind == 4) { MoveToEx(mdc, pts[0], pts[1], IntPtr.Zero); LineTo(mdc, pts[2], pts[1]); }
+						else if (kind == 5) { MoveToEx(mdc, pts[0], pts[1], IntPtr.Zero); LineTo(mdc, pts[0], pts[3]); }
+						else if (kind == 1) Polygon(mdc, pts, 3);
+						else if (kind == 2) Polygon(mdc, pts, 4);
+						else { int l = Math.Min(pts[0], pts[2]), r = Math.Max(pts[0], pts[2]) + 8, t = Math.Min(pts[1], pts[3]), b = Math.Max(pts[1], pts[3]) + 4; Ellipse(mdc, l, t, r, b); }
+					}
+					SelectObject(mdc, op); SelectObject(mdc, ob); DeleteObject(p); DeleteObject(br);
+					IntPtr emf = CloseEnhMetaFile(mdc);
+					IntPtr dc, bmp;
+					IntPtr bits = Surface(screen, out dc, out bmp);
+					PatBlt(dc, 0, 0, W, H, 0x00FF0062);
+					var rect = new RECT { Right = W, Bottom = H };
+					PlayEnhMetaFile(dc, emf, ref rect);
+					Save(bits, Path.Combine(dir, name + ".png"));
+					DeleteEnhMetaFile(emf); DeleteDC(dc); DeleteObject(bmp);
+				}
+		ReleaseDC(IntPtr.Zero, screen);
+	}
+
 	public static void Run(string dir)
 	{
 		IntPtr screen = GetDC(IntPtr.Zero);
