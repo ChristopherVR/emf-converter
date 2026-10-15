@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { cmykInputCurve } from './jpeg-cmyk';
+import { cmykColour16, cmykInputCurve, cmykInputPositions } from './jpeg-cmyk';
 
 /**
  * Edge sweep of the Windows ICM module (`scripts/gdi-fixtures/cmyk-edge-sweep.py`, `generate.ps1 icm-cmyk-translate16`): every
@@ -116,5 +116,26 @@ describe('Windows ICM CMYK edge sweep', () => {
 			}
 		}
 		expect({ cells, infeasible }).toEqual({ cells: 1095, infeasible: 412 });
+	});
+	it('is reproduced by the integer nodes and the output table of jpeg-cmyk.ts at the 8-bit lattice (exact lattice words)', () => {
+		let exact = 0;
+		let worst = 0;
+		for (let edge = 0; edge < 32; edge++) {
+			const ink = edge >> 3;
+			const others = [0, 1, 2, 3].filter((d) => d !== ink);
+			for (let v = 0; v < 256; v++) {
+				const positions = [0, 0, 0, 0];
+				others.forEach((d, i) => { positions[d] = (edge >> i) & 1 ? 15 * 4096 : 0; });
+				positions[ink] = cmykInputPositions[v];
+				const colour = cmykColour16(positions);
+				for (let c = 0; c < 3; c++) {
+					const d = Math.abs(colour[c] - lattice(edge, v, c));
+					if (d === 0) exact++;
+					worst = Math.max(worst, d);
+				}
+			}
+		}
+		expect(exact).toBe(24410);
+		expect(worst).toBeLessThanOrEqual(4);
 	});
 });
