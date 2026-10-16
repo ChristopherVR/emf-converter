@@ -1,4 +1,4 @@
-param([string]$OutDir = '', [switch]$Argb)
+param([string]$OutDir = '', [switch]$Argb, [switch]$Centre)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class PathGradientSpanDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
@@ -6,6 +6,17 @@ Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static cl
 $destination = if ($OutDir) { $OutDir } else { Join-Path $here '..\..\src\__fixtures__\gdi' }
 $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $destination)).Path
 Add-Type -Path (Join-Path $here 'PathGradientSpanProbe.cs') -ReferencedAssemblies System.Drawing
+if ($Centre) {
+    # Round 9: the span measured from the centre colour and the three kinds of edge (path-gradient-flat-grid*.json.gz, path-gradient-edge-stage*.json.gz).
+    [PathGradientSpanProbe]::RunGrid($destination)
+    [PathGradientSpanProbe]::RunGridColors($destination, 192, 64, 128, 255, 'path-gradient-flat-grid-neg.json.gz')
+    [PathGradientSpanProbe]::RunEdges($destination)
+    [PathGradientSpanProbe]::RunEdgesX($destination)
+    [PathGradientSpanProbe]::RunEdgesMid($destination)
+    $files = @('path-gradient-flat-grid.json.gz', 'path-gradient-flat-grid-neg.json.gz', 'path-gradient-edge-stage.json.gz', 'path-gradient-edge-stage-x.json.gz', 'path-gradient-edge-stage-mid.json.gz') | ForEach-Object { Join-Path $destination $_ }
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $destination 'environment-path-gradient-centre.json') -Groups 'path-gradient-centre' -Files $files
+    return
+}
 [PathGradientSpanProbe]::Run($destination)
 & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $destination 'environment-path-gradient-span.json') -Groups 'path-gradient-span' -Files @((Join-Path $destination 'path-gradient-span.json.gz'))
 # -Argb: the per-vertex capture set again onto a straight-alpha Format32bppArgb surface with SourceOver (path-gradient-vertices-argb.json.gz,
