@@ -19,8 +19,9 @@ import { gdiTextCoverage } from './gdi-text-render';
  *    (strike-out), where the baseline is the origin plus the rounded cell ascent, raised to the next quarter pixel
  *    after truncation to 1/512 pixel. Every captured column profile agrees.
  *  - The coverage is four sub-scanlines by eight horizontal samples, 32 levels: a value is `round(255 * k / 32)`.
- *  - Bars of two or more rows start at `ceil8(origin + 0.5)` (every capture agrees); their end is within an eighth
- *    pixel of `ceil8(end + 0.5)` in most captures. A bar one row thick has sub-scanline dependent ends that are not
+ *  - Bars of two or more rows start at `ceil8(origin + 0.5)` (every capture agrees) and end at `ceil8(end + 0.5)`
+ *    (1,939 of 1,968), where `end` is the origin plus the run's advance (design-unit advances times 1.03, see
+ *    `gdiplus-singlebit-advances.fixture.test.ts`). A bar one row thick has sub-scanline dependent ends that are not
  *    modelled (the converter uses start + 0.3 and end + 0.8).
  */
 const json = (name: string): any[] => JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}`, import.meta.url))).toString());
@@ -34,7 +35,7 @@ describe.skipIf(!fonts)('GDI+ AntiAlias underline and strike-out bars against na
 		const style = c.style;
 		const font = collection.realize({ face: c.face, height: -c.size, width: 0, weight: style & 1 ? 700 : 400, italic: !!(style & 2), charSet: 1, pitchAndFamily: 0, quality: 4, unhinted: true, ignoreGasp: true, gdiPlus: true } as any)!;
 		const codes = [...'        x'].map((ch) => ch.codePointAt(0)!);
-		const dx = codes.map((ch) => font.advance(font.glyphIndex(ch)) * 1.03);
+		const dx = codes.map((ch) => font.designAdvance!(font.glyphIndex(ch), 1.03));
 		const x0 = 10 + c.ox + c.size / 6;
 		const y = 8 + c.oy + Math.round((font.ttf.winAscent * c.size) / font.ttf.unitsPerEm);
 		const cov = gdiTextCoverage(font, { codes, glyphIndices: false, x: x0, y, dx, dy: null, textAlign: 24, textColor: '#000000', bkColor: '#ffffff', bkMode: 1, options: 0, rect: null, matrix: null, underline: !!(style & 4), strikeOut: !!(style & 8), plusBars: 'fractional' }, { decorations: true, grayLevels: 15 })!;
@@ -75,8 +76,8 @@ describe.skipIf(!fonts)('GDI+ AntiAlias underline and strike-out bars against na
 			else { stats.thinStart++; stats.thinEnd++; if (start) stats.thinStartExact++; if (end) stats.thinEndExact++; }
 		}
 		expect(stats).toEqual({
-			thickStart: 1968, thickStartExact: 1968, thickEnd: 1968, thickEndExact: 1607,
-			thinStart: 4432, thinStartExact: 1536, thinEnd: 4432, thinEndExact: 1272,
+			thickStart: 1968, thickStartExact: 1968, thickEnd: 1968, thickEndExact: 1939,
+			thinStart: 4432, thinStartExact: 1536, thinEnd: 4432, thinEndExact: 1246,
 		});
 	});
 });
