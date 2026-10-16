@@ -393,8 +393,8 @@ interface PlusEngineFont {
 	solidViaCoverage: boolean;
 	underline: boolean;
 	strikeOut: boolean;
-	/** TextRenderingHintAntiAlias draws its underline and strike-out bars at fractional positions. */
-	fractionalDecorations: boolean;
+	/** How DrawString draws underline and strike-out bars: fractionally for AntiAlias, with rounded ends otherwise. */
+	plusBars: 'fractional' | 'snapped';
 }
 
 /**
@@ -457,7 +457,7 @@ function realizePlusEngineFont(
 		solidViaCoverage,
 		underline: (font.flags & 4) !== 0,
 		strikeOut: (font.flags & 8) !== 0,
-		fractionalDecorations: hint === 4,
+		plusBars: hint === 4 ? 'fractional' : 'snapped',
 	};
 }
 
@@ -482,7 +482,7 @@ function paintPlusEngineRun(
 		matrix: null,
 	};
 	if ((!ef.color || ef.solidViaCoverage) && ef.sampler) {
-		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: ef.underline, strikeOut: ef.strikeOut, fractionalDecorations: ef.fractionalDecorations }, { decorations: true, grayLevels: 15 });
+		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: ef.underline, strikeOut: ef.strikeOut, plusBars: ef.plusBars }, { decorations: true, grayLevels: 15 });
 		if (!cov) {
 			return true;
 		}
@@ -516,7 +516,7 @@ function paintPlusEngineRun(
 	paintGdiTextRun(
 		rCtx.ctx,
 		ef.realized,
-		{ ...base, textColor: ef.color as string, underline: ef.underline, strikeOut: ef.strikeOut },
+		{ ...base, textColor: ef.color as string, underline: ef.underline, strikeOut: ef.strikeOut, plusBars: ef.plusBars },
 		rCtx.fontFamilyMap,
 	);
 	return true;
@@ -584,7 +584,8 @@ function drawPlusStringWithEngine(
 	// captures from 39,867 to 22,277 pixels but worsen six (Arial 12 `GDI+ DrawString Ag 0123` from 61 to 308), whose
 	// end-of-run compensation is not modelled.
 	const ctGrid = !unhinted && realized.mode === 'cleartype' && !!realized.ctGridAdvance && !realized.syntheticItalic && tracking > 1;
-	const dx = unhinted ? codes.map((c) => realized.advance(realized.glyphIndex(c)) * tracking)
+	const designUnits = !!realized.designAdvance && m[0] === 1 && m[3] === 1;
+	const dx = unhinted ? codes.map((c) => designUnits ? realized.designAdvance!(realized.glyphIndex(c), tracking) : realized.advance(realized.glyphIndex(c)) * tracking)
 		: ctGrid ? codes.map((c) => realized.ctGridAdvance!(realized.glyphIndex(c))) : null;
 	return paintPlusEngineRun(rCtx, ef, { codes, glyphIndices: false, x, y, dx, dy: null });
 }

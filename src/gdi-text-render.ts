@@ -72,10 +72,10 @@ export interface GdiTextRun {
 	underline: boolean;
 	strikeOut: boolean;
 	/**
-	 * GDI+ AntiAlias (not grid-fitted) text draws its underline and strike-out bars at fractional positions, see
-	 * {@link fractionalBars}. Only {@link gdiTextCoverage} honours it.
+	 * GDI+ DrawString bars: `fractional` (AntiAlias) draws them at fractional positions, see {@link fractionalBars};
+	 * `snapped` (the other hints) draws the same horizontal extent with its ends rounded to whole pixels.
 	 */
-	fractionalDecorations?: boolean;
+	plusBars?: 'fractional' | 'snapped';
 }
 
 /** What the run advanced the current position by (device), for TA_UPDATECP. */
@@ -425,12 +425,15 @@ export function paintGdiTextRun(
 		if (run.strikeOut) {
 			bars.push([font.strikeoutPosition, Math.max(1, font.strikeoutThickness), font.strikeoutShift ?? 0]);
 		}
+		const snapped = !m && run.plusBars === 'snapped' && font.exactDecorations ? fractionalBars(font.exactDecorations, run, run.x + startAlong, run.y + baseDown, total) : null;
+		let barIndex = 0;
 		for (const [pos, thick, lean] of bars) {
+			const snap = snapped?.[barIndex++];
 			if (!m) {
 				const x0 = Math.round(run.x + startAlong) + lean;
 				const top = Math.round(run.y + baseDown) - pos;
-				const l = Math.min(x0, x0 + Math.round(total));
-				const r = Math.max(x0, x0 + Math.round(total));
+				const l = snap ? Math.round(snap.left) : Math.min(x0, x0 + Math.round(total));
+				const r = snap ? Math.round(snap.right) : Math.max(x0, x0 + Math.round(total));
 				fillDeviceRect(ctx, { left: l, top, right: r, bottom: top + thick }, run.textColor, clip);
 			} else {
 				const quad = [
@@ -922,7 +925,7 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 	const { placed, total, startAlong, baseDown } = layoutGdiRun(font, run);
 	const bars: DeviceRect[] = [];
 	const softBars: SoftBar[] = [];
-	if (options.decorations && run.fractionalDecorations && font.exactDecorations && !run.matrix && total !== 0 && font.mode === 'gray') {
+	if (options.decorations && run.plusBars === 'fractional' && font.exactDecorations && !run.matrix && total !== 0 && font.mode === 'gray') {
 		softBars.push(...fractionalBars(font.exactDecorations, run, run.x + startAlong, run.y + baseDown, total));
 	} else
 	// EMF+ uses upright, device-scaled fonts on this coverage path. Keep
@@ -930,9 +933,14 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 	if (options.decorations && !run.matrix && total !== 0) {
 		const x = Math.round(run.x + startAlong);
 		const end = x + Math.round(total);
+		const snapped = run.plusBars === 'snapped' && font.exactDecorations ? fractionalBars(font.exactDecorations, run, run.x + startAlong, run.y + baseDown, total) : null;
+		let barIndex = 0;
 		const add = (position: number, thickness: number): void => {
 			const top = Math.round(run.y + baseDown) - position;
-			bars.push({ left: Math.min(x, end), right: Math.max(x, end), top, bottom: top + Math.max(1, thickness) });
+			const snap = snapped?.[barIndex++];
+			const l = snap ? Math.round(snap.left) : x;
+			const r = snap ? Math.round(snap.right) : end;
+			bars.push({ left: Math.min(l, r), right: Math.max(l, r), top, bottom: top + Math.max(1, thickness) });
 		};
 		if (run.underline) add(font.underlinePosition, font.underlineThickness);
 		if (run.strikeOut) add(font.strikeoutPosition, font.strikeoutThickness);

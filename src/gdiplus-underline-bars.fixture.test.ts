@@ -37,7 +37,7 @@ describe.skipIf(!fonts)('GDI+ AntiAlias underline and strike-out bars against na
 		const dx = codes.map((ch) => font.advance(font.glyphIndex(ch)) * 1.03);
 		const x0 = 10 + c.ox + c.size / 6;
 		const y = 8 + c.oy + Math.round((font.ttf.winAscent * c.size) / font.ttf.unitsPerEm);
-		const cov = gdiTextCoverage(font, { codes, glyphIndices: false, x: x0, y, dx, dy: null, textAlign: 24, textColor: '#000000', bkColor: '#ffffff', bkMode: 1, options: 0, rect: null, matrix: null, underline: !!(style & 4), strikeOut: !!(style & 8), fractionalDecorations: true }, { decorations: true, grayLevels: 15 })!;
+		const cov = gdiTextCoverage(font, { codes, glyphIndices: false, x: x0, y, dx, dy: null, textAlign: 24, textColor: '#000000', bkColor: '#ffffff', bkMode: 1, options: 0, rect: null, matrix: null, underline: !!(style & 4), strikeOut: !!(style & 8), plusBars: 'fractional' }, { decorations: true, grayLevels: 15 })!;
 		const data = cov.bars!;
 		const at = (x: number, yy: number): number => (x >= cov.x && x < cov.x + cov.width && yy >= cov.y && yy < cov.y + cov.height ? data[(yy - cov.y) * cov.width + (x - cov.x)] : 0);
 		return { at, sumColumn: (x) => { let s = 0; for (let yy = cov.y; yy < cov.y + cov.height; yy++) s += at(x, yy); return s; }, y0: cov.y, y1: cov.y + cov.height };
