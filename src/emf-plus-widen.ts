@@ -263,12 +263,13 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt
 	// a width beyond both ends (measured with GraphicsPath.Widen: a 12-pixel
 	// dash of a 4-pixel pen is straight for 8, a 4-pixel dot for none).
 	const shorten = pen.dashCap !== 0 ? 2 * pen.half : 0;
-	const dash = (pen.dash as number[]).map((v, i, all) => {
+	const dash = (pen.dash as number[]).map((v, i) => {
 		if (i % 2 === 0) {
-			return Math.max(v - shorten, MIN_DASH);
+			return Math.max(v - shorten, MIN_DASH * 2 * pen.half);
 		}
-		const on = all[i - 1];
-		return v + on - Math.max(on - shorten, MIN_DASH);
+		// The next dash starts one `shorten` after this dash's straight part ends, however short the dash was: a dash shorter than the cap
+		// still takes the cap's whole length of the pattern (measured: the pattern 2, 1, 0.5, 1.5 of a width 2 pen repeats every 11 pixels, not 10).
+		return v + shorten;
 	});
 	const total = dash.reduce((s, v) => s + v, 0);
 	const out: Array<{ pts: Pt[]; first: boolean; last: boolean }> = [];
@@ -292,20 +293,27 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt
 	let on = idx % 2 === 0;
 	let cur: Pt[] | null = on ? [path[0]] : null;
 	let curFirst = on;
+	const m = pen.dashMetric;
+	const lengths = path.slice(1).map((b, i) => {
+		const vx = b.x - path[i].x;
+		const vy = b.y - path[i].y;
+		return m ? Math.hypot(m[0] * vx + m[2] * vy, m[1] * vx + m[3] * vy) : Math.hypot(vx, vy);
+	});
+	// Length of the path after the segment `i`.
+	const after = (i: number): number => lengths.slice(i + 1).reduce((sum, v) => sum + v, 0);
 	for (let i = 0; i + 1 < path.length; i++) {
 		const a = path[i];
 		const b = path[i + 1];
-		const m = pen.dashMetric;
-		const vx = b.x - a.x;
-		const vy = b.y - a.y;
-		let segLen = m ? Math.hypot(m[0] * vx + m[2] * vy, m[1] * vx + m[3] * vy) : Math.hypot(vx, vy);
+		let segLen = lengths[i];
 		let t0 = 0;
 		while (segLen - t0 > remaining + 1e-9) {
 			t0 += remaining;
 			const q = { x: a.x + ((b.x - a.x) * t0) / segLen, y: a.y + ((b.y - a.y) * t0) / segLen };
 			if (on && cur) {
 				cur.push(q);
-				out.push({ pts: cur, first: curFirst, last: false });
+				// A dash of an open line whose cap would reach the line's end (the line ends within half a pen width of its straight part) is
+				// the line's last dash: it ends where its straight part does, under the line's own end cap (measured: a Flat end cap there).
+				out.push({ pts: cur, first: curFirst, last: !closed && shorten > 0 && segLen - t0 + after(i) <= pen.half + 1e-9 });
 				cur = null;
 			} else {
 				cur = [q];
@@ -371,7 +379,7 @@ function arrowAnchor(pp: Pt[], atEnd: boolean, half: number): Pt[] {
 }
 
 /** Shortest straight part of a dash (GDI+ keeps a zero-length dash's direction for its caps). */
-const MIN_DASH = 1 / 256;
+const MIN_DASH = 0.001;
 
 /** Signed area (y down: positive when the figure turns clockwise on screen). */
 function signedArea(pts: Pt[]): number {

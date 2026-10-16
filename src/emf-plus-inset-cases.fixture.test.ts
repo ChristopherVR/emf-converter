@@ -143,7 +143,7 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 
 	it('dashed Inset pens with round dash caps: the band along the inside of each edge, clipped', () => {
 		const round = cases.filter((c) => c.kind === 'dash' && c.dashCap === 2);
-		expect(score(round)).toEqual({ aliased: [12, 4543], aa: [10, 8690] });
+		expect(score(round)).toEqual({ aliased: [38, 36], aa: [34, 244] });
 	});
 
 	it('paths of overlapping closed figures: the even-odd interior is the clip', () => {
@@ -154,6 +154,6 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 	it('control: dashed Center pens, flat and round dash caps', () => {
 		const flat = cases.filter((c) => c.kind === 'dashc' && c.dashCap === 0);
 		const round = cases.filter((c) => c.kind === 'dashc' && c.dashCap === 2);
-		expect({ flat: score(flat), round: score(round) }).toEqual({ flat: { aliased: [37, 18], aa: [35, 62] }, round: { aliased: [8, 3353], aa: [8, 8549] } });
+		expect({ flat: score(flat), round: score(round) }).toEqual({ flat: { aliased: [37, 18], aa: [35, 62] }, round: { aliased: [34, 6], aa: [13, 125] } });
 	});
 });
