@@ -127,6 +127,18 @@ const COVERAGE_NUDGE_X = 1e-6;
 const COVERAGE_NUDGE_Y = 1e-9;
 
 /**
+ * The vertical source position of a plain Bilinear `DrawImagePoints` draw (the form a metafile records for
+ * `DrawImage(image, rectangle)`) with axis-aligned points runs a constant relative 2^-21 (four float32 epsilons)
+ * above the exact position: 959 native flip origins bisected to one float32 value in eight geometries
+ * (`image-refine-rows.json`; source heights 7 to 100, destination heights 100 to 170, origins 10 to 90) fit
+ * `(y - oy) * sh / dh * (1 + e)` at e = 4.3e-7 to 5.5e-7, where the position from the float32 inverse sits 3 to 8
+ * float32 units low. The horizontal position carries no such term, and neither does a `DrawImage` rectangle. The
+ * mechanism is not known (the exact multiplier is a fit, its best value in the sweeps 4.8e-7 to 5.0e-7), so the
+ * constant is the nearest power of two.
+ */
+const POINTS_BILINEAR_V_BIAS = 1 + 2 ** -21;
+
+/**
  * Largest off-diagonal to diagonal ratio of a high-quality draw's matrix that
  * GDI+ still draws as axis-aligned. Native draws of a 48-pixel quad whose far
  * corners are offset by up to 0.02 pixels (a ratio of 4.2e-4) are identical
@@ -693,6 +705,13 @@ export function resampleImage(
 	// own origin is already snapped, and measured against 600 native rotated captures the stepper trades
 	// as many pixels as it fixes there.
 	const steppedInv = !plainRotatedPass && (kernel === 'bilinear' || (kernel === 'bicubic' && !axisAligned)) ? invertTextureMatrix(m) : null;
+	if (steppedInv && spec.pointsForm && kernel === 'bilinear' && axisAligned) {
+		// The horizontal step of an axis-aligned DrawImagePoints draw is the nearest float32 reciprocal of the scale,
+		// not the round-down chain of the matrix inverse (`image-points.json.gz`: a 100 -> 100 draw with a 10 -> 8
+		// vertical reduction goes from 3,155 differing pixels of 27,648 to 2, a 360 -> 162 reduction from 31 to 6; the
+		// two agree for the 37 -> 260 upscale). The vertical entry keeps the chain (see POINTS_BILINEAR_V_BIAS).
+		steppedInv[0] = Math.fround(1 / Math.fround(m[0]));
+	}
 	for (let j = 0; j < h; j++) {
 		const py = by0 + j + o;
 		let start = -1;
@@ -738,6 +757,9 @@ export function resampleImage(
 				}
 				u = stepU;
 				v = stepV;
+				if (spec.pointsForm && kernel === 'bilinear' && axisAligned) {
+					v = spec.srcY + (stepV - spec.srcY) * POINTS_BILINEAR_V_BIAS;
+				}
 			}
 			if (integerBicubic) {
 				if (steppedInv) {
