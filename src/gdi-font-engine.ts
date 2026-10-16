@@ -207,6 +207,11 @@ export interface GdiRealizedFont {
 	readonly strikeoutThickness: number;
 	/** Pixels the strike-out bar is shifted right (a slanted raster face leans it like a glyph row). */
 	readonly strikeoutShift?: number;
+	/**
+	 * The unrounded `post` / `OS/2` bar geometry in device pixels (positions above the baseline, y up), for GDI+
+	 * AntiAlias text, which draws its bars at fractional positions.
+	 */
+	readonly exactDecorations?: { underlinePosition: number; underlineThickness: number; strikeoutPosition: number; strikeoutThickness: number };
 	readonly mode: GdiTextMode;
 	readonly syntheticBold: boolean;
 	readonly syntheticItalic: boolean;
@@ -421,6 +426,7 @@ export class RealizedFont implements GdiRealizedFont {
 	readonly underlineThickness: number;
 	readonly strikeoutPosition: number;
 	readonly strikeoutThickness: number;
+	readonly exactDecorations: { underlinePosition: number; underlineThickness: number; strikeoutPosition: number; strikeoutThickness: number };
 	readonly mode: GdiTextMode;
 	readonly syntheticBold: boolean;
 	readonly syntheticItalic: boolean;
@@ -490,6 +496,13 @@ export class RealizedFont implements GdiRealizedFont {
 		this.underlineThickness = scale(ttf.underlineThickness);
 		this.strikeoutPosition = scale(ttf.strikeoutPosition);
 		this.strikeoutThickness = scale(ttf.strikeoutSize);
+		const exact = (v: number): number => (v * ppem) / upem;
+		this.exactDecorations = {
+			underlinePosition: exact(ttf.underlinePosition),
+			underlineThickness: exact(ttf.underlineThickness),
+			strikeoutPosition: exact(ttf.strikeoutPosition),
+			strikeoutThickness: exact(ttf.strikeoutSize),
+		};
 		// GDI+ gray masks use the subpixel interpreter's x-direction rules;
 		// AntiAlias also runs these programs, while keeping linear advances.
 		this.hinted = new HintedSize(ttf, ppemX, ppem,

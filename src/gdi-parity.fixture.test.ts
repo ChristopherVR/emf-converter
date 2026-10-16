@@ -503,7 +503,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-opaque-aa', 'emf', 0.0001), // measured 0.0015% over 8 levels (0.39% exact before the native opaque-text blend, round 7)
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
-	fontCase('textx-plus-antialias', 'emf', 0.0274), // nearest-quarter grayscale origins; remaining glyph hinting; measured 2.734%, 3.157% before the storage 8 rule, 3.210% before the y DELTAP rule
+	fontCase('textx-plus-antialias', 'emf', 0.0137), // nearest-quarter grayscale origins, fractional AntiAlias underline; remaining glyph hinting (diagonal stems); measured 1.360%, 2.734% before the fractional bars, 3.157% before the storage 8 rule, 3.210% before the y DELTAP rule
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0253), // measured 2.527%, 2.547% before the y DELTAP rule; GDI+ hinting and shades
 	fontCase('textx-plus-cleartype', 'emf', 0.0924), // measured 9.236%, 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
 	fontCase('textx-plus-singlebit', 'emf', 0.0195), // measured 1.941% (1.960% before the instruction budget was reset per program)

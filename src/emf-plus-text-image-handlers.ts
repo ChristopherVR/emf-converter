@@ -393,6 +393,8 @@ interface PlusEngineFont {
 	solidViaCoverage: boolean;
 	underline: boolean;
 	strikeOut: boolean;
+	/** TextRenderingHintAntiAlias draws its underline and strike-out bars at fractional positions. */
+	fractionalDecorations: boolean;
 }
 
 /**
@@ -455,6 +457,7 @@ function realizePlusEngineFont(
 		solidViaCoverage,
 		underline: (font.flags & 4) !== 0,
 		strikeOut: (font.flags & 8) !== 0,
+		fractionalDecorations: hint === 4,
 	};
 }
 
@@ -479,13 +482,26 @@ function paintPlusEngineRun(
 		matrix: null,
 	};
 	if ((!ef.color || ef.solidViaCoverage) && ef.sampler) {
-		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: ef.underline, strikeOut: ef.strikeOut }, { decorations: true, grayLevels: 15 });
+		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: ef.underline, strikeOut: ef.strikeOut, fractionalDecorations: ef.fractionalDecorations }, { decorations: true, grayLevels: 15 });
 		if (!cov) {
 			return true;
 		}
 		const gamma = textGamma(rCtx.ext?.textContrast);
 		if (cov.channels === 1) {
 			applyTextContrast(cov.data, gamma);
+		}
+		if (cov.bars) {
+			// Native does not apply the text contrast to the bars, and blends them over the glyphs as a second draw:
+			// the coverages combine as 1 - (1 - glyph) * (1 - bar) (Segoe UI Bold 12 `g` over its underline).
+			const n = cov.width * cov.height;
+			for (let i = 0; i < n; i++) {
+				const b = cov.bars[i];
+				if (b === 0) continue;
+				for (let c = 0; c < cov.channels; c++) {
+					const g = cov.data[i * cov.channels + c];
+					cov.data[i * cov.channels + c] = 255 - Math.round(((255 - g) * (255 - b)) / 255);
+				}
+			}
 		}
 		return compositeBrushCoverage(
 			rCtx,

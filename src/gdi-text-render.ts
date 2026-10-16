@@ -71,6 +71,11 @@ export interface GdiTextRun {
 	matrix: [number, number, number, number] | null;
 	underline: boolean;
 	strikeOut: boolean;
+	/**
+	 * GDI+ AntiAlias (not grid-fitted) text draws its underline and strike-out bars at fractional positions, see
+	 * {@link fractionalBars}. Only {@link gdiTextCoverage} honours it.
+	 */
+	fractionalDecorations?: boolean;
 }
 
 /** What the run advanced the current position by (device), for TA_UPDATECP. */
@@ -848,6 +853,54 @@ export interface GdiTextCoverage {
 	channels: 1 | 3;
 	/** Row-major coverage, 0..255 per pixel (or per channel). */
 	data: Uint8ClampedArray;
+	/**
+	 * Fractional underline / strike-out bars of GDI+ AntiAlias text, one value per pixel, kept apart because native
+	 * does not apply the text contrast to them: callers apply the contrast to `data` and then take the larger value.
+	 */
+	bars?: Uint8ClampedArray;
+}
+
+/** An underline or strike-out bar at fractional device coordinates. */
+interface SoftBar {
+	left: number;
+	right: number;
+	top: number;
+	bottom: number;
+}
+
+/**
+ * The bars of GDI+ AntiAlias (unhinted, gray) text, measured against native DrawString captures of five stock faces
+ * in regular, bold and italic (`scripts/gdi-fixtures/UnderlineProbe.cs`). Vertically a bar is an integer number of
+ * rows thick, `max(1, round(thickness))`, centred so that its top edge is
+ * `baseline + position - (thickness - 1) / 2` for the underline (`position` the `post` underlinePosition below the
+ * baseline) and `baseline - position - (thickness - 1) / 2` for the strike-out (`OS/2` yStrikeoutPosition), where
+ * `baseline` is the run's rounded-ascent baseline. The edge is then raised to the next quarter pixel (the rasteriser's
+ * four sub-scanlines) after the position is truncated to 1/512 pixel: 3,248 underline and 1,160 strike-out columns of
+ * the probe agree. Horizontally the bar runs over the run's advance; bars of two or more rows begin and end at
+ * `ceil8(edge + 0.5)` (1/8 pixel columns, all measured ends agree); the thin bar's ends are fitted offsets
+ * (start + 0.30, end + 0.80, within about a sixteenth), whose exact rule is not known.
+ */
+function fractionalBars(
+	metrics: NonNullable<GdiRealizedFont['exactDecorations']>,
+	run: GdiTextRun,
+	start: number,
+	baseline: number,
+	total: number,
+): SoftBar[] {
+	const raiseToQuarter = (v: number): number => Math.ceil((Math.floor(v * 512 + 1e-7) / 512) * 4 - 1e-9) / 4;
+	const raiseToEighth = (v: number): number => Math.ceil(v * 8 - 1e-9) / 8;
+	const end = start + total;
+	const make = (top: number, thickness: number): SoftBar => {
+		const rows = Math.max(1, Math.round(thickness));
+		const t = raiseToQuarter(top - (rows - 1) / 2);
+		return rows === 1
+			? { left: start + 0.3, right: end + 0.8, top: t, bottom: t + 1 }
+			: { left: raiseToEighth(start + 0.5), right: raiseToEighth(end + 0.5), top: t, bottom: t + rows };
+	};
+	const bars: SoftBar[] = [];
+	if (run.underline) bars.push(make(baseline - metrics.underlinePosition, metrics.underlineThickness));
+	if (run.strikeOut) bars.push(make(baseline - metrics.strikeoutPosition, metrics.strikeoutThickness));
+	return bars;
 }
 
 /**
@@ -863,6 +916,10 @@ export interface GdiTextCoverage {
 export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options: { decorations?: boolean; grayLevels?: 15 | 16 } = {}): GdiTextCoverage | null {
 	const { placed, total, startAlong, baseDown } = layoutGdiRun(font, run);
 	const bars: DeviceRect[] = [];
+	const softBars: SoftBar[] = [];
+	if (options.decorations && run.fractionalDecorations && font.exactDecorations && !run.matrix && total !== 0 && font.mode === 'gray') {
+		softBars.push(...fractionalBars(font.exactDecorations, run, run.x + startAlong, run.y + baseDown, total));
+	} else
 	// EMF+ uses upright, device-scaled fonts on this coverage path. Keep
 	// decoration masks optional for callers that only need the glyphs.
 	if (options.decorations && !run.matrix && total !== 0) {
@@ -875,7 +932,7 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 		if (run.underline) add(font.underlinePosition, font.underlineThickness);
 		if (run.strikeOut) add(font.strikeoutPosition, font.strikeoutThickness);
 	}
-	if (placed.length === 0 && bars.length === 0) {
+	if (placed.length === 0 && bars.length === 0 && softBars.length === 0) {
 		return null;
 	}
 	let x0 = Infinity;
@@ -891,6 +948,10 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 	for (const bar of bars) {
 		x0 = Math.min(x0, bar.left); y0 = Math.min(y0, bar.top);
 		x1 = Math.max(x1, bar.right); y1 = Math.max(y1, bar.bottom);
+	}
+	for (const bar of softBars) {
+		x0 = Math.min(x0, Math.floor(bar.left)); y0 = Math.min(y0, Math.floor(bar.top));
+		x1 = Math.max(x1, Math.ceil(bar.right)); y1 = Math.max(y1, Math.ceil(bar.bottom));
 	}
 	const w = x1 - x0;
 	const h = y1 - y0;
@@ -918,5 +979,18 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 			data.fill(255, ((y - y0) * w + bar.left - x0) * channels, ((y - y0) * w + bar.right - x0) * channels);
 		}
 	}
-	return { x: x0, y: y0, width: w, height: h, channels, data };
+	const barData = softBars.length > 0 ? new Uint8ClampedArray(w * h) : undefined;
+	for (const bar of softBars) {
+		for (let y = Math.floor(bar.top); y < Math.ceil(bar.bottom); y++) {
+			const rowCover = Math.min(y + 1, bar.bottom) - Math.max(y, bar.top);
+			for (let x = Math.floor(bar.left); x < Math.ceil(bar.right); x++) {
+				// Four sub-scanlines of eight horizontal samples: 32 coverage levels (native values are round(k * 255 / 32)).
+				const samples = Math.round(rowCover * 4) * Math.round((Math.min(x + 1, bar.right) - Math.max(x, bar.left)) * 8);
+				const v = Math.round((samples * 255) / 32);
+				const i = (y - y0) * w + x - x0;
+				if (v > barData![i]) barData![i] = v;
+			}
+		}
+	}
+	return { x: x0, y: y0, width: w, height: h, channels, data, bars: barData };
 }
