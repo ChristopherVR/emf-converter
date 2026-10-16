@@ -7,7 +7,7 @@ import { gdiTextCoverage } from './gdi-text-render';
 /**
  * Native GDI ExtTextOut ClearType at default quality (compatible widths) against natural quality for private fonts that
  * continue a glyph program past the stem (generator `scripts/gdi-fixtures/build-cleartype-arm-fonts.py`, probe
- * `GdiClearTypeWidthProbe.cs`, mode `text-gdi-cleartype-arm`, captures `gdi-cleartype-arm.json.gz`, 701 glyphs at 16 ppem
+ * `GdiClearTypeWidthProbe.cs`, mode `text-gdi-cleartype-arm`, captures `gdi-cleartype-arm.json.gz`, 765 glyphs at 16 ppem
  * in both qualities). They isolate what the diagonal letters of Arial, Tahoma and Segoe UI (V W X x A) do under the width
  * mode, and were found by bisecting the glyph programs of the system fonts (truncating the program after every
  * instruction of a copy of Arial 'V', 'W' and Tahoma 'V', 'y' and capturing each):
@@ -67,7 +67,7 @@ const same = (a: Uint8Array, b: Uint8Array): boolean => a.every((v, i) => v === 
 
 describe('GDI ClearType compatible widths past the stem (gdi-cleartype-arm.json.gz)', () => {
 	it('captured every glyph of every set at both qualities', () => {
-		expect(sets.map((s) => s.set)).toEqual(['arm', 'height', 'postiup']);
+		expect(sets.map((s) => s.set)).toEqual(['arm', 'height', 'postiup', 'postsmall']);
 		for (const s of sets) {
 			expect(captures.filter((c) => c.set === s.set && c.quality === 5)).toHaveLength(s.count);
 			expect(captures.filter((c) => c.set === s.set && c.quality === 6)).toHaveLength(s.count);
@@ -89,11 +89,30 @@ describe('GDI ClearType compatible widths past the stem (gdi-cleartype-arm.json.
 		expect(identical).toEqual({ iupx: perKind, iupxy: perKind, iupyx: perKind, 'x-pair-y': perKind });
 	});
 
+	it('native shows a stem shift of a few 1/64 px only beyond 1/16 px (set postsmall)', () => {
+		const set = sets.find((s) => s.set === 'postsmall')!;
+		const kinds = set.meta.kinds as string[];
+		const advances = set.meta.adv as number[];
+		const compat = nativeOf('postsmall', 5);
+		const natural = nativeOf('postsmall', 6);
+		const identical: Record<string, number[]> = {};
+		for (let i = 0; i < set.count; i++) {
+			const [kind, , adv] = set.params[i];
+			if (same(pixels(compat.get(i)!), pixels(natural.get(i)!))) (identical[kinds[kind]] ??= []).push(advances[adv]);
+		}
+		// Before IUP[x] the pair of a bar whose advance is 0.2 px or more off a whole pixel (a shift of 7/64 px or more at
+		// this width) shows; below that the two qualities cannot be told apart. After IUP[x] nothing ever shows.
+		const small = advances.filter((a) => a <= 12.12);
+		expect([...new Set(identical.none)].sort()).toEqual([...small].sort());
+		expect([...new Set(identical.iupx)].sort()).toEqual([...advances].sort());
+	});
+
 	// Exact glyph captures per set at natural quality and at default quality as production renders them (see above).
 	const EXPECTED: Record<string, [number, number]> = {
 		arm: [224, 126],
 		height: [288, 171],
 		postiup: [189, 69],
+		postsmall: [64, 52],
 	};
 	for (const s of sets) {
 		it(`reproduces ${EXPECTED[s.set][0]} natural and ${EXPECTED[s.set][1]} default-quality glyphs of the ${s.set} set`, () => {

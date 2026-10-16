@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-16T02:24:29.5340892Z",
+    "capturedAt":  "2026-10-16T02:35:06.5641563Z",
     "groups":  "text-gdi-cleartype-arm",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9711,
@@ -3399,8 +3399,12 @@
                            "sha256":  "80fbc918f3a94d799722224871f95dd62cfb3565b88a633e4ecc9c5097a26144"
                        },
                        {
+                           "name":  "cta-postsmall.ttf",
+                           "sha256":  "c08eb0e352e9d189be27a107aaac3eb0e383911fe58943c7a0611fe49433a9a8"
+                       },
+                       {
                            "name":  "gdi-cleartype-arm.json.gz",
-                           "sha256":  "ad00d53da8fbcb7f90d932578579171a844325d176d23f041e7c5666959e1ecf"
+                           "sha256":  "d67c8231ffc92f77b809239ab03e6589f9916cc69baaab4399c2df11c6aa0bf7"
                        }
                    ]
 }

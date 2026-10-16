@@ -13,6 +13,8 @@ natural ClearType quality; the two qualities differ only in the width mode (see 
            the program numbers are 0 bottom-left, 1 follower, 2 top-left, 3 top-right, 4 bottom-right); the follower is
            placed by MDRP from the stem point with the projection vector perpendicular to the arm.
   postiup  a bar whose edges are placed by MIRP (as in `types`), with IUP[x] / IUP[y] run before, between or after the pair.
+  postsmall  the same bar before and after IUP[x] with an advance within 0.5 px of a whole pixel, so that the stem shift is a
+           few 1/64 px (the smallest shifts the converter makes).
 The fonts are generated test inputs, CC0 1.0.
 """
 import json
@@ -168,6 +170,25 @@ def post_glyphs():
     return out
 
 
+# --- set postsmall -----------------------------------------------------------------------------------------------
+SMALL_KINDS = ['none', 'iupx']
+SMALL_D = [5.5, 6.0, 6.5, 7.0]
+SMALL_ADV = [12.02, 12.04, 12.06, 12.09, 12.12, 12.2, 12.3, 12.5]
+
+
+def small_glyphs():
+    out = []
+    for k in range(len(SMALL_KINDS)):
+        for d in range(len(SMALL_D)):
+            for a in range(len(SMALL_ADV)):
+                x0 = round(SMALL_D[d] * UPX)
+                x1 = x0 + round(W * UPX)
+                pts = [(x0, 0), (x0, 1000), (x1, 1000), (x1, 0)]
+                code = stem_head(0, 3, 4, d, len(SMALL_D))
+                out.append((pts, round(SMALL_ADV[a] * UPX), ([IUP_X] if k else []) + code, (k, d, a)))
+    return out
+
+
 def build(path, family, glyphs, cvt_values):
     fb = FontBuilder(2048, isTTF=True)
     order = ['.notdef'] + ['g%d' % i for i in range(len(glyphs))]
@@ -220,6 +241,8 @@ def sets():
          {'kinds': HEIGHT_KINDS, 'heights': HEIGHTS, 'slopes': HEIGHT_SLOPES, 'dc': HEIGHT_DC, 'adv': HEIGHT_ADV}),
         ('postiup', 'Parity CTA PostIup', post_glyphs(), [round(d * UPX) for d in POST_D] + [round(W * UPX)],
          {'kinds': POST_KINDS, 'd': POST_D, 'adv': POST_ADV}),
+        ('postsmall', 'Parity CTA PostSmall', small_glyphs(), [round(d * UPX) for d in SMALL_D] + [round(W * UPX)],
+         {'kinds': SMALL_KINDS, 'd': SMALL_D, 'adv': SMALL_ADV}),
     ]
 
 
