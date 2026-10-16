@@ -1,0 +1,145 @@
+[
+ {
+  "set": "phantom",
+  "file": "ctw-phantom.ttf",
+  "family": "Parity CT Phantom",
+  "count": 357,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "types",
+  "file": "ctw-types.ttf",
+  "family": "Parity CTW Types",
+  "count": 585,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "sweep",
+  "file": "ctw-sweep.ttf",
+  "family": "Parity CTW Sweep",
+  "count": 1632,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "kinds",
+  "file": "ctw-kinds.ttf",
+  "family": "Parity CTW Kinds",
+  "count": 324,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "corners",
+  "file": "ctw-corners.ttf",
+  "family": "Parity CTW Corners",
+  "count": 288,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "rects",
+  "file": "ctw-rects.ttf",
+  "family": "Parity CTW Rects",
+  "count": 36,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "centre",
+  "file": "ctw-centre.ttf",
+  "family": "Parity CTW Centre",
+  "count": 196,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "h",
+  "file": "ctw-h.ttf",
+  "family": "Parity CTW H",
+  "count": 27,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "follow",
+  "file": "ctw-follow.ttf",
+  "family": "Parity CTW Follow",
+  "count": 112,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "pp2",
+  "file": "ctw-pp2.ttf",
+  "family": "Parity CTW PP2",
+  "count": 544,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ },
+ {
+  "set": "flags",
+  "file": "ctw-flags.ttf",
+  "family": "Parity CTW Flags",
+  "count": 108,
+  "sizes": [
+   16
+  ],
+  "qualities": [
+   5,
+   6
+  ]
+ }
+]

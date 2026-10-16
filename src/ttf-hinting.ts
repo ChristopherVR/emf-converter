@@ -156,6 +156,8 @@ const ceil64 = (x: number): number => floor64(x + 63);
 /** Point flags. */
 const ON_CURVE = 1;
 const TOUCH_X = 8;
+/** Narrowest pair of points (26.6, a quarter pixel) the compatible-width mode treats as the sides of a stem. */
+const STEM_MIN_WIDTH = 16;
 const TOUCH_Y = 16;
 
 /** A glyph or twilight zone. Coordinates are 26.6 (orus: font units). */
@@ -169,6 +171,15 @@ export class Zone {
 	curY: Float64Array;
 	tags: Uint8Array;
 	endPts: number[];
+	/**
+	 * Compatible-width ClearType bookkeeping (allocated on first use): `shift` is the x shift pending for each point
+	 * (applied before IUP[x] and at the end of the program), `shifted` marks points that have one, and `carry` is the
+	 * share of the advance phantom point's black-and-white offset a point inherited by being placed relative to it (it stays
+	 * in `curX` until the shifts are applied, so every pair that takes the point cancels it again).
+	 */
+	shift?: Float64Array;
+	shifted?: Uint8Array;
+	carry?: Float64Array;
 
 	constructor(n: number, endPts: number[] = []) {
 		this.n = n;
@@ -319,6 +330,17 @@ export interface HintEnvironment {
 	 * not grayscale (selector 32), at every size (`gdi-getinfo-gdiplus.json.gz`).
 	 */
 	grayClearType?: boolean;
+	/**
+	 * GETINFO selector 2048 -> bit 18: the size's `gasp` range asks for symmetric smoothing (GDI ClearType reports it
+	 * from the range, for natural and compatible-width quality alike; GDI+ does not report it).
+	 */
+	smoothingBit18?: boolean;
+	/**
+	 * Black-and-white advance width (whole pixels) of glyph `g`. Under compatible widths GDI holds the advance phantom
+	 * point there, and shifts every stem a program sets with MIRP/MSIRP by half the difference to the natural advance
+	 * (see `pairShift`).
+	 */
+	bwAdvance?: (g: number) => number;
 	/**
 	 * Report the glyph as stretched to GETINFO (selector bit 2 -> result bit 9) and SCANCTRL although the x and y
 	 * scales are equal: Windows plays a recording's text through a horizontal world-transform stretch, which fonts
@@ -538,6 +560,7 @@ export class HintedSize {
 	): { zone: Zone; scanControl: boolean; scanSet: boolean; scanType: number } {
 		const font = this.font;
 		const glyph = depth < 8 ? font.loadGlyph(g) : null;
+		this.hintingGlyph = g;
 		const { advance, lsb } = font.hMetrics(g);
 		const xMin = glyph ? glyph.xMin : 0;
 		const yMax = glyph ? glyph.yMax : 0;
@@ -704,6 +727,7 @@ export class HintedSize {
 			zone.orgX.set(zone.curX);
 			zone.orgY.set(zone.curY);
 			this.inComposite = true;
+			this.hintingGlyph = g;
 			const hinted = this.hintZone(zone, glyph.instructions, !metricsFrom);
 			this.inComposite = false;
 			return hinted;
@@ -711,10 +735,22 @@ export class HintedSize {
 		if (this.hinting && !metricsFrom) {
 			zone.curX[total] = round64(zone.curX[total]);
 			zone.curX[total + 1] = round64(zone.curX[total + 1]);
+			this.hintingGlyph = g;
+			this.compatAdvance(zone, total + 1);
 			zone.curY[total + 2] = round64(zone.curY[total + 2]);
 			zone.curY[total + 3] = round64(zone.curY[total + 3]);
 		}
 		return { zone, ...lastScan };
+	}
+
+	private hintingGlyph = 0;
+
+	/** Under compatible-width ClearType the advance phantom point is held at the black-and-white advance. */
+	private compatAdvance(zone: Zone, k: number): void {
+		const bw = this.env.clearType && this.env.compatibleWidths !== false ? this.env.bwAdvance?.(this.hintingGlyph) : undefined;
+		if (bw !== undefined) {
+			zone.curX[k] = bw * 64;
+		}
 	}
 
 	/** Rounds the phantom points and runs a glyph program over `zone`. */
@@ -729,6 +765,7 @@ export class HintedSize {
 			const rx = this.env.clearType ? (v: number): number => Math.floor((v + 2) / 4) * 4 : round64;
 			zone.curX[n - 4] = rx(zone.curX[n - 4]);
 			zone.curX[n - 3] = rx(zone.curX[n - 3]);
+			this.compatAdvance(zone, n - 3);
 			zone.curY[n - 2] = round64(zone.curY[n - 2]);
 			zone.curY[n - 1] = round64(zone.curY[n - 1]);
 		}
@@ -749,6 +786,7 @@ export class HintedSize {
 		} catch {
 			// Keep the partially hinted outline.
 		}
+		this.applyWidthShift(zone);
 		return { zone, scanControl: this.gs.scanControl, scanSet: this.gs.scanSet, scanType: this.gs.scanType };
 	}
 
@@ -1686,6 +1724,8 @@ export class HintedSize {
 					}
 				}
 				this.move(this.zp1, p, target - dist);
+				this.carryFrom(p);
+				this.pairShift(gs.rp0, p);
 				gs.rp1 = gs.rp0;
 				gs.rp2 = p;
 				if (op & 1) {
@@ -1703,6 +1743,8 @@ export class HintedSize {
 							this.zp1.curY[p] - this.zp0.curY[gs.rp0],
 						);
 						this.move(this.zp1, p, -d);
+						this.carryFrom(p);
+						this.shiftFollow(p);
 					}
 					gs.loop--;
 				}
@@ -2019,6 +2061,7 @@ export class HintedSize {
 				if (sel & 128 && this.env.clearType && this.env.compatibleWidths !== false) k |= 1 << 14;
 				if (sel & 256 && this.env.symmetricSmoothing) k |= 1 << 15;
 				if (sel & 4096 && this.env.grayClearType) k |= 1 << 19;
+				if (sel & 2048 && this.env.smoothingBit18) k |= 1 << 18;
 				this.push(k);
 				return true;
 			}
@@ -2110,6 +2153,7 @@ export class HintedSize {
 			const p = this.pop();
 			if (disp && p >= 0 && p < this.zp2.n) {
 				this.moveZp2(p, disp.dx, disp.dy, true);
+				this.shpFollow(p, disp.zone, disp.ref);
 			}
 			gs.loop--;
 		}
@@ -2218,9 +2262,166 @@ export class HintedSize {
 		}
 		const cur = this.project(this.zp1.curX[p] - this.zp0.curX[gs.rp0], this.zp1.curY[p] - this.zp0.curY[gs.rp0]);
 		this.move(this.zp1, p, distance - cur);
+		this.carryFrom(p);
+		this.shiftFollow(p);
 		gs.rp1 = gs.rp0;
 		gs.rp2 = p;
 		if (op & 16) gs.rp0 = p;
+	}
+
+	// -----------------------------------------------------------------------
+	// Compatible-width ClearType: stem shifts
+	// -----------------------------------------------------------------------
+	//
+	// Native GDI ClearType at default quality keeps the black-and-white advance width. The programs run with the advance
+	// phantom point at that width (`compatAdvance`), and, measured on private fonts (`build-cleartype-mirp-font.py`,
+	// `text-gdi-cleartype-compat.json.gz`), every stem the program sets with MIRP or MSIRP between two glyph points is
+	// moved rigidly, both edges and the points that follow them, by (centre of the pair) * (BW / natural advance - 1) with
+	// the centre taken from the original outline: stems are scaled in position and keep their hinted widths. A point that
+	// the program placed relative to the advance phantom point already carries that point's offset, which the pair's
+	// shift replaces. Pairs are stems: the segment between the two points runs through ink, and they are at least a
+	// quarter pixel apart. Nothing else (MDAP, MDRP, MIAP, a single MIRP from a phantom point) shifts.
+
+	private widthShiftOn(): boolean {
+		return !!this.env.clearType && this.env.compatibleWidths !== false && !!this.env.bwAdvance && this.ctDirection() && this.ctCompat();
+	}
+
+	/** Records that point `p`, just moved relative to rp0, carries the advance phantom point's offset when rp0 does. */
+	private carryFrom(p: number): void {
+		if (!this.widthShiftOn()) {
+			return;
+		}
+		const z = this.zp1;
+		const r = this.gs.rp0;
+		if (this.zp0 !== z || r < 0 || r >= z.n || p < 0 || p >= z.n) {
+			return;
+		}
+		z.carry ??= new Float64Array(z.n);
+		z.carry[p] = r === z.n - 3 ? 1 : z.carry[r];
+	}
+
+	/** A MIRP or MSIRP just placed `p` relative to rp0: if the two are the sides of a stem, shift the stem. */
+	private pairShift(rp0: number, p: number): void {
+		if (!this.widthShiftOn()) {
+			return;
+		}
+		const z = this.zp1;
+		const n = z.n - 4;
+		if (this.zp0 !== z || rp0 < 0 || p < 0 || rp0 >= n || p >= n) {
+			return;
+		}
+		const org2 = z.orgX[n + 1] - z.orgX[n];
+		const bw = (this.env.bwAdvance?.(this.hintingGlyph) ?? 0) * 64;
+		if (!org2 || !bw || Math.abs(z.orgX[rp0] - z.orgX[p]) < STEM_MIN_WIDTH) {
+			return;
+		}
+		const mx = (z.orgX[rp0] + z.orgX[p]) / 2;
+		const my = (z.orgY[rp0] + z.orgY[p]) / 2;
+		if (!this.inkAt(z, mx, my) && !this.inkAt(z, mx, my + 2) && !this.inkAt(z, mx, my - 2)) {
+			return;
+		}
+		z.shift ??= new Float64Array(z.n);
+		z.shifted ??= new Uint8Array(z.n);
+		const centre = (z.orgX[rp0] + z.orgX[p]) / 2;
+		const shift = Math.round(centre * (bw / org2 - 1));
+		const offset = bw - org2;
+		const lo = Math.min(z.curX[rp0], z.curX[p]);
+		const hi = Math.max(z.curX[rp0], z.curX[p]);
+		for (let i = 0; i < n; i++) {
+			if (i === rp0 || i === p || (!z.shifted[i] && z.tags[i] & TOUCH_X && z.curX[i] >= lo - 1 && z.curX[i] <= hi + 1)) {
+				z.shift[i] = shift - (z.carry ? z.carry[i] * offset : 0);
+				z.shifted[i] = 1;
+			}
+		}
+	}
+
+	/** A point placed relative to rp0 by ALIGNRP or MDRP follows rp0's pending shift. */
+	private shiftFollow(p: number): void {
+		const z = this.zp1;
+		const r = this.gs.rp0;
+		if (!z.shift || this.zp0 !== z || !this.widthShiftOn() || r < 0 || r >= z.n || p < 0 || p >= z.n) {
+			return;
+		}
+		if (z.shifted![r] && !z.shifted![p]) {
+			z.shift[p] = z.shift[r];
+			z.shifted![p] = 1;
+		}
+	}
+
+	/** A point moved by SHP with reference point `ref` takes its pending shift and carried offset. */
+	private shpFollow(p: number, refZone: Zone, ref: number): void {
+		const z = this.zp2;
+		if (refZone !== z || !this.widthShiftOn()) {
+			return;
+		}
+		if (z.carry) {
+			z.carry[p] = ref === z.n - 3 ? 1 : z.carry[ref];
+		}
+		if (z.shift && z.shifted![ref] && !z.shifted![p]) {
+			z.shift[p] = z.shift[ref];
+			z.shifted![p] = 1;
+		}
+	}
+
+	/** A point interpolated by IP between rp1 and rp2 takes the interpolated carried offset and pending shift. */
+	private shiftInterpolate(p: number, rp1: number, rp2: number, orgDist: number, oldRange: number): void {
+		const z = this.zp2;
+		if (this.zp0 !== z || this.zp1 !== z || !this.widthShiftOn()) {
+			return;
+		}
+		if (rp1 < 0 || rp2 < 0 || rp1 >= z.n || rp2 >= z.n || p < 0 || p >= z.n) {
+			return;
+		}
+		const t = oldRange ? orgDist / oldRange : 0;
+		z.carry ??= new Float64Array(z.n);
+		const c1 = rp1 === z.n - 3 ? 1 : z.carry[rp1];
+		const c2 = rp2 === z.n - 3 ? 1 : z.carry[rp2];
+		z.carry[p] = c1 + (c2 - c1) * t;
+		if (!z.shift || z.shifted![p]) {
+			return;
+		}
+		const a = z.shifted![rp1] ? z.shift[rp1] : undefined;
+		const b = z.shifted![rp2] ? z.shift[rp2] : undefined;
+		if (a === undefined && b === undefined) {
+			return;
+		}
+		z.shift[p] = a !== undefined && b !== undefined ? a + (b - a) * t : (a ?? b)!;
+		z.shifted![p] = 1;
+	}
+
+	/** Applies the pending stem shifts (before IUP[x] interpolates the untouched points, and at the program's end). */
+	private applyWidthShift(z: Zone): void {
+		if (!z.shift) {
+			return;
+		}
+		for (let i = 0; i < z.n - 4; i++) {
+			z.curX[i] += z.shift[i];
+			z.shift[i] = 0;
+			if (z.shifted![i] && z.carry) {
+				z.carry[i] = 0;
+			}
+		}
+		z.shifted!.fill(0);
+	}
+
+	/** Nonzero-winding test of (x, y) against the original outline's control polygon. */
+	private inkAt(z: Zone, x: number, y: number): boolean {
+		let winding = 0;
+		let start = 0;
+		for (const end of z.endPts) {
+			for (let i = start; i <= end; i++) {
+				const j = i === end ? start : i + 1;
+				const x0 = z.orgX[i];
+				const y0 = z.orgY[i];
+				const x1 = z.orgX[j];
+				const y1 = z.orgY[j];
+				if (y0 <= y) {
+					if (y1 > y && (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0) > 0) winding++;
+				} else if (y1 <= y && (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0) < 0) winding--;
+			}
+			start = end + 1;
+		}
+		return winding !== 0;
 	}
 
 	private insMIRP(op: number): void {
@@ -2271,6 +2472,8 @@ export class HintedSize {
 			}
 		}
 		this.move(this.zp1, p, distance - curDist);
+		this.carryFrom(p);
+		this.pairShift(gs.rp0, p);
 		gs.rp1 = gs.rp0;
 		if (op & 16) gs.rp0 = p;
 		gs.rp2 = p;
@@ -2319,6 +2522,7 @@ export class HintedSize {
 				newDist = 0;
 			}
 			this.move(this.zp2, p, newDist - curDist);
+			this.shiftInterpolate(p, rp1, rp2, orgDist, oldRange);
 		}
 		gs.loop = 1;
 	}
@@ -2338,6 +2542,7 @@ export class HintedSize {
 	private insIUP(xAxis: number): void {
 		if (!xAxis) this.iupy = true;
 		const z = this.pts;
+		if (xAxis) this.applyWidthShift(z);
 		const mask = xAxis ? TOUCH_X : TOUCH_Y;
 		const orgs = xAxis ? z.orgX : z.orgY;
 		const curs = xAxis ? z.curX : z.curY;

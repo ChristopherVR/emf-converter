@@ -568,11 +568,13 @@ export class RealizedFont implements GdiRealizedFont {
 	 * The outline ClearType rasterises. It is grid-fitted at the real ppem
 	 * with the Microsoft rasterizer's ClearType interpreter rules (see
 	 * `HintEnvironment.clearType`: x rounds on a 1/16-pixel virtual grid,
-	 * legacy x-direction deltas are skipped, ...), then, for GDI's default
-	 * "compatible widths" ClearType, scaled horizontally so the glyph's
-	 * natural (unhinted) advance fills the black-and-white advance width
-	 * GDI keeps for ClearType text. CLEARTYPE_NATURAL_QUALITY keeps the
-	 * natural widths unscaled.
+	 * legacy x-direction deltas are skipped, ...). For GDI's default
+	 * "compatible widths" ClearType the programs run with the advance
+	 * phantom point at the black-and-white advance GDI keeps for ClearType
+	 * text, and the interpreter moves every stem the program sets with MIRP
+	 * or MSIRP by its centre times the ratio of that advance to the natural
+	 * one (`HintEnvironment.bwAdvance`). CLEARTYPE_NATURAL_QUALITY keeps the
+	 * natural widths.
 	 */
 	private ctOutline(index: number): Outline {
 		let o = this.ctOutlines.get(index);
@@ -585,11 +587,17 @@ export class RealizedFont implements GdiRealizedFont {
 		const gridFit = this.gdiPlus || clearTypeGridFits(this.ttf, this.ppem);
 		// CLEARTYPE_NATURAL_QUALITY runs the programs without GETINFO's compatible-widths bit: its glyphs match native at
 		// 9 to 17 px (Arial lines of `textx-arial-ctnatural.wide.png`: 2,100 differing pixels fall to 270 in lines 1 to 8).
-		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 40, grayscale: false, clearType: true, compatibleWidths: !this.gdiPlus && !this.naturalWidths, gdiArithmetic: !this.gdiPlus }, gridFit);
+		this.ctSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, {
+			version: 40,
+			grayscale: false,
+			clearType: true,
+			compatibleWidths: !this.gdiPlus && !this.naturalWidths,
+			gdiArithmetic: !this.gdiPlus,
+			smoothingBit18: !this.gdiPlus && gridFit && clearTypeSmoothsVertically(this.ttf, this.ppem),
+			bwAdvance: !this.gdiPlus && !this.naturalWidths && gridFit ? (g: number): number => this.advance(g) : undefined,
+		}, gridFit);
 		const u = this.ctSize.hintGlyph(gi);
-		const natural = (this.ttf.hMetrics(gi).advance * this.ppemX) / this.ttf.unitsPerEm;
-		const k = !this.naturalWidths && natural > 0 && gridFit ? this.advance(index) / natural : 1;
-		o = { xs: Array.from(u.xs, (v) => v * k), ys: u.ys, onCurve: u.onCurve, endPts: u.endPts };
+		o = { xs: u.xs, ys: u.ys, onCurve: u.onCurve, endPts: u.endPts };
 		this.ctOutlines.set(index, o);
 		return o;
 	}
