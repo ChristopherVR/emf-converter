@@ -120,3 +120,81 @@ describe('linear gradient ramp origin (native, 2^-16 pixel sweeps)', () => {
 		});
 	}
 });
+
+/**
+ * Round 9 (W5): the origin from the inverse of the composite `Scale(w / N, 1) Translate(rect.x, 0) Transform` in single precision, products and
+ * sums rounded toward minus infinity and the determinant and quotients to nearest. A step is right when the origin it gives is one that makes
+ * every compared pixel of the step exact (a step that the origin does not change counts as right for either). The converter's double precision
+ * origin is right on 8,085 of the 8,196 steps; this one on 8,169, but two steps of the 0 degree brush that the converter has exact go wrong,
+ * so it is only a measurement (the exact rule is still open).
+ */
+describe('linear gradient ramp origin from a single precision composite inverse (measurement, not used)', () => {
+	const f32 = new Float32Array(1);
+	const u32 = new Uint32Array(f32.buffer);
+	const down = (x: number): number => {
+		const r = Math.fround(x);
+		if (r <= x) return r;
+		f32[0] = r;
+		if (r > 0) u32[0] -= 1;
+		else if (r < 0) u32[0] += 1;
+		else u32[0] = 0x80000001;
+		return f32[0];
+	};
+	it('is right on 8,169 of 8,196 steps against 8,085 for the converter', () => {
+		const px = new Uint8ClampedArray(4);
+		let converterRight = 0;
+		let compositeRight = 0;
+		let total = 0;
+		const wrongByScene: Record<string, number> = {};
+		for (const scene of scenes) {
+			const data = Buffer.from(scene.rgb, 'base64');
+			const first = gradientOf(scene, 0);
+			const table = buildLinearRampTable(linearRampOf(first)!, first.rect!);
+			const intervals = table.intervals;
+			for (let i = 0; i <= scene.last - scene.first; i++) {
+				const grad = gradientOf(scene, i);
+				const bd = scene.matrices[i];
+				const b = bd.map(Math.fround);
+				const rect = grad.rect!;
+				const scale = intervals / rect.w;
+				const det0 = bd[0] * bd[3] - bd[1] * bd[2];
+				const ia0 = bd[3] / det0;
+				const ic0 = -bd[2] / det0;
+				const ie0 = -(ia0 * bd[4] + ic0 * bd[5]);
+				const du = Math.round(ia0 * scale * FIX);
+				const dv = Math.round(ic0 * scale * FIX);
+				const u00 = Math.round((ie0 - rect.x) * scale * FIX);
+				const rightFor = (candidate: number): boolean => {
+					for (let r = 0; r < scene.rows.length; r++) {
+						for (let x = 0; x < scene.w; x++) {
+							writeRampColor(table, foldRampCoordinate(candidate + x * du + scene.rows[r] * dv, intervals, 'clamp'), px, 0, false);
+							const o = ((i * scene.rows.length + r) * scene.w + x) * 3;
+							if (data[o] !== px[0] || data[o + 1] !== px[1] || data[o + 2] !== px[2]) return false;
+						}
+					}
+					return true;
+				};
+				// K = Scale(w / N, 1) Translate(rect.x, 0) Transform, its inverse's translation is the origin in units of the ramp
+				const sc = Math.fround(rect.w / intervals);
+				const rx = Math.fround(rect.x);
+				const k0 = down(sc * b[0]);
+				const k1 = down(sc * b[1]);
+				const k4 = down(down(rx * b[0]) + b[4]);
+				const k5 = down(down(rx * b[1]) + b[5]);
+				const det = Math.fround(down(k0 * b[3]) - down(k1 * b[2]));
+				const ia = Math.fround(b[3] / det);
+				const ic = Math.fround(-b[2] / det);
+				const ie = -down(down(ia * k4) + down(ic * k5));
+				const composite = Math.round(ie * FIX);
+				total++;
+				if (rightFor(u00)) converterRight++;
+				if (rightFor(composite)) compositeRight++;
+				else wrongByScene[scene.name] = (wrongByScene[scene.name] ?? 0) + 1;
+			}
+		}
+		expect(total).toBe(8196);
+		expect(converterRight).toBe(8085);
+		expect(compositeRight).toBe(8169);
+		expect(wrongByScene).toEqual({ sigma: 13, plain60: 8, sigma0: 2, a30: 4 });
+	});
+});
