@@ -14,5 +14,6 @@
   { "name": "textx-arial-q1-draft", "w": 1209, "h": 602, "ox": 0, "oy": 0 },
   { "name": "textx-arial-q2-proof", "w": 1209, "h": 602, "ox": 0, "oy": 0 },
   { "name": "textx-arial-ctnatural", "w": 1209, "h": 602, "ox": 0, "oy": 0 },
-  { "name": "wmf-embedded-emf", "emf": "wmf-embedded-emf.recovered.emf", "w": 240, "h": 120, "ox": 0, "oy": 0 }
+  { "name": "wmf-embedded-emf", "emf": "wmf-embedded-emf.recovered.emf", "w": 240, "h": 120, "ox": 0, "oy": 0 },
+  { "name": "textx-segoeui-cell-mono", "w": 678, "h": 464, "ox": 0, "oy": 0 }
 ]

@@ -503,17 +503,17 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-opaque-aa', 'emf', 0.0001), // measured 0.0015% over 8 levels (0.39% exact before the native opaque-text blend, round 7)
 	fontCase('textx-opaque-mono', 'emf', 0.0004), // measured 0.004%
-	fontCase('textx-plus-antialias', 'emf', 0.0274), // nearest-quarter grayscale origins; remaining glyph hinting; measured 2.734%, 3.157% before the storage 8 rule, 3.210% before the y DELTAP rule
-	fontCase('textx-plus-antialiasgridfit', 'emf', 0.0253), // measured 2.527%, 2.547% before the y DELTAP rule; GDI+ hinting and shades
-	fontCase('textx-plus-cleartype', 'emf', 0.0924), // measured 9.236%, 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
-	fontCase('textx-plus-singlebit', 'emf', 0.0195), // measured 1.941% (1.960% before the instruction budget was reset per program)
-	fontCase('textx-plus-singlebitgridfit', 'emf', 0.0005), // measured 0.020%
-	fontCase('textx-plus-systemdefault', 'emf', 0.0005), // measured 0.020%
+	fontCase('textx-plus-antialias', 'emf', 0.0021), // measured 0.202%: GDI+ design-unit advances, fractional AntiAlias underline; remaining glyph hinting (diagonal stems); 1.360% before the advances, 2.734% before the bars
+	fontCase('textx-plus-antialiasgridfit', 'emf', 0.00065), // measured 0.064% (2.527% before the round 8 AntiAliasGridFit advances); GDI+ hinting and shades
+	fontCase('textx-plus-cleartype', 'emf', 0.0013), // measured 0.133% (GDI+ ClearType blend arithmetic, 8-bit tables and exact sixths of coverage; 9.236% before the round 8 interpreter rules), 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
+	fontCase('textx-plus-singlebit', 'emf', 0.0015), // measured 0.148% (GDI+ design-unit advances; 1.941% before); the rest are Times New Roman glyph shapes and the bar end
+	fontCase('textx-plus-singlebitgridfit', 'emf', 0.00015), // measured 0.015%
+	fontCase('textx-plus-systemdefault', 'emf', 0.00015), // measured 0.015%
 	fontCase('textx-rotalign-esc', 'emf', 0.00005), // measured 0.0048% (15 px; 34 before round 8) against the native playback (0.511% before)
 	fontCase('textx-rotalign-esc-small', 'emf', 0.00005), // measured 0.0042% (13 px; 207 before round 8: quarter-turn text has its own tmAscent / tmDescent) against the native playback (0.367% before)
 	fontCase('textx-rotalign-world', 'emf', 0.00005), // measured 0.0048% (15 px; 34 before round 8) against the native playback (0.537% before)
 	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
-	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
+	fontCase('textx-segoeui-cell-mono', 'emf', 0.00016), // measured 0.015% against the native playback (the recorded exScale / eyScale stretch is drawn); 0.086% before
 	fontCase('textx-segoeui-cleartype', 'emf', 0.0126), // measured 1.258%, 2.992% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 3.694% before the ClearType dropout control
 	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
@@ -684,7 +684,7 @@ const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
 	close('gpx-text-pathgrad', 0.0070), // measured 0.692%, 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
-	close('gpx-text-texture-cleartype', 0.0281), // measured 2.802%, 3.093% before the size-specific SHPIX tweaks
+	close('gpx-text-texture-cleartype', 0), // exact (GDI+ ClearType blend arithmetic); 2.802% 3.093% before the size-specific SHPIX tweaks
 ];
 
 /**
@@ -864,8 +864,8 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
  * 6.39% before, grayscale 6.64%).
  */
 const TEXT_CONTRAST_CASES: ParityCase[] = [
-	close('gpx-rec-textcontrast', 0.0287), // measured 2.865%; GDI+ hinting and shades
-	close('gpx-rec-textcontrast-cleartype', 0.0334), // measured 3.331%, 4.008% before the size-specific SHPIX tweaks
+	close('gpx-rec-textcontrast', 0.0042), // measured 0.413% (diagonal stems); 2.865% before the round 8 gray ClearType GETINFO; GDI+ hinting and shades
+	close('gpx-rec-textcontrast-cleartype', 0.0012), // measured 0.112% (diagonal stems; GDI+ ClearType blend arithmetic); 3.331% 4.008% before the size-specific SHPIX tweaks
 ];
 
 /**

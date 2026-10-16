@@ -90,7 +90,13 @@ function drawWithFontEngine(rCtx: EmfGdiReplayCtx, offset: number, dataOff: numb
 			dy.push(raw[i * 2 + 1] | 0);
 		}
 	}
+	// GM_COMPATIBLE records store the device's exScale / eyScale; native playback draws their text through
+	// diag(eyScale / exScale, 1) (patching the two equal removes the effect: see `playbackStretchReacts`).
+	const exScale = view.getFloat32(dataOff + 20, true);
+	const eyScale = view.getFloat32(dataOff + 24, true);
+	const playbackStretch = view.getUint32(dataOff + 16, true) === 1 && exScale > 0 && eyScale > 0 ? eyScale / exScale : undefined;
 	const adv = drawGdiTextCall(ctx, fonts, state, {
+		playbackStretch,
 		codes,
 		glyphIndices: (options & ETO_GLYPH_INDEX) !== 0,
 		x: view.getInt32(dataOff + 28, true),
