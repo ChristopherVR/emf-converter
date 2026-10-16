@@ -115,6 +115,20 @@ Native rules recovered in this round (details in [Limitations](./limitations.md)
 
 Validation: 237 test files and 7,747 tests pass, together with library and documentation type checks, the package build and the browser-package check. No existing tolerance was widened. Open items, with their negative results, include GDI+ ClearType and grayscale text (which keep the previous hinting arithmetic), default-quality GDI ClearType stems, high-quality Bicubic rows, the path-gradient Gouraud tie (a candidate that trades named fixtures against independent captures is not shipped), red-eye areas with a far-off centroid in bright fields and lfWidth raster-face selection.
 
+## Round 8 (16 October 2026)
+
+Nine further workstreams, measured on the merged tree against the round-7 head (`f55a4d2`): of the 898 comparisons both reports share, **797 are RGB-exact, up from 777**, and the mismatched pixels fall from 78,599 to 43,353. Twelve new Inset-pen playback sheets bring the report to 910 comparisons, 803 exact and 795 with complete ink coverage. Forty-seven comparisons improve. Three get worse by one pixel each, all accepted trades: `textx-escapement-aa` and `-mono` (14 to 15, from the rotated-glyph rules) and `textx-plus-antialias` (555 to 556, from the GDI+ text rules, which also widen two non-exact alignment ceilings by one pixel). Render failures and omitted reference ink remain zero.
+
+- **Red-eye:** all three recorded fixtures are exact. Native playback of the recordings is deterministic across fresh processes; the residual was a wrong stand-in centre (the darkness-weighted centroid of the area) and float32 truncating arithmetic.
+- **Raster fonts:** the font mapper chooses each face's factors first and then compares one cost per face; `textx-fon-courier-styles` is exact. Fifty Terminal mapper rows that matched by coincidence (the fixture font set lacks native's OEM sizes) and one near-tie no longer match.
+- **GDI geometry:** every mirrored compat-playback and wide-mirror sheet is exact (the other end of a nib edge parallel to the segment, the mapped orientation of wide-pen rectangles, the inside-frame RoundRect under a mirrored x). `wmf-embedded-emf` now compares with native playback and is exact.
+- **EMF+ pens:** custom caps, round caps, square caps, corner-touching Inset holes and several untested Inset cases (thin, PixelOffsetMode Half, several figures) are exact; dashed Inset pens are much closer.
+- **High-quality images:** reduction edges are 16.16 fixed point; the PixelOffsetMode high-quality fixtures are exact.
+- **Text:** rotated glyphs are hinted unrotated at a rotation-scaled size, with directed tie rules and exact rotated metrics; GDI+ grayscale reports gray ClearType to GETINFO, grid-fit layouts use the measured advances and per-size SHPIX helpers stop after IUP[y]; GDI ClearType reports GETINFO bit 18 from `gasp` and applies compatible widths as an interpreter rule (stems shift rigidly, the advance phantom point stays at the black-and-white advance). The width rule turns 259 private-font glyph captures exact and 60 inexact; the user accepted that trade for the fixture gains.
+- **Not shipped:** a path-gradient span rule that would make 7 exact alpha controls inexact.
+
+Validation: 251 test files and 7,876 tests pass (one texture test timed out under full-suite load and passes alone), with library and documentation type checks, the package build and the browser-package check.
+
 ## Open-source alternatives
 
 | Project | Useful role | Limitation for this converter |
