@@ -174,3 +174,21 @@ describe('Inset stroke outline: corner contacts (inset-contacts.json.gz)', () =>
 		expect({ exact: diffs.filter((n) => n === 0).length, total: diffs.reduce((s, n) => s + n, 0) }).toEqual({ exact: 249, total: 556 });
 	});
 });
+
+describe('Inset stroke outline: thin slivers (inset-slivers.json.gz)', () => {
+	// 240 triangles 40 to 100 pixels long and 1.2 to 6 pixels thick in random directions (`inset-slivers-probe`), drawn with an Inset pen of
+	// width 14 so that the whole triangle is stroke. Where overlapping figures cancel (even-odd) the surviving part of a ring is such a strip, and
+	// this was the first suspect for the staircase corners that differ at the junctions of crossing rings: it is not. Every sliver is exact,
+	// aliased and antialiased, so the corner rule is not what separates the rings of two figures (that is open, see the docs).
+	const slivers: Case[] = JSON.parse(gunzipSync(readFileSync(fixturePath('inset-slivers.json.gz'))).toString());
+
+	it('is the captured set', () => {
+		expect(slivers.length).toBe(240);
+	});
+
+	it('240 of 240 exact aliased and antialiased', () => {
+		const al = slivers.map((c) => differing(render(c, false), bitmap(c.aliased)));
+		const aa = slivers.map((c) => differing(render(c, true), bitmap(c.aa)));
+		expect({ aliased: al.reduce((s, n) => s + n, 0), aa: aa.reduce((s, n) => s + n, 0) }).toEqual({ aliased: 0, aa: 0 });
+	});
+});

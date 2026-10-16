@@ -35,7 +35,7 @@
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
 #   bicubic-arithmetic, bicubic-independent, wide-pen-axis-probe,
 #   wide-pen-axis-directions, dashed-pen-axis-probe, general-matrix-pen-probe,
-#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, inset-contacts-probe, cap-widen-probe, round-join-probe, bezier-flatten,
+#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, inset-contacts-probe, inset-slivers-probe, cap-widen-probe, dash-widen-probe, round-join-probe, bezier-flatten,
 #   illuminant-cubes, chroma-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
@@ -1018,9 +1018,21 @@ if ($Which -eq 'inset-contacts-probe') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'inset-slivers-probe') {
+    Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
+    [InsetOutlineProbe]::RunSlivers($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'cap-widen-probe') {
     Add-Type -Path (Join-Path $here 'CapWidenProbe.cs') -ReferencedAssemblies System.Drawing
     [CapWidenProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'dash-widen-probe') {
+    Add-Type -Path (Join-Path $here 'DashWidenProbe.cs') -ReferencedAssemblies System.Drawing
+    [DashWidenProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
