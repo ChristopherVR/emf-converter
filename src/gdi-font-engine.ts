@@ -748,7 +748,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
 			const dropout = dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType);
-			bitmap = rasterizeMono(o, dropout, undefined, true, smartGrid, !this.gdiPlus && (!m || !!skew), !!skew && !this.gdiPlus);
+			bitmap = rasterizeMono(o, dropout, undefined, true, smartGrid, !this.gdiPlus && (!m || !!skew), !!skew && !this.gdiPlus, !this.gdiPlus, false, true);
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
@@ -762,7 +762,7 @@ export class RealizedFont implements GdiRealizedFont {
 			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&
 				this.ttf.weightClass < 600 && this.ttf.family.toLowerCase() === 'courier new'
 				? rasterizeCourierGray(o, dropout)
-				: rasterizeGray(o, dropout, !this.gdiPlus && !m);
+				: rasterizeGray(o, dropout, !this.gdiPlus && !m, false, true);
 		}
 		if (bitmap && this.syntheticBold) {
 			bitmap = embolden(bitmap, this.mode === 'mono' ? 1 : 16);
@@ -1153,7 +1153,7 @@ const CLEARTYPE_OVERSAMPLE = 6;
  * AntiAliasGridFit and classic GDI do not use this adjustment.
  */
 function rasterizeCourierGray(o: Outline, dropout: number): GlyphBitmap | null {
-	const samples = rasterizeSamples(o, 4, 4, 1, dropout, false, false, true);
+	const samples = rasterizeSamples(o, 4, 4, 1, dropout, false, false, true, true);
 	if (!samples) return null;
 	const { box, hi } = samples;
 	const width = box.xMax - box.xMin;

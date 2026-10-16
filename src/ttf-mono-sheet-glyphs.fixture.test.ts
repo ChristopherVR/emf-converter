@@ -17,39 +17,14 @@ interface Capture { face: string; height: number; width: number; weight: number;
 const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/mono-sheet-glyphs.json.gz', import.meta.url))).toString());
 const fonts = windowsFonts();
 
-/** Bitmaps that still differ from native (sample counts: 175 differing pixels over 140 glyphs). */
+/** Bitmaps that still differ from native (sample counts: 28 differing pixels over 22 glyphs; 175 over 140 before round 9). */
 const INEXACT_BITMAP = new Set([
-	'Arial:-28:400:0:0:97', 'Arial:-72:400:0:0:48', 'Arial:9:400:0:0:38', 'Arial:9:400:0:0:36', 'Arial:-11:400:1:0:81',
-	'Arial:-11:400:1:0:51', 'Arial:-11:700:1:0:51', 'Arial:-17:400:1:0:83', 'Times New Roman:-8:400:0:0:64', 'Times New Roman:-9:400:0:0:64',
-	'Times New Roman:-10:400:0:0:64', 'Times New Roman:-11:400:0:0:64', 'Times New Roman:-18:400:0:0:97', 'Times New Roman:-72:400:0:0:88',
-	'Times New Roman:9:400:0:0:97', 'Times New Roman:9:400:0:0:109', 'Times New Roman:9:400:0:0:103', 'Times New Roman:9:400:0:0:101',
-	'Times New Roman:9:400:0:0:110', 'Times New Roman:9:400:0:0:115', 'Times New Roman:9:400:0:0:116', 'Times New Roman:9:400:0:0:118',
-	'Times New Roman:9:400:0:0:50', 'Times New Roman:9:400:0:0:65', 'Times New Roman:9:400:0:0:88', 'Times New Roman:9:400:0:0:38',
-	'Times New Roman:9:400:0:0:64', 'Times New Roman:9:400:0:0:37', 'Times New Roman:10:400:0:0:64', 'Times New Roman:12:400:0:0:64',
-	'Times New Roman:14:400:0:0:64', 'Times New Roman:20:400:0:0:97', 'Times New Roman:23:400:0:0:97', 'Times New Roman:56:400:0:0:87',
-	'Times New Roman:-11:700:1:0:83', 'Times New Roman:-11:400:0:12:51', 'Courier New:-9:400:0:0:109', 'Courier New:-9:400:0:0:115',
-	'Courier New:-9:400:0:0:37', 'Courier New:-11:400:0:0:97', 'Courier New:-12:400:0:0:97', 'Courier New:-13:400:0:0:97',
-	'Courier New:-14:400:0:0:97', 'Courier New:-15:400:0:0:97', 'Courier New:-24:400:0:0:51', 'Courier New:-24:400:0:0:88',
-	'Courier New:-36:400:0:0:50', 'Courier New:-72:400:0:0:98', 'Courier New:12:400:0:0:109', 'Courier New:12:400:0:0:115',
-	'Courier New:12:400:0:0:37', 'Courier New:14:400:0:0:97', 'Courier New:16:400:0:0:97', 'Courier New:26:400:0:0:38',
-	'Courier New:-11:400:1:0:101', 'Courier New:-11:400:0:12:51', 'Courier New:-17:400:0:7:120', 'Segoe UI:-8:400:0:0:109',
-	'Segoe UI:-8:400:0:0:117', 'Segoe UI:-8:400:0:0:114', 'Segoe UI:-8:400:0:0:110', 'Segoe UI:-8:400:0:0:115', 'Segoe UI:-8:400:0:0:105',
-	'Segoe UI:-13:400:0:0:51', 'Segoe UI:-15:400:0:0:101', 'Segoe UI:-16:400:0:0:101', 'Segoe UI:-20:400:0:0:51', 'Segoe UI:-22:400:0:0:51',
-	'Segoe UI:-24:400:0:0:50', 'Segoe UI:-28:400:0:0:50', 'Segoe UI:-32:400:0:0:51', 'Segoe UI:-36:400:0:0:64', 'Segoe UI:-72:400:0:0:97',
-	'Segoe UI:-72:400:0:0:98', 'Segoe UI:-72:400:0:0:64', 'Segoe UI:9:400:0:0:97', 'Segoe UI:9:400:0:0:109', 'Segoe UI:9:400:0:0:98',
-	'Segoe UI:9:400:0:0:114', 'Segoe UI:9:400:0:0:101', 'Segoe UI:9:400:0:0:102', 'Segoe UI:9:400:0:0:110', 'Segoe UI:9:400:0:0:105',
-	'Segoe UI:9:400:0:0:49', 'Segoe UI:9:400:0:0:51', 'Segoe UI:9:400:0:0:65', 'Segoe UI:9:400:0:0:37', 'Segoe UI:10:400:0:0:97',
-	'Segoe UI:10:400:0:0:109', 'Segoe UI:10:400:0:0:98', 'Segoe UI:10:400:0:0:114', 'Segoe UI:10:400:0:0:101', 'Segoe UI:10:400:0:0:102',
-	'Segoe UI:10:400:0:0:110', 'Segoe UI:10:400:0:0:105', 'Segoe UI:10:400:0:0:49', 'Segoe UI:10:400:0:0:51', 'Segoe UI:10:400:0:0:65',
-	'Segoe UI:10:400:0:0:37', 'Segoe UI:18:400:0:0:51', 'Segoe UI:20:400:0:0:101', 'Segoe UI:26:400:0:0:51', 'Segoe UI:30:400:0:0:51',
-	'Segoe UI:36:400:0:0:50', 'Segoe UI:44:400:0:0:51', 'Segoe UI:56:400:0:0:36', 'Segoe UI:-11:400:1:0:112', 'Segoe UI:-11:400:0:4:109',
-	'Segoe UI:-11:400:0:12:115', 'Segoe UI:-17:400:1:0:83', 'Segoe UI:-17:400:1:0:99', 'Segoe UI:-17:400:1:0:115', 'Tahoma:-8:400:0:0:97',
-	'Tahoma:-8:400:0:0:109', 'Tahoma:-8:400:0:0:98', 'Tahoma:-8:400:0:0:114', 'Tahoma:-8:400:0:0:102', 'Tahoma:-8:400:0:0:110',
-	'Tahoma:-8:400:0:0:105', 'Tahoma:-16:400:0:0:97', 'Tahoma:9:400:0:0:109', 'Tahoma:9:400:0:0:103', 'Tahoma:9:400:0:0:102',
-	'Tahoma:9:400:0:0:110', 'Tahoma:9:400:0:0:36', 'Tahoma:10:400:0:0:97', 'Tahoma:10:400:0:0:109', 'Tahoma:10:400:0:0:98',
-	'Tahoma:10:400:0:0:114', 'Tahoma:10:400:0:0:102', 'Tahoma:10:400:0:0:110', 'Tahoma:10:400:0:0:105', 'Tahoma:20:400:0:0:97',
-	'Tahoma:56:400:0:0:103', 'Tahoma:-11:400:1:0:51', 'Tahoma:-11:700:1:0:51', 'Tahoma:-11:400:0:12:51', 'Tahoma:-17:400:1:0:83',
-	'Tahoma:-17:400:1:0:99', 'Tahoma:-17:400:0:15:51',
+	'Arial:-28:400:0:0:97', 'Times New Roman:-72:400:0:0:88', 'Times New Roman:9:400:0:0:97', 'Times New Roman:9:400:0:0:103',
+	'Times New Roman:9:400:0:0:101', 'Times New Roman:56:400:0:0:87', 'Courier New:-9:400:0:0:109', 'Courier New:-24:400:0:0:88',
+	'Courier New:-36:400:0:0:50', 'Courier New:-72:400:0:0:98', 'Courier New:12:400:0:0:109', 'Courier New:26:400:0:0:38',
+	'Courier New:-11:400:0:12:51', 'Courier New:-17:400:0:7:120', 'Segoe UI:-13:400:0:0:51', 'Segoe UI:-36:400:0:0:64',
+	'Segoe UI:-72:400:0:0:64', 'Segoe UI:18:400:0:0:51', 'Segoe UI:-11:400:1:0:112', 'Tahoma:-16:400:0:0:97',
+	'Tahoma:20:400:0:0:97', 'Tahoma:-17:400:0:15:51',
 ]);
 /** Upright regular glyphs whose hinted outline still differs (the others are point for point native's). */
 const INEXACT_OUTLINE = new Set([
@@ -101,7 +76,7 @@ describe.skipIf(!fonts)('native monochrome glyphs of the text size and style she
 	const realize = (c: Capture): any => collection!.realize({ face: c.face, height: c.height, width: c.width, weight: c.weight, italic: c.italic,
 		charSet: 1, pitchAndFamily: 0, quality: 3, unhinted: false, gdiPlus: false });
 
-	it('draws 6,600 of 6,740 glyph bitmaps exactly and no glyph outside the recorded misses', () => {
+	it('draws 6718 of 6,740 glyph bitmaps exactly and no glyph outside the recorded misses', () => {
 		expect(captures).toHaveLength(6740);
 		let exact = 0, pixels = 0;
 		for (const c of captures) {
@@ -117,8 +92,8 @@ describe.skipIf(!fonts)('native monochrome glyphs of the text size and style she
 			else expect(INEXACT_BITMAP.has(key(c)), key(c)).toBe(true);
 			pixels += differing;
 		}
-		expect(exact).toBeGreaterThanOrEqual(6600);
-		expect(pixels).toBeLessThanOrEqual(175);
+		expect(exact).toBeGreaterThanOrEqual(6718);
+		expect(pixels).toBeLessThanOrEqual(28);
 	});
 
 	it('hints the upright regular glyphs to the native outline, 63 misses aside', () => {

@@ -48,7 +48,7 @@ The report supplies `windowsFonts()` when the complete fixture font set is avail
 
 ## Monochrome stub and DrawString spacing controls
 
-`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-mono-stubs.ps1` captures native monochrome glyph masks using generated diagnostic fonts. `build-mono-stub-fonts.py` rebuilds those fonts with Python fontTools. Original, independent and held-out sets total 29,696 controls; `ttf-mono-stub.fixture.test.ts` checks complete ink coordinates, individual bounds and preservation of previously exact cases. Curves and multiple contours remain diagnostic controls; the new runtime rule is limited to straight single-contour outlines.
+`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-mono-stubs.ps1` captures native monochrome glyph masks using generated diagnostic fonts. `build-mono-stub-fonts.py` rebuilds those fonts with Python fontTools. Original, independent and held-out sets total 29,696 controls; `ttf-mono-squares.fixture.test.ts` (round 9; it replaced `ttf-mono-stub.fixture.test.ts`, whose frozen round 8 bounds are retired) checks complete ink coordinates, individual bounds and preservation of previously exact cases. Curves and multiple contours remain diagnostic controls; the new runtime rule is limited to straight single-contour outlines.
 
 `powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-drawstring-advances.ps1` captures native repeat-glyph and mixed-string spacing evidence. `gdiplus-drawstring-advances.fixture.test.ts` pins the current per-case baselines. These captures rejected two candidate ClearType spacing corrections; they do not establish a complete layout model. See the text follow-up in `docs/native-parity-review.md` for the measured counterexamples.
 
@@ -358,7 +358,7 @@ Expanded playback now contains 101 controls (92 when this paragraph was first wr
 
 `powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-drawstring-baseline.ps1` captures 2,320 native ClearType DrawString surfaces across five faces, four requested styles, both formats, a 7-40px size sweep and held-out mixed strings. The font-cell baseline correction improves 1,038 controls without regressions. Synthetic styles, scaled transforms and fractional device positions remain outside the new path.
 
-`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-mono-multiple.ps1` builds generated CC0 fonts and records 32,256 native GGO_BITMAP controls across three seeds and ST1/ST4/ST5. `ttf-mono-multiple.fixture.test.ts` checks these and all 29,696 prior native masks against individual nonincreasing ceilings; unsupported contours retain complete bitmap fingerprints. `compare-mono-stubs.ts <frozen-e7bea83-ttf-raster-source> --multiple-contours` records the old-corpus evidence without replacing historical bounds.
+`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-mono-multiple.ps1` builds generated CC0 fonts and records 32,256 native GGO_BITMAP controls across three seeds and ST1/ST4/ST5. `ttf-mono-squares.fixture.test.ts` checks these and all 29,696 prior native masks against individual nonincreasing ceilings (`mono-squares-bounds.json.gz`) and pins the controls the specification-squares rule gave up. `compare-mono-squares.ts <frozen-round-8-ttf-raster-source>` (`git show d28c941:src/ttf-raster.ts`) records the before and after counts; it replaced `compare-mono-stubs.ts` and the `mono-stub-bounds` / `mono-multiple-bounds` evidence of rounds 5 to 8.
 
 ## Monochrome hinting and scan-conversion controls (round 7, 15 October 2026)
 
