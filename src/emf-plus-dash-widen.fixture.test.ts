@@ -151,7 +151,7 @@ describe('dashed pens against GDI+ (dash-widen.json.gz)', () => {
 	});
 
 	it('Round dash caps, polylines', () => {
-		expect(score(centered.filter((c) => c.dashCap === 2 && c.kind === 'polyline'))).toEqual({ aliased: [51, 28], aa: [26, 162] });
+		expect(score(centered.filter((c) => c.dashCap === 2 && c.kind === 'polyline'))).toEqual({ aliased: [52, 2], aa: [26, 128] });
 	});
 
 	it('Round dash caps, closed figures', () => {
@@ -159,11 +159,11 @@ describe('dashed pens against GDI+ (dash-widen.json.gz)', () => {
 	});
 
 	it('Triangle dash caps, open lines', () => {
-		expect(score(centered.filter((c) => c.dashCap === 3 && c.kind === 'line'))).toEqual({ aliased: [50, 5], aa: [36, 51] });
+		expect(score(centered.filter((c) => c.dashCap === 3 && c.kind === 'line'))).toEqual({ aliased: [50, 2], aa: [38, 40] });
 	});
 
 	it('Triangle dash caps, polylines', () => {
-		expect(score(centered.filter((c) => c.dashCap === 3 && c.kind === 'polyline'))).toEqual({ aliased: [46, 11], aa: [23, 150] });
+		expect(score(centered.filter((c) => c.dashCap === 3 && c.kind === 'polyline'))).toEqual({ aliased: [47, 5], aa: [23, 132] });
 	});
 
 	it('Triangle dash caps, closed figures', () => {
@@ -174,6 +174,10 @@ describe('dashed pens against GDI+ (dash-widen.json.gz)', () => {
 		const selected = centered.filter((c) => c.kind === 'line' && c.dashCap === 2 && c.width === 12 && c.pattern?.join() === '0.5,1.5');
 		expect(selected.length).toBeGreaterThan(0);
 		expect(score(selected).aliased[0]).toBe(selected.length);
+	});
+
+	it('Inset pens on the sheet figures with Triangle dash caps: the band, cut flat at the end of the straight part (11,286 differing pixels with the tip)', () => {
+		expect(score(cases.filter((c) => c.inset && c.dashCap === 3))).toEqual({ aliased: [16, 80], aa: [12, 613] });
 	});
 
 	it('Inset pens on the sheet figures with Round dash caps (the band along the inside of each edge)', () => {

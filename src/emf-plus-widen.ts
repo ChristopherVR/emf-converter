@@ -231,6 +231,10 @@ function capPoints(p: Pt, f: ReturnType<typeof frame>, o1: number, o2: number, c
 			return [at(o2, 0), ...arcPoints(centre, r, a0, sweep), at(o1, 0)];
 		}
 		case 3:
+			// An Inset pen draws the band along the inside of the line (o1, o2 on one side of it) with no triangle at all: the dash is just cut flat at the end of its straight part (measured: 85 pixels differ over 48 Inset Triangle-dash cases, against 11,286 with the tip).
+			if (Math.abs(o1 + o2) > 1e-9) {
+				return [at(o2, 0), at(o1, 0)];
+			}
 			return [at(o2, 0), at((o1 + o2) / 2, half), at(o1, 0)];
 		default:
 			return [at(o2, 0), at(o1, 0)];
@@ -317,7 +321,9 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt
 				cur = null;
 			} else {
 				cur = [q];
-				curFirst = false;
+				// The first dash of an open line that starts within half a pen width of the line's start (its cap would reach before it) takes
+				// the line's own start cap there, at the start of its straight part.
+				curFirst = !closed && shorten > 0 && out.length === 0 && lengths.slice(0, i).reduce((sum, v) => sum + v, 0) + t0 <= pen.half + 1e-9;
 			}
 			on = !on;
 			idx = (idx + 1) % dash.length;
