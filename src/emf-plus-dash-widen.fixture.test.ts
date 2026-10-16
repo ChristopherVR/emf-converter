@@ -8,15 +8,16 @@
  * What the capture shows (all measured with `Widen`):
  *  - GDI+ dashes the figure before widening and widens every dash as its own open figure. With a Round or Triangle DashCap a dash is straight
  *    for its length minus the pen width, the caps reaching half a width beyond both ends. A dash shorter than the pen width is a DOT: a straight
- *    part of 0.001 pen widths (the two short sides of the polygon are 0.002 long for a width 2 pen, 0.0045 for 4.5, 0.008 for 8 in all 386
- *    dots surveyed) and the caps of a dot touch.
+ *    part of 0.001 pen widths (the two short sides of the polygon are 0.002 long for a width 2 pen, 0.0045 for 4.5, 0.008 for 8 in all 142
+ *    dots among the 193 round-capped dashes of open lines) and the caps of a dot touch.
  *  - A dash shorter than the cap still takes the cap's whole length of the pattern: the next dash starts one pen width after the straight
  *    part ends, whatever the dash length was (the pattern 2, 1, 0.5, 1.5 of a width 2 pen repeats every 11 pixels, not 10). The converter
  *    kept the period instead, which put every later dash of such a pattern off: 4,543 differing pixels of the Inset round-dash cases, 4,000
  *    over a dozen paths.
  *  - A dash of an open line whose cap would reach the line's end (the line ends within half a pen width of the straight part) is the line's
- *    last dash: it ends where its straight part does and takes the line's own end cap (a Flat cap shows as a flat end up to a pen width
- *    short of the end of the dash that the pattern would have drawn).
+ *    last dash: it ends where its straight part does and takes the line's own end cap, so a Flat end cap shows there. In the same way the first
+ *    dash of an open line that starts within half a pen width of the line's start takes the line's own start cap, at the start of its
+ *    straight part.
  *  - The caps are Beziers (types 3 in the `Widen` path), flattened as every other Bezier of a fill; filling the native `Widen` path with
  *    `flattenBezierGdiplus` and the 28.4 fill reproduces the native pixels (479 of 480 aliased, 475 antialiased), so the remaining differences
  *    are in the geometry (cut points, 1/16 pixel roundings of the control points of a cap), not in the rasteriser.
