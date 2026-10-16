@@ -513,7 +513,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-rotalign-esc-small', 'emf', 0.00005), // measured 0.0042% (13 px; 207 before round 8: quarter-turn text has its own tmAscent / tmDescent) against the native playback (0.367% before)
 	fontCase('textx-rotalign-world', 'emf', 0.00005), // measured 0.0048% (15 px; 34 before round 8) against the native playback (0.537% before)
 	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
-	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
+	fontCase('textx-segoeui-cell-mono', 'emf', 0.00016), // measured 0.015% against the native playback (the recorded exScale / eyScale stretch is drawn); 0.086% before
 	fontCase('textx-segoeui-cleartype', 'emf', 0.0126), // measured 1.258%, 2.992% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 3.694% before the ClearType dropout control
 	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%

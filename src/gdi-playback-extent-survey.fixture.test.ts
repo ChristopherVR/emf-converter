@@ -19,7 +19,7 @@ interface Survey { name: string; w: number; h: number; ox: number; oy: number; p
 const survey: Survey[] = JSON.parse(readFileSync(fixturePath('playback-extent-survey.json'), 'utf8'));
 
 /** Sheets whose ink bounds differ from native playback for reasons other than the extent. */
-const boundsDiffer = new Set(['emfrec-ca-dither-5-5-0-0', 'emfrec-ca-dither-5-5-3-2', 'emfrec-ca-dither-6-7-0-0', 'textx-segoeui-cell-mono']);
+const boundsDiffer = new Set(['emfrec-ca-dither-5-5-0-0', 'emfrec-ca-dither-5-5-3-2', 'emfrec-ca-dither-6-7-0-0']);
 /** Sheets whose reference PNG is clipped: native playback paints ink beyond it (see gdi-playback-extents.fixture.test.ts). */
 const clipped = new Set(['rotate-text-25deg', 'textx-arial-cleartype', 'textx-arial-ctnatural', 'textx-arial-q0-default', 'textx-arial-q1-draft', 'textx-arial-q2-proof', 'textx-fon-fixedsys', 'textx-fon-fixedsys.regen', 'textx-fon-system', 'textx-fon-system.regen', 'textx-segoeui-cell-mono']);
 
@@ -65,7 +65,8 @@ describe.skipIf(!windowsFonts())('native playback into the converter extent of e
 				blankMargin++;
 			}
 		}
-		expect(sameBounds).toBe(162);
+		// textx-segoeui-cell-mono joined the 162 once the converter drew the recorded playback stretch (round 9).
+		expect(sameBounds).toBe(163);
 		expect(blankMargin).toBe(155);
 	}, 300_000);
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { diffImages, fixturePath, loadReference, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
+import { diffImages, fixturePath, loadReference, renderEmfBytes, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
 
 /**
  * `text-playback-hinting` (TextPlaybackProbe.cs, 8 October 2026). Native playback of a recorded Segoe UI
@@ -59,24 +59,45 @@ describe('playback versus direct drawing of recorded text sheets', () => {
 	});
 });
 
-describe.skipIf(!windowsFonts())('the converter draws the direct shapes', () => {
+describe.skipIf(!windowsFonts())('the converter draws the native playback shapes', () => {
 	// name -> [converter vs direct drawing, converter vs native playback] over the whole sheet
 	const expected: Record<string, [number, number]> = {
 		// Native direct-drawing references: collapsed-box dropout placement
 		// closes another eight pixels per sheet (cell 169/4215, em 80/80 before); GDI's own hinting arithmetic and the
 		// single-rounding cell height (Segoe UI cell 9 is 7 ppem) and the rounded implied on-curve points took the cell
-		// sheet to 45/4095 and the em sheet to 19/19.
-		'textpb-segoeui-cell-q3': [45, 4095],
+		// sheet to 45/4095 and the em sheet to 19/19. Round 9: the converter reads the record's exScale / eyScale and
+		// re-grid-fits (switches off grid-fitting for) the nine flagged heights like native playback does
+		// (`playbackStretchReacts`: patching the two scales equal makes native playback equal the direct drawing), which
+		// takes the cell sheet to 93 pixels from the playback (45 of them the direct drawing's own residual) and leaves it
+		// 4,113 from the direct drawing.
+		'textpb-segoeui-cell-q3': [4113, 93],
 		'textpb-segoeui-em-q3': [19, 19],
 	};
-	it('matches the direct drawing on the nine flagged heights, not the playback', async () => {
+	it('matches the native playback on the nine flagged heights, not the direct drawing', async () => {
 		for (const [name, [direct, played]] of Object.entries(expected)) {
 			const rendered = await renderFixture(`${name}.emf`, { fonts: windowsFonts()! });
 			expect(rendered, name).not.toBeNull();
 			expect(diffImages(rendered!, await loadReference(`${name}.direct`), 0, 0).mismatched, name).toBe(direct);
 			expect(diffImages(rendered!, await loadReference(name), 0, 0).mismatched, name).toBe(played);
 		}
-	});
+	}, 60_000);
+	it('takes the stretch from the records: with every eyScale patched to its exScale the sheet is the unstretched, direct one again', async () => {
+		// Native: playing the patched recording (`scripts/gdi-fixtures/patch-text-scales.ts`) draws exactly the direct
+		// drawing (0 of 2,102,400 pixels differ, 4,050 for the unpatched recording).
+		const bytes = Buffer.from(readFileSync(fixturePath('textpb-segoeui-cell-q3.emf')));
+		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		let patched = 0;
+		for (let off = 0; off + 8 <= bytes.length; off += view.getUint32(off + 4, true)) {
+			if (view.getUint32(off, true) === 84) {
+				view.setFloat32(off + 8 + 16 + 8, view.getFloat32(off + 8 + 16 + 4, true), true);
+				patched++;
+			}
+			if (view.getUint32(off + 4, true) === 0) break;
+		}
+		expect(patched).toBe(57);
+		const rendered = (await renderEmfBytes(bytes, { fonts: windowsFonts()! }))!;
+		expect(diffImages(rendered, await loadReference('textpb-segoeui-cell-q3.direct'), 0, 0).mismatched).toBe(45);
+	}, 60_000);
 });
 
 /**

@@ -631,6 +631,8 @@ export interface GdiTextCall {
 	textJustification?: { extra: number; count: number };
 	/** Logical-to-device affine `[a, b, c, d, e, f]` (x' = a*x + c*y + e). */
 	matrix: TransformMatrix;
+	/** `eyScale / exScale` of the record when it is a GM_COMPATIBLE one (upright text only), see `playbackStretchReacts`. */
+	playbackStretch?: number;
 }
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -669,7 +671,10 @@ export function drawGdiTextCall(
 	if (!(advanceScale > 0) || !(fontScale > 0) || call.codes.length === 0) {
 		return null;
 	}
-	const font = fonts.realize(deviceLogFont(state, fontScale, advanceScale), state.fontFamilyMap);
+	const upright = b === 0 && c === 0 && state.fontEscapementTenthDeg % 3600 === 0;
+	const spec = deviceLogFont(state, fontScale, advanceScale);
+	if (upright && call.playbackStretch && call.playbackStretch !== 1) spec.playbackStretch = call.playbackStretch;
+	const font = fonts.realize(spec, state.fontFamilyMap);
 	if (!font) {
 		return null;
 	}

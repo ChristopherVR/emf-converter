@@ -91,6 +91,11 @@ export interface LogFontSpec {
 	ignoreGasp?: boolean;
 	/** GDI+ smoothing uses natural-width hinting and its own coverage quantisation. */
 	gdiPlus?: boolean;
+	/**
+	 * The horizontal stretch `eyScale / exScale` stored in a GM_COMPATIBLE text record, which native playback draws the
+	 * text through (see {@link playbackStretchReacts}). Absent or 1: none.
+	 */
+	playbackStretch?: number;
 }
 
 /**
@@ -458,6 +463,7 @@ export class RealizedFont implements GdiRealizedFont {
 		stretchWidth = 0,
 		gridFit = true,
 		private readonly gdiPlus = false,
+		private readonly playbackStretched = false,
 	) {
 		this.ttf = ttf;
 		this.gridFit = gridFit;
@@ -508,7 +514,7 @@ export class RealizedFont implements GdiRealizedFont {
 		this.hinted = new HintedSize(ttf, ppemX, ppem,
 			gdiPlus && mode === 'gray'
 				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false, grayClearType: true }
-				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus }, gridFit || (gdiPlus && mode === 'gray'));
+				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus, reportStretched: playbackStretched }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
 		if (gdiPlus && mode === 'gray' && gridFit) {
 			// AntiAliasGridFit spaces its glyphs by the widths GDI itself reports (`GetCharWidth32` at the same height:
@@ -607,6 +613,7 @@ export class RealizedFont implements GdiRealizedFont {
 			compatibleWidths: !this.gdiPlus && !this.naturalWidths,
 			gdiArithmetic: !this.gdiPlus,
 			smoothingBit18: !this.gdiPlus && gridFit && clearTypeSmoothsVertically(this.ttf, this.ppem),
+			reportStretched: this.playbackStretched,
 			bwAdvance: !this.gdiPlus && !this.naturalWidths && gridFit ? (g: number): number => this.advance(g) : undefined,
 		}, gridFit);
 		const u = this.ctSize.hintGlyph(gi);
@@ -1062,6 +1069,7 @@ export class GdiFontCollection {
 					spec.width,
 					!spec.unhinted,
 					spec.gdiPlus,
+					!!spec.playbackStretch && playbackStretchReacts(best, spec.height, spec.playbackStretch),
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				return tt;
@@ -1103,6 +1111,33 @@ export class GdiFontCollection {
 		}
 		return mode;
 	}
+}
+
+/**
+ * Whether the horizontal stretch `stretch` (`eyScale / exScale` of a GM_COMPATIBLE text record, 1.00055838 on a
+ * 3840 x 2160 display at 150%) makes native playback re-grid-fit a height of this face.
+ *
+ * Native playback draws such text through `diag(eyScale / exScale, 1)`: patching every record's `eyScale` of
+ * `textpb-segoeui-cell-q3.emf` to its `exScale` makes `PlayEnhMetaFile` draw exactly the direct drawing (0 of 2,102,400
+ * pixels differ, 4,050 without the patch), so the stretch comes from the record, not from the playing device. For
+ * Segoe UI the stretched size `M = round(32 E s) / 32` (E the exact em size, `h * unitsPerEm / (winAscent + winDescent)`
+ * for a cell height and `|h|` for an em height) either equals the unstretched `round(32 E) / 32`, which changes nothing,
+ * or lies at least 15/16 pixel from the ppem GDI realised, which switches grid-fitting off at that size while the
+ * outline keeps the unstretched scale: the nine cell heights 24, 35, 36, 39, 40, 56, 58, 59 and 64 and no em height at
+ * the playback ratio; all 5,330 native outcomes of `text-stretch-hinting.json.gz` agree
+ * (`gdi-text-stretch-hinting.fixture.test.ts`). Calibri-like fonts follow another rule and the other stock faces change
+ * by the x scale alone; neither is modelled.
+ */
+export function playbackStretchReacts(font: TtfFont, height: number, stretch: number): boolean {
+	if (!(stretch > 0) || stretch === 1 || font.family.toLowerCase() !== 'segoe ui') {
+		return false;
+	}
+	const cell = font.winAscent + font.winDescent;
+	const em = height < 0 ? -height : (height * font.unitsPerEm) / cell;
+	const ppem = height < 0 ? -height : resolvePpem(font, height);
+	const unstretched = Math.floor(em * 32 + 0.5);
+	const stretched = Math.floor(em * 32 * stretch + 0.5);
+	return stretched !== unstretched && Math.abs(stretched / 32 - ppem) >= 15 / 16;
 }
 
 /**

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { resolvePpem } from './gdi-font-engine';
+import { playbackStretchReacts, resolvePpem } from './gdi-font-engine';
 import { fixturePath } from './__fixtures__/gdi-parity-harness';
 import { parseFontFile, type TtfFont } from './ttf-font';
 import { HintedSize } from './ttf-hinting';
@@ -27,8 +27,11 @@ import { HintedSize } from './ttf-hinting';
  *   - "integer": Calibri, Consolas, Candara, Corbel, Constantia react whenever M is not a multiple of 32;
  *   - others (Arial, Tahoma, Times New Roman, Courier New, ...) follow neither: their outlines change by the
  *     x scale alone.
- * - The engine keeps drawing the unstretched shapes: the reference PNGs of the old recordings are direct
- *   drawings, so reproducing the playback would make `textx-segoeui-cell-mono` inexact (989 pixels).
+ * - Round 9: the engine now draws the playback shapes (`playbackStretchReacts`, from the record's own exScale /
+ *   eyScale: patching the two equal makes native playback draw the unstretched, direct sheet, so the stretch is not the
+ *   playing device's). `textx-segoeui-cell-mono` is compared with its native playback
+ *   (`textx-segoeui-cell-mono.playback.png`, `playback-references.json`); against the old direct-drawing PNG it would be
+ *   989 pixels off, as the playback itself is.
  */
 interface Capture { glyphs: string; steps: number[]; faces: Array<{ face: string; heights: Record<string, string> }> }
 const capture: Capture = JSON.parse(gunzipSync(readFileSync(fixturePath('text-stretch-hinting.json.gz'))).toString());
@@ -223,5 +226,25 @@ describe.skipIf(!haveFonts)('the interpreter reproduces the stretched Segoe UI o
 			expect(same(h, 1.0002), String(h)).toBe(true);
 			expect(same(h, 1.000558), String(h)).toBe(true);
 		}
+	});
+});
+
+describe.skipIf(!haveFonts)("the converter's playbackStretchReacts", () => {
+	it('is the "window" rule for Segoe UI: all 5,330 native cell-height outcomes and all 5,330 em-height outcomes', () => {
+		const font = loadFont('Segoe UI');
+		let ok = 0;
+		let total = 0;
+		for (const [hs, bits] of Object.entries(face('Segoe UI').heights)) {
+			for (let k = 0; k < capture.steps.length; k++) {
+				total++;
+				if (playbackStretchReacts(font, Number(hs), capture.steps[k]) === (bits[k] === '1')) ok++;
+			}
+		}
+		expect([ok, total]).toEqual([10660, 10660]);
+	});
+	it('reacts for no other face (they are not modelled) and never without a stretch', () => {
+		const font = loadFont('Calibri');
+		expect(playbackStretchReacts(font, 24, 1.00055838)).toBe(false);
+		expect(playbackStretchReacts(loadFont('Segoe UI'), 24, 1)).toBe(false);
 	});
 });
