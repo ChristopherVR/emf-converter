@@ -75,7 +75,7 @@ const EXPECTED: Record<string, [number, number]> = {
 	sweep: [1632, 1632],
 	kinds: [281, 290],
 	corners: [284, 284],
-	rects: [36, 31],
+	rects: [36, 33],
 	centre: [196, 196],
 	h: [27, 23],
 	follow: [98, 97],
@@ -147,9 +147,9 @@ describe.skipIf(!windowsFonts())('GDI ClearType compatible widths on the Windows
 	}
 
 	const PINS: Record<string, { natural: [number, number]; default: [number, number] }> = {
-		Arial: { natural: [349, 264], default: [146, 3324] },
-		'Segoe UI': { natural: [349, 151], default: [135, 2622] },
-		Tahoma: { natural: [368, 248], default: [126, 4103] },
+		Arial: { natural: [349, 264], default: [179, 2700] },
+		'Segoe UI': { natural: [349, 151], default: [138, 2556] },
+		Tahoma: { natural: [368, 248], default: [140, 2953] },
 	};
 	for (const [face, pin] of Object.entries(PINS)) {
 		it(`${face}: natural quality exact for ${pin.natural[0]} of 420 glyphs, default quality for ${pin.default[0]}`, () => {

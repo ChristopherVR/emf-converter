@@ -109,10 +109,10 @@ describe('GDI ClearType compatible widths past the stem (gdi-cleartype-arm.json.
 
 	// Exact glyph captures per set at natural quality and at default quality as production renders them (see above).
 	const EXPECTED: Record<string, [number, number]> = {
-		arm: [224, 126],
-		height: [288, 171],
-		postiup: [189, 69],
-		postsmall: [64, 52],
+		arm: [224, 189],
+		height: [288, 268],
+		postiup: [189, 177],
+		postsmall: [64, 64],
 	};
 	for (const s of sets) {
 		it(`reproduces ${EXPECTED[s.set][0]} natural and ${EXPECTED[s.set][1]} default-quality glyphs of the ${s.set} set`, () => {
