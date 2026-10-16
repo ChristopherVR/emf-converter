@@ -438,6 +438,8 @@ export class HintedSize {
 	private inComposite = false;
 	/** IUP[y] has run in the current glyph program. */
 	private iupy = false;
+	/** IUP[x] has run in the current glyph program. */
+	private iupx = false;
 	private count = 0;
 
 	constructor(font: TtfFont, ppemX: number, ppemY: number, env: HintEnvironment, hinting = true) {
@@ -780,6 +782,7 @@ export class HintedSize {
 		this.zp0 = this.zp1 = this.zp2 = zone;
 		this.stack = [];
 		this.iupy = false;
+		this.iupx = false;
 		this.computeFuncs();
 		try {
 			this.execute(instructions);
@@ -2302,7 +2305,10 @@ export class HintedSize {
 
 	/** A MIRP or MSIRP just placed `p` relative to rp0: if the two are the sides of a stem, shift the stem. */
 	private pairShift(rp0: number, p: number): void {
-		if (!this.widthShiftOn()) {
+		// Native leaves a stem alone once IUP[x] has run (private bars with the pair after IUP[x], alone or with IUP[y] before
+		// or after it: 108 of 108 glyphs identical at the two qualities; Tahoma 'V', 'A' and 'W' set their diagonal caps
+		// after both IUPs and are unshifted).
+		if (!this.widthShiftOn() || this.iupx) {
 			return;
 		}
 		const z = this.zp1;
@@ -2541,6 +2547,7 @@ export class HintedSize {
 
 	private insIUP(xAxis: number): void {
 		if (!xAxis) this.iupy = true;
+		if (xAxis) this.iupx = true;
 		const z = this.pts;
 		if (xAxis) this.applyWidthShift(z);
 		const mask = xAxis ? TOUCH_X : TOUCH_Y;
