@@ -143,10 +143,10 @@ describe('per-vertex path gradient span (native, exact end colours)', () => {
 		});
 	});
 
-	it('keeps the converter (16.16 span) within 33 pixels of the nearest level off ties and measures its tie misses', () => {
-		expect(result.productionNonTieOff).toBeLessThanOrEqual(33);
-		// 71% of the ties, almost all of them the flat spans, which no stepped delta can reproduce.
-		expect(result.productionOff).toBeLessThanOrEqual(245641);
+	it('has the converter right at every non-tie pixel and measures its tie misses', () => {
+		expect(result.productionNonTieOff).toBeLessThanOrEqual(0);
+		// the centre-relative model (round 9) is right at every non-tie pixel and misses 10,137 of the 343,488 ties (245,641 before)
+		expect(result.productionOff).toBeLessThanOrEqual(10137);
 	});
 
 	it('is matched at every non-tie pixel by the single-precision weights candidate, which misses 24% of the ties (not shipped)', () => {
@@ -187,7 +187,7 @@ describe('per-vertex path gradient captures: the candidate against the converter
 			}
 		}
 		expect(native).toBe(174084);
-		expect(exactProduction).toBeGreaterThanOrEqual(171194);
+		expect(exactProduction).toBeGreaterThanOrEqual(172969); // 171,194 before round 9
 		expect(exactCandidate).toBe(172759);
 	});
 });

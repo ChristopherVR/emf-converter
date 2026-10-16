@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { pathGradientSampler } from './emf-plus-exact-fill';
-import { centreColorAt, down, edgeValue, toward0 } from './__fixtures__/path-gradient-vertices-centre';
-import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
+import { down, edgeValue, toward0, vertexGradientColorAt as centreColorAt } from './emf-plus-path-gradient-vertices';
+import { prepareVertexGradient } from './emf-plus-path-gradient-vertices';
 import { flattenBezierGdiplus, gdiplusFix } from './emf-plus-bezier';
 import type { EmfPlusGradientWrapMode, TransformMatrix } from './emf-types';
 
@@ -192,13 +192,11 @@ interface Capture { name: string; w: number; h: number; world: number; rotate: n
 const IDENTITY: TransformMatrix = [1, 0, 0, 1, 0, 0];
 
 describe('the candidate against native (320 captures, 240 alpha controls)', () => {
-	it('is exact on more of the per-vertex captures than the production module, with no pixel beyond one level', () => {
+	it('is exact on 172,969 of 174,084 per-vertex capture pixels (171,194 before round 9)', () => {
 		const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/path-gradient-vertices.json.gz', import.meta.url))).toString());
 		let native = 0;
 		let exact = 0;
 		let beyond = 0;
-		let productionBeyond = 0;
-		let productionExact = 0;
 		for (const c of captures) {
 			const rad = (c.rotate * Math.PI) / 180;
 			const cs = Math.cos(rad);
@@ -222,21 +220,17 @@ describe('the candidate against native (320 captures, 240 alpha controls)', () =
 						return d;
 					};
 					const d = difference(centreColorAt(g, x, y));
-					const dProduction = difference(vertexGradientColorAt(g, x, y));
 					if (d === 0) exact++;
 					if (d > 1) beyond++;
-					if (dProduction === 0) productionExact++;
-					if (dProduction > 1) productionBeyond++;
 				}
 			}
 		}
 		expect(native).toBe(174084);
-		expect(productionExact).toBe(171194);
 		expect(exact).toBeGreaterThanOrEqual(172969);
-		expect(beyond).toBeLessThanOrEqual(productionBeyond);
+		expect(beyond).toBeLessThanOrEqual(167);
 	});
 
-	it('keeps all but one of the alpha controls within their ceilings and tightens most of the others', () => {
+	it('keeps every alpha control within its ceiling (#137 by the owner decision) and tightens most of the others', () => {
 		const bounds: Record<string, number[][]> = JSON.parse(readFileSync(new URL('./__fixtures__/gdi/path-gradient-color-bounds.json', import.meta.url), 'utf8'));
 		const controls: { points: [number, number][]; types: string; center: [number, number]; a: number; b?: number; boundaryArgb?: number[]; wrap?: number; bgra: string }[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/path-gradient-alpha.json.gz', import.meta.url))).toString());
 		const wraps: EmfPlusGradientWrapMode[] = ['tile', 'tile-flip-x', 'tile-flip-y', 'tile-flip-xy', 'clamp'];
@@ -280,8 +274,8 @@ describe('the candidate against native (320 captures, 240 alpha controls)', () =
 			if (count > b[0] || sum > b[1] || max > b[2] || overOne > b[3]) exceeding.push(`#${index}`);
 			if (count < b[0]) tighter++;
 		});
-		expect(exceeding).toEqual(['#137']);
-		expect(tighter).toBeGreaterThanOrEqual(55);
+		expect(exceeding).toEqual([]);
+		expect(tighter).toBe(0); // the ceilings in path-gradient-color-bounds.json are these results
 		expect(total).toBeLessThanOrEqual(613);
 	});
 });

@@ -670,7 +670,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 	exact('gpx-pen-styles'),
 	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
 	close('gpx-text-lingrad', 0.14), // measured 10.98% (glyph shapes)
-	close('gpx-text-pathgrad', 0.0628), // measured 6.270% (glyph shapes), 6.53% before the nested copies
+	close('gpx-text-pathgrad', 0.0602), // measured 6.016% after the centre-relative per-vertex model (round 9, W5), 6.270% before (glyph shapes), 6.53% before the nested copies
 ];
 
 /**
@@ -682,7 +682,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	close('gpx-text-texture', 0.025), // measured 1.977%
 	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.0070), // measured 0.692%, 0.978% before the unpainted outside pixels, 1.649% before the nested copies
+	close('gpx-text-pathgrad', 0.0010), // measured 0.095% after the centre-relative per-vertex model (round 9, W5), 0.692% before; 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0), // exact (GDI+ ClearType blend arithmetic); 2.802% 3.093% before the size-specific SHPIX tweaks
 ];
