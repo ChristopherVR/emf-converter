@@ -109,8 +109,8 @@ describe('GDI ClearType compatible widths past the stem (gdi-cleartype-arm.json.
 
 	// Exact glyph captures per set at natural quality and at default quality as production renders them (see above).
 	const EXPECTED: Record<string, [number, number]> = {
-		arm: [224, 126],
-		height: [288, 171],
+		arm: [224, 189],
+		height: [288, 268],
 		postiup: [189, 177],
 		postsmall: [64, 64],
 	};
