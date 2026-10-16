@@ -507,13 +507,13 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.00065), // measured 0.064% (2.527% before the round 8 AntiAliasGridFit advances); GDI+ hinting and shades
 	fontCase('textx-plus-cleartype', 'emf', 0.0013), // measured 0.133% (GDI+ ClearType blend arithmetic, 8-bit tables and exact sixths of coverage; 9.236% before the round 8 interpreter rules), 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
 	fontCase('textx-plus-singlebit', 'emf', 0.0015), // measured 0.148% (GDI+ design-unit advances; 1.941% before); the rest are Times New Roman glyph shapes and the bar end
-	fontCase('textx-plus-singlebitgridfit', 'emf', 0.00015), // measured 0.015%
-	fontCase('textx-plus-systemdefault', 'emf', 0.00015), // measured 0.015%
+	fontCase('textx-plus-singlebitgridfit', 'emf', 0), // measured 0 (round 9: GDI+ advances and the stub squares; 0.020% before)
+	fontCase('textx-plus-systemdefault', 'emf', 0), // measured 0 (round 9: GDI+ advances and the stub squares; 0.020% before)
 	fontCase('textx-rotalign-esc', 'emf', 0.00005), // measured 0.0048% (15 px; 34 before round 8) against the native playback (0.511% before)
 	fontCase('textx-rotalign-esc-small', 'emf', 0.00005), // measured 0.0042% (13 px; 207 before round 8: quarter-turn text has its own tmAscent / tmDescent) against the native playback (0.367% before)
 	fontCase('textx-rotalign-world', 'emf', 0.00005), // measured 0.0048% (15 px; 34 before round 8) against the native playback (0.537% before)
 	fontCase('textx-segoeui-aa', 'emf', 0.00013), // measured 0.0118% (a scan line exactly on a horizontal edge is inked, round 9; 0.031% before)
-	fontCase('textx-segoeui-cell-mono', 'emf', 0.00016), // measured 0.015% against the native playback (the recorded exScale / eyScale stretch is drawn); 0.086% before
+	fontCase('textx-segoeui-cell-mono', 'emf', 0.00003), // measured 0.0025% (8 px) against the native playback (round 9 stub squares; 0.015% before, 0.086% against the direct drawing)
 	fontCase('textx-segoeui-cleartype', 'emf', 0.0126), // measured 1.258%, 2.992% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 3.694% before the ClearType dropout control
 	fontCase('textx-segoeui-mono', 'emf', 0.00001), // measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.00001), // measured 0.0004% (round 9; was 0.0400% ceiling) measured 0.007%

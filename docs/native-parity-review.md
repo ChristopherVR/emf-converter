@@ -129,6 +129,25 @@ Nine further workstreams, measured on the merged tree against the round-7 head (
 
 Validation: 251 test files and 7,876 tests pass (one texture test timed out under full-suite load and passes alone), with library and documentation type checks, the package build and the browser-package check.
 
+## Round 9 (16 October 2026, final round)
+
+Six workstreams began by reviewing how Windows documents or is known to implement each area (Microsoft's TrueType instruction specification, the ClearType backward-compatibility white paper, the GDI and GDI+ API pages, FreeType's v40 documentation and Wine's GDI+ sources as behavioural references only; no code was copied), then confirmed each mechanism with native probes. Against the round-8 head (`d28c941`) on the same 910 comparisons, **813 are RGB-exact, up from 803**, 805 have complete ink coverage, 62 comparisons improve and none gets worse; mismatched pixels fall from 44,210 to 31,892.
+
+How Windows does it, as now understood (each item measured here unless marked):
+
+- **GDI text** is hinted by the font's TrueType program and scan-converted with pixel centres on the contour counted inside; dropout control follows the specification's "squares" definition of a stub (documented by Microsoft) and grayscale is the same conversion on an oversampled outline. Escapement uses a 128-step chord table for its sine and cosine.
+- **GDI ClearType** runs the program on a finer horizontal grid with Microsoft's documented backward-compatibility rules; at default quality it keeps the black-and-white advance and slides each stem the program sets, while the program runs, until IUP[x] (undocumented; measured).
+- **GDI+ text** advances unhinted glyphs by font-unit advances times 1.03 rounded to whole units, draws underlines and strike-outs as separate quarter-pixel bars, blends ClearType through 8-bit gamma tables in exact sixths of coverage, and applies the GM_COMPATIBLE stretch recorded in the text record.
+- **GDI+ path gradients** are triangle fans shaded per scanline in single precision relative to the centre colour, rounded toward minus infinity.
+- **GDI+ dashed pens** are cut into dashes first (consistent with Wine's re-implementation) and every dash is widened on its own; a dash shorter than its cap consumes the cap's length of the pattern.
+- **GDI+ DrawImage** in a metafile is recorded as a three-point draw, which uses the same bilinear sampler as a rectangle draw with slightly different float arithmetic.
+
+Accepted trades (owner decisions): the specification stub rule for GDI monochrome and gray text (20 near-tie private controls become inexact against about 9,500 gained and seven more exact fixtures), the in-program ClearType width shifts (7 default-quality glyph captures change, 54 become exact), and the centre-relative path-gradient model (one alpha control is one pixel off).
+
+Still missing: the hinted shape of GDI+ diagonal-stem glyphs (whose native output also varies between runs), which MIRP chains GDI ClearType counts as stems in V/W/X, sub-0.004 px scan-conversion ties, ISECT on non-axis lines, falling-colour gradient spans, the linear ramp origin of rotated brushes, crossing Inset rings, high-quality wrap-mode image draws, a y-dependent x position in three-point image draws, and the measured (not derived) 2^-21 vertical bias of those draws.
+
+Validation: 259 test files and 7,926 tests pass, with library and documentation type checks, the package build (`dist/index.mjs` 2,145,067 bytes) and the browser-package check.
+
 ## Open-source alternatives
 
 | Project | Useful role | Limitation for this converter |
