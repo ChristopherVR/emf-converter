@@ -69,9 +69,10 @@ describe.skipIf(!windowsFonts())('the converter draws the native playback shapes
 		// re-grid-fits (switches off grid-fitting for) the nine flagged heights like native playback does
 		// (`playbackStretchReacts`: patching the two scales equal makes native playback equal the direct drawing), which
 		// takes the cell sheet to 93 pixels from the playback (45 of them the direct drawing's own residual) and leaves it
-		// 4,113 from the direct drawing.
-		'textpb-segoeui-cell-q3': [4113, 93],
-		'textpb-segoeui-em-q3': [19, 19],
+		// 4,113 from the direct drawing. The round 9 specification stub squares and finer arcs then take the cell sheet
+		// to 44 from the playback (4,070 from the direct drawing) and the em sheet to 8/8.
+		'textpb-segoeui-cell-q3': [4070, 44],
+		'textpb-segoeui-em-q3': [8, 8],
 	};
 	it('matches the native playback on the nine flagged heights, not the direct drawing', async () => {
 		for (const [name, [direct, played]] of Object.entries(expected)) {
@@ -83,7 +84,8 @@ describe.skipIf(!windowsFonts())('the converter draws the native playback shapes
 	}, 60_000);
 	it('takes the stretch from the records: with every eyScale patched to its exScale the sheet is the unstretched, direct one again', async () => {
 		// Native: playing the patched recording (`scripts/gdi-fixtures/patch-text-scales.ts`) draws exactly the direct
-		// drawing (0 of 2,102,400 pixels differ, 4,050 for the unpatched recording).
+		// drawing (0 of 2,102,400 pixels differ, 4,050 for the unpatched recording); since the round 9 stub squares the
+		// converter's patched sheet is exactly the direct drawing too (45 pixels before).
 		const bytes = Buffer.from(readFileSync(fixturePath('textpb-segoeui-cell-q3.emf')));
 		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 		let patched = 0;
@@ -96,7 +98,7 @@ describe.skipIf(!windowsFonts())('the converter draws the native playback shapes
 		}
 		expect(patched).toBe(57);
 		const rendered = (await renderEmfBytes(bytes, { fonts: windowsFonts()! }))!;
-		expect(diffImages(rendered, await loadReference('textpb-segoeui-cell-q3.direct'), 0, 0).mismatched).toBe(45);
+		expect(diffImages(rendered, await loadReference('textpb-segoeui-cell-q3.direct'), 0, 0).mismatched).toBe(0);
 	}, 60_000);
 });
 

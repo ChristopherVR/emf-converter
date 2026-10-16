@@ -447,7 +447,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('text-helv-hm13', 'wmf', 0), // measured 0.000%
 	fontCase('text-helv-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-helv-hp18', 'wmf', 0), // measured 0.000%
-	fontCase('text-msshelldlg-hm13', 'wmf', 0.0009), // measured 0.057%
+	fontCase('text-msshelldlg-hm13', 'wmf', 0.00061), // measured 0.0571% (round 9; was 0.0900% ceiling) measured 0.057%
 	fontCase('text-msshelldlg-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-msshelldlg-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('text-nosuchfacexyz-hm13', 'wmf', 0), // measured 0.000%
@@ -457,11 +457,11 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('text-timesnewroman-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-timesnewroman-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
-	fontCase('textx-arial-aa', 'emf', 0.0016), // measured 0.122%
+	fontCase('textx-arial-aa', 'emf', 0.00009), // measured 0.0080% (round 9; was 0.1600% ceiling) measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0.0005), // measured 0.019%
 	fontCase('textx-arial-cleartype', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
-	fontCase('textx-arial-ctnatural', 'emf', 0.0010), // measured 0.095% against native playback, 0.610% before the symmetric-smoothing GETINFO bit (round 8), 14.847% before the exact blend
-	fontCase('textx-arial-mono', 'emf', 0.0005), // measured 0.017%
+	fontCase('textx-arial-ctnatural', 'emf', 0.00097), // measured 0.0913% (round 9; was 0.1000% ceiling) measured 0.095% against native playback, 0.610% before the symmetric-smoothing GETINFO bit (round 8), 14.847% before the exact blend
+	fontCase('textx-arial-mono', 'emf', 0.00001), // measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.017%
 	fontCase('textx-arial-q0-default', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
 	fontCase('textx-arial-q1-draft', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
 	fontCase('textx-arial-q2-proof', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
@@ -470,13 +470,13 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-color-aa', 'emf', 0.0004), // measured 0.030% (1.322% before the native grayscale blend, round 7)
 	fontCase('textx-color-cleartype', 'emf', 0.0082), // measured 0.815%, 1.280% before the round 8 compatible-width stem shifts, 1.868% before the ClearType dropout control
 	fontCase('textx-color-mono', 'emf', 0.0004), // measured 0.005%
-	fontCase('textx-couriernew-aa', 'emf', 0.00006), // measured 0.0052% (0.010% before round 9)
-	fontCase('textx-couriernew-cell-mono', 'emf', 0.0005), // measured 0.011%
-	fontCase('textx-couriernew-mono', 'emf', 0.0004), // measured 0.010%
-	fontCase('textx-couriernew-styles-mono', 'emf', 0.0005), // measured 0.012%
+	fontCase('textx-couriernew-aa', 'emf', 0.00002), // measured 0.0014% (round 9; was 0.0060% ceiling) measured 0.0052% (0.010% before round 9)
+	fontCase('textx-couriernew-cell-mono', 'emf', 0.00001), // measured 0.0005% (round 9; was 0.0500% ceiling) measured 0.011%
+	fontCase('textx-couriernew-mono', 'emf', 0.00002), // measured 0.0010% (round 9; was 0.0400% ceiling) measured 0.010%
+	fontCase('textx-couriernew-styles-mono', 'emf', 0.00004), // measured 0.0029% (round 9; was 0.0500% ceiling) measured 0.012%
 	fontCase('textx-escapement-aa', 'emf', 0.00009), // measured 0.0085% (15 px; 14 before round 8: one glyph pixel of the 45-degree line moved while the other 16 improved) against the native playback (0.212% against the direct drawing)
 	fontCase('textx-escapement-mono', 'emf', 0.00009), // measured 0.0085% (15 px) against the native playback (0.212% against the direct drawing)
-	fontCase('textx-eto-aa', 'emf', 0.0008), // measured 0.076% over 8 levels (0.087% exact; 0.50% before the native opaque-text blend, round 7) against the native playback (0.499% against the direct drawing)
+	fontCase('textx-eto-aa', 'emf', 0.00002), // measured 0.0011% (round 9; was 0.0800% ceiling) measured 0.076% over 8 levels (0.087% exact; 0.50% before the native opaque-text blend, round 7) against the native playback (0.499% against the direct drawing)
 	fontCase('textx-eto-mono', 'emf', 0.00013), // measured 0.012% against the native playback (0.435% against the direct drawing)
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-courier-cell', 'wmf', 0), // measured 0.000%
@@ -491,8 +491,8 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-mssansserif-styles', 'emf', 0), // measured 0.000% (0.016% before the bold italic and strike-out rules)
 	fontCase('textx-fon-msserif', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-msserif-cell', 'wmf', 0), // measured 0.000%
-	fontCase('textx-fon-msshelldlg', 'emf', 0.0006), // measured 0.021%
-	fontCase('textx-fon-msshelldlg-cell', 'wmf', 0.0005), // measured 0.013%
+	fontCase('textx-fon-msshelldlg', 'emf', 0.00006), // measured 0.0050% (round 9; was 0.0600% ceiling) measured 0.021%
+	fontCase('textx-fon-msshelldlg-cell', 'wmf', 0.00005), // measured 0.0042% (round 9; was 0.0500% ceiling) measured 0.013%
 	fontCase('textx-fon-smallfonts', 'emf', 0), // measured 0.000% (0.208% before the tiny-face stretch cost)
 	fontCase('textx-fon-smallfonts-cell', 'wmf', 0), // measured 0.000% (0.380% before the tiny-face stretch cost)
 	fontCase('textx-fon-system', 'emf', 0), // measured 0.000%
@@ -515,28 +515,28 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-segoeui-aa', 'emf', 0.00013), // measured 0.0118% (a scan line exactly on a horizontal edge is inked, round 9; 0.031% before)
 	fontCase('textx-segoeui-cell-mono', 'emf', 0.00016), // measured 0.015% against the native playback (the recorded exScale / eyScale stretch is drawn); 0.086% before
 	fontCase('textx-segoeui-cleartype', 'emf', 0.0126), // measured 1.258%, 2.992% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 3.694% before the ClearType dropout control
-	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
-	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
+	fontCase('textx-segoeui-mono', 'emf', 0.00001), // measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.015%
+	fontCase('textx-segoeui-styles-mono', 'emf', 0.00001), // measured 0.0004% (round 9; was 0.0400% ceiling) measured 0.007%
 	fontCase('textx-tahoma-aa', 'emf', 0.00007), // measured 0.0055% (0.092% before)
-	fontCase('textx-tahoma-cell-mono', 'emf', 0.0005), // measured 0.019%
-	fontCase('textx-tahoma-mono', 'emf', 0.0005), // measured 0.020%
+	fontCase('textx-tahoma-cell-mono', 'emf', 0.00001), // measured 0.0009% (round 9; was 0.0500% ceiling) measured 0.019%
+	fontCase('textx-tahoma-mono', 'emf', 0.00001), // measured 0.0007% (round 9; was 0.0500% ceiling) measured 0.020%
 	fontCase('textx-tahoma-styles-mono', 'emf', 0.0006), // measured 0.028%
-	fontCase('textx-timesnewroman-aa', 'emf', 0.0013), // measured 0.092%
-	fontCase('textx-timesnewroman-cell-mono', 'emf', 0.0005), // measured 0.019%
+	fontCase('textx-timesnewroman-aa', 'emf', 0.00009), // measured 0.0076% (round 9; was 0.1300% ceiling) measured 0.092%
+	fontCase('textx-timesnewroman-cell-mono', 'emf', 0.00002), // measured 0.0014% (round 9; was 0.0500% ceiling) measured 0.019%
 	fontCase('textx-timesnewroman-mono', 'emf', 0.0005), // measured 0.013%
 	fontCase('textx-timesnewroman-styles-mono', 'emf', 0.0005), // measured 0.012%
 	fontCase('textx-wmf-align-mono', 'wmf', 0), // measured 0.000%
-	fontCase('textx-wmf-arial-aa', 'wmf', 0.0016), // measured 0.122%
-	fontCase('textx-wmf-arial-mono', 'wmf', 0.0005), // measured 0.017%
+	fontCase('textx-wmf-arial-aa', 'wmf', 0.00009), // measured 0.0080% (round 9; was 0.1600% ceiling) measured 0.122%
+	fontCase('textx-wmf-arial-mono', 'wmf', 0.00001), // measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.017%
 	fontCase('textx-wmf-arial-styles-mono', 'wmf', 0.0006), // measured 0.027%
-	fontCase('textx-wmf-couriernew-mono', 'wmf', 0.0004), // measured 0.010%
+	fontCase('textx-wmf-couriernew-mono', 'wmf', 0.00002), // measured 0.0010% (round 9; was 0.0400% ceiling) measured 0.010%
 	fontCase('textx-wmf-escapement-mono', 'wmf', 0.00006), // measured 0.0057% (10 px; 17 before round 8) (0.247% before the linear-advance rotated layout)
 	fontCase('textx-wmf-eto-mono', 'wmf', 0.0004), // measured 0.004%
 	fontCase('textx-wmf-opaque-mono', 'wmf', 0.0004), // measured 0.004%
-	fontCase('textx-wmf-segoeui-mono', 'wmf', 0.0005), // measured 0.015%
-	fontCase('textx-wmf-tahoma-mono', 'wmf', 0.0005), // measured 0.020%
-	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.0006), // measured 0.028%
-	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0.0005), // measured 0.020%
+	fontCase('textx-wmf-segoeui-mono', 'wmf', 0.00001), // measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.015%
+	fontCase('textx-wmf-tahoma-mono', 'wmf', 0.00001), // measured 0.0007% (round 9; was 0.0500% ceiling) measured 0.020%
+	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.00012), // measured 0.0108% (round 9; was 0.0600% ceiling) measured 0.028%
+	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0.00008), // measured 0.0073% (round 9; was 0.0500% ceiling) measured 0.020%
 	fontCase('textx-wmf-timesnewroman-styles-mono', 'wmf', 0.0005), // measured 0.012%
 	fontCase('textx-world-aa', 'emf', 0.00003), // measured 0.0023% (3 px; 13 before round 8) against the native playback (0.265% before)
 	fontCase('textx-world-mono', 'emf', 0.00002), // measured 0.0015% (2 px; 12 before round 8) against the native playback (0.202% before)

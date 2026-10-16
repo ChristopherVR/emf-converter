@@ -62,7 +62,7 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 		return image;
 	}
 
-	it('text-real-glyphs: 2,492 of 31,584 captures differ between the 06:21 and 07:35 UTC runs; per-product matches 1,691 of the later images, combined 851, and the earlier run matches combined 65 times and per-product never', () => {
+	it('text-real-glyphs: 2,492 of 31,584 captures differ between the 06:21 and 07:35 UTC runs; per-product matches 1,692 of the later images, combined 852, and the earlier run matches combined 65 times and per-product never', () => {
 		const states = json('text-native-states.json.gz');
 		expect(states.total).toBe(31584);
 		expect(states.differing).toHaveLength(2492);
@@ -85,9 +85,9 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 		}
 		// Courier New's native AntiAlias widening adds 5/50/103 exact matches
 		// for combined A/B and per-product B. The monochrome contour rule
-		// adds one further Tahoma per-product B match; other faces are unchanged.
+		// adds one further Tahoma per-product B match; the round 9 stub squares and closed ties add one more for each of combined B and per-product B; other faces are unchanged.
 		// The references and the divergent projection-call evidence stay fixed.
-		expect(matches).toEqual({ 'combined A-0621Z': 65, 'combined B-0735Z': 851, 'perProduct B-0735Z': 1691 });
+		expect(matches).toEqual({ 'combined A-0621Z': 65, 'combined B-0735Z': 852, 'perProduct B-0735Z': 1692 });
 	});
 
 	it('text-coverage: 606 of 3,328 committed captures differ from a fresh capture; per-product matches 350 of the fresh images, combined 128, and the committed ones 192 and 94', () => {
