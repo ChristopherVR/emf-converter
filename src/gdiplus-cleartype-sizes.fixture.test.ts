@@ -45,10 +45,10 @@ const faceKey = (c: Capture): string => `${c.face}${['', ' bold', ' italic', ' b
  * becoming exact is an improvement to record here; one that stops being exact is a regression.
  */
 const EXACT_BITS =
-	'/73//b/1//XfzP//f+7993////yv+///Hbv//+f///837br/1v//f3+/6W/51//3/7///+7//9//vf/f/3/9+/9P/5//3//7//dn//3///7/+7////7//+39v/m+eXx+c/3utz+f/3/Xp/3P7v7X//fAb7/ft399u/Nd7s/vrLfXktd/L96/HyDk9Pb7////ffv//9z/+3nu/vc75+//37v+5e/9//fn+n//c9u/553v/+tW/e97zu+3//+v3//5x+/f/8f37/vj+/+/8/17v334vz/+//xvvn9vH1+//5/n9/nDU3v+Y2P/9Xb31zvvi96P9+v7zbrTeee/tyaRu2+/W/03fWyPyL/W/91j9zNgge95+MTOf/9/e///rvv//vv+//P/+7/8/v3//ff//7/9/8ff/3//j9v/5b/v/2b/p6+1Uf//3///r/9/////f/7fPe//P13//3/v/9/v9/////fv3/fy/ft++v//f+7933/u//v//////6//fv////1//X/b//h7///+5/5b////////9n3+bf8mf/L/vvfvX+v////73///+q/9f/+//+//b//v/9//7//7/9//7n/7v9b/+9/69/xd/1//9/I1';
+	'/73//b/1//Xf7P//f/7993////yv+///Hbv//+f///837br/1v//f3+/6W/51//3/7///+7//9//vf/f/3/9+/9P/5//3//7//dn//3///7/+7////7//+39v/m+eXx/c/3utz+f/3/Xp/3P7v7X//fAb7/ft399u/Nd7s/vrLfXktd/L96/HyDk9Pb7////ffv//9z/+3nu/vc75+//37v+5e/9//fn+n//c9u/553v/+tW/e97zu+3//+v3//5x+/f/8f37/vj+/+/8/17v334vz/+//xvvn9vH1+//5/n9/nDU3v+Y2P/9Xb31zvvi96P9+v7zbrTeee/tyaRu2+/W/03fWyPyL/W/91j9zNgge95+MTOf/9/e///rvv//vv+//P/+7/8/v3//ff//7/9/8ff/3//j9v/5b/v/2b/p6+1Uf//3///r/9/////f/7fPe//P13//3/v/9/v9/////fv3/fy/ft++v//f+7933/u//v//////6//fv////1//X/b//h7///+5/5b////////9n3+bf8mf/L/vvfvX+v////73///+q/9f/+//+//b//v/9//7//7/9//7n/7v9b/+9/69/xd/1//9/I1';
 
 const EXACT_BY_FACE: Record<string, number> = {
-	'Arial': 317, 'Arial bold': 337, 'Arial italic': 269,
+	'Arial': 319, 'Arial bold': 337, 'Arial italic': 270,
 	'Times New Roman': 308, 'Times New Roman bold': 297, 'Times New Roman italic': 250,
 	'Tahoma': 317, 'Tahoma bold': 330, 'Segoe UI': 325, 'Segoe UI bold': 326,
 };
@@ -56,9 +56,11 @@ const EXACT_BY_FACE: Record<string, number> = {
 /**
  * Captures that were exact before ClearType used the font's dropout control and are not now: our geometry has a thin tail
  * end there that native's does not, and the dropout rule keeps the sample the old rendering happened to lack. The rule
- * gains 645 captures; these two are the price (see docs/outstanding-work.md, "ClearType dropout control").
+ * gains 645 captures; these two were the price (see docs/outstanding-work.md, "ClearType dropout control"). Round 9
+ * decides a stub by the specification's squares instead of FreeType's profile rule, which returns 'Arial 11px g'
+ * (with 'Arial 12px g' and 'Arial italic 9px n'); only 'Tahoma bold 18px y' is still given up.
  */
-const KNOWN_LOSSES = ['Arial 11px g', 'Tahoma bold 18px y'];
+const KNOWN_LOSSES = ['Tahoma bold 18px y'];
 
 describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles', () => {
 	const fonts = new GdiFontCollection(windowsFonts() ?? []);
@@ -85,7 +87,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles'
 			byFace[faceKey(captures[i])] = (byFace[faceKey(captures[i])] ?? 0) + (exact[i] ? 1 : 0);
 		}
 		expect(byFace).toEqual(EXACT_BY_FACE);
-		expect(exact.filter(Boolean)).toHaveLength(3076);
+		expect(exact.filter(Boolean)).toHaveLength(3079);
 	});
 
 	it('loses no exact capture and gains none unrecorded', () => {
@@ -102,7 +104,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs across sizes and styles'
 		expect(unrecorded).toEqual([]);
 	});
 
-	it('records the two captures the dropout rule gave up', () => {
+	it('records the one capture the dropout rule gives up', () => {
 		const names = new Map(captures.map((c, i) => [`${faceKey(c)} ${c.size}px ${String.fromCharCode(c.code)}`, exact[i]]));
 		for (const name of KNOWN_LOSSES) expect(names.get(name), name).toBe(false);
 	});

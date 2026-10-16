@@ -17,7 +17,7 @@
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, arc-small-probe, arc-huge-probe, chord-closing-probe,
 #   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-rotated-placement, playback-references, text-coverage,
-#   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-gdi-cleartype-blend, text-gdi-cleartype-raster, text-gdi-cleartype-compat, text-gdi-cleartype-width, text-gdi-getinfo, text-shpix, text-iup, text-shpix-order, text-alignrp, text-msirp,
+#   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-gdi-cleartype-blend, text-gdi-cleartype-raster, text-gdi-cleartype-compat, text-gdi-cleartype-width, text-gdi-cleartype-arm, text-gdi-getinfo, text-shpix, text-iup, text-shpix-order, text-alignrp, text-msirp,
 #   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
 #   text-origin-phases, text-origin-vertical-phases,
 #   text-drawstring-placement, text-diagonal-hinting, text-diagonal-coverage,
@@ -35,7 +35,7 @@
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
 #   bicubic-arithmetic, bicubic-independent, wide-pen-axis-probe,
 #   wide-pen-axis-directions, dashed-pen-axis-probe, general-matrix-pen-probe,
-#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, inset-contacts-probe, cap-widen-probe, round-join-probe, bezier-flatten,
+#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, inset-contacts-probe, inset-slivers-probe, cap-widen-probe, dash-widen-probe, round-join-probe, bezier-flatten,
 #   illuminant-cubes, chroma-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
@@ -76,7 +76,7 @@ function Complete-Fixtures {
         $_.LastWriteTimeUtc -ge $generationStarted -and $_.Name -notlike 'environment-*.json'
     } | ForEach-Object { $_.FullName })
     # Private diagnostic fonts are capture inputs even when they were not regenerated.
-    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } elseif ($Which -like 'text-opcode*') { 'opcode-*.ttf' } elseif ($Which -like 'text-vector-stage*') { 'vector-stage-*.ttf' } elseif ($Which -eq 'text-shpix') { 'shpix-*.ttf' } elseif ($Which -eq 'text-iup') { 'iup-*.ttf' } elseif ($Which -eq 'text-shpix-order') { 'shpix-order-*.ttf' } elseif ($Which -eq 'text-alignrp') { 'alignrp-*.ttf' } elseif ($Which -eq 'text-msirp') { 'msirp-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-width') { 'ctw-*.ttf' } else { $null }
+    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } elseif ($Which -like 'text-opcode*') { 'opcode-*.ttf' } elseif ($Which -like 'text-vector-stage*') { 'vector-stage-*.ttf' } elseif ($Which -eq 'text-shpix') { 'shpix-*.ttf' } elseif ($Which -eq 'text-iup') { 'iup-*.ttf' } elseif ($Which -eq 'text-shpix-order') { 'shpix-order-*.ttf' } elseif ($Which -eq 'text-alignrp') { 'alignrp-*.ttf' } elseif ($Which -eq 'text-msirp') { 'msirp-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-width') { 'ctw-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-arm') { 'cta-*.ttf' } else { $null }
     if ($fontFilter) {
         $files += @(Get-ChildItem -LiteralPath $Directory -File -Filter $fontFilter | ForEach-Object { $_.FullName })
         $files = @($files | Sort-Object -Unique)
@@ -260,6 +260,14 @@ if ($Which -eq 'text-gdi-cleartype-width') {
     Add-Type -Path (Join-Path $here 'GdiClearTypeWidthProbe.cs')
     $sets = Get-Content -Raw -LiteralPath (Join-Path $outDir 'ctw-sets.json') | ConvertFrom-Json
     [GdiClearTypeWidthProbe]::Run($outDir, 'gdi-cleartype-width.json.gz', [string[]]@($sets | ForEach-Object { $_.set }), [string[]]@($sets | ForEach-Object { $_.file }), [string[]]@($sets | ForEach-Object { $_.family }), [int[]]@($sets | ForEach-Object { $_.count }), [int[]]@(16), [int[]]@(5, 6))
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-gdi-cleartype-arm') {
+    # Fonts and sets: python scripts/gdi-fixtures/build-cleartype-arm-fonts.py (writes cta-*.ttf and cta-sets.json here).
+    Add-Type -Path (Join-Path $here 'GdiClearTypeWidthProbe.cs')
+    $sets = Get-Content -Raw -LiteralPath (Join-Path $outDir 'cta-sets.json') | ConvertFrom-Json
+    [GdiClearTypeWidthProbe]::Run($outDir, 'gdi-cleartype-arm.json.gz', [string[]]@($sets | ForEach-Object { $_.set }), [string[]]@($sets | ForEach-Object { $_.file }), [string[]]@($sets | ForEach-Object { $_.family }), [int[]]@($sets | ForEach-Object { $_.count }), [int[]]@(16), [int[]]@(5, 6))
     Complete-Fixtures
     return
 }
@@ -1018,9 +1026,21 @@ if ($Which -eq 'inset-contacts-probe') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'inset-slivers-probe') {
+    Add-Type -Path (Join-Path $here 'InsetOutlineProbe.cs') -ReferencedAssemblies System.Drawing
+    [InsetOutlineProbe]::RunSlivers($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'cap-widen-probe') {
     Add-Type -Path (Join-Path $here 'CapWidenProbe.cs') -ReferencedAssemblies System.Drawing
     [CapWidenProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'dash-widen-probe') {
+    Add-Type -Path (Join-Path $here 'DashWidenProbe.cs') -ReferencedAssemblies System.Drawing
+    [DashWidenProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

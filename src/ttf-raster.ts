@@ -116,7 +116,7 @@ class Raster {
 	private arcY: number[] = [];
 	private arc = 0;
 
-	constructor(private readonly dropOutControl: number) {
+	constructor(private readonly dropOutControl: number, fineArcs = false) {
 		// A 1/65536-pixel grid: GDI computes scanline crossings (near)
 		// exactly (measured: every coarser grid, including FreeType's
 		// 1/4096 and 1/64, matches fewer GetGlyphOutline bitmaps). Conic
@@ -124,7 +124,7 @@ class Raster {
 		// span "jitter" tolerance is 1/137 pixel, as in FreeType's
 		// high-precision mode.
 		this.precBits = 16;
-		this.precStep = 4096;
+		this.precStep = fineArcs ? 512 : 4096;
 		this.precJitter = 480;
 		this.prec = 2 ** this.precBits;
 		this.precHalf = this.prec / 2;
@@ -871,6 +871,181 @@ class MonoStubContours {
 	}
 }
 
+/**
+ * Flattens the quadratic arcs of an outline for the stub test: every arc becomes 16 equal parameter steps plus its
+ * extrema in x and y, which lie on the 26.6 grid (a rasterizer splits arcs there, and a contour that only just touches
+ * a pixel-centre line must touch it on the same grid the test reads). The result is a polygon (all points on-curve).
+ */
+function flattenForStubs(o: Outline): Outline {
+	const xs: number[] = [], ys: number[] = [], endPts: number[] = [];
+	let start = 0;
+	for (const end of o.endPts) {
+		const n = end - start + 1;
+		// An explicit on/off sequence with the on-curve point implied between two off-curve points, starting on-curve.
+		const pts: { x: number; y: number; on: boolean }[] = [];
+		for (let i = 0; i < n; i++) {
+			const a = { x: o.xs[start + i], y: o.ys[start + i], on: !!o.onCurve[start + i] };
+			const b = { x: o.xs[start + ((i + 1) % n)], y: o.ys[start + ((i + 1) % n)], on: !!o.onCurve[start + ((i + 1) % n)] };
+			pts.push(a);
+			if (!a.on && !b.on) pts.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, on: true });
+		}
+		const first = pts.findIndex((p) => p.on);
+		const seq = pts.slice(first).concat(pts.slice(0, first));
+		let cx = seq[0].x, cy = seq[0].y;
+		xs.push(cx); ys.push(cy);
+		for (let k = 1; k <= seq.length; k++) {
+			const p = seq[k % seq.length];
+			if (p.on) {
+				if (k < seq.length) { xs.push(p.x); ys.push(p.y); }
+				cx = p.x; cy = p.y;
+				continue;
+			}
+			const e = seq[(k + 1) % seq.length];
+			const steps: { t: number; extremum: boolean }[] = [];
+			for (let t = 1; t <= 16; t++) steps.push({ t: t / 16, extremum: false });
+			for (const [a, b, c] of [[cx, p.x, e.x], [cy, p.y, e.y]]) {
+				const den = a - 2 * b + c;
+				if (den !== 0) {
+					const t = (a - b) / den;
+					if (t > 0 && t < 1) steps.push({ t, extremum: true });
+				}
+			}
+			steps.sort((a, b) => a.t - b.t);
+			for (let i = 0; i < steps.length; i++) {
+				// The arc's last point is the next on-curve point, which the contour's own loop would add again.
+				if (k + 1 === seq.length && i === steps.length - 1) break;
+				const u = steps[i].t, v = 1 - u;
+				let x = v * v * cx + 2 * v * u * p.x + u * u * e.x, y = v * v * cy + 2 * v * u * p.y + u * u * e.y;
+				if (steps[i].extremum) { x = Math.round(x); y = Math.round(y); }
+				xs.push(x); ys.push(y);
+			}
+			cx = e.x; cy = e.y; k++;
+		}
+		endPts.push(xs.length - 1);
+		start = end + 1;
+	}
+	return { xs, ys, onCurve: new Array(xs.length).fill(1), endPts };
+}
+
+/**
+ * Stub test of TrueType dropout control, read as the specification words it (rule 4 of SCANTYPE 1 and rule 6 of
+ * SCANTYPE 5, https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions#scantype): a dropout between
+ * two pixel centres is kept only if the contours continue to intersect the neighbouring scan lines in both directions,
+ * judged on "the scanline segments that form a square with the intersected scan line segment" and "they could be
+ * different contours than the ones intersecting the dropout scan line segment". Here the square on each side of the
+ * dropout segment (the neighbouring scan segment and the two segments that join it to the dropout's pixel centres) must
+ * be crossed by contours at least once. A contour that only touches a segment counts as crossing it twice (a vertex
+ * on the segment's line with both neighbours on one side), one that runs through it as once; the neighbouring
+ * scan segment is closed at both ends, the two joining segments are open.
+ *
+ * Measured against native GetGlyphOutline bitmaps (single decisions isolated by flipping one decision at a time in
+ * 9,070 glyphs of the private polygon fonts): 9,061 are classified right; this reads the specification, nothing else
+ * (FreeType's profile rule, which the earlier code followed, disagreed with it on curves and on several contours).
+ */
+class StubSquares {
+	private readonly contours: [number, number][][] = [];
+	constructor(o: Outline) {
+		let start = 0;
+		for (const end of o.endPts) {
+			const pts: [number, number][] = [];
+			// Pixel centres are the integers.
+			for (let i = start; i <= end; i++) pts.push([o.xs[i] / 64 - 0.5, o.ys[i] / 64 - 0.5]);
+			this.contours.push(pts);
+			start = end + 1;
+		}
+	}
+
+	/** Crossings of the line `scan axis = L` (axis 1 in the unflipped frame) within [a, b] of the other axis. */
+	private crossings(flipped: boolean, axis: 0 | 1, L: number, a: number, b: number, closed: boolean): number {
+		const ax = (flipped ? 1 - axis : axis) as 0 | 1, ot = 1 - ax;
+		let n = 0;
+		const within = (v: number): boolean => closed ? v >= a && v <= b : v > a && v < b;
+		for (const pts of this.contours) {
+			const m = pts.length;
+			for (let i = 0; i < m; i++) {
+				const u = pts[(i + m - 1) % m], v = pts[i], w = pts[(i + 1) % m];
+				const sv = Math.sign(v[ax] - L), sw = Math.sign(w[ax] - L);
+				if (sv * sw < 0) {
+					const t = (L - v[ax]) / (w[ax] - v[ax]);
+					if (within(v[ot] + (w[ot] - v[ot]) * t)) n++;
+				} else if (sv === 0 && within(v[ot])) {
+					const su = Math.sign(u[ax] - L);
+					if (sw === 0) n++;
+					else if (su === 0) { /* counted with the previous vertex */ }
+					else if (su * sw < 0) n++;
+					else n += 2;
+				}
+			}
+		}
+		return n;
+	}
+
+	/** Crossings of the three sides of the unit square on one side (`d` = +1 or -1) of the dropout segment. */
+	private side(flipped: boolean, scan: number, lo: number, hi: number, d: number): number {
+		const far = scan + d, low = Math.min(scan, far), high = Math.max(scan, far);
+		return this.crossings(flipped, 1, far, lo, hi, true) + this.crossings(flipped, 0, lo, low, high, false) + this.crossings(flipped, 0, hi, low, high, false);
+	}
+
+	/** Whether the dropout on scan line `scan` between pixel centres `lo` and `hi` is a stub. */
+	isStub(flipped: boolean, scan: number, lo: number, hi: number): boolean {
+		return this.side(flipped, scan, lo, hi, 1) < 1 || this.side(flipped, scan, lo, hi, -1) < 1;
+	}
+}
+
+/**
+ * Scan lines that lie exactly on a horizontal edge of the outline. A sample centre on the contour is on it (rule 2 of
+ * the TrueType scan conversion), so such a line is inked where the closed region is: the union of the spans just above
+ * and just below the line. The sweep pairs the crossings of the edges that end and start there and leaves a notch's
+ * underside or a counter's upper side out. `local` is in sample units of 1/64 with the centre of row r at 64 r + 32.
+ */
+function fillTieRows(local: Outline, curved: boolean, data: Uint8Array, width: number, height: number, at: (col: number, row: number) => number): void {
+	const rows = new Set<number>();
+	let start = 0;
+	for (const end of local.endPts) {
+		for (let i = start; i <= end; i++) {
+			const j = i === end ? start : i + 1;
+			if (!local.onCurve[i] || !local.onCurve[j] || local.ys[i] !== local.ys[j] || local.xs[i] === local.xs[j]) continue;
+			const row = (local.ys[i] - 32) / 64;
+			if (row === Math.round(row) && row >= 0 && row < height) rows.add(row);
+		}
+		start = end + 1;
+	}
+	if (!rows.size) return;
+	const polygon = curved ? flattenForStubs(local) : local;
+	const edges: [number, number, number, number][] = [];
+	start = 0;
+	for (const end of polygon.endPts) {
+		for (let i = start; i <= end; i++) {
+			const j = i === end ? start : i + 1;
+			if (polygon.ys[i] !== polygon.ys[j]) edges.push([polygon.xs[i], polygon.ys[i], polygon.xs[j], polygon.ys[j]]);
+		}
+		start = end + 1;
+	}
+	for (const row of rows) {
+		const y = 64 * row + 32;
+		const spans: [number, number][] = [];
+		for (const side of [-1, 1]) {
+			const level = y + side * 1e-3;
+			const crossings: [number, number][] = [];
+			for (const [x0, y0, x1, y1] of edges) {
+				if ((y0 <= level) === (y1 <= level)) continue;
+				crossings.push([x0 + (x1 - x0) * (level - y0) / (y1 - y0), y1 > y0 ? 1 : -1]);
+			}
+			crossings.sort((a, b) => a[0] - b[0]);
+			let winding = 0, from = 0;
+			for (const [x, d] of crossings) {
+				const before = winding;
+				winding += d;
+				if (before === 0 && winding !== 0) from = x;
+				else if (before !== 0 && winding === 0) spans.push([from, x]);
+			}
+		}
+		for (const [a, b] of spans) {
+			for (let col = Math.max(0, Math.ceil((a - 32) / 64)); col < width && 64 * col + 32 <= b; col++) data[at(col, row)] = 1;
+		}
+	}
+}
+
 /** The pixel box a mono bitmap covers: every pixel whose centre lies in the control box. */
 function monoBox(o: Outline): PixelBox | null {
 	const n = o.xs.length;
@@ -921,8 +1096,15 @@ interface PixelBox {
  * glyph black box does, unless `fixedBox` pins it. `smartCrossings26Dot6`
  * enables the measured smart-crossing precision only for a caller's verified
  * upright uniform realization; the default preserves previous arithmetic.
+ *
+ * `squareStubs` decides the stubs of SCANTYPE 1 and 5 by the specification's squares ({@link StubSquares}); without it
+ * the sweep's profiles do (a tip that ends before the next scan line, with FreeType's overshoot exemption and, for
+ * single convex or separated straight contours, a neighbouring-square refinement when `stubOvershoot`). `fineArcs`
+ * splits quadratic arcs ten times finer (GDI evaluates curved edges almost exactly: native monochrome bitmaps of 1,024
+ * generated ovals, 921 exact at FreeType's 1/16 pixel steps, 933 at 1/128). `closedTies` inks a scan line that lies
+ * exactly on a horizontal edge where the closed region is ({@link fillTieRows}).
  */
-export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false, roundImpliedPoints = false, directedTies = false): GlyphBitmap | null {
+export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false, roundImpliedPoints = false, directedTies = false, fineArcs = false, closedTies = false, squareStubs = false): GlyphBitmap | null {
 	const box = fixedBox ?? monoBox(o);
 	if (!box) {
 		return null;
@@ -945,14 +1127,17 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 	const at = (col: number, row: number): number => (height - 1 - row) * width + col;
 
 	// ---- vertical sweep: scanlines are rows ----
-	const r = new Raster(dropout);
+	const r = new Raster(dropout, fineArcs);
 	r.roundImpliedPoints = roundImpliedPoints;
 	r.directedTies = directedTies;
 	const P = r.precision;
-	const monoContour = stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) ?
+	const monoContour = !squareStubs && stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) ?
 		MonoStubContours.create(local) : null;
+	const curved = Array.from(local.onCurve).some((p) => !p);
+	const squares = squareStubs && (dropout === 1 || dropout === 5) ? new StubSquares(curved ? flattenForStubs(local) : local) : null;
+	const roundSmart = squareStubs ? smartCrossings26Dot6 && !curved && (dropout === 1 || dropout === 4 || dropout === 5) : !!(monoContour && smartCrossings26Dot6);
 	const smartPixel = (raster: Raster, x1: number, x2: number): number => {
-		if (monoContour && smartCrossings26Dot6) {
+		if (roundSmart) {
 			// Native monochrome smart control compares 26.6 crossings, with an
 			// exact midpoint tie taking the lower sample (native mono-stubs).
 			const step = P / 64;
@@ -997,8 +1182,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 						case 5:
 							// A collapsed control-box axis has only the forced sample;
 							// excluding its end stubs would shorten the sole visible stroke.
-							const stub = monoContour && box.collapsedX ? false : monoContour?.isStub(false, y, x1 / P, e2 / P, e1 / P, P, x2 / P);
-							if (stub === true) return;
+							const stub = squares ? (box.collapsedX ? false : squares.isStub(false, y, e2 / P, e1 / P)) : monoContour && box.collapsedX ? false : monoContour?.isStub(false, y, x1 / P, e2 / P, e1 / P, P, x2 / P);							if (stub === true) return;
 							if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= r.half)) {
 								return;
 							}
@@ -1027,7 +1211,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 
 	// ---- horizontal sweep: scanlines are columns (dropouts only) ----
 	if (dropout !== 2) {
-		const h = new Raster(dropout);
+		const h = new Raster(dropout, fineArcs);
 		h.directedTies = directedTies;
 		if (h.convert(local, true, 0, (width - 1) * P)) {
 			h.sweep(
@@ -1061,7 +1245,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 								break;
 							case 1:
 							case 5:
-								const stub = monoContour && box.collapsedY ? false : monoContour?.isStub(true, col, x1 / P, e2 / P, e1 / P, P, x2 / P);
+								const stub = squares ? (box.collapsedY ? false : squares.isStub(true, col, e2 / P, e1 / P)) : monoContour && box.collapsedY ? false : monoContour?.isStub(true, col, x1 / P, e2 / P, e1 / P, P, x2 / P);
 								if (stub === true) return;
 								if (stub == null && left.next === right && left.height <= 0 && !(stubOvershoot && left.flags & OVERSHOOT_TOP && x2 - x1 >= h.half)) {
 									return;
@@ -1089,6 +1273,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 			);
 		}
 	}
+	if (closedTies) fillTieRows(local, curved, data, width, height, at);
 	return { width, height, left: box.xMin, top: box.yMax, data };
 }
 
@@ -1103,7 +1288,7 @@ const GRAY_OVERSAMPLE = 4;
  * scan converter's dropout mode (2 = none); `stubOvershoot` keeps the
  * FreeType exemption that stops a tall overshoot from counting as a stub.
  */
-export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true): { box: PixelBox; hi: GlyphBitmap } | null {
+export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true, fineArcs = false, closedTies = false, squareStubs = false): { box: PixelBox; hi: GlyphBitmap } | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -1132,7 +1317,7 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, d
 		onCurve: o.onCurve,
 		endPts: o.endPts,
 	};
-	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot);
+	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot, false, false, false, fineArcs, closedTies, squareStubs);
 	return hi ? { box, hi } : null;
 }
 
@@ -1145,7 +1330,7 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, d
  * overshoot exemption), and every 4x4 block of samples is counted, giving a
  * coverage of 0..16 per pixel (`data`).
  */
-export function rasterizeGray(o: Outline, dropout = 2, roundImpliedPoints = false): GlyphBitmap | null {
+export function rasterizeGray(o: Outline, dropout = 2, roundImpliedPoints = false, fineArcs = false, squareStubs = false): GlyphBitmap | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -1175,7 +1360,7 @@ export function rasterizeGray(o: Outline, dropout = 2, roundImpliedPoints = fals
 		onCurve: o.onCurve,
 		endPts: o.endPts,
 	};
-	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * k, xMax: box.xMax * k, yMin: box.yMin * k, yMax: box.yMax * k }, false, false, roundImpliedPoints);
+	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * k, xMax: box.xMax * k, yMin: box.yMin * k, yMax: box.yMax * k }, false, false, roundImpliedPoints, false, fineArcs, true, squareStubs);
 	if (!hi) {
 		return null;
 	}

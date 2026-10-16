@@ -80,6 +80,19 @@ function emfDeviceOrigin(bytes: Buffer): { x: number; y: number } {
 	return bounds ? { x: bounds.left, y: bounds.top } : { x: 0, y: 0 };
 }
 
+/** Replays EMF bytes (for example a patched copy of a fixture) like {@link renderFixture}. */
+export async function renderEmfBytes(bytes: Buffer, options: EmfConvertOptions = {}): Promise<Rgba | null> {
+	const url = await convertMetafileToDataUrl(toArrayBuffer(bytes), { dpiScale: 1, ...options });
+	if (!url) {
+		return null;
+	}
+	const image = await decodePng(Buffer.from(url.split(',')[1], 'base64'));
+	const origin = emfDeviceOrigin(bytes);
+	image.originX = origin.x;
+	image.originY = origin.y;
+	return image;
+}
+
 /**
  * Replays a fixture metafile and decodes the resulting PNG, tagging it with
  * the device-space origin of its pixel (0, 0) so `diffImages` compares each

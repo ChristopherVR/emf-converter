@@ -927,6 +927,51 @@ function sourceCopyComposite(
 	return true;
 }
 
+/** The 8-bit tables of {@link blendClearTypeChannel}. */
+export interface ClearTypeBlendTables {
+	lin: Uint8Array;
+	inv: Uint8Array;
+}
+
+/** Tables of GDI+'s gamma-space ClearType blend for one text gamma: `lin[v] = round(255 * (v / 255)^gamma)` and its inverse power. */
+export function clearTypeBlendTables(gamma: number): ClearTypeBlendTables {
+	const lin = new Uint8Array(256);
+	const inv = new Uint8Array(256);
+	for (let v = 0; v < 256; v++) {
+		lin[v] = Math.round(255 * Math.pow(v / 255, gamma));
+		inv[v] = Math.round(255 * Math.pow(v / 255, 1 / gamma));
+	}
+	return { lin, inv };
+}
+
+/**
+ * A ClearType coverage byte as the fraction native blends with. The 6 x 1 sample filter yields sixths of a pixel and
+ * the byte is their truncated 255ths (42, 85, 127, 170, 212): 127 stands for exactly one half, not 127/255, which is
+ * what moves a blended channel by a level (the measured blends fit the exact sixths).
+ */
+function clearTypeCoverage(byte: number): number {
+	const sixths = Math.round((byte * 6) / 255);
+	return Math.abs(byte - (255 * sixths) / 6) <= 0.51 ? sixths / 6 : byte / 255;
+}
+
+/**
+ * One channel of GDI+'s ClearType text blend under its text contrast (gamma above 1): text value `fg` over `bg` with
+ * the channel's coverage byte `cover` (and the brush's alpha, 0..1). The channels are linearised through the 8-bit
+ * `value^gamma` table, mixed by the exact coverage with a rounded 8-bit step and mapped back by the rounded
+ * `1 / gamma` power. A channel without coverage keeps the background and a pixel whose three channels are all fully
+ * covered (`pixelFull`) is the text colour; a fully covered channel of a partly covered pixel still goes through the
+ * tables (the two are not exact inverses at the dark end: 30 comes back as 31 at contrast 2). Measured against
+ * `text-cleartype-blend-plus.json.gz`: 1,843,077 of 1,843,600 pixels whose channels are all sixths of coverage, the
+ * rest being pixels the native filter covers fully but not quite.
+ */
+export function blendClearTypeChannel(tables: ClearTypeBlendTables, cover: number, fg: number, bg: number, alpha = 1, pixelFull = false): number {
+	if (cover === 0) return bg;
+	if (pixelFull) return fg;
+	const lb = tables.lin[bg];
+	const lf = tables.lin[fg];
+	return tables.inv[Math.min(255, Math.max(0, lb + Math.round((lf - lb) * clearTypeCoverage(cover) * alpha)))];
+}
+
 /**
  * Composites a brush through a coverage mask the caller already computed
  * for `box` (`channels` coverage values per pixel: 1, or 3 for ClearType's
@@ -935,9 +980,9 @@ function sourceCopyComposite(
  * coverage, drawn at an integer device offset through the live clip. A
  * three-channel mask blends each channel separately against the pixels
  * already there (read back, blended, and drawn opaque where covered).
- * `gamma` (above 1) blends a three-channel (ClearType) mask the way GDI+
- * does under its text contrast: each channel mixed as value^gamma and the
- * result taken back by 1 / gamma (measured on ClearType text at every
+ * `gamma` blends a three-channel (ClearType) mask the way GDI+ does under its
+ * text contrast: 8-bit value^gamma tables and exact sixths of coverage, see
+ * {@link blendClearTypeChannel} (measured on ClearType text at every
  * TextContrast, dark on light, light on dark and colour on colour).
  * `gdiplusBlend` marks a coverage from GDI+'s own rasteriser (0/255, or
  * `round(k * 255 / 32)` for k of 32 samples): the pixels are then blended
@@ -989,24 +1034,18 @@ export function compositeBrushCoverage(
 			return false;
 		}
 		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
+		const tables = clearTypeBlendTables(gamma);
 		for (let p = 0; p < box.w * box.h; p++) {
 			const o = p * 4;
 			const a = data[o + 3] / 255;
 			let any = false;
+			const pixelFull = a === 1 && coverage[p * 3] === 255 && coverage[p * 3 + 1] === 255 && coverage[p * 3 + 2] === 255;
 			for (let c = 0; c < 3; c++) {
-				const k = (coverage[p * 3 + c] / 255) * a;
-				if (k > 0) {
+				const cover = coverage[p * 3 + c];
+				if (cover > 0) {
 					any = true;
 				}
-				if (gamma === 1) {
-					data[o + c] = dst[o + c] + (data[o + c] - dst[o + c]) * k;
-				} else {
-					// GDI+'s ClearType blend under its text gamma: the channels
-					// mixed as value^gamma, the result taken back by 1 / gamma.
-					const d = Math.pow(dst[o + c] / 255, gamma);
-					const f = Math.pow(data[o + c] / 255, gamma);
-					data[o + c] = 255 * Math.pow(d + (f - d) * k, 1 / gamma);
-				}
+				data[o + c] = blendClearTypeChannel(tables, cover, data[o + c], dst[o + c], a, pixelFull);
 			}
 			data[o + 3] = any ? 255 : 0;
 		}

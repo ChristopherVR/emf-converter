@@ -91,6 +91,11 @@ export interface LogFontSpec {
 	ignoreGasp?: boolean;
 	/** GDI+ smoothing uses natural-width hinting and its own coverage quantisation. */
 	gdiPlus?: boolean;
+	/**
+	 * The horizontal stretch `eyScale / exScale` stored in a GM_COMPATIBLE text record, which native playback draws the
+	 * text through (see {@link playbackStretchReacts}). Absent or 1: none.
+	 */
+	playbackStretch?: number;
 }
 
 /**
@@ -207,6 +212,11 @@ export interface GdiRealizedFont {
 	readonly strikeoutThickness: number;
 	/** Pixels the strike-out bar is shifted right (a slanted raster face leans it like a glyph row). */
 	readonly strikeoutShift?: number;
+	/**
+	 * The unrounded `post` / `OS/2` bar geometry in device pixels (positions above the baseline, y up), for GDI+
+	 * AntiAlias text, which draws its bars at fractional positions.
+	 */
+	readonly exactDecorations?: { underlinePosition: number; underlineThickness: number; strikeoutPosition: number; strikeoutThickness: number };
 	readonly mode: GdiTextMode;
 	readonly syntheticBold: boolean;
 	readonly syntheticItalic: boolean;
@@ -421,6 +431,7 @@ export class RealizedFont implements GdiRealizedFont {
 	readonly underlineThickness: number;
 	readonly strikeoutPosition: number;
 	readonly strikeoutThickness: number;
+	readonly exactDecorations: { underlinePosition: number; underlineThickness: number; strikeoutPosition: number; strikeoutThickness: number };
 	readonly mode: GdiTextMode;
 	readonly syntheticBold: boolean;
 	readonly syntheticItalic: boolean;
@@ -452,6 +463,7 @@ export class RealizedFont implements GdiRealizedFont {
 		stretchWidth = 0,
 		gridFit = true,
 		private readonly gdiPlus = false,
+		private readonly playbackStretched = false,
 	) {
 		this.ttf = ttf;
 		this.gridFit = gridFit;
@@ -490,12 +502,19 @@ export class RealizedFont implements GdiRealizedFont {
 		this.underlineThickness = scale(ttf.underlineThickness);
 		this.strikeoutPosition = scale(ttf.strikeoutPosition);
 		this.strikeoutThickness = scale(ttf.strikeoutSize);
+		const exact = (v: number): number => (v * ppem) / upem;
+		this.exactDecorations = {
+			underlinePosition: exact(ttf.underlinePosition),
+			underlineThickness: exact(ttf.underlineThickness),
+			strikeoutPosition: exact(ttf.strikeoutPosition),
+			strikeoutThickness: exact(ttf.strikeoutSize),
+		};
 		// GDI+ gray masks use the subpixel interpreter's x-direction rules;
 		// AntiAlias also runs these programs, while keeping linear advances.
 		this.hinted = new HintedSize(ttf, ppemX, ppem,
 			gdiPlus && mode === 'gray'
 				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false, grayClearType: true }
-				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus }, gridFit || (gdiPlus && mode === 'gray'));
+				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus, reportStretched: playbackStretched }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
 		if (gdiPlus && mode === 'gray' && gridFit) {
 			// AntiAliasGridFit spaces its glyphs by the widths GDI itself reports (`GetCharWidth32` at the same height:
@@ -594,6 +613,7 @@ export class RealizedFont implements GdiRealizedFont {
 			compatibleWidths: !this.gdiPlus && !this.naturalWidths,
 			gdiArithmetic: !this.gdiPlus,
 			smoothingBit18: !this.gdiPlus && gridFit && clearTypeSmoothsVertically(this.ttf, this.ppem),
+			reportStretched: this.playbackStretched,
 			bwAdvance: !this.gdiPlus && !this.naturalWidths && gridFit ? (g: number): number => this.advance(g) : undefined,
 		}, gridFit);
 		const u = this.ctSize.hintGlyph(gi);
@@ -748,7 +768,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
 			const dropout = dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType);
-			bitmap = rasterizeMono(o, dropout, undefined, true, smartGrid, !this.gdiPlus && (!m || !!skew), !!skew && !this.gdiPlus);
+			bitmap = rasterizeMono(o, dropout, undefined, true, smartGrid, !this.gdiPlus && (!m || !!skew), !!skew && !this.gdiPlus, !this.gdiPlus, false, true);
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
@@ -762,7 +782,7 @@ export class RealizedFont implements GdiRealizedFont {
 			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&
 				this.ttf.weightClass < 600 && this.ttf.family.toLowerCase() === 'courier new'
 				? rasterizeCourierGray(o, dropout)
-				: rasterizeGray(o, dropout, !this.gdiPlus && !m);
+				: rasterizeGray(o, dropout, !this.gdiPlus && !m, false, true);
 		}
 		if (bitmap && this.syntheticBold) {
 			bitmap = embolden(bitmap, this.mode === 'mono' ? 1 : 16);
@@ -1049,6 +1069,7 @@ export class GdiFontCollection {
 					spec.width,
 					!spec.unhinted,
 					spec.gdiPlus,
+					!!spec.playbackStretch && playbackStretchReacts(best, spec.height, spec.playbackStretch),
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				return tt;
@@ -1090,6 +1111,33 @@ export class GdiFontCollection {
 		}
 		return mode;
 	}
+}
+
+/**
+ * Whether the horizontal stretch `stretch` (`eyScale / exScale` of a GM_COMPATIBLE text record, 1.00055838 on a
+ * 3840 x 2160 display at 150%) makes native playback re-grid-fit a height of this face.
+ *
+ * Native playback draws such text through `diag(eyScale / exScale, 1)`: patching every record's `eyScale` of
+ * `textpb-segoeui-cell-q3.emf` to its `exScale` makes `PlayEnhMetaFile` draw exactly the direct drawing (0 of 2,102,400
+ * pixels differ, 4,050 without the patch), so the stretch comes from the record, not from the playing device. For
+ * Segoe UI the stretched size `M = round(32 E s) / 32` (E the exact em size, `h * unitsPerEm / (winAscent + winDescent)`
+ * for a cell height and `|h|` for an em height) either equals the unstretched `round(32 E) / 32`, which changes nothing,
+ * or lies at least 15/16 pixel from the ppem GDI realised, which switches grid-fitting off at that size while the
+ * outline keeps the unstretched scale: the nine cell heights 24, 35, 36, 39, 40, 56, 58, 59 and 64 and no em height at
+ * the playback ratio; all 5,330 native outcomes of `text-stretch-hinting.json.gz` agree
+ * (`gdi-text-stretch-hinting.fixture.test.ts`). Calibri-like fonts follow another rule and the other stock faces change
+ * by the x scale alone; neither is modelled.
+ */
+export function playbackStretchReacts(font: TtfFont, height: number, stretch: number): boolean {
+	if (!(stretch > 0) || stretch === 1 || font.family.toLowerCase() !== 'segoe ui') {
+		return false;
+	}
+	const cell = font.winAscent + font.winDescent;
+	const em = height < 0 ? -height : (height * font.unitsPerEm) / cell;
+	const ppem = height < 0 ? -height : resolvePpem(font, height);
+	const unstretched = Math.floor(em * 32 + 0.5);
+	const stretched = Math.floor(em * 32 * stretch + 0.5);
+	return stretched !== unstretched && Math.abs(stretched / 32 - ppem) >= 15 / 16;
 }
 
 /**
@@ -1153,7 +1201,7 @@ const CLEARTYPE_OVERSAMPLE = 6;
  * AntiAliasGridFit and classic GDI do not use this adjustment.
  */
 function rasterizeCourierGray(o: Outline, dropout: number): GlyphBitmap | null {
-	const samples = rasterizeSamples(o, 4, 4, 1, dropout, false);
+	const samples = rasterizeSamples(o, 4, 4, 1, dropout, false, false, true, true);
 	if (!samples) return null;
 	const { box, hi } = samples;
 	const width = box.xMax - box.xMin;
@@ -1236,7 +1284,7 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 	const KY = vertical ? CLEARTYPE_ROWS : 1;
 	const WT = vertical ? CLEARTYPE_ROW_WEIGHTS : [1];
 	const WSUM = WT.reduce((a, c) => a + c, 0);
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false);
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, false, false, true);
 	if (!r) {
 		return null;
 	}

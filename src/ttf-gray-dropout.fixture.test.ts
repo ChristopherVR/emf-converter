@@ -17,8 +17,10 @@ import { gdiTextCoverage } from './gdi-text-render';
  *    above (GDI monochrome bitmaps, `text-raster-mono.json.gz`): shipped for the monochrome rasterizer.
  *  - GDI's grayscale bitmaps (`GGO_GRAY4_BITMAP`) and GDI+ AntiAlias text apply the font's scan control to the 4x4
  *    oversampled outline. SCANTYPE 0 and 4 and, since round 6, 1 and 5 (the stub-excluding types, which stock
- *    fonts use; FreeType's stub rule without its overshoot exemption) are shipped: 3,106 and 3,147 of 4,096
- *    bitmaps at 8 to 32 ppem for the two stub types, 2,344 before.
+ *    fonts use; FreeType's stub rule without its overshoot exemption) were shipped: 3,106 and 3,147 of 4,096
+ *    bitmaps at 8 to 32 ppem for the two stub types, 2,344 before. Round 9 decides those stubs by the specification's
+ *    squares (`StubSquares`): 4,027 and 4,045 of 4,096 (and 1,009 of 1,024 above 32 ppem, 778 and 782 before); the one
+ *    gray glyph it gives up is st5 at 40 ppem, #99 (a tip within a sample of a square corner).
  *  - GDI+ AntiAliasGridFit on a font without a `gasp` table draws GDI's monochrome bitmap from 9 to 17 ppem, and
  *    both defaults hold in grayscale too; they are not shipped (see the pinned gap below).
  */
@@ -133,7 +135,7 @@ describe('GDI monochrome bitmaps of the private polygon fonts (GetGlyphOutline G
 	const expected: Record<string, [number, number]> = {
 		polygons: [4096, 1024], st0: [4096, 1024], st4: [4096, 1024],
 		// Straight single contours follow native neighbouring-square stub control
-		// and 26.6 smart crossings; per-case ceilings/preservation live in ttf-mono-stub.fixture.test.ts.
+		// and 26.6 smart crossings; per-case ceilings/preservation live in ttf-mono-squares.fixture.test.ts.
 		st1: [4096, 1024], st5: [4096, 1024],
 	};
 	it.each(Object.keys(expected))('%s', (set) => {
@@ -171,7 +173,7 @@ describe('GDI monochrome bitmaps of polygon fonts with hinting machinery that ne
 describe('GDI grayscale bitmaps of the private polygon fonts (GetGlyphOutline GGO_GRAY4_BITMAP)', () => {
 	// polygons has no SCANCTRL: GDI draws simple dropouts up to 32 ppem (3,852 of 4,096 would match), the engine none yet.
 	const expected: Record<string, [number, number]> = {
-		polygons: [517, 1019], st0: [3852, 967], st4: [3747, 945], st1: [3106, 778], st5: [3147, 782],
+		polygons: [517, 1019], st0: [3852, 967], st4: [3747, 945], st1: [4027, 1009], st5: [4045, 1009],
 	};
 	it.each(Object.keys(expected))('%s', (set) => {
 		expect(gdiExact(set, 5, true)).toEqual([expected[set][0], 4096]);
@@ -211,7 +213,7 @@ describe('GDI+ DrawDriverString images of the private polygon fonts', () => {
 		expect(plusExact('polygons', 3, true)).toEqual([227, 4096]);
 		expect(plusExact('polygons', 3, false)).toEqual([1019, 1024]);
 	});
-	it.each([['st0', 3709, 940], ['st4', 3712, 937], ['st1', 3106, 778], ['st5', 3147, 782]] as const)('AntiAlias, SCANTYPE %s', (set, small, large) => {
+	it.each([['st0', 3709, 940], ['st4', 3712, 937], ['st1', 4028, 1009], ['st5', 4046, 1009]] as const)('AntiAlias, SCANTYPE %s', (set, small, large) => {
 		expect(plusExact(set, 4, true)).toEqual([small, 4096]);
 		expect(plusExact(set, 4, false)).toEqual([large, 1024]);
 	});
@@ -219,7 +221,7 @@ describe('GDI+ DrawDriverString images of the private polygon fonts', () => {
 
 describe.skipIf(!existsSync(join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts', 'georgia.ttf')))('Georgia (SCANTYPE 4) GDI+ grayscale glyphs', () => {
 	// text-real-glyphs: every printable ASCII glyph at 9 to 24 ppem, AntiAlias and AntiAliasGridFit, origin (6, 28).
-	it('draws 1,053 grid-fitted and 782 unfitted glyphs of 1,128 exactly (942 and 476 without smart dropout control; 1,042 and 736 before GDI+ grayscale reported gray ClearType to GETINFO)', () => {
+	it('draws 1,060 grid-fitted and 784 unfitted glyphs of 1,128 exactly (1,053 and 782 before round 9\u0027s stub squares and closed horizontal ties; 942 and 476 without smart dropout control; 1,042 and 736 before GDI+ grayscale reported gray ClearType to GETINFO)', () => {
 		const georgia = new GdiFontCollection([readFileSync(join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts', 'georgia.ttf'))]);
 		const exact: Record<number, number> = { 3: 0, 4: 0 };
 		let total = 0;
@@ -237,6 +239,6 @@ describe.skipIf(!existsSync(join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts', '
 			if (Buffer.from(image).equals(Buffer.from(c.gray, 'base64'))) exact[c.hint]++;
 		}
 		expect(total).toBe(1128);
-		expect(exact).toEqual({ 3: 1053, 4: 782 });
+		expect(exact).toEqual({ 3: 1060, 4: 784 });
 	});
 });

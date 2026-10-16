@@ -1,6 +1,6 @@
 /** Native GGO_BITMAP controls establish the safe scope of smart-crossing refinement.
  * System-font assertions run when the same Windows fonts used by the existing
- * parity harness are available; private portable controls live in ttf-mono-stub.
+ * parity harness are available; private portable controls live in ttf-mono-squares.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';

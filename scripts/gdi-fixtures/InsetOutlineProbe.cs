@@ -269,4 +269,55 @@ public static class InsetOutlineProbe
         }
         Console.WriteLine(name + ": " + count + " cases");
     }
+
+    // Thin slivers: where overlapping figures cancel (even-odd) the surviving part of a ring is a strip a few pixels wide, and GDI+ cuts the
+    // staircase corners of such a strip differently from those of a thick ring. 240 triangles 40 to 100 pixels long and 1.2 to 6 pixels thick, in
+    // random directions, drawn with an Inset pen of width 14 (so that the whole triangle is stroke: the surviving pixels are those of the hard-clipped
+    // interior) and a Miter join. `inset-slivers.json.gz`: [{ join, width, src, widen, types, aliased, aa }].
+    public static void RunSlivers(string dir)
+    {
+        seed = 777001;
+        var json = new StringBuilder("[");
+        int count = 0;
+        for (int i = 0; i < 240; i++)
+        {
+            double len = 40 + Rnd() * 60, thick = 1.2 + Rnd() * 4.8, ang = Rnd() * 2 * Math.PI, along = 0.15 + Rnd() * 0.7;
+            double cx = 65 + (Rnd() - 0.5) * 20, cy = 65 + (Rnd() - 0.5) * 20;
+            double ca = Math.Cos(ang), sa = Math.Sin(ang);
+            Func<double, double, PointF> at = (u, v) => new PointF((float)(cx + u * ca - v * sa), (float)(cy + u * sa + v * ca));
+            var pts = new[] { at(-len / 2, 0), at(len / 2, 0), at(-len / 2 + along * len, thick) };
+            float width = 14f;
+            using (var path = new GraphicsPath())
+            {
+                path.AddPolygon(pts);
+                using (var pen = new Pen(Color.Black, width))
+                {
+                    pen.Alignment = PenAlignment.Inset; pen.LineJoin = LineJoin.Miter;
+                    var widened = (GraphicsPath)path.Clone();
+                    widened.Widen(pen);
+                    var wp = widened.PathPoints; var wt = widened.PathTypes;
+                    if (count++ > 0) json.Append(',');
+                    json.Append("{\"join\":0,\"width\":").Append(F(width)).Append(",\"src\":[");
+                    for (int j = 0; j < pts.Length; j++) { if (j > 0) json.Append(','); json.Append(F(pts[j].X)).Append(',').Append(F(pts[j].Y)); }
+                    json.Append("],\"widen\":[");
+                    for (int j = 0; j < wp.Length; j++) { if (j > 0) json.Append(','); json.Append(F(wp[j].X)).Append(',').Append(F(wp[j].Y)); }
+                    json.Append("],\"types\":[");
+                    for (int j = 0; j < wt.Length; j++) { if (j > 0) json.Append(','); json.Append((int)wt[j]); }
+                    json.Append("],\"aliased\":");
+                    using (var b = Draw(pts, width, LineJoin.Miter, false)) json.Append(Rows(b));
+                    json.Append(",\"aa\":");
+                    using (var b = Draw(pts, width, LineJoin.Miter, true)) json.Append(Rows(b));
+                    json.Append('}');
+                }
+            }
+        }
+        json.Append(']');
+        using (var file = File.Create(Path.Combine(dir, "inset-slivers.json.gz")))
+        using (var zip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Compress))
+        {
+            var bytes = Encoding.UTF8.GetBytes(json.ToString());
+            zip.Write(bytes, 0, bytes.Length);
+        }
+        Console.WriteLine("inset-slivers.json.gz: " + count + " cases");
+    }
 }

@@ -126,31 +126,31 @@ function tally(face: string, size: number): Tally | null {
 }
 
 describe.skipIf(!hasFonts)('GDI grayscale glyph bitmaps of real fonts (GGO_GRAY4_BITMAP, GGO_NATIVE)', () => {
-	// face|size -> [glyphs, bitmaps equal, native outline rasterized equal, hinted outlines equal]: floors, measured 15 October 2026.
+	// face|size -> [glyphs, bitmaps equal, native outline rasterized equal, hinted outlines equal]: floors; the bitmap column measured 16 October 2026 (round 9: a scan line exactly on a horizontal edge is inked, Segoe UI 12 more).
 	// (Segoe UI's GGO_NATIVE outlines are not the outlines its bitmaps come from; Courier New below 40 px is monochrome.)
 	const expected: Record<string, [number, number, number, number]> = {
-		'Arial|18': [94,73,91,94],
-		'Arial|24': [94,70,92,94],
-		'Arial|32': [94,74,91,94],
-		'Arial|48': [94,58,78,94],
-		'Arial|72': [94,45,64,93],
-		'Times New Roman|18': [94,75,93,93],
-		'Times New Roman|24': [94,78,94,93],
-		'Times New Roman|32': [94,73,90,93],
-		'Times New Roman|48': [94,69,86,93],
-		'Times New Roman|72': [94,53,73,93],
-		'Tahoma|18': [94,79,94,94],
-		'Tahoma|24': [94,71,92,94],
-		'Tahoma|32': [94,72,91,94],
-		'Tahoma|48': [94,66,83,94],
-		'Tahoma|72': [94,58,75,94],
-		'Segoe UI|18': [94,90,16,15],
-		'Segoe UI|24': [94,88,15,16],
-		'Segoe UI|32': [94,79,19,16],
-		'Segoe UI|48': [94,78,18,16],
-		'Segoe UI|72': [94,56,15,17],
-		'Courier New|48': [94,70,89,94],
-		'Courier New|72': [94,56,73,93],
+		'Arial|18': [94,91,91,94],
+		'Arial|24': [94,92,92,94],
+		'Arial|32': [94,91,91,94],
+		'Arial|48': [94,78,78,94],
+		'Arial|72': [94,63,64,93],
+		'Times New Roman|18': [94,94,93,93],
+		'Times New Roman|24': [94,93,94,93],
+		'Times New Roman|32': [94,89,90,93],
+		'Times New Roman|48': [94,85,86,93],
+		'Times New Roman|72': [94,72,73,93],
+		'Tahoma|18': [94,94,94,94],
+		'Tahoma|24': [94,92,92,94],
+		'Tahoma|32': [94,91,91,94],
+		'Tahoma|48': [94,83,83,94],
+		'Tahoma|72': [94,75,75,94],
+		'Segoe UI|18': [94,92,16,15],
+		'Segoe UI|24': [94,92,15,16],
+		'Segoe UI|32': [94,88,19,16],
+		'Segoe UI|48': [94,79,18,16],
+		'Segoe UI|72': [94,61,15,17],
+		'Courier New|48': [94,89,89,94],
+		'Courier New|72': [94,73,73,93],
 	};
 	it('pins the capture', () => {
 		const sizes = new Set(data.map((r) => `${r.face}|${r.size}`));
