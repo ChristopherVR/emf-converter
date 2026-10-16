@@ -470,7 +470,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-color-aa', 'emf', 0.0004), // measured 0.030% (1.322% before the native grayscale blend, round 7)
 	fontCase('textx-color-cleartype', 'emf', 0.0082), // measured 0.815%, 1.280% before the round 8 compatible-width stem shifts, 1.868% before the ClearType dropout control
 	fontCase('textx-color-mono', 'emf', 0.0004), // measured 0.005%
-	fontCase('textx-couriernew-aa', 'emf', 0.0004), // measured 0.010%
+	fontCase('textx-couriernew-aa', 'emf', 0.00006), // measured 0.0052% (0.010% before round 9)
 	fontCase('textx-couriernew-cell-mono', 'emf', 0.0005), // measured 0.011%
 	fontCase('textx-couriernew-mono', 'emf', 0.0004), // measured 0.010%
 	fontCase('textx-couriernew-styles-mono', 'emf', 0.0005), // measured 0.012%
@@ -512,12 +512,12 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-rotalign-esc', 'emf', 0.00005), // measured 0.0048% (15 px; 34 before round 8) against the native playback (0.511% before)
 	fontCase('textx-rotalign-esc-small', 'emf', 0.00005), // measured 0.0042% (13 px; 207 before round 8: quarter-turn text has its own tmAscent / tmDescent) against the native playback (0.367% before)
 	fontCase('textx-rotalign-world', 'emf', 0.00005), // measured 0.0048% (15 px; 34 before round 8) against the native playback (0.537% before)
-	fontCase('textx-segoeui-aa', 'emf', 0.0007), // measured 0.031%
+	fontCase('textx-segoeui-aa', 'emf', 0.00013), // measured 0.0118% (a scan line exactly on a horizontal edge is inked, round 9; 0.031% before)
 	fontCase('textx-segoeui-cell-mono', 'emf', 0.0012), // measured 0.086%
 	fontCase('textx-segoeui-cleartype', 'emf', 0.0126), // measured 1.258%, 2.992% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 3.694% before the ClearType dropout control
 	fontCase('textx-segoeui-mono', 'emf', 0.0005), // measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0.0004), // measured 0.007%
-	fontCase('textx-tahoma-aa', 'emf', 0.0013), // measured 0.092%
+	fontCase('textx-tahoma-aa', 'emf', 0.00007), // measured 0.0055% (0.092% before)
 	fontCase('textx-tahoma-cell-mono', 'emf', 0.0005), // measured 0.019%
 	fontCase('textx-tahoma-mono', 'emf', 0.0005), // measured 0.020%
 	fontCase('textx-tahoma-styles-mono', 'emf', 0.0006), // measured 0.028%

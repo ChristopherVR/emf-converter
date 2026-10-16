@@ -219,7 +219,7 @@ describe('GDI+ DrawDriverString images of the private polygon fonts', () => {
 
 describe.skipIf(!existsSync(join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts', 'georgia.ttf')))('Georgia (SCANTYPE 4) GDI+ grayscale glyphs', () => {
 	// text-real-glyphs: every printable ASCII glyph at 9 to 24 ppem, AntiAlias and AntiAliasGridFit, origin (6, 28).
-	it('draws 1,053 grid-fitted and 782 unfitted glyphs of 1,128 exactly (942 and 476 without smart dropout control; 1,042 and 736 before GDI+ grayscale reported gray ClearType to GETINFO)', () => {
+	it('draws 1,054 grid-fitted and 784 unfitted glyphs of 1,128 exactly (1,053 and 782 before the closed horizontal ties of round 9; 942 and 476 without smart dropout control; 1,042 and 736 before GDI+ grayscale reported gray ClearType to GETINFO)', () => {
 		const georgia = new GdiFontCollection([readFileSync(join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts', 'georgia.ttf'))]);
 		const exact: Record<number, number> = { 3: 0, 4: 0 };
 		let total = 0;
@@ -237,6 +237,6 @@ describe.skipIf(!existsSync(join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts', '
 			if (Buffer.from(image).equals(Buffer.from(c.gray, 'base64'))) exact[c.hint]++;
 		}
 		expect(total).toBe(1128);
-		expect(exact).toEqual({ 3: 1053, 4: 782 });
+		expect(exact).toEqual({ 3: 1054, 4: 784 });
 	});
 });
