@@ -16,23 +16,20 @@
  *   the parameter at column or row `u` is `|u - floor(a)| / trunc(|b - a|)`.
  *   The edges are taken in the order centre -> vertex i, vertex i -> vertex
  *   i + 1, vertex i + 1 -> centre.
- * - The span interpolates in 16.16 fixed point: both end colours truncate to
- *   16 fractional bits, the per-pixel step is `floor((cR - cL) / (xe - xs))`
- *   and the pixel rounds half up.
+ * - Every colour is measured from the colour of the fan's centre, in single precision with the operations rounded toward minus
+ *   infinity (round 9, `PathGradientSpanProbe.cs` grids and edge probes): a pixel of an `n` pixel span is
+ *   `C + qa (n - j) + qb j` with `qa = (cL - C) / n` and `qb = (cR - C) / n` rounded toward zero, the first pixel is `cL`,
+ *   and an edge is `C + (P - C) t` (`t = down(k / steps)`, `down(1 - down(k / steps))` towards the centre) or, between two
+ *   vertices, `(C + (a - C) (1 - t)) + (b - C) t`. Fitted to the controls rather than isolated: the premultiplied vertex colours
+ *   and both edge colours are floored to 1/65536, and the right edge rounds its sum to nearest.
  * - Alpha and the premultiplied colour channels interpolate together (the
  *   native value is premultiplied).
  * - Device vertices reach the scan converter rounded up to 1/16 pixel
  *   (28.4 fixed point); that is what makes scaled and rotated gradients agree.
  *
- * Measured on 320 captures (`path-gradient-vertices.json.gz`): 98.8% of the
- * pixels of 120 random polygons exact and none beyond a level; scaled and
- * rotated polygons 96-99%. The residual is rounding ties and the pixels of a
- * vertex's own row. A focus, Blend or preset curve keeps the previous model.
- *
- * The span is not a stepped delta in native (round 8, `PathGradientSpanProbe.cs`): a single precision form that
- * weights the two end colours separately, every operation rounded toward minus infinity, reproduces more of the
- * captures (99.24%) but exceeds the ceilings of 14 per-vertex alpha controls, so it lives in
- * `__fixtures__/path-gradient-vertices-candidate.ts` and is not used here.
+ * Measured on 320 captures (`path-gradient-vertices.json.gz`): 99.36% of the pixels exact (98.34% before round 9); alpha
+ * control #137 is one pixel off by the owner's decision (see docs/outstanding-work.md, round 9, W5). A focus, Blend or preset
+ * curve keeps the previous model.
  *
  * @module emf-plus-path-gradient-vertices
  */
@@ -51,9 +48,6 @@ export interface VertexGradient {
 	cc: [number, number, number, number];
 }
 
-/** Fixed-point fraction bits of the span interpolation. */
-const FRACTION_BITS = 16;
-const ONE = 2 ** FRACTION_BITS;
 /** Guards `ceil` against float noise in an edge crossing that is a whole pixel. */
 const CEIL_EPSILON = 1e-9;
 
@@ -100,21 +94,64 @@ export function prepareVertexGradient(shape: EmfPlusPathGradientShape, full: Tra
 	};
 }
 
-/** One edge's channel value at column `x` (x-major edges) or row `y`, in fixed point. */
-function edgeChannel(
-	ax: number, ay: number, bx: number, by: number, ca: number, cb: number, x: number, y: number,
+const f32 = new Float32Array(1);
+const u32 = new Uint32Array(f32.buffer);
+
+/** The largest single-precision value not above `x`. */
+export function down(x: number): number {
+	const r = Math.fround(x);
+	if (r <= x || r !== r) return r;
+	f32[0] = r;
+	if (r > 0) u32[0] -= 1;
+	else if (r < 0) u32[0] += 1;
+	else u32[0] = 0x80000001;
+	return f32[0];
+}
+
+/** The single-precision value nearest to `x` among those not further from zero. */
+export function toward0(x: number): number {
+	const r = Math.fround(x);
+	if (Math.abs(r) <= Math.abs(x) || r !== r) return r;
+	f32[0] = r;
+	u32[0] -= 1;
+	return f32[0];
+}
+
+/** A premultiplied channel floored to 1/65536 (the alpha channel is a whole number already). */
+const fixed = (v: number): number => Math.floor(v * 65536) / 65536;
+
+/**
+ * One edge's channel value. `e` is the edge's index in the fan (0 centre to vertex, 1 vertex to vertex, 2 vertex to centre),
+ * `right` whether it is the span's right edge.
+ */
+export function edgeValue(
+	right: boolean, e: number, centre: number, ax: number, ay: number, bx: number, by: number,
+	ca: number, cb: number, x: number, y: number,
 ): number {
 	const dx = bx - ax;
 	const dy = by - ay;
-	let t = 0;
+	let k: number;
+	let steps: number;
 	if (Math.abs(dx) > Math.abs(dy)) {
-		const steps = Math.trunc(Math.abs(dx));
-		if (steps > 0) t = Math.abs(x - Math.floor(ax)) / steps;
+		steps = Math.trunc(Math.abs(dx));
+		k = Math.abs(x - Math.floor(ax));
 	} else {
-		const steps = Math.trunc(Math.abs(dy));
-		if (steps > 0) t = Math.abs(y - Math.floor(ay)) / steps;
+		steps = Math.trunc(Math.abs(dy));
+		k = Math.abs(y - Math.floor(ay));
 	}
-	return Math.trunc((ca + (cb - ca) * t) * ONE);
+	if (steps <= 0) return ca;
+	if (e === 1) {
+		const wb = down(k / steps);
+		const wa = down(1 - wb);
+		return down(down(centre + down((ca - centre) * wa)) + down((cb - centre) * wb));
+	}
+	if (e === 0) {
+		const t = down(k / steps);
+		return right ? Math.fround(ca + toward0((cb - ca) * t)) : down(ca + down((cb - ca) * t));
+	}
+	return right
+		? Math.fround(cb + down((ca - cb) * down((steps - k) / steps)))
+		: down(cb + down((ca - cb) * down(1 - down(k / steps))));
 }
 
 /**
@@ -130,7 +167,6 @@ export function vertexGradientColorAt(g: VertexGradient, px: number, py: number)
 	const out = [0, 0, 0, 0];
 	for (let f = 0; f < n; f++) {
 		const f1 = (f + 1) % n;
-		// Triangle (centre, vertex f, vertex f + 1); edge i runs from point i to point i + 1.
 		tx[0] = g.cx; tx[1] = g.vx[f]; tx[2] = g.vx[f1];
 		ty[0] = g.cy; ty[1] = g.vy[f]; ty[2] = g.vy[f1];
 		let left = -1;
@@ -143,30 +179,30 @@ export function vertexGradientColorAt(g: VertexGradient, px: number, py: number)
 			const by = ty[j];
 			if (!((ay <= py && by > py) || (by <= py && ay > py))) continue;
 			const x = tx[i] + ((py - ay) / (by - ay)) * (tx[j] - tx[i]);
-			if (x < xl) {
-				xl = x;
-				left = i;
-			}
-			if (x > xr) {
-				xr = x;
-				right = i;
-			}
+			if (x < xl) { xl = x; left = i; }
+			if (x > xr) { xr = x; right = i; }
 		}
 		if (left < 0 || right < 0 || left === right) continue;
 		const xs = Math.ceil(xl - CEIL_EPSILON);
 		const xe = Math.ceil(xr - CEIL_EPSILON);
 		if (px < xs || px >= xe) continue;
-		const li = left;
 		const lj = (left + 1) % 3;
-		const ri = right;
 		const rj = (right + 1) % 3;
+		const span = xe - xs;
+		const j = px - xs;
 		for (let q = 0; q < 4; q++) {
-			const colors = [g.cc[q], g.vc[f * 4 + q], g.vc[f1 * 4 + q]];
-			const cL = edgeChannel(tx[li], ty[li], tx[lj], ty[lj], colors[li], colors[lj], xs, py);
-			const cR = edgeChannel(tx[ri], ty[ri], tx[rj], ty[rj], colors[ri], colors[rj], xe, py);
-			const step = Math.floor((cR - cL) / (xe - xs));
-			const v = cL + step * (px - xs);
-			out[q] = Math.max(0, Math.min(255, Math.floor((v + ONE / 2) / ONE)));
+			const centre = fixed(g.cc[q]);
+			const colors = [centre, fixed(g.vc[f * 4 + q]), fixed(g.vc[f1 * 4 + q])];
+			const cL = fixed(edgeValue(false, left, centre, tx[left], ty[left], tx[lj], ty[lj], colors[left], colors[lj], xs, py));
+			const cR = fixed(edgeValue(true, right, centre, tx[right], ty[right], tx[rj], ty[rj], colors[right], colors[rj], xe, py));
+			let value: number;
+			if (j === 0) value = cL;
+			else {
+				const qa = toward0((cL - centre) / span);
+				const qb = toward0((cR - centre) / span);
+				value = down(centre + toward0(toward0(qa * (span - j)) + toward0(qb * j)));
+			}
+			out[q] = Math.max(0, Math.min(255, Math.floor(value + 0.5)));
 		}
 		const alpha = out[0];
 		if (alpha === 0) {
