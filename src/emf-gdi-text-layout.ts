@@ -102,6 +102,28 @@ export function alignmentStartOffset(
 const DEG_TO_RAD = Math.PI / 180;
 
 /**
+ * Sine and cosine of a LOGFONT `lfEscapement` the way GDI computes them: linear interpolation between the exact values
+ * at 128 equal steps of a turn (2.8125 degrees), so the rotation is a chord of the circle between two table angles and
+ * its length dips by up to `1 - cos(1.40625 degrees)` = 3.0e-4 in between. Measured here, not documented: native
+ * `GetGlyphOutline(GGO_NATIVE)` of a private font whose points lie 30,000 pixels out, read at every tenth of a degree
+ * (3,600 angles, `escapement-angles.json.gz`, `EscapementAngleProbe.cs`): the vector of the x axis follows the
+ * interpolation to 2e-5 (exact trigonometry is off by up to 3.1e-4, with the same dips at the same angles), the rest
+ * being about half a unit of 1/65536. A world-transform rotation does not do this (it is exact to 1.5e-5).
+ */
+export function escapementSinCos(tenthsOfDegree: number): { sin: number; cos: number } {
+	const tenths = ((tenthsOfDegree % 3600) + 3600) % 3600;
+	const x = (tenths * ESCAPEMENT_TABLE_STEPS) / 3600;
+	const k = Math.floor(x);
+	const f = x - k;
+	const a = (k * 2 * Math.PI) / ESCAPEMENT_TABLE_STEPS;
+	const b = ((k + 1) * 2 * Math.PI) / ESCAPEMENT_TABLE_STEPS;
+	return f === 0
+		? { sin: Math.sin(a), cos: Math.cos(a) }
+		: { sin: (1 - f) * Math.sin(a) + f * Math.sin(b), cos: (1 - f) * Math.cos(a) + f * Math.cos(b) };
+}
+const ESCAPEMENT_TABLE_STEPS = 128;
+
+/**
  * Canvas rotation angle (radians, clockwise-positive) for a GDI escapement
  * or orientation value (tenths of a degree). LOGFONT documents both angles
  * as measured counterclockwise in the device's own coordinate system;

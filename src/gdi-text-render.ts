@@ -18,7 +18,7 @@
 
 import { canvasDrawImage, canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mapFontFamily } from './emf-canvas-helpers';
-import { applyTextJustification } from './emf-gdi-text-layout';
+import { applyTextJustification, escapementSinCos } from './emf-gdi-text-layout';
 import { blendGrayChannel } from './gdi-gray-blend';
 import type { GdiFontCollection, GdiRealizedFont, LogFontSpec } from './gdi-font-engine';
 import { isSvgContext, type SvgContext } from './svg-context';
@@ -69,6 +69,8 @@ export interface GdiTextRun {
 	 * y' = b*x + d*y; unit length), or null for upright text.
 	 */
 	matrix: [number, number, number, number] | null;
+	/** The matrix that rotates the glyph outlines when it differs from the baseline frame (an escapement's table angle). */
+	glyphMatrix?: [number, number, number, number] | null;
 	underline: boolean;
 	strikeOut: boolean;
 	/**
@@ -287,7 +289,8 @@ export function layoutGdiRun(font: GdiRealizedFont, run: GdiTextRun): RunLayout 
 	// Place every glyph at an integer device origin.
 	const placed: PlacedGlyph[] = [];
 	const origins: Array<{ x: number; y: number; along: number; down: number }> = [];
-	const gm = m ? ([m[0], m[1], m[2], m[3]] as const) : undefined;
+	const g4 = run.glyphMatrix ?? m;
+	const gm = g4 ? ([g4[0], g4[1], g4[2], g4[3]] as const) : undefined;
 	let along = startAlong;
 	let down = baseDown;
 	for (let i = 0; i < n; i++) {
@@ -638,8 +641,6 @@ export interface GdiTextCall {
 	playbackStretch?: number;
 }
 
-const DEG_TO_RAD = Math.PI / 180;
-
 /** The LOGFONT in `state`, with its sizes mapped to device pixels. */
 export function deviceLogFont(state: DrawState, heightScale: number, widthScale: number): LogFontSpec {
 	const d = state.fontDetails;
@@ -687,18 +688,25 @@ export function drawGdiTextCall(
 	let frame: [number, number, number, number] | null = rotated
 		? [a / advanceScale, b / advanceScale, c / fontScale, d / fontScale]
 		: null;
+	let glyphFrame = frame;
 	const esc = state.fontEscapementTenthDeg % 3600;
 	if (esc !== 0) {
-		const t = (esc / 10) * DEG_TO_RAD;
-		const r: [number, number, number, number] = [Math.cos(t), -Math.sin(t), Math.sin(t), Math.cos(t)];
-		frame = frame
-			? [
-					frame[0] * r[0] + frame[2] * r[1],
-					frame[1] * r[0] + frame[3] * r[1],
-					frame[0] * r[2] + frame[2] * r[3],
-					frame[1] * r[2] + frame[3] * r[3],
-				]
-			: r;
+		// The baseline runs along the exact angle; the glyph outlines are rotated by GDI's interpolated table.
+		const compose = (sin: number, cos: number): [number, number, number, number] => {
+			const r: [number, number, number, number] = [cos, -sin, sin, cos];
+			return frame
+				? [
+						frame[0] * r[0] + frame[2] * r[1],
+						frame[1] * r[0] + frame[3] * r[1],
+						frame[0] * r[2] + frame[2] * r[3],
+						frame[1] * r[2] + frame[3] * r[3],
+					]
+				: r;
+		};
+		const table = escapementSinCos(esc);
+		const t = (esc / 10) * (Math.PI / 180);
+		glyphFrame = compose(table.sin, table.cos);
+		frame = compose(Math.sin(t), Math.cos(t));
 	}
 	const updateCp = (state.textAlign & 0x01) !== 0;
 	const lx = updateCp ? state.curX : call.x;
@@ -731,6 +739,7 @@ export function drawGdiTextCall(
 		options: call.options,
 		rect,
 		matrix: frame,
+		glyphMatrix: glyphFrame,
 		underline: state.fontUnderline,
 		strikeOut: state.fontStrikeOut,
 	};

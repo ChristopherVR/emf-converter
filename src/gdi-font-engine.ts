@@ -1201,7 +1201,7 @@ const CLEARTYPE_OVERSAMPLE = 6;
  * AntiAliasGridFit and classic GDI do not use this adjustment.
  */
 function rasterizeCourierGray(o: Outline, dropout: number): GlyphBitmap | null {
-	const samples = rasterizeSamples(o, 4, 4, 1, dropout, false);
+	const samples = rasterizeSamples(o, 4, 4, 1, dropout, false, false, true);
 	if (!samples) return null;
 	const { box, hi } = samples;
 	const width = box.xMax - box.xMin;
@@ -1284,7 +1284,7 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 	const KY = vertical ? CLEARTYPE_ROWS : 1;
 	const WT = vertical ? CLEARTYPE_ROW_WEIGHTS : [1];
 	const WSUM = WT.reduce((a, c) => a + c, 0);
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false);
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, false, false, true);
 	if (!r) {
 		return null;
 	}
