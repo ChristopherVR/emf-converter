@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { rotationMatrix } from './gdi-font-engine';
+import { escapementSinCos } from './emf-gdi-text-layout';
 import { fixturePath } from './__fixtures__/gdi-parity-harness';
 
 /**
@@ -76,7 +77,9 @@ describe('against the native outlines', () => {
 			const rad = (r.degrees * Math.PI) / 180;
 			// a world rotation turns the text the other way round from an escapement of the same angle
 			const sign = mode === 'world' ? 1 : -1;
-			const rm = rotationMatrix([f32(Math.cos(rad)), f32(sign * Math.sin(rad)), f32(-sign * Math.sin(rad)), f32(Math.cos(rad))], r.ppem, true)!;
+			// an escapement is rotated by GDI table of 128 chords, not by exact trigonometry (escapement-angles.json.gz)
+			const t = mode === 'escapement' ? escapementSinCos(r.degrees * 10) : { sin: Math.sin(rad), cos: Math.cos(rad) };
+			const rm = rotationMatrix([f32(t.cos), f32(sign * t.sin), f32(-sign * t.sin), f32(t.cos)], r.ppem, true)!;
 			let full = true;
 			r.points.forEach((p, k) => {
 				const j = k < r.points.length - 1 ? k * r.step : 238;
@@ -106,10 +109,11 @@ describe('against the native outlines', () => {
 		expect(w.hits).toBeGreaterThanOrEqual(38436);
 		expect(w.fullRows).toBeGreaterThanOrEqual(484);
 	});
-	it('predicts 84% of the far points under an escapement (its sine and cosine are less precise: 3e-4)', () => {
+	it('predicts 95% of the far points under an escapement (its sine and cosine come from a 128-step table, 84% with exact trigonometry)', () => {
 		const e = predict('escapement');
-		expect(e.targetHits).toBeGreaterThanOrEqual(1252);
-		expect(e.hits).toBeGreaterThanOrEqual(33620);
+		expect(e.targetHits).toBeGreaterThanOrEqual(1260);
+		expect(e.hits).toBeGreaterThanOrEqual(38204);
+		expect(e.fullRows).toBeGreaterThanOrEqual(476);
 	});
 	it('is the exact rotation at the font size when head.flags bit 3 is clear (to 3e-5, the 16.16 matrix)', () => {
 		let checked = 0;
