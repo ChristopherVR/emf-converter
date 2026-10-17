@@ -4,6 +4,115 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.21.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.21.0) - 2026-10-17
+
+### Features
+
+- Read the Windows ICM CMYK nodes and arithmetic exactly (all CMYK/YCCK fixtures exact) ([3046e12](https://github.com/ChristopherVR/emf-converter/commit/3046e129cea012fb1fc3db3e2badb5b28c546491))
+- Model the Windows raster font mapper from synthetic-family measurements ([8cae0ed](https://github.com/ChristopherVR/emf-converter/commit/8cae0ed45e0f30be90d3518ae7ca5b4e91ef20ed))
+- Weigh HighQuality reductions in 16.16 fixed point and follow the unsnapped edges ([c1150ba](https://github.com/ChristopherVR/emf-converter/commit/c1150ba4e9f456485aaedd19dcad9c830b4ff7f9))
+- **text:** Hint rotated GDI glyphs at the rounded major ppem, with GDI's metrics, advances and edge ties ([efcf9d6](https://github.com/ChristopherVR/emf-converter/commit/efcf9d6a1f6af95eea6dd06002e2e24705c551c3))
+- **text:** GDI+ gray ClearType GETINFO, GDI advances for AntiAliasGridFit, hinted advances for default-format ClearType ([1726586](https://github.com/ChristopherVR/emf-converter/commit/1726586404e7fa36e272d05cd14281a1f1a3f36d))
+- Report GETINFO symmetric smoothing (bit 18) from the gasp range for GDI ClearType ([7f07569](https://github.com/ChristopherVR/emf-converter/commit/7f0756997112f097ed82b7ec6feb28830e026605))
+- GDI ClearType compatible widths as an interpreter rule ([75cbc39](https://github.com/ChristopherVR/emf-converter/commit/75cbc398fed98cf71fd643c71fedfd8fd4a4c49a))
+- Centre-relative single-precision per-vertex path gradients ([3524319](https://github.com/ChristopherVR/emf-converter/commit/35243191c77709c8cf6ac4e8b090d574aa100864))
+- Draw GDI+ AntiAlias underline and strike-out bars at fractional positions ([0202409](https://github.com/ChristopherVR/emf-converter/commit/020240988dcda292d097e66a9afdeb34a2cdcbdd))
+- DrawImagePoints bilinear float arithmetic (vertical bias, nearest horizontal step) with native captures ([b8100e9](https://github.com/ChristopherVR/emf-converter/commit/b8100e91332ebde5c6e6007ad79b4d917d481bc3))
+- Rotate glyph outlines by GDI's 128-step escapement table ([86ef3d2](https://github.com/ChristopherVR/emf-converter/commit/86ef3d256f125d680c070f976defb9b1168fefaa))
+- Specification stub squares for ClearType and closed horizontal ties for gray ([890e789](https://github.com/ChristopherVR/emf-converter/commit/890e78924e8a1e83d4e7ef2b15dc72e11fc6a020))
+- Decide monochrome and gray stubs by the specification squares (gives up 20 exact controls) ([445ea91](https://github.com/ChristopherVR/emf-converter/commit/445ea91253acd5153edf1fe536c147325d4c1f4a))
+- Leave a stem the program sets after IUP[x] where the program put it ([1827223](https://github.com/ChristopherVR/emf-converter/commit/18272232ee032111573e06302108038b70bb81db))
+- Run the ClearType compatible-width stem shifts on the live outline ([937e30b](https://github.com/ChristopherVR/emf-converter/commit/937e30b44aa65475f9e62f36438c1001426f4ebf))
+
+### Bug Fixes
+
+- Run playback image effects on the premultiplied bitmap ([b91f2a4](https://github.com/ChristopherVR/emf-converter/commit/b91f2a4de256796afa265b96a7928a2194f7dbb6))
+- Lay out rotated GDI text from linear 28.4 advances and use native playback references ([c7329a6](https://github.com/ChristopherVR/emf-converter/commit/c7329a62b3652313cf4c17510776f2228003c34f))
+- Use the matrix nib for wide plain pens under an unequal map that mirrors x ([5c99a1d](https://github.com/ChristopherVR/emf-converter/commit/5c99a1dd7940a817dbdeccaed5023adacb86c6f7))
+- SourceCopy gradients store GDI+'s truncated unpremultiply and scaled edge colours ([0c7f887](https://github.com/ChristopherVR/emf-converter/commit/0c7f88770d2a285d0a1486a8c0c89cdd3423af27))
+- GDI ClearType exact blend, vertical smoothing and unhinted small sizes ([77a73fd](https://github.com/ChristopherVR/emf-converter/commit/77a73fd3d3aa53d6fec0de6f3504a76810d593ee))
+- Natural-quality ClearType runs without compatible-widths GETINFO; add GDI ClearType compat and GETINFO probes ([f6acf73](https://github.com/ChristopherVR/emf-converter/commit/f6acf730f5865c6f03a63e12f18d2ce166555bc3))
+- Raster face mapper, bold italic and decorations match native GDI ([7062c03](https://github.com/ChristopherVR/emf-converter/commit/7062c0390c4fc6296e086215d2880a372906bcde))
+- Draw EMF+ Inset pens as GDI+ does and treat small round turns as smooth ([de431b7](https://github.com/ChristopherVR/emf-converter/commit/de431b755b7a8188536f7018db4461548b7a6dfe))
+- Pull the nib of a dot on a whole device pixel in by one FIX ([4950743](https://github.com/ChristopherVR/emf-converter/commit/4950743915d417ab9000aafb0a457ac111198203))
+- Blend GDI grayscale text exactly as native playback does ([8cba460](https://github.com/ChristopherVR/emf-converter/commit/8cba460dadb51c96f077a5cd18c0dbba339f806d))
+- Scale the RoundRect corner half extent from the half box under scaled maps ([540f707](https://github.com/ChristopherVR/emf-converter/commit/540f707a0ae3ada37db70a500c82b94ea9486084))
+- Use GDI's own hinting arithmetic for monochrome and grayscale GDI text ([61bd66d](https://github.com/ChristopherVR/emf-converter/commit/61bd66dab71d4a887726b85d569d24f4b1e145d6))
+- Synthetic italic follows GDI's hinting arithmetic and the unrounded stretch ([a6a5a3f](https://github.com/ChristopherVR/emf-converter/commit/a6a5a3fce9e2809382e9b807e7104654f2648632))
+- Round implied on-curve points to the 26.6 grid in GDI's monochrome scan conversion ([4c12672](https://github.com/ChristopherVR/emf-converter/commit/4c1267207142214fc0adc4509fdc3be70ba930d9))
+- Snap GDI+ SingleBitPerPixel glyph origins to whole pixels ([d523e11](https://github.com/ChristopherVR/emf-converter/commit/d523e1105b2d66149504b6ec9475b6c4a95c38f0))
+- GDI diagonal hinting arithmetic recovered from single-instruction sweeps; enable for GDI ClearType ([86fa6b5](https://github.com/ChristopherVR/emf-converter/commit/86fa6b50a9f656cbd95e8356b68a43df90f69df8))
+- Step texture and plain bilinear image positions in float32 rounded down, as GDI+ does ([bfcc1ed](https://github.com/ChristopherVR/emf-converter/commit/bfcc1ed0a71b5c42cd97fa33409a79677f735d40))
+- Read a translucent ImageAttributes Clamp colour as literal premultiplied bytes ([134f5d4](https://github.com/ChristopherVR/emf-converter/commit/134f5d421d7af3f5ed2cb3591f24f3cedee4cf01))
+- Draw rotated and sheared plain Bicubic with integer intermediates, float32 stepping and fill-rule coverage ([a9be566](https://github.com/ChristopherVR/emf-converter/commit/a9be566e036c0ac47d5d5ba9925ff6ed89ca9e42))
+- Round the DrawImage scale down for the quad and invert the nearest float32 scale for the high-quality step ([281feb2](https://github.com/ChristopherVR/emf-converter/commit/281feb23b7ce4dd35a97c7820685862864ef31e1))
+- Close the GDI geometry leftovers under mirrored maps (nib-edge ties, wide Rectangle orientation, inside-frame RoundRect) ([d3583d2](https://github.com/ChristopherVR/emf-converter/commit/d3583d2eab8619c1512f7a869c363e64a8b48b2d))
+- Pick raster faces and stretch factors with the measured mapper model ([4b31bc8](https://github.com/ChristopherVR/emf-converter/commit/4b31bc80bd675e335f51a04e3fc910ab660ec03e))
+- GDI+ traces a hole that touches itself at a corner as separate holes (Inset antialiased, gpx-pen-inset exact) ([6afecdb](https://github.com/ChristopherVR/emf-converter/commit/6afecdb4a5350396c67899ac4ffd102130bc371d))
+- Exact GDI+ pen caps, joins and custom caps (customcap, curve-aa and inset-aa now exact) ([5c14fbd](https://github.com/ChristopherVR/emf-converter/commit/5c14fbdc40c1d031310d2f48a18cefa74f7f8b1a))
+- Inset pens exact for PixelOffsetMode Half, overlapping figures (aliased) and dashes; nominal-width Inset confirmed ([8b07d87](https://github.com/ChristopherVR/emf-converter/commit/8b07d87bfba12559b013cbcea7d91f9c2aca4315))
+- Outline each figure of an Inset path on its own; docs and pins for the round 8 pen work ([33c1600](https://github.com/ChristopherVR/emf-converter/commit/33c1600d9866eaac29fdb572f8330149e98c165e))
+- **redeye:** Darkness-weighted stand-in centre and float32 truncating arithmetic ([527dd24](https://github.com/ChristopherVR/emf-converter/commit/527dd243f533836f366a6ec77a6617f37874c868))
+- EMF+ dashes shorter than the cap take the cap's length of the pattern ([96b8a89](https://github.com/ChristopherVR/emf-converter/commit/96b8a89a1565662703b16de8ebf13b6e5b00fc0a))
+- EMF+ Inset Triangle dash caps, first dash of a line, thin-sliver capture ([410159f](https://github.com/ChristopherVR/emf-converter/commit/410159f032323a29e0297ce126a0eae7687f084c))
+- Blend GDI+ ClearType text with native's 8-bit gamma tables and exact sixths of coverage ([a9ed619](https://github.com/ChristopherVR/emf-converter/commit/a9ed619186397a51ad56e8868108143355c02055))
+- Draw the playback stretch recorded in GM_COMPATIBLE text records ([ec4e509](https://github.com/ChristopherVR/emf-converter/commit/ec4e509f6e6c5dbeb934a9170fc2bef4a64b1d52))
+- Advance unhinted GDI+ DrawString text by tracked design-unit advances ([82eb5ec](https://github.com/ChristopherVR/emf-converter/commit/82eb5ec74441edaf374dfa1d339c9a1e9f05087b))
+
+### Other
+
+- Playback references from rotated-text workstream ([e17734e](https://github.com/ChristopherVR/emf-converter/commit/e17734e8b3c7a177137fe1993a2c1869883115c2))
+- Diagonal hinting arithmetic from single-instruction sweeps ([42f6bd8](https://github.com/ChristopherVR/emf-converter/commit/42f6bd8b4783a4857f780071dbd9d3438404c2a0))
+- Merge mono-text workstream; unify GDI arithmetic ([27da973](https://github.com/ChristopherVR/emf-converter/commit/27da97391cf138113c26d98bc4c4cbbadb6cd0af))
+
+### Documentation
+
+- Record the premultiplied playback step for image effects ([263aeee](https://github.com/ChristopherVR/emf-converter/commit/263aeee13fda48bc6acffd338ab533052ad47436))
+- Record round 7 non-text vector findings and the widened SheetPaths option ([0aca589](https://github.com/ChristopherVR/emf-converter/commit/0aca5899457e9e65407169077e7b7c4f33626d8a))
+- GDI ClearType blend, vertical smoothing and gasp findings; playback references for Arial ClearType sheets ([d2bfde1](https://github.com/ChristopherVR/emf-converter/commit/d2bfde1b130c8fde008889b62bc862b94558c569))
+- Raster face findings (mapper tiny faces, bold italic, decorations, lfWidth open) ([e0777ac](https://github.com/ChristopherVR/emf-converter/commit/e0777ace15c00ad476d6902200931c522a484dac))
+- Record how GDI+ builds an Inset stroke and the smooth round join ([84b8b2b](https://github.com/ChristopherVR/emf-converter/commit/84b8b2bfbc8bcb7eb821dc1628dade99dcd5ed0a))
+- Record monochrome hinting arithmetic results ([f71e54d](https://github.com/ChristopherVR/emf-converter/commit/f71e54d11ef185eeb78ae2397acdde4110228006))
+- Correct the step-grid test header ([9b3724f](https://github.com/ChristopherVR/emf-converter/commit/9b3724f75049f3d68c32ac5a6a60f959702c3bab))
+- Record the round 7 coordinate-stage experiments and results ([8445cef](https://github.com/ChristopherVR/emf-converter/commit/8445cef5b70c1033ca8812651088ae52d2d08def))
+- CMYK nodes and arithmetic identified; JPEG draw-stage residuals ([c86f8ec](https://github.com/ChristopherVR/emf-converter/commit/c86f8ec40c2a17109b3152a446d81d030420d759))
+- Summarise the round 7 parity workstreams ([f55a4d2](https://github.com/ChristopherVR/emf-converter/commit/f55a4d275c069f8af7fffdd411d0b012f02bca8a))
+- Record the round 8 R5 gradient experiments ([8947bc2](https://github.com/ChristopherVR/emf-converter/commit/8947bc26e7068c781d12fb1dd06a5ade6bf87503))
+- HighQuality reductions in fixed point, unsnapped edges and the JPEG playback residual ([2a76872](https://github.com/ChristopherVR/emf-converter/commit/2a76872fdce636a0e4b4e17d6a49980d87df151e))
+- Red-eye fixtures exact; the process-state attribution corrected ([5b52385](https://github.com/ChristopherVR/emf-converter/commit/5b52385fb9bb7a1c70df1a69deefb49ac4ddeac4))
+- Record the round 8 rotated-glyph findings ([bb8ddd1](https://github.com/ChristopherVR/emf-converter/commit/bb8ddd12b63a8353e77089db41709a8fe384f69f))
+- Record the round 8 GDI+ text findings, candidates and open items ([158b7c5](https://github.com/ChristopherVR/emf-converter/commit/158b7c5460c1dea3732573c694c306759ef3b3c2))
+- Add the native readout of the diagonal MIRP and MDRP moves ([96c67fd](https://github.com/ChristopherVR/emf-converter/commit/96c67fd8c257735b169acc601e3fde9ddbda1c39))
+- Summarise the round 8 parity workstreams ([d28c941](https://github.com/ChristopherVR/emf-converter/commit/d28c941caf103a969c3e7b920a7ad205c135628d))
+- Round 9 workstream W5 (EMF+ gradients) ([20807b0](https://github.com/ChristopherVR/emf-converter/commit/20807b0332983674e95c9f583add07e458c0d5b6))
+- Round 9 pen leftovers (dash widening, Inset Triangle dashes, open items) ([458fd0f](https://github.com/ChristopherVR/emf-converter/commit/458fd0fb28f414153f0049ab2192193dae884db0))
+- Record the round 9 GDI+ text workstream ([f29315b](https://github.com/ChristopherVR/emf-converter/commit/f29315b32456e112bbec0e8896b316e20a20db0c))
+- GDI ClearType past the stem, the research and the withheld candidates (round 9, W1) ([48bbcfe](https://github.com/ChristopherVR/emf-converter/commit/48bbcfe9dbb4f1d7b27bfa1ff112824fd37edb69))
+- Summarise the final parity round and tighten three merged text bounds ([6ad61a7](https://github.com/ChristopherVR/emf-converter/commit/6ad61a73f7a73cc83433a18974901576ba4a4cd5))
+
+### Testing
+
+- Pin native GETINFO answers for GDI and GDI+ ClearType ([d0e83f6](https://github.com/ChristopherVR/emf-converter/commit/d0e83f6dd98cf29b59f1b8cde979118885a2ad74))
+- Pin RoundRect corner extents under scaled maps and the geosq9 widening ([8791c5e](https://github.com/ChristopherVR/emf-converter/commit/8791c5e8ad5db291c961f259f93fc6b51ddebe0c))
+- Capture GDI grayscale glyph bitmaps and hinted outlines; document the AA blend and the hinting residual ([881dc45](https://github.com/ChristopherVR/emf-converter/commit/881dc45b4edfcfb884ef1ca7f560cca78d1cc889))
+- Pin the RoundRect corner rule across graphics modes ([7802f2e](https://github.com/ChristopherVR/emf-converter/commit/7802f2e75cf658800d54cc5a8e1be793a0d9c16a))
+- Pin GDI's interpreter primitives, curve scan conversion and the sheet glyphs against native captures ([307610d](https://github.com/ChristopherVR/emf-converter/commit/307610d6bef056b1597e624cc74d30ee02c9bc14))
+- Compare wmf-embedded-emf against native playback of its recovered EMF (16 px was direct-vs-playback RoundRect corners, not a hatch edge) ([7133235](https://github.com/ChristopherVR/emf-converter/commit/7133235c40142bba8bc79a222cc7f4991173c0d3))
+- Isolate the per-vertex path gradient span and the linear ramp origin with native probes ([cba0870](https://github.com/ChristopherVR/emf-converter/commit/cba08702d58b0b79ebcf0e0d670cb2e89841fe1f))
+- **redeye:** Playback determinism, fixture-direct, fallback-centre and held-out scene captures ([3e191d1](https://github.com/ChristopherVR/emf-converter/commit/3e191d1eef65a4de53f1abe340403cc3391e5532))
+- Allow one more pixel on two Arial 12 px W alignment controls ([db4f989](https://github.com/ChristopherVR/emf-converter/commit/db4f9890c0de56238f9fa9dc72150352fc87d1c7))
+- Tighten 686 text ceilings the round 8 text changes improved ([62d3230](https://github.com/ChristopherVR/emf-converter/commit/62d323058a1fb8c58946a5d44acebe78ff076e75))
+- Native captures of the ClearType compatible-width mode on private fonts ([f4f7bd3](https://github.com/ChristopherVR/emf-converter/commit/f4f7bd326c77afcca91ad439c77b0fdcb5479003))
+- Per-vertex path gradients measured from the centre colour ([c87960a](https://github.com/ChristopherVR/emf-converter/commit/c87960a0b801a8c957243086b067ae8efe471911))
+- Pin the bar ends against design-unit advances (thick bars 1,939 of 1,968) ([ea7aceb](https://github.com/ChristopherVR/emf-converter/commit/ea7aceb5844d19752bfa75982ac7acd26850779c))
+- Native captures of the ClearType compatible-width mode past the stem ([4b2ca77](https://github.com/ChristopherVR/emf-converter/commit/4b2ca775f6dcb9f3cf23619a297316d6a8b332ce))
+- Defer Windows font setup in skipped fixture suites ([f8a2b11](https://github.com/ChristopherVR/emf-converter/commit/f8a2b1166e9007f5100f20bcf618b007d3a1c518))
+- Respect pooled buffer offsets in coordinate fixtures ([2cd814d](https://github.com/ChristopherVR/emf-converter/commit/2cd814d4533ee126a80b471ec483243ce9f75c6f))
+
+### Chores
+
+- Merge EMF+ image sampling branch ([5e45561](https://github.com/ChristopherVR/emf-converter/commit/5e4556156631e8fcf9c729fdfcde88e7d730044b))
+
 ## [4.20.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.20.3) - 2026-10-12
 
 ### Bug Fixes
