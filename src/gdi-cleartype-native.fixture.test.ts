@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { GdiFontCollection } from './gdi-font-engine';
 import { blendCtLevel, gdiTextCoverage } from './gdi-text-render';
@@ -47,11 +47,14 @@ interface RasterFile { width: number; height: number; captures: RasterCapture[] 
 
 describe.skipIf(!windowsFonts())('GDI ExtTextOut ClearType scan conversion (gdi-cleartype-raster.json.gz)', () => {
 	const file = load<RasterFile>('gdi-cleartype-raster.json.gz');
-	const fonts = new GdiFontCollection([
-		...windowsFonts()!,
-		readFileSync(new URL('./__fixtures__/gdi/raster-polygons.ttf', import.meta.url)),
-		readFileSync(new URL('./__fixtures__/gdi/cleartype-geometry.ttf', import.meta.url)),
-	]);
+	let fonts: GdiFontCollection;
+	beforeAll(() => {
+		fonts = new GdiFontCollection([
+			...windowsFonts()!,
+			readFileSync(new URL('./__fixtures__/gdi/raster-polygons.ttf', import.meta.url)),
+			readFileSync(new URL('./__fixtures__/gdi/cleartype-geometry.ttf', import.meta.url)),
+		]);
+	});
 	const faces: Record<string, string> = { 'raster-polygons.ttf': 'Parity Raster Polygons', 'cleartype-geometry.ttf': 'Parity ClearType Geometry' };
 
 	function mismatches(c: RasterCapture): number {

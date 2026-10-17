@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { GdiFontCollection } from './gdi-font-engine';
 import { gdiTextCoverage } from './gdi-text-render';
@@ -113,7 +113,10 @@ interface CompatCapture { face: string; size: number; quality: number; code: num
  */
 describe.skipIf(!windowsFonts())('GDI ClearType compatible widths on the Windows fonts (gdi-cleartype-compat.json.gz)', () => {
 	const compat: CompatCapture[] = JSON.parse(gunzipSync(readFileSync(new URL('gdi-cleartype-compat.json.gz', dir))).toString());
-	const system = new GdiFontCollection(windowsFonts()!);
+	let system: GdiFontCollection;
+	beforeAll(() => {
+		system = new GdiFontCollection(windowsFonts()!);
+	});
 	const CW = 56;
 	const CH = 64;
 

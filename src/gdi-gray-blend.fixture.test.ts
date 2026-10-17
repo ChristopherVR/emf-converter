@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { GdiFontCollection } from './gdi-font-engine';
 import { blendGrayChannel } from './gdi-gray-blend';
@@ -116,7 +116,10 @@ describe('GDI grayscale text blend (native capture)', () => {
 describe.skipIf(!windowsFonts())('which ETO_OPAQUE rectangles take the opaque blend', () => {
 	// Each rectangle edge swept across the text cell with the others far outside: the rectangle must reach the text cell
 	// and every glyph bitmap (the first glyph's left bearing, the last glyph's overhang), measured per edge.
-	const collection = new GdiFontCollection(windowsFonts()!);
+	let collection: GdiFontCollection;
+	beforeAll(() => {
+		collection = new GdiFontCollection(windowsFonts()!);
+	});
 	for (const s of capture.sweeps) {
 		it(`${s.face} ${-s.height}px${s.italic ? ' italic' : ''} "${s.text}"`, () => {
 			const font = collection.realize({ face: s.face, height: s.height, width: 0, weight: s.weight ?? 400, italic: !!s.italic, charSet: 1, pitchAndFamily: 0, quality: 4, unhinted: false, gdiPlus: false }) as any;
