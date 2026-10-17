@@ -51,9 +51,15 @@ function channel(p: number): number {
 	return ((2048 - q) * t0 + q * (1 - t0) + 1024) >> 11;
 }
 
+/** Read the probe's little-endian integers within the decoded Buffer's own byte range, including pooled Buffers. */
+function decodeInt32(base64: string): Int32Array {
+	const bytes = Buffer.from(base64, 'base64');
+	return Int32Array.from({ length: bytes.length / 4 }, (_, i) => bytes.readInt32LE(i * 4));
+}
+
 function missedFlips(c: Capture): number {
 	const fround = Math.fround;
-	const flips = new Int32Array(Buffer.from(c.flips, 'base64').buffer.slice(0));
+	const flips = decodeInt32(c.flips);
 	const positions = (j: number, y: number): [Float64Array, Float64Array] => {
 		const tx = fround(c.matrix[4] + fround(j * c.sx));
 		const ty = fround(c.matrix[5] + fround(j * c.sy));
@@ -177,7 +183,7 @@ describe('native high-quality DrawImage positions (image-levels.json.gz)', () =>
 			for (let i = 0; i < source.length; i++) rgba.set([source[i], source[i], source[i], 255], i * 4);
 			const first = Buffer.from(c.first, 'base64');
 			const count = Buffer.from(c.count, 'base64');
-			const when = new Int32Array(Buffer.from(c.when, 'base64').buffer.slice(0));
+			const when = decodeInt32(c.when);
 			const what = Buffer.from(c.what, 'base64');
 			const step = fround(c.step);
 			const y = 6;
@@ -262,7 +268,7 @@ describe('native plain Bilinear DrawImage source coordinates (image-coordinate.j
 					rgba.set([x % 2, y % 2, 0, 255], (y * c.sw + x) * 4);
 				}
 			}
-			const flips = new Int32Array(Buffer.from(c.flips, 'base64').buffer.slice(0));
+			const flips = decodeInt32(c.flips);
 			const step = fround(c.step);
 			const cache = new Map<number, ReturnType<typeof resampleImage>>();
 			const draw = (j: number): ReturnType<typeof resampleImage> => {
