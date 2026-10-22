@@ -23,6 +23,7 @@
  */
 
 import { packPremultiplied, premultipliedColor } from './emf-plus-path-gradient-fan';
+import { blendAdjuster, presetRamp } from './emf-plus-path-gradient-curves';
 import { add, ceilInt, div, downF32, f32, floorInt, ja, jae, jb, jbe, mul, sqrt, sub, transformPoint } from './gdiplus-float';
 import type { EmfPlusPathGradientShape, TransformMatrix } from './emf-types';
 
@@ -47,7 +48,7 @@ export class BilinearQuad {
 	private e2y = 0;
 	private p0x = 0;
 	private p0y = 0;
-	/** `[0x40]`, `[0x44]`: the quadratic's leading coefficient and the cross product of the two sides. */
+	/** The quadratic's leading coefficient and the cross product of the two sides. */
 	private a = 0;
 	private det = 0;
 	// the edge analyzer
@@ -175,8 +176,8 @@ export class BilinearQuad {
 		const b = sub(add(mul(this.e3x, dy), this.det), mul(this.e3y, dx));
 		const c = sub(mul(this.e1x, dy), mul(this.e1y, dx));
 		let roots = 0; // `edi`
-		let s = 0; // `xmm6`
-		let other = 0; // `xmm2`: the second root of a quadratic
+		let s = 0; // the root along side 2
+		let other = 0; // the second root of a quadratic
 		if (a !== 0 || a !== a) {
 			const disc = sub(mul(b, b), mul(mul(a, 4), c));
 			const twoA = add(a, a);
@@ -284,6 +285,14 @@ export class OneDGradient {
 		return v < 0 ? null : v;
 	}
 
+	/** The premultiplied ARGB of ramp position `t` (0 at the centre or inside the focus, 1 at the boundary), as one number. */
+	colorForPosition(t: number): number {
+		let u = f32(t);
+		if (ja(0, u)) u = 0;
+		else if (!(u < 1)) u = 1;
+		return this.table[floorInt(add(mul(this.n, u), 0.5))];
+	}
+
 	private computeRow(y: number, clipLeft: number, clipRight: number): Float64Array | null {
 		let row: Float64Array | null = null;
 		const state = [0, 0];
@@ -304,17 +313,52 @@ export class OneDGradient {
 			let at = 0;
 			for (let k = 0; k < spans.length; k += 2) {
 				for (let x = spans[k]; x < spans[k + 1]; x++) {
-					let t = ts[at++];
-					if (ja(0, t)) t = 0;
-					else if (!(t < 1)) t = 1;
-					const index = floorInt(add(mul(this.n, t), 0.5));
+					const color = this.colorForPosition(ts[at++]);
 					const i = x - this.x0;
-					if (i >= 0 && i < this.width) row[i] = this.table[index];
+					if (i >= 0 && i < this.width) row[i] = color;
 				}
 			}
 		}
 		return row;
 	}
+}
+
+/**
+ * The number of steps `N` of the colour ramp: `ceil(|d1| + |d2|)` for the two device diagonals of the boundary's brush-space
+ * bounding box `w` x `h` under the linear part of `m` (`AllocateOneDData`), at least 1. Rotating the shape leaves it alone, shearing
+ * makes the two diagonals differ.
+ */
+export function rampSteps(boundary: ReadonlyArray<{ x: number; y: number }>, m: readonly number[]): number {
+	if (boundary.length === 0) return 0;
+	let minX = f32(boundary[0].x);
+	let minY = f32(boundary[0].y);
+	let maxX = minX;
+	let maxY = minY;
+	for (const p of boundary) {
+		const x = f32(p.x);
+		const y = f32(p.y);
+		if (x > maxX) maxX = x;
+		else if (x < minX) minX = x;
+		if (y > maxY) maxY = y;
+		else if (y < minY) minY = y;
+	}
+	const w = sub(maxX, minX);
+	const h = sub(maxY, minY);
+	const vec = (x: number, y: number): [number, number] => [
+		add(mul(y, f32(m[2])), mul(x, f32(m[0]))),
+		add(mul(y, f32(m[3])), mul(x, f32(m[1]))),
+	];
+	const v0 = vec(0, 0);
+	const v1 = vec(w, 0);
+	const v2 = vec(w, h);
+	const v3 = vec(0, h);
+	const len = (a: [number, number], b: [number, number]): number => {
+		const dx = sub(a[0], b[0]);
+		const dy = sub(a[1], b[1]);
+		return sqrt(add(mul(dx, dx), mul(dy, dy)));
+	};
+	const diagonals = add(len(v1, v3), len(v0, v2));
+	return Math.max(1, ceilInt(diagonals));
 }
 
 /** The 1/16-pixel grid native snaps the boundary to: `floor(v 16 + 0.5) / 16`. */
@@ -329,34 +373,7 @@ function toSixteenth(v: number): number {
 export function prepareOneD(shape: EmfPlusPathGradientShape, full: TransformMatrix): OneDGradient | null {
 	const count = shape.boundary.length;
 	if (count < 2) return null;
-	// the ramp's length: the diagonals of the brush bounding box under the device matrix
-	let minX = shape.boundary[0].x;
-	let minY = shape.boundary[0].y;
-	let maxX = minX;
-	let maxY = minY;
-	for (const p of shape.boundary) {
-		if (p.x > maxX) maxX = p.x;
-		else if (p.x < minX) minX = p.x;
-		if (p.y > maxY) maxY = p.y;
-		else if (p.y < minY) minY = p.y;
-	}
-	const w = sub(maxX, minX);
-	const h = sub(maxY, minY);
-	const vec = (x: number, y: number): [number, number] => [
-		add(mul(y, f32(full[2])), mul(x, f32(full[0]))),
-		add(mul(y, f32(full[3])), mul(x, f32(full[1]))),
-	];
-	const v0 = vec(0, 0);
-	const v1 = vec(w, 0);
-	const v2 = vec(w, h);
-	const v3 = vec(0, h);
-	const len = (a: [number, number], b: [number, number]): number => {
-		const dx = sub(a[0], b[0]);
-		const dy = sub(a[1], b[1]);
-		return sqrt(add(mul(dx, dx), mul(dy, dy)));
-	};
-	const diagonals = add(len(v1, v3), len(v0, v2));
-	const n = Math.max(1, ceilInt(diagonals));
+	const n = rampSteps(shape.boundary, full);
 	// the colour ramp
 	const e0 = premultipliedColor(shape.centerArgb);
 	const e1 = premultipliedColor(shape.boundaryArgb[0] ?? 0xff000000);
@@ -422,78 +439,4 @@ export function prepareOneD(shape: EmfPlusPathGradientShape, full: TransformMatr
 	const x0 = Math.floor(lowX) - 2;
 	const width = Math.ceil(highX) + 3 - x0;
 	return new OneDGradient(focused ? [...quads, ...inner] : quads, table, n, x0, width);
-}
-
-/** `1 - v` in double, rounded down to single precision (native stores the reversed positions this way). */
-const reversed = (v: number): number => downF32(1 - f32(v));
-
-/**
- * `slowAdjustValue`: the Blend curve applied to the ramp position `t` (0 at the centre, 1 at the boundary). `SetBlend` stores the
- * factors and positions reversed and subtracted from one, and the curve is linear between them; a single factor is an exponent.
- */
-function blendAdjuster(blend: EmfPlusPathGradientShape['blend']): ((t: number) => number) | null {
-	if (!blend || blend.factors.length === 0) return null;
-	const count = blend.factors.length;
-	if (count === 1) {
-		const scale = f32(blend.factors[0]);
-		if (scale === 1) return null;
-		return (t) => (scale > 0 && t >= 0 && t <= 1 ? downF32(Math.pow(t, scale)) : t);
-	}
-	const values = blend.factors.map(reversed).reverse();
-	const positions = blend.positions.map(reversed).reverse();
-	return (t) => {
-		if (jb(t, 0) || jb(1, t)) return t;
-		let i = 1;
-		if (ja(sub(t, positions[1]), EPSILON)) {
-			for (;;) {
-				i++;
-				if (i >= count) return t;
-				if (!ja(sub(t, positions[i]), EPSILON)) break;
-			}
-		}
-		const span = sub(positions[i], positions[i - 1]);
-		if (ja(span, 0)) {
-			return add(mul(div(sub(t, positions[i - 1]), span), sub(values[i], values[i - 1])), values[i - 1]);
-		}
-		return mul(add(values[i], values[i - 1]), 0.5);
-	};
-}
-
-/** The comparison epsilon of the ramp lookups (`1.1920929e-07`). */
-const EPSILON = 1.1920929e-7;
-
-/**
- * `interpolatePresetColors`: the InterpolationColors ramp read at `t` into premultiplied channels, or `null` without one. The
- * colours and positions are stored reversed and the positions subtracted from one; the colours blend linearly in premultiplied form.
- */
-function presetRamp(preset: EmfPlusPathGradientShape['preset']): ((t: number, out: number[]) => void) | null {
-	if (!preset || preset.argb.length < 2) return null;
-	const count = preset.argb.length;
-	const colors = preset.argb.map((c) => premultipliedColor(c)).reverse();
-	const positions = preset.positions.map(reversed).reverse();
-	return (t, out) => {
-		let c: number[];
-		if (jb(t, 0) || jb(1, t)) {
-			// outside [0, 1]: the first colour at or below zero, the last above one
-			c = jae(0, t) ? colors[0] : colors[count - 1];
-			for (let q = 0; q < 4; q++) out[q] = c[q];
-			return;
-		}
-		let i = 1;
-		while (i < count && ja(t, positions[i])) i++;
-		if (i >= count) {
-			c = colors[count - 1];
-			for (let q = 0; q < 4; q++) out[q] = c[q];
-			return;
-		}
-		const lo = colors[i - 1];
-		const hi = colors[i];
-		const span = sub(positions[i], positions[i - 1]);
-		if (ja(span, 0)) {
-			const d = div(sub(t, positions[i - 1]), span);
-			for (let q = 0; q < 4; q++) out[q] = add(mul(sub(hi[q], lo[q]), d), lo[q]);
-		} else {
-			for (let q = 0; q < 4; q++) out[q] = mul(add(hi[q], lo[q]), 0.5);
-		}
-	};
 }

@@ -167,6 +167,16 @@ export interface FanRow {
 	argb: Uint8Array;
 }
 
+/**
+ * How a triangle turns its weights into a colour when the brush carries a Blend or InterpolationColors curve (the curves are
+ * `emf-plus-path-gradient-curves.ts`): a preset ramp read at the centre's weight `t = 1 - a - b` replaces the vertex colours; a
+ * Blend curve adjusts that weight and the other two are scaled to share what is left.
+ */
+export interface FanShading {
+	preset?: (t: number, out: number[]) => void;
+	adjust?: (t: number) => number;
+}
+
 /** One triangle of the fan. */
 export class FanTriangle {
 	private readonly edges: FanEdge[] = [];
@@ -182,6 +192,7 @@ export class FanTriangle {
 	constructor(
 		device: [number, number, number, number, number, number],
 		colors: [PremultipliedColor, PremultipliedColor, PremultipliedColor],
+		private readonly shading: FanShading = {},
 	) {
 		this.colors = colors;
 		const px = [fanCoordinate(device[0]), fanCoordinate(device[2]), fanCoordinate(device[4]), fanCoordinate(device[0])];
@@ -252,11 +263,27 @@ export class FanTriangle {
 		const [c0, c1, c2] = this.colors;
 		const argb = new Uint8Array(count * 4);
 		const v = [0, 0, 0, 0];
+		const { preset, adjust } = this.shading;
 		for (let i = 0; i < count; i++) {
-			for (let q = 0; q < 4; q++) {
-				const base = c0[q];
-				const s = add(mul(sub(c1[q], base), a), base);
-				v[q] = add(s, mul(sub(c2[q], base), b));
+			if (preset) {
+				preset(sub(sub(1, a), b), v);
+			} else {
+				let wa = a;
+				let wb = b;
+				if (adjust) {
+					const centre = adjust(sub(sub(1, a), b));
+					const sum = add(b, a);
+					if (sum !== 0) {
+						const f = div(sub(1, centre), sum);
+						wa = mul(a, f);
+						wb = mul(b, f);
+					}
+				}
+				for (let q = 0; q < 4; q++) {
+					const base = c0[q];
+					const s = add(mul(sub(c1[q], base), wa), base);
+					v[q] = add(s, mul(sub(c2[q], base), wb));
+				}
 			}
 			a = add(a, da);
 			b = add(b, db);
@@ -303,9 +330,14 @@ function toByte(v: number): number {
 	return Number.isFinite(r) ? r & 0xff : 0;
 }
 
-/** The non-premultiplied ARGB colour of premultiplied bytes (a transparent pixel is 0). */
-export function unpremultipliedArgb(alpha: number, r: number, g: number, b: number): number {
+/**
+ * The non-premultiplied ARGB colour of premultiplied bytes (a transparent pixel is 0). Rounded to nearest by default; with
+ * `bitmap` the conversion native performs when it renders a gradient into a straight-alpha ARGB bitmap (the tile bitmap of a tiled
+ * brush): `floor(p (255 / alpha))` with the reciprocal in single precision rounded down.
+ */
+export function unpremultipliedArgb(alpha: number, r: number, g: number, b: number, bitmap = false): number {
 	if (alpha === 0) return 0;
-	const ch = (premult: number): number => Math.min(255, Math.round((premult * 255) / alpha));
+	const scale = bitmap ? div(255, alpha) : 0;
+	const ch = (premult: number): number => Math.min(255, bitmap ? Math.floor(mul(premult, scale)) : Math.round((premult * 255) / alpha));
 	return ((alpha << 24) | (ch(r) << 16) | (ch(g) << 8) | ch(b)) >>> 0;
 }

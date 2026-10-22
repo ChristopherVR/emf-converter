@@ -31,8 +31,7 @@
  */
 
 import { canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
-import { mulMatrix, pathGradientColorAt, pathGradientQuantum, pathGradientStepColor } from './emf-plus-brush-gradient';
-import { copiesStepAt, prepareCopies } from './emf-plus-path-gradient-copies';
+import { mulMatrix, pathGradientColorAt, pathGradientQuantum } from './emf-plus-brush-gradient';
 import { hatchSampler } from './emf-plus-brush-hatch';
 import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
 import { prepareOneD } from './emf-plus-path-gradient-oned';
@@ -158,16 +157,21 @@ export function foldIntoTile(v: number, origin: number, size: number, mirror: bo
 	return origin + local;
 }
 
-/** The device columns `[left, right)` of a brush bounding box under `m`: the extent of its corners, each `floor(v + 1/2)`. */
-function tileDeviceColumns(box: { x: number; y: number; w: number; h: number }, m: TransformMatrix): [number, number] {
+/** The device rectangle `[left, top, right, bottom)` of a brush bounding box under `m`: the extent of its corners, each `floor(v + 1/2)`. */
+function tileDeviceRect(box: { x: number; y: number; w: number; h: number }, m: TransformMatrix): [number, number, number, number] {
 	let left = Infinity;
+	let top = Infinity;
 	let right = -Infinity;
+	let bottom = -Infinity;
 	for (const [bx, by] of [[box.x, box.y], [box.x + box.w, box.y], [box.x, box.y + box.h], [box.x + box.w, box.y + box.h]]) {
 		const x = m[0] * bx + m[2] * by + m[4];
+		const y = m[1] * bx + m[3] * by + m[5];
 		left = Math.min(left, x);
+		top = Math.min(top, y);
 		right = Math.max(right, x);
+		bottom = Math.max(bottom, y);
 	}
-	return [Math.floor(left + 0.5), Math.floor(right + 0.5)];
+	return [Math.floor(left + 0.5), Math.floor(top + 0.5), Math.floor(right + 0.5), Math.floor(bottom + 0.5)];
 }
 
 /** True when the boundary's device-space bounding box sits on whole pixels. */
@@ -243,7 +247,7 @@ function fractionalTileSampler(
 		boundary: shape.boundary.map(toTile),
 		center: toTile(shape.center),
 		transform: null,
-	}, 'clamp', IDENTITY, false);
+	}, 'clamp', IDENTITY, false, true);
 	if (!inner) return null;
 	const mirrorX = wrap === 'tile-flip-x' || wrap === 'tile-flip-xy';
 	const mirrorY = wrap === 'tile-flip-y' || wrap === 'tile-flip-xy';
@@ -310,6 +314,8 @@ export function pathGradientSampler(
 	device: TransformMatrix,
 	/** Leave a whole-pixel sample the copies put outside the boundary unpainted (the tile bitmap of a fractional tile keeps the smooth ratio there). */
 	strictOutside = true,
+	/** The colours go into a straight-alpha ARGB bitmap (the tile bitmap of a tiled brush): premultiplied bytes convert the way native converts them. */
+	straightBitmap = false,
 ): DeviceBrushSampler | null {
 	const box = boundaryBox(shape.boundary);
 	const full = mulMatrix(device, shape.transform ?? IDENTITY);
@@ -329,15 +335,13 @@ export function pathGradientSampler(
 	// strips put about one pixel in 500 a step off) and a tile cut from a bounding
 	// box on fractional pixels (its colours sit on a shifted grid).
 	const uniformSurround = shape.boundaryArgb.every((color) => color === shape.boundaryArgb[0]);
-	const smooth = (!uniformSurround && !shape.preset) ||
-		(wrap !== 'clamp' && !pixelAligned(shape.boundary, full));
+	const smooth = !uniformSurround || (wrap !== 'clamp' && !pixelAligned(shape.boundary, full));
 	const quantum = smooth ? 0 : pathGradientQuantum(shape.boundary, full);
 	// Surround colours that differ from vertex to vertex are Gouraud-shaded fan triangles, not nested
 	// copies (see emf-plus-path-gradient-vertices.ts). A tile cut from fractional bounds keeps the old path.
 	const vertexGradient = wrap === 'clamp' || pixelAligned(shape.boundary, full) ? prepareVertexGradient(shape, full) : null;
 	// A uniform surround is nested copies, rasterised from the boundary rounded to 1/16 pixel (see emf-plus-path-gradient-copies.ts).
-	const oneD = quantum > 0 && !process.env.PG_NO_ONED ? prepareOneD(shape, full) : null;
-	const copies = quantum > 0 && !oneD ? prepareCopies(shape, full, quantum) : null;
+	const oneD = quantum > 0 ? prepareOneD(shape, full) : null;
 	const pxX = Math.hypot(full[0], full[1]);
 	const pxY = Math.hypot(full[2], full[3]);
 	const lagX = pxX > 0 ? 1 / pxX : 0;
@@ -348,12 +352,15 @@ export function pathGradientSampler(
 	// nudged to select the left-inclusive, right-exclusive span; nudging y
 	// paints isolated top vertices and sloped right edges native leaves empty.
 	const bias = wrap === 'clamp' ? CLAMP_EDGE_BIAS : 0;
-	// The window the scan converters are asked for spans in: the fill's own region, or for a tiled brush the device bounds of the tile
-	// bitmap native renders it into (`floor(v + 1/2)` of the bounds' corners).
-	const tileX = wrap === 'clamp' ? null : tileDeviceColumns(box, full);
+	// The window the scan converters are asked for spans in: the fill's own region, or for a tiled brush whose tile does not contain
+	// the region the device bounds of the tile bitmap native renders it into (`floor(v + 1/2)` of the bounds' corners).
+	const tile = wrap === 'clamp' ? null : tileDeviceRect(box, full);
 	return (x0, y0, w, h, out) => {
-		const windowLeft = tileX ? tileX[0] : x0;
-		const windowRight = tileX ? tileX[1] : x0 + w;
+		const inside = tile !== null && x0 >= tile[0] && x0 + w <= tile[2] && y0 >= tile[1] && y0 + h <= tile[3];
+		const windowLeft = tile && !inside ? tile[0] : x0;
+		const windowRight = tile && !inside ? tile[2] : x0 + w;
+		// A tile outside its own bounds is rendered into a straight-alpha ARGB bitmap, whose conversion from the premultiplied spans truncates.
+		const bitmap = straightBitmap || (tile !== null && !inside);
 		for (let j = 0; j < h; j++) {
 			const dy = y0 + j;
 			for (let i = 0; i < w; i++) {
@@ -372,7 +379,7 @@ export function pathGradientSampler(
 				let c: number | null = null;
 				// A whole-pixel sample the nested copies leave outside the boundary is unpainted: the smooth ratio must not paint it.
 				let decided = false;
-				if (vertexGradient || copies || oneD) {
+				if (vertexGradient || oneD) {
 					// The scan converter works on whole pixels: the (folded) sample is a device pixel.
 					const fx = wrap === 'clamp' ? x0 + i : full[0] * bx + full[2] * by + full[4];
 					const fy = wrap === 'clamp' ? dy : full[1] * bx + full[3] * by + full[5];
@@ -380,20 +387,27 @@ export function pathGradientSampler(
 					const ry = Math.round(fy);
 					if (Math.abs(fx - rx) < 1e-6 && Math.abs(fy - ry) < 1e-6) {
 						if (vertexGradient) {
-							c = vertexGradientColorAt(vertexGradient, rx, ry, windowLeft, windowRight);
+							c = vertexGradientColorAt(vertexGradient, rx, ry, windowLeft, windowRight, bitmap);
 							if (c === null && strictOutside) decided = true;
 						} else if (oneD) {
 							const v = oneD.colorAt(rx, ry, windowLeft, windowRight);
-							if (v !== null) c = unpremultipliedArgb(v >>> 24, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff);
+							if (v !== null) c = unpremultipliedArgb(v >>> 24, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff, bitmap);
 							else if (strictOutside) decided = true;
-						} else if (copies) {
-							const step = copiesStepAt(copies, rx, ry, bias);
-							if (step !== null) c = pathGradientStepColor(shape, step, quantum);
-							else if (strictOutside && !copies.anisotropic) decided = true;
 						}
 					}
 				}
-				if (c === null && !decided) c = pathGradientColorAt(shape, bx, by, focusPoint, quantum);
+				if (c === null && !decided) {
+					if (oneD) {
+						// A sample off the pixel grid reads the ramp at its exact ratio.
+						const report = { s: NaN };
+						if (pathGradientColorAt(shape, bx, by, focusPoint, report) !== null) {
+							const v = oneD.colorForPosition(report.s);
+							c = unpremultipliedArgb(v >>> 24, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff, bitmap);
+						}
+					} else {
+						c = pathGradientColorAt(shape, bx, by, focusPoint);
+					}
+				}
 				if (c === null) {
 					continue;
 				}

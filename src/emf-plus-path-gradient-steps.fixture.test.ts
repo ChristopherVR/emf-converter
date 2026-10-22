@@ -234,7 +234,7 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			if (c.color! <= 1) opaque += exact; else translucent += exact;
 		}
 		expect(opaque).toBeGreaterThanOrEqual(632109); // 596053 with the binary-fraction ties, 595655 with the smooth tie, 497349 of 640000 before the steps
-		expect(translucent).toBeGreaterThanOrEqual(222321); // 218385 with the binary-fraction ties, 217832, then 197700 of 320000 before
+		expect(translucent).toBeGreaterThanOrEqual(292631); // 222321 before round 11 (the tiles rendered into a straight-alpha bitmap now truncate like native), 218385, 217832, then 197700 of 320000 before
 	});
 
 	it('keeps the alpha captures exact to the step', () => {

@@ -14,19 +14,17 @@
  * @module gdiplus-float
  */
 
+import { down32 } from './float32-down';
+
 export const f32 = Math.fround;
+
+/** The largest single-precision value not above `x`. */
+export const downF32 = down32;
 
 const scratch = new Float32Array(1);
 const scratchBits = new Uint32Array(scratch.buffer);
 
-/** The largest single-precision value not above `x`. */
-export function downF32(x: number): number {
-	const r = f32(x);
-	if (r <= x || r !== r) return r;
-	return prevF32(r);
-}
-
-/** The single-precision value just below `r` (toward minus infinity). */
+/** The single-precision value just below the single-precision value `r` (toward minus infinity). */
 function prevF32(r: number): number {
 	scratch[0] = r;
 	if (r > 0) scratchBits[0] -= 1;
