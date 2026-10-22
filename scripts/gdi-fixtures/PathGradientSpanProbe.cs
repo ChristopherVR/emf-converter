@@ -93,6 +93,30 @@ public static class PathGradientSpanProbe {
   }
   var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());using(var file=File.Create(Path.Combine(directory,"path-gradient-edge-stage-mid.json.gz")))using(var gzip=new GZipStream(file,CompressionMode.Compress))gzip.Write(bytes,0,bytes.Length);
  }
+ // RunEdgesMidCentre: RunEdgesMid (vertical edge between two surround vertices) with the CENTRE colour swept as well (round 10: the edge
+ // formula is centre-relative and RunEdgesMid fixed the centre at 128). Names `midy_<a>_<b>_c<centre>`.
+ public static void RunEdgesMidCentre(string directory){
+  var json=new StringBuilder("[");
+  int[] P={100,150,60,90,120,36,48,75,105,135};
+  int[] bases={0,40};
+  int[] centres={0,64,200,255};
+  foreach(int p in P)foreach(int sign in new int[]{1,-1})foreach(int b0 in bases)foreach(int cc in centres){
+   int a=sign>0?b0:b0+p; int b=sign>0?b0+p:b0; if(a<0||b<0||a>255||b>255)continue;
+   int S=2*p; int h=(int)Math.Round(S*0.6);
+   PointF p0=new PointF(30,50),p1=new PointF(30,50+S),center=new PointF(100,50+S/2f);
+   PointF p2=PointF.Empty; bool found=false;
+   for(int py=10;py<=100+2*h+S&&!found;py+=10)for(int px=40;px<=300&&!found;px+=10){
+    var q=new PointF(px,py);
+    float d1=(p1.X-p0.X)*(center.Y-p0.Y)-(p1.Y-p0.Y)*(center.X-p0.X);
+    float d2=(q.X-p1.X)*(center.Y-p1.Y)-(q.Y-p1.Y)*(center.X-p1.X);
+    float d3=(p0.X-q.X)*(center.Y-q.Y)-(p0.Y-q.Y)*(center.X-q.X);
+    if((d1>0&&d2>0&&d3>0)||(d1<0&&d2<0&&d3<0)){p2=q;found=true;}
+   }
+   if(!found)continue;
+   One(json,"midy_"+a+"_"+b+"_c"+cc,320,100+2*h+S+60,new PointF[]{p0,p1,p2},new Color[]{Red(a),Red(b),Red(0)},center,Red(cc));
+  }
+  var bytes=Encoding.UTF8.GetBytes(json.Append(']').ToString());using(var file=File.Create(Path.Combine(directory,"path-gradient-edge-stage-mid-centre.json.gz")))using(var gzip=new GZipStream(file,CompressionMode.Compress))gzip.Write(bytes,0,bytes.Length);
+ }
  // RunEdgesX: the same for an x-major edge (|dx| > |dy|): the left edge runs 2 |b - a| columns and about 0.6 of that in rows, so the span
  // start of a row is the edge's colour at column xs = ceil(crossing), k = |xs - floor(first vertex x)| of s = 2 |b - a| steps.
  public static void RunEdgesX(string directory){

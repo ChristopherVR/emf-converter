@@ -91,19 +91,19 @@ describe('span measured from the centre colour (flat fans, native)', () => {
 	});
 });
 
-interface EdgeRow { kind: number; a: number; b: number; S: number; k: number; v: number }
+interface EdgeRow { kind: number; a: number; b: number; c?: number; S: number; k: number; v: number }
 
-function loadEdgeRows(file: string, parse: (name: string) => { kind: number; a: number; b: number }, wanted: (leftEdge: number, kind: number) => boolean, vertical: boolean): EdgeRow[] {
+function loadEdgeRows(file: string, parse: (name: string) => { kind: number; a: number; b: number; c?: number }, wanted: (leftEdge: number, kind: number) => boolean, vertical: boolean): EdgeRow[] {
 	const captures: { name: string; w: number; h: number; points: [number, number][]; center: [number, number]; ra: string }[] = JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${file}`, import.meta.url))).toString());
 	const rows: EdgeRow[] = [];
 	for (const c of captures) {
-		const { kind, a, b } = parse(c.name);
+		const { kind, a, b, c: centre } = parse(c.name);
 		const ra = Buffer.from(c.ra, 'base64');
 		if (vertical) {
 			const S = 2 * Math.abs(b - a);
 			for (let k = 1; k < S; k++) {
 				const index = ((50 + k) * c.w + 30) * 2;
-				if (ra[index + 1]) rows.push({ kind, a, b, S, k, v: ra[index] });
+				if (ra[index + 1]) rows.push({ kind, a, b, c: centre, S, k, v: ra[index] });
 			}
 			continue;
 		}
@@ -128,7 +128,7 @@ function loadEdgeRows(file: string, parse: (name: string) => { kind: number; a: 
 			const k = xMajor ? Math.abs(xs - Math.floor(tx[left])) : Math.abs(y - Math.floor(ty[left]));
 			if (k < 1 || k >= S) continue;
 			const index = (y * c.w + xs) * 2;
-			if (ra[index + 1]) rows.push({ kind, a, b, S, k, v: ra[index] });
+			if (ra[index + 1]) rows.push({ kind, a, b, c: centre, S, k, v: ra[index] });
 		}
 	}
 	return rows;
@@ -183,6 +183,22 @@ describe('edges measured from the centre colour (native, first pixel of a span)'
 			// the centre colour of these captures is 128
 			const value = modelOf(r, 128, 1);
 			if (Math.floor(value + 0.5) !== r.v) wrong++;
+		}
+		expect(wrong).toBe(0);
+	});
+});
+
+describe('the vertex-to-vertex edge with the centre colour swept (round 10)', () => {
+	it('is exact for centre colours 0, 64, 200 and 255 (29,248 rows, 14,704 of them half-level ties)', () => {
+		// `RunEdgesMidCentre`: RunEdgesMid fixed the centre colour at 128; the edge formula is centre-relative.
+		const rows = loadEdgeRows('path-gradient-edge-stage-mid-centre.json.gz', (name) => {
+			const m = /midy_(\d+)_(\d+)_c(\d+)/.exec(name)!;
+			return { kind: 1, a: +m[1], b: +m[2], c: +m[3] };
+		}, (left) => left === 1, true);
+		expect(rows).toHaveLength(29248);
+		let wrong = 0;
+		for (const r of rows) {
+			if (Math.floor(edgeValue(false, 1, r.c!, 0, 0, 0, r.S, r.a, r.b, 0, r.k) + 0.5) !== r.v) wrong++;
 		}
 		expect(wrong).toBe(0);
 	});
