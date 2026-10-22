@@ -617,7 +617,7 @@ export class RealizedFont implements GdiRealizedFont {
 			gdiArithmetic: !this.gdiPlus,
 			smoothingBit18: !this.gdiPlus && gridFit && clearTypeSmoothsVertically(this.ttf, this.ppem),
 			reportStretched: this.playbackStretched,
-			bwAdvance: !this.gdiPlus && !this.naturalWidths && gridFit ? (g: number): number => this.advance(g) : undefined,
+			bwAdvance: !this.gdiPlus && !this.naturalWidths && gridFit ? (g: number): number => this.advance(g, true) : undefined,
 		}, gridFit);
 		const u = this.ctSize.hintGlyph(gi);
 		o = { xs: u.xs, ys: u.ys, onCurve: u.onCurve, endPts: u.endPts };
@@ -667,7 +667,7 @@ export class RealizedFont implements GdiRealizedFont {
 	}
 
 	/** Integer advance width of glyph `index`, as GetCharWidth32 reports it (GDI+ ClearType: its hinted phantom advance rounded). */
-	advance(index: number): number {
+	advance(index: number, hintedOnly = false): number {
 		const hd = this.hdmx;
 		let base: number;
 		if (this.stretchWidth > 0) {
@@ -678,7 +678,7 @@ export class RealizedFont implements GdiRealizedFont {
 			base = Math.round((advance * this.stretchWidth) / this.ttf.xAvgCharWidth);
 		} else if (!this.gridFit) {
 			base = this.outline(index).linearAdvance / 64;
-		} else if (this.ltshLinear(index)) {
+		} else if (!hintedOnly && this.ltshLinear(index)) {
 			// `LTSH`: from its yPels on a glyph's advance is the linearly scaled one, rounded (GetCharWidth32 and
 			// GGO_METRICS of Times New Roman A: hinted up to 68 px, linear from 69, hdmx records excepted).
 			base = this.linearAdvance(index);
