@@ -90,6 +90,8 @@ export interface DeviceFigure {
 	pts: number[];
 	closed: boolean;
 	curved: boolean;
+	/** Vertices (device pixels) where the path holds a degenerate Bezier (all four points the same, as `AddArc` leaves one beside a rounded corner). */
+	splits?: Array<{ x: number; y: number }>;
 }
 
 /**
@@ -125,12 +127,17 @@ export function recordDeviceFigures(buildPath: (c: CanvasContext) => void, devic
 		const f = fig as DeviceFigure;
 		f.curved = true;
 		const n = f.pts.length;
+		const near = (qx: number, qy: number): boolean => Math.abs(qx - f.pts[n - 2]) < 1e-3 && Math.abs(qy - f.pts[n - 1]) < 1e-3;
+		const degenerate = near(dx(c1x, c1y), dy(c1x, c1y)) && near(dx(c2x, c2y), dy(c2x, c2y)) && near(dx(x, y), dy(x, y));
 		const fix = (v: number): number => toPlusFix(v);
 		const p0x = fix(f.pts[n - 2]);
 		const p0y = fix(f.pts[n - 1]);
 		// The curve starts at its start point as GDI+ holds it.
 		f.pts[n - 2] = p0x / 16;
 		f.pts[n - 1] = p0y / 16;
+		if (degenerate) {
+			(f.splits ??= []).push({ x: p0x / 16, y: p0y / 16 });
+		}
 		const out: number[] = [];
 		const ctrl = [p0x, p0y, fix(dx(c1x, c1y)), fix(dy(c1x, c1y)), fix(dx(c2x, c2y)), fix(dy(c2x, c2y)), fix(dx(x, y)), fix(dy(x, y))];
 		flattenBezierGdiplus(ctrl, out);

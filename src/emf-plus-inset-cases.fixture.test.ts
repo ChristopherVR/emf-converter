@@ -138,7 +138,7 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 
 	it('dashed Inset pens with flat dash caps: the doubled pen clipped to the figure', () => {
 		const flat = cases.filter((c) => c.kind === 'dash' && c.dashCap === 0);
-		expect(score(flat)).toEqual({ aliased: [53, 18], aa: [50, 110] });
+		expect(score(flat)).toEqual({ aliased: [59, 1], aa: [56, 26] });
 	});
 
 	it('dashed Inset pens with round dash caps: the band along the inside of each edge, clipped', () => {
@@ -154,6 +154,6 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 	it('control: dashed Center pens, flat and round dash caps', () => {
 		const flat = cases.filter((c) => c.kind === 'dashc' && c.dashCap === 0);
 		const round = cases.filter((c) => c.kind === 'dashc' && c.dashCap === 2);
-		expect({ flat: score(flat), round: score(round) }).toEqual({ flat: { aliased: [37, 18], aa: [35, 62] }, round: { aliased: [34, 6], aa: [13, 125] } });
+		expect({ flat: score(flat), round: score(round) }).toEqual({ flat: { aliased: [38, 14], aa: [37, 38] }, round: { aliased: [34, 6], aa: [13, 125] } });
 	});
 });

@@ -35,7 +35,7 @@
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
 #   bicubic-arithmetic, bicubic-independent, wide-pen-axis-probe,
 #   wide-pen-axis-directions, dashed-pen-axis-probe, general-matrix-pen-probe,
-#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, inset-contacts-probe, inset-slivers-probe, cap-widen-probe, dash-widen-probe, round-join-probe, bezier-flatten,
+#   nib-matrix-pen-probe, rotated-pen-vector-probe, inset-outline-probe, inset-contacts-probe, inset-slivers-probe, cap-widen-probe, dash-widen-probe, dash-curve-probe, round-join-probe, bezier-flatten,
 #   illuminant-cubes, chroma-cubes, image-codecs, image-codecs-extra, image-codecs-advanced,
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
@@ -1041,6 +1041,12 @@ if ($Which -eq 'cap-widen-probe') {
 if ($Which -eq 'dash-widen-probe') {
     Add-Type -Path (Join-Path $here 'DashWidenProbe.cs') -ReferencedAssemblies System.Drawing
     [DashWidenProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'dash-curve-probe') {
+    Add-Type -Path (Join-Path $here 'DashCurveProbe.cs') -ReferencedAssemblies System.Drawing
+    [DashCurveProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
