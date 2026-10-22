@@ -71,6 +71,15 @@ const TIE = 1e-6;
 const STRIP_TIE = 0.005;
 /** Within this many steps of a whole one the scaled copy's own geometry decides which side a pixel not on an edge is (76 of 76 right below 0.0005 in the focus-shape captures, 8 of 626 wrong from there to 0.005). */
 const CONTAINMENT_TIE = 0.0005;
+/**
+ * Beyond `CONTAINMENT_TIE` and up to `STRIP_TIE` of a whole step the exact containment of the scaled copy decides the
+ * side, except for a pixel whose span end of that copy is within `NOISE_NEAR` to `NOISE_FAR` pixels of it along the row:
+ * there native's own copy edge lands on either side of ours (11 of the 643 distinct pixels of the 252 focus contours
+ * and 240 alpha controls that fall within the band are on the wrong side, all of them between 6.4e-5 and 4.9e-4 pixels
+ * from the span end; nearer and farther pixels, 30 and 400 of them, are all right), and those keep the half-way colour.
+ */
+const NOISE_NEAR = 6e-5;
+const NOISE_FAR = 5e-4;
 /** A pixel this close (in pixels) to a slanted edge of a scaled copy counts as on it (the exact tie of rational scales lands within a few millionths). */
 const SLANTED_NEAR = 5e-6;
 const CEIL_EPSILON = 1e-9;
@@ -288,6 +297,29 @@ function insideCopy(g: CopiesGradient, scale: number, px: number, py: number, sc
 	return xl !== Infinity && px >= Math.ceil(xl - CEIL_EPSILON) && px < Math.ceil(xr - CEIL_EPSILON);
 }
 
+/** Whether the exact containment test may decide a pixel the strip solver puts 0.0005 to 0.005 of a step from a copy edge (see `NOISE_NEAR`). */
+function clearOfNoise(g: CopiesGradient, scaleX: number, scaleY: number, px: number, py: number): boolean {
+	const n = g.vx.length;
+	let xl = Infinity;
+	let xr = -Infinity;
+	let ax = g.cx + (g.vx[n - 1] - g.cx) * scaleX;
+	let ay = g.cy + (g.vy[n - 1] - g.cy) * scaleY;
+	for (let i = 0; i < n; i++) {
+		const bx = g.cx + (g.vx[i] - g.cx) * scaleX;
+		const by = g.cy + (g.vy[i] - g.cy) * scaleY;
+		if ((ay <= py && by > py) || (by <= py && ay > py)) {
+			const x = ax + ((py - ay) / (by - ay)) * (bx - ax);
+			if (x < xl) xl = x;
+			if (x > xr) xr = x;
+		}
+		ax = bx;
+		ay = by;
+	}
+	if (xl === Infinity) return false;
+	const distance = Math.min(Math.abs(px - xl), Math.abs(xr - px));
+	return distance < NOISE_NEAR || distance > NOISE_FAR;
+}
+
 /** The edge of the boundary scaled by (`scaleX`, `scaleY`) that a pixel lies on, and whether that edge is vertical, horizontal or slanted. */
 interface EdgeHit {
 	kind: 'vertical' | 'horizontal' | 'slanted';
@@ -367,7 +399,7 @@ function anisotropicTieStep(g: CopiesGradient, q: number, tie: number, dx: numbe
 	const hit = edgeAt(g, scaleX, scaleY, px, py);
 	const half = g.steps - tie - 0.5;
 	if (hit?.kind === 'slanted') return half;
-	if (hit === null && Math.abs(q - tie) >= CONTAINMENT_TIE) return half;
+	if (hit === null && (Math.abs(q - tie) >= CONTAINMENT_TIE ? !clearOfNoise(g, scaleX, scaleY, px, py) : false)) return half;
 	if (hit === null) return g.steps - tie - (insideCopy(g, scaleX, px, py, scaleY) ? 0 : 1);
 	let odd = g.steps;
 	while (odd % 2 === 0) odd /= 2;
