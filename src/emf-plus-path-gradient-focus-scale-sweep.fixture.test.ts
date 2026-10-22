@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
  * pixel's row at `ax + (py - ay)(bx - ax)/(by - ay)`, the copy scale `f + (1 - f)(m + 1/2)/N`) flips at the same sweep
  * step, and at no other, for 169. The rest are native's own noise of up to a few 1e-5 pixels perpendicular to the edge
  * (float32 rounding of the scaled vertices, the scale or the crossing does not explain them: the best of 54 variants
- * gets 172), which is why the half-way colour is kept in a band around the span end (`NOISE_NEAR`, `NOISE_FAR` in
- * `emf-plus-path-gradient-copies.ts`).
+ * gets 172), which is why a few one-level pixels remain near the span end (a band that kept the half-way colour there
+ * was replaced by plain containment in round 10).
  */
 interface Capture { name: string; focus: number[]; center: number[]; points: number[][]; ra: string }
 const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/path-gradient-focus-scale-sweep.json.gz', import.meta.url))).toString());
