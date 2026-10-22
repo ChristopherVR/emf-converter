@@ -50,9 +50,9 @@ describe('GDI ClearType compatible widths on zigzag MIRP chains (ctc-chain.json.
 		const exactByFlags: Record<number, number> = {};
 		sets[0].params.forEach((prm, i) => { if (diff(5, i) === 0) exactByFlags[prm[4]] = (exactByFlags[prm[4]] ?? 0) + 1; });
 		expect(natural).toBeGreaterThanOrEqual(540);
-		// flags 0xF1, 0xF4, 0xFD: 192 glyphs each (measured exact after the round-10 phantom-point merge: 148, 59 and 70)
-		expect(exactByFlags[244]).toBeGreaterThanOrEqual(148);
-		expect(exactByFlags[253]).toBeGreaterThanOrEqual(70);
-		expect(exactByFlags[241]).toBeGreaterThanOrEqual(59);
+		// flags 0xF1, 0xF4, 0xFD: 192 glyphs each (measured exact: 158, 73 and 93)
+		expect(exactByFlags[244]).toBeGreaterThanOrEqual(158);
+		expect(exactByFlags[253]).toBeGreaterThanOrEqual(93);
+		expect(exactByFlags[241]).toBeGreaterThanOrEqual(73);
 	});
 });
