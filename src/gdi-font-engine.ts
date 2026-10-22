@@ -96,6 +96,8 @@ export interface LogFontSpec {
 	 * text through (see {@link playbackStretchReacts}). Absent or 1: none.
 	 */
 	playbackStretch?: number;
+	/** GDI+ text drawn at an identity world scale (the hinting rules of `HintEnvironment.shpixX` apply). */
+	unscaledText?: boolean;
 }
 
 /**
@@ -464,6 +466,7 @@ export class RealizedFont implements GdiRealizedFont {
 		gridFit = true,
 		private readonly gdiPlus = false,
 		private readonly playbackStretched = false,
+		plusUnscaled = false,
 	) {
 		this.ttf = ttf;
 		this.gridFit = gridFit;
@@ -513,7 +516,7 @@ export class RealizedFont implements GdiRealizedFont {
 		// AntiAlias also runs these programs, while keeping linear advances.
 		this.hinted = new HintedSize(ttf, ppemX, ppem,
 			gdiPlus && mode === 'gray'
-				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false, grayClearType: true }
+				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false, grayClearType: true, shpixX: plusUnscaled }
 				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus, reportStretched: playbackStretched }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
 		if (gdiPlus && mode === 'gray' && gridFit) {
@@ -1099,6 +1102,7 @@ export class GdiFontCollection {
 					!spec.unhinted,
 					spec.gdiPlus,
 					!!spec.playbackStretch && playbackStretchReacts(best, spec.height, spec.playbackStretch),
+					!!spec.unscaledText,
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				return tt;
