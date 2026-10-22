@@ -150,7 +150,7 @@ describe.skipIf(!windowsFonts())('GDI ClearType compatible widths on the Windows
 	}
 
 	const PINS: Record<string, { natural: [number, number]; default: [number, number] }> = {
-		Arial: { natural: [349, 264], default: [179, 2700] },
+		Arial: { natural: [349, 264], default: [183, 1976] },
 		'Segoe UI': { natural: [349, 151], default: [138, 2556] },
 		Tahoma: { natural: [368, 248], default: [140, 2953] },
 	};

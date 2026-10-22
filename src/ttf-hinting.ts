@@ -158,6 +158,8 @@ const ON_CURVE = 1;
 const TOUCH_X = 8;
 /** Narrowest pair of points (26.6, a quarter pixel) the compatible-width mode treats as the sides of a stem. */
 const STEM_MIN_WIDTH = 16;
+/** Stem shifts under this many 1/64 px (a thirty-second of a pixel) are applied as before the stem-pair rules. */
+const STEM_SMALL_SHIFT = 4;
 const TOUCH_Y = 16;
 
 /** A glyph or twilight zone. Coordinates are 26.6 (orus: font units). */
@@ -454,6 +456,8 @@ export class HintedSize {
 	private iupy = false;
 	/** IUP[x] has run in the current glyph program. */
 	private iupx = false;
+	/** Points that belong to a stem pair shifted so far in the glyph program (compatible-width ClearType). */
+	private stemPoints = new Set<number>();
 	private count = 0;
 
 	constructor(font: TtfFont, ppemX: number, ppemY: number, env: HintEnvironment, hinting = true) {
@@ -817,6 +821,7 @@ export class HintedSize {
 		this.stack = [];
 		this.iupy = false;
 		this.iupx = false;
+		this.stemPoints.clear();
 		this.computeFuncs();
 		try {
 			this.execute(instructions);
@@ -1796,7 +1801,7 @@ export class HintedSize {
 				}
 				this.move(this.zp1, p, target - dist);
 				this.carryFrom(p);
-				this.pairShift(gs.rp0, p);
+				this.pairShift(gs.rp0, p, true);
 				gs.rp1 = gs.rp0;
 				gs.rp2 = p;
 				if (op & 1) {
@@ -2396,7 +2401,7 @@ export class HintedSize {
 	}
 
 	/** A MIRP or MSIRP just placed `p` relative to rp0: if the two are the sides of a stem, shift the stem. */
-	private pairShift(rp0: number, p: number): void {
+	private pairShift(rp0: number, p: number, black: boolean): void {
 		// Native leaves a stem alone once IUP[x] has run (private bars with the pair after IUP[x], alone or with IUP[y] before
 		// or after it: 108 of 108 glyphs identical at the two qualities; Tahoma 'V', 'A' and 'W' set their diagonal caps
 		// after both IUPs and are unshifted).
@@ -2422,6 +2427,23 @@ export class HintedSize {
 		z.shifted ??= new Uint8Array(z.n);
 		const centre = (z.orgX[rp0] + z.orgX[p]) / 2;
 		const shift = Math.round(centre * (bw / org2 - 1));
+		// Round 10 (private zigzag chains, `ctc-chain.json.gz`, 16 flag values): only a MIRP whose distance type is black (flag
+		// bits 0 and 1 = 01) is a stem, whatever its min-distance, rounding and set-rp0 bits; and a point that already belongs
+		// to a stem is not the first edge of another one: the point of a later MIRP from it scales with its own position
+		// (the stems of Arial's W alternate along the chain, and X's four arms from the central crotch scale one by one).
+		// Shifts below SMALL (1/32 px) keep the earlier behaviour, which the native captures cannot tell apart.
+		if (!black && Math.abs(shift) >= STEM_SMALL_SHIFT) {
+			return;
+		}
+		if (this.stemPoints.has(rp0) && Math.abs(shift) >= STEM_SMALL_SHIFT) {
+			z.applied ??= new Float64Array(z.n);
+			const own = Math.round(z.orgX[p] * (bw / org2 - 1)) - (z.carry ? z.carry[p] * (bw - org2) : 0);
+			z.curX[p] += own - z.applied[p];
+			z.applied[p] = own;
+			return;
+		}
+		this.stemPoints.add(rp0);
+		this.stemPoints.add(p);
 		const offset = bw - org2;
 		const lo = Math.min(z.curX[rp0], z.curX[p]);
 		const hi = Math.max(z.curX[rp0], z.curX[p]);
@@ -2560,7 +2582,7 @@ export class HintedSize {
 		}
 		this.move(this.zp1, p, distance - curDist);
 		this.carryFrom(p);
-		this.pairShift(gs.rp0, p);
+		this.pairShift(gs.rp0, p, (op & 3) === 1);
 		gs.rp1 = gs.rp0;
 		if (op & 16) gs.rp0 = p;
 		gs.rp2 = p;
