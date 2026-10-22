@@ -606,10 +606,10 @@ const IMAGE_ORDER_CASES: ParityCase[] = [close('gpx-image-clip-zorder', 0)];
  */
 const IMAGE_ATTRIBUTE_CASES: ParityCase[] = ['flipxy', 'tile', 'clamp'].flatMap((w) => [
 	close(`gpx-image-attr-${w}-bilinear`, 0),
-	// The wrapped overhang goes through the axis-aligned high-quality weights: within one level except for 1, 13 and 0
-	// pixels (of 15,741) under TileFlipXY, Tile and Clamp (before round 8: 4, 15 and 2; before round 6: 39, 75 and 45;
-	// 3,400 to 3,600 off at zero tolerance, now 41, 90 and 67).
-	{ name: `gpx-image-attr-${w}-highqualitybicubic`, ext: 'emf', tolerance: 1, maxMismatch: { flipxy: 0.00007, tile: 0.00083, clamp: 0 }[w] },
+	// The wrapped overhang goes through the axis-aligned high-quality weights, and the kernel's fifth row past a
+	// sub-rectangle wraps inside the margin-extended rectangle (round 10): exact (before: 41, 90 and 67 pixels off at
+	// zero tolerance under TileFlipXY, Tile and Clamp; 3,400 to 3,600 before round 6).
+	exact(`gpx-image-attr-${w}-highqualitybicubic`),
 ]);
 
 /**
