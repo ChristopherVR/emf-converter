@@ -261,7 +261,7 @@ function sidePoints(pts: Pt[], closed: boolean, o: number, pen: DevicePen): Pt[]
 }
 
 /** Splits a figure into its dashes (open polylines) with flags for which ends are the figure's own. */
-function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt[]; first: boolean; last: boolean }> {
+function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen, splits?: ReadonlyArray<Pt>): Array<{ pts: Pt[]; first: boolean; last: boolean }> {
 	// With a Round or Triangle DashCap GDI+ keeps each dash's start and ends
 	// its straight part a full pen width early, the caps then reaching half
 	// a width beyond both ends (measured with GraphicsPath.Widen: a 12-pixel
@@ -332,6 +332,13 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen): Array<{ pts: Pt
 		remaining -= segLen - t0;
 		if (on && cur) {
 			cur.push(b);
+			// A degenerate Bezier in the path ends the dash that runs into it: a new one carries on from the same vertex (measured: a dash crossing the
+			// zero-length curve `AddArc` leaves beside a rounded rectangle's corner is two polygons, 4 differing pixels of the Inset sheet).
+			if (splits && i + 2 < path.length && splits.some((k) => Math.abs(k.x - b.x) < 1e-6 && Math.abs(k.y - b.y) < 1e-6)) {
+				out.push({ pts: cur, first: curFirst, last: false });
+				cur = [b];
+				curFirst = false;
+			}
 		}
 		segLen = 0;
 	}
@@ -501,7 +508,7 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 		// width (measured: offset 0.5 of an 8-pixel inset pen shifts the
 		// pattern 8 pixels; the dash lengths stay in the pen's own width).
 		const dashPen = pen.inset && closed ? { ...pen, dashOffset: pen.dashOffset * 2 } : pen;
-		const pieces = pen.dash ? dashFigure(pts, closed, dashPen) : [{ pts, first: true, last: true }];
+		const pieces = pen.dash ? dashFigure(pts, closed, dashPen, fig.splits) : [{ pts, first: true, last: true }];
 		const pieceClosed = !pen.dash && closed;
 		for (const piece of pieces) {
 			const pp = cleanPoints(
@@ -549,6 +556,20 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 				// At the start the outward frame is reversed, so its left normal is the
 				// line's right: the band runs from -o1 (the line's o1 side) to -o2.
 				const capStart = capPoints(pp[0], f0, -o2, -o1, startCap, h);
+				if (endCap === 0 && capEnd.length === 2 && left.length > 2 && right.length > 2) {
+					// A flat end whose corner would lie behind the offset point before it (the last segment shorter than the reach of a smooth join,
+					// on the inner side of the turn) ends at that point instead: measured against GraphicsPath.Widen of dashed curves, where the
+					// end edge of the dash is slanted by the difference (27.89 to 27.93 pixels long for a 28 pixel pen).
+					const behind = (c: Pt, q: Pt): boolean => (c.x - q.x) * fEnd.ux + (c.y - q.y) * fEnd.uy < -1e-9;
+					const lq = left[left.length - 2];
+					const rq = right[1];
+					if (behind(capEnd[0], lq)) {
+						capEnd[0] = { x: lq.x, y: lq.y };
+					}
+					if (behind(capEnd[1], rq)) {
+						capEnd[1] = { x: rq.x, y: rq.y };
+					}
+				}
 				// The start corner of the left side is the cap's own when the start is square.
 				const poly = [...left.slice(startCap === 1 ? 1 : 0, -1), ...capEnd, ...right.slice(1, -1), ...capStart];
 				polys.push(poly);

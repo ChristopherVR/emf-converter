@@ -8,6 +8,7 @@ replay each metafile through the converter and compare against the PNG.
 | --- | --- |
 | `GdiFixtures.cs` | The case groups. Each case records the drawing into `<name>.emf` / `.wmf` and writes `<name>.png`: either the same calls painted onto a 32bpp bitmap, or GDI+'s own playback of the recorded metafile. |
 | `PenTransformProbe.cs` | Pen-transform (`Pen.Transform`) cases: `pen-<case>.emf`, `pen-<case>.png` (GDI+ playback) and `pen-<case>-direct.png` (drawn straight onto a bitmap). |
+| `DashCurveProbe.cs` | `dash-curve-probe` mode: where GDI+ cuts the dashes of a pen on 120 random Beziers (`GraphicsPath.Flatten` and `Widen(pen, new Matrix(), 0.25)`, the outline `DrawPath` draws, with a straight-lines control path), the 24 flat-dashed Inset sheet figures with their native `Widen` polygons and pixels (`inset-dash-polygons.json.gz`), and the check that a flat-dashed Inset pen equals `SetClip` plus a Center pen of twice the width. |
 | `generate.ps1` | Compiles both files with `Add-Type` and runs the requested groups. |
 | `report.ts` | Parity table for every fixture: `bun scripts/gdi-fixtures/report.ts` (not part of `bun run test`). |
 | `generate-mapping-extents.ps1` | Standalone signed rational extent scaling, rejection and 32-bit arithmetic controls, including complete native polygon masks for EMF/WMF replay tests. |
