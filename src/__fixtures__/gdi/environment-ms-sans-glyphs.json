@@ -1,6 +1,6 @@
 {
     "schemaVersion":  1,
-    "capturedAt":  "2026-10-22T10:00:58.2306474Z",
+    "capturedAt":  "2026-10-22T10:20:48.8136098Z",
     "groups":  "ms-sans-glyphs",
     "os":  "Microsoft Windows NT 10.0.26300.0",
     "build":  9711,
@@ -3393,6 +3393,10 @@
                        {
                            "name":  "ms-sans-glyphs-gray.json.gz",
                            "sha256":  "1f971f599fa933179569456cc0620df5c781c0e961e8091ee5d72a792d0daaff"
+                       },
+                       {
+                           "name":  "times-italic-glyphs.json.gz",
+                           "sha256":  "76b97480bdcb26544760ab8fb3691fae597ec52bfa571f677f89f27ae578b117"
                        }
                    ]
 }
