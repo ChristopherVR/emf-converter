@@ -1177,12 +1177,22 @@ function resampleHqAxisAligned(
 	// (rounded up, in texels) on each side; a tap farther out is transparent. A unit-scale axis is left open: whether
 	// its margin is that one or one texel wider is a float32 coin toss (see "Cropped sources and mirrors" in
 	// outstanding-work.md). Under a WrapMode the taps wrap instead.
-	const rowMargin = edge || Math.abs(scaleV - 1) < 1e-9 ? Infinity : Math.ceil((cubic ? 2 : 1) / Math.min(1, scaleV));
+	const rowMargin = Math.abs(scaleV - 1) < 1e-9 ? Infinity : Math.ceil((cubic ? 2 : 1) / Math.min(1, scaleV));
 	// Horizontal pass: premultiplied, rounded to 8 bits, limited to the alpha.
 	const inter = new Uint8Array(rows * w * 4);
 	for (let r = 0; r < rows; r++) {
-		const rowTexel = edge ? wrapTap(rowMin + r, 0, height, edge.mirrorY, edge) : rowMin + r;
-		if (rowTexel === OUTSIDE_TRANSPARENT || rowTexel < spec.srcY - rowMargin || rowTexel > spec.srcY + spec.srcH + rowMargin - 1) {
+		let rowTexel = rowMin + r;
+		if (edge) {
+			// Under a WrapMode the rows past the margin wrap inside the margin-extended rectangle cut to the bitmap (period
+			// `srcH + 2 margin` inside a bitmap): a tap at the kernel's fifth row reads `srcY - 2` for Tile, or its mirror image.
+			if (Number.isFinite(rowMargin)) {
+				rowTexel = wrapTap(rowTexel, Math.max(0, spec.srcY - rowMargin), Math.min(height, spec.srcY + spec.srcH + rowMargin), edge.mirrorY, edge);
+			}
+			if (rowTexel !== OUTSIDE_TRANSPARENT && rowTexel !== OUTSIDE_CLAMP) {
+				rowTexel = wrapTap(rowTexel, 0, height, edge.mirrorY, edge);
+			}
+		}
+		if (rowTexel === OUTSIDE_TRANSPARENT || (rowTexel !== OUTSIDE_CLAMP && (rowTexel < spec.srcY - rowMargin || rowTexel > spec.srcY + spec.srcH + rowMargin - 1))) {
 			continue;
 		}
 		const srcRow = rowTexel * width;

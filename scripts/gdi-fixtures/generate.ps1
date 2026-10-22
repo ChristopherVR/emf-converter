@@ -29,7 +29,7 @@
 #   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, redeye-fixture-direct, redeye-fallback-centre, redeye-scenes,
 #   redeye-playback, vertical-focus-line, playback-extents, playback-extent-survey,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
-#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-step-grid, hq-reduction-grid, hq-half-length, bicubic-boundary,
+#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-wrap-crop, hq-step-grid, hq-reduction-grid, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
 #   halftone-kernel, halftone-arrangement, halftone-selection, halftone-boundary,
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
@@ -632,6 +632,12 @@ if ($Which -eq 'hq-crop-alpha') {
 if ($Which -eq 'hq-crop-height') {
     Add-Type -Path (Join-Path $here 'HighQualityCropHeightProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityCropHeightProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-wrap-crop') {
+    Add-Type -Path (Join-Path $here 'HighQualityWrapCropProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityWrapCropProbe]::Run($outDir)
     Complete-Fixtures
     return
 }
