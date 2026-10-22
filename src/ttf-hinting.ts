@@ -1524,6 +1524,7 @@ export class HintedSize {
 				if (op < 8) {
 					gs.pvx = gs.dvx = vx;
 					gs.pvy = gs.dvy = vy;
+					this.pvLine = [a1, a0];
 					this.pvFromSpvtl = true;
 				} else {
 					gs.fvx = vx;
@@ -2355,7 +2356,15 @@ export class HintedSize {
 	/** The link table of the running glyph program while recording applies (before the first IUP[x]). */
 	private recorder(direction = true): CtLinks | undefined {
 		const links = this.pts.links;
-		return links && !links.done && (!direction || this.ctDirection()) ? links : undefined;
+		return links && !links.done && (!direction || this.linkDirection()) ? links : undefined;
+	}
+
+	/**
+	 * Native's ClearType-direction flag while it records links: set by the projection-vector instructions as ClearType on
+	 * and the vector not being the y axis exactly (SPVTCA, SPVTL and SDPVTL; SPVFS leaves the flag as it was).
+	 */
+	private linkDirection(): boolean {
+		return !!this.env.clearType && !(this.gs.pvx === 0 && this.gs.pvy === 0x4000);
 	}
 
 	private beginLinks(zone: Zone): void {
@@ -2804,7 +2813,13 @@ export class HintedSize {
 		) {
 			return;
 		}
-		if (zp2 === this.pts && this.recorder(false)) this.linkProportion(zp2, b0, p, b1);
+		if (zp2 === this.pts && this.recorder(false)) {
+			// Native links the point to the steeper of the two lines (the first, B, unless |dyA * dxB| > |dxA * dyB|).
+			const mul = (u: number, v: number): number => Math.abs(Math.floor((u * v + 32) / 64));
+			const steeperA =
+				mul(zp1.curY[a1] - zp1.curY[a0], zp0.curX[b1] - zp0.curX[b0]) > mul(zp1.curX[a1] - zp1.curX[a0], zp0.curY[b1] - zp0.curY[b0]);
+			this.linkProportion(zp2, steeperA ? a0 : b0, p, steeperA ? a1 : b1);
+		}
 		const dbx = zp0.curX[b1] - zp0.curX[b0];
 		const dby = zp0.curY[b1] - zp0.curY[b0];
 		const dax = zp1.curX[a1] - zp1.curX[a0];
