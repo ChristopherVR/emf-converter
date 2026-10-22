@@ -33,7 +33,7 @@ export interface Corner {
  * converts the surviving pixels of each figure's stroke to an outline (see the module comment) and fills the outlines of all the figures together
  * with the nonzero rule, aliased and antialiased alike. `evenOdd` takes the clip as the even-odd interior of the figures (the Alternate fill mode
  * of a GraphicsPath, its default; a polygon or a Winding path clips by the nonzero interior): a pixel is kept when it lies in an odd number of the
- * figures and in the stroke. `half` (PixelOffsetMode Half) moves the samples of the mask half a pixel; the outline of the surviving pixels is on
+ * figures and in the stroke. `open` are the polygons of the path's open figures, filled with them. `half` (PixelOffsetMode Half) moves the samples of the mask half a pixel; the outline of the surviving pixels is on
  * the device pixels of that mask and is not moved again.
  */
 export function insetStrokeCoverage(
@@ -43,6 +43,7 @@ export function insetStrokeCoverage(
 	half: boolean,
 	box: { x: number; y: number; w: number; h: number },
 	evenOdd: boolean = false,
+	open: ReadonlyArray<FixFigure> = [],
 ): Uint8ClampedArray {
 	const inside = rasterizePlusFill(figureFix, evenOdd, false, half, box);
 	const masks = strokeGroups.map((group) => {
@@ -56,13 +57,10 @@ export function insetStrokeCoverage(
 	});
 	// GDI+ fills the outlines of the regions (all of them in one path, nonzero), aliased and antialiased alike: the outline is on whole pixels, and
 	// the diagonal cuts of its corners decide the pixels the cut passes through.
-	return rasterizePlusFill(
-		masks.flatMap((mask) => insetMaskOutline(mask, box.w, box.h, box.x, box.y)),
-		false,
-		antialias,
-		false,
-		box,
-	);
+	// The open figures of the path (stroked at the pen's own width, not clipped) are part of the same fill; PixelOffsetMode Half moves their samples,
+	// which the whole-pixel outlines do not follow, so they move the other way.
+	const shifted = half ? open.map((f) => f.map((v) => v - 8)) : open;
+	return rasterizePlusFill([...masks.flatMap((mask) => insetMaskOutline(mask, box.w, box.h, box.x, box.y)), ...shifted], false, antialias, false, box);
 }
 
 /**

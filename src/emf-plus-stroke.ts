@@ -414,12 +414,13 @@ function strokeGdiplus(
 	let fix: FixFigure[];
 	let groups: FixFigure[][] = [];
 	let insetFigures: FixFigure[] | null = null;
+	let open: FixFigure[] = [];
 	if (hasCustomCap(pen)) {
 		fix = customCapOutline(figures, width, devicePen, pen).map(toFix);
 	} else if (width <= NOMINAL_PEN_MAX && !devicePen.dash && !(((pen.startCap ?? 0) | (pen.endCap ?? 0) | (pen.dashCap ?? 0)) & 0xf0)) {
 		return strokeNominal(rCtx, pen, sampler, buildPath, device, size, antialias, closedFigure);
 	} else {
-		({ fix, groups, insetFigures } = widenedPen(figures, devicePen, toFix));
+		({ fix, groups, insetFigures, open } = widenedPen(figures, devicePen, toFix));
 	}
 	const box = figuresBox(fix, size);
 	if (!box) {
@@ -429,7 +430,7 @@ function strokeGdiplus(
 		return false;
 	}
 	const half = isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0);
-	const coverage = insetFigures ? insetStrokeCoverage(groups, insetFigures, antialias, half, box, evenOddClip) : rasterizePlusFill(fix, false, antialias, half, box);
+	const coverage = insetFigures ? insetStrokeCoverage(groups, insetFigures, antialias, half, box, evenOddClip, open) : rasterizePlusFill(fix, false, antialias, half, box);
 	return compositeBrushCoverage(rCtx, sampler, box, coverage, 1, true);
 }
 
@@ -444,15 +445,35 @@ export function widenedPen(
 	figures: ReadonlyArray<DeviceFigure>,
 	devicePen: DevicePen,
 	toFix: (poly: ReadonlyArray<{ x: number; y: number }>) => number[],
-): { fix: FixFigure[]; groups: FixFigure[][]; insetFigures: FixFigure[] | null } {
-	const insetClosed = devicePen.inset && !devicePen.compound && figures.every((f) => f.closed);
-	const insetClip = insetClosed;
-	const widenPen = insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2, dashOffset: devicePen.dashOffset * 2, dashCapWidth: devicePen.half * 2, doubleRoundCap: true } : devicePen;
-	// One group of polygons per figure: the antialiased outline of an Inset stroke is taken for each figure's own pixels.
-	const groups = insetClosed ? figures.map((f) => widenFigures([f], widenPen).map(toFix)) : [widenFigures(figures, widenPen).map(toFix)];
-	const fix = groups.flat();
-	const insetFigures = insetClosed ? figures.map((f) => toFix(Array.from({ length: f.pts.length >> 1 }, (_, i) => ({ x: f.pts[2 * i], y: f.pts[2 * i + 1] })))) : null;
-	return { fix, groups, insetFigures };
+): { fix: FixFigure[]; groups: FixFigure[][]; insetFigures: FixFigure[] | null; open: FixFigure[] } {
+	const closedFigures = figures.filter((f) => f.closed);
+	if (!devicePen.inset || devicePen.compound || closedFigures.length === 0) {
+		const fix = widenFigures(figures, devicePen).map(toFix);
+		return { fix, groups: [fix], insetFigures: null, open: [] };
+	}
+	// An Inset pen strokes each closed figure at twice its width, centered, clipped to the path's interior; an open figure of the same path is
+	// stroked as a Center pen of the pen's own width and not clipped (`GpPath::GetWidenedPath` takes the doubled pen only for a closed subpath).
+	const widenPen = { ...devicePen, inset: false, half: devicePen.half * 2, dashOffset: devicePen.dashOffset * 2, dashCapWidth: devicePen.half * 2, doubleRoundCap: true };
+	// One group of polygons per figure: the outline of an Inset stroke is taken for each figure's own pixels.
+	const groups = closedFigures.map((f) => widenFigures([f], widenPen).map(toFix));
+	// The outlines GDI+'s widener returns wind the other way round from the outlines of the clipped regions, so where an open figure's stroke
+	// overlaps a region it cancels it out under the nonzero fill (measured: a closed rectangle with an open polyline across it, solid and dashed,
+	// exact once reversed, 105 pixels off otherwise).
+	const open = widenFigures(
+		figures.filter((f) => !f.closed),
+		{ ...devicePen, inset: false },
+	)
+		.map(toFix)
+		.map((poly) => {
+			const reversed: number[] = [];
+			for (let i = poly.length / 2 - 1; i >= 0; i--) {
+				reversed.push(poly[2 * i], poly[2 * i + 1]);
+			}
+			return reversed;
+		});
+	// The clip is the interior of the whole path, an open figure counting as closed.
+	const insetFigures = figures.map((f) => toFix(Array.from({ length: f.pts.length >> 1 }, (_, i) => ({ x: f.pts[2 * i], y: f.pts[2 * i + 1] }))));
+	return { fix: [...groups.flat(), ...open], groups, insetFigures, open };
 }
 
 /**
