@@ -332,6 +332,11 @@ export interface HintEnvironment {
 	 */
 	grayClearType?: boolean;
 	/**
+	 * GDI+ grayscale text drawn at an identity world scale: SHPIX along x is honoured (see `plusShpixX`). Compatible
+	 * mode skips it otherwise, as the scaled-alignment controls (a uniform world scale) still need.
+	 */
+	shpixX?: boolean;
+	/**
 	 * GETINFO selector 2048 -> bit 18: the size's `gasp` range asks for symmetric smoothing (GDI ClearType reports it
 	 * from the range, for natural and compatible-width quality alike; GDI+ does not report it).
 	 */
@@ -1159,6 +1164,21 @@ export class HintedSize {
 	 * its centre by one at 26 to 58 ppem; native leaves all three where the interpolation put them (private fonts
 	 * `build-shpix-order-fonts.py`: a touched stem top moved by the helper after IUP[y] stays, after IUP[x] alone it moves).
 	 */
+	/**
+	 * GDI+ grayscale text (`shpixX`): which SHPIX shifts along x native honours. Measured with prefix copies of Arial Bold
+	 * `y` (40 ppem), Arial `W` (12), Times New Roman Italic `T` (22) and Courier New `R` (22) and the 31,584 real glyphs
+	 * (see docs/outstanding-work.md): a shift made by a function call (not a generic per-size helper, `inSizeTweak`)
+	 * applies; one made inline in the glyph program applies to a point touched in exactly one direction, or in both once
+	 * both IUPs have run, and not to a point touched in neither, nor to one touched in both before the IUPs.
+	 */
+	private plusShpixX(p: number): boolean {
+		if (!this.env.shpixX) return false;
+		if (this.callFrames.length > 0) return true;
+		const t = this.zp2.tags[p];
+		const tx = (t & TOUCH_X) !== 0, ty = (t & TOUCH_Y) !== 0;
+		return tx !== ty || (tx && this.iupx && this.iupy);
+	}
+
 	private shpixAlongY(p: number): boolean {
 		return (this.zp2.tags[p] & TOUCH_Y) !== 0 && !(this.iupy && this.inSizeTweak());
 	}
@@ -1699,7 +1719,7 @@ export class HintedSize {
 							!this.ctCompat() ||
 							this.inComposite ||
 							(gs.fvx === 0 && this.shpixAlongY(p)) ||
-							(gs.fvx !== 0 && !this.env.grayscale && !this.inSizeTweak());
+							(gs.fvx !== 0 && !this.inSizeTweak() && (!this.env.grayscale || this.plusShpixX(p)));
 						if (keep) {
 							this.moveZp2(p, dx, dy, true);
 						}

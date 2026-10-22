@@ -442,6 +442,7 @@ function realizePlusEngineFont(
 		// grayscale there, but single-bit under AntiAliasGridFit, as in GDI).
 		ignoreGasp: hint === 4,
 		gdiPlus: true,
+		unscaledText: m[0] === 1 && m[3] === 1,
 	};
 	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
 	if (!realized) {
