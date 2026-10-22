@@ -1,4 +1,4 @@
-param([string]$OutDir = '', [switch]$Argb, [switch]$Centre)
+param([string]$OutDir = '', [switch]$Argb, [switch]$Centre, [switch]$MidCentre)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static class PathGradientSpanDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }'
@@ -6,6 +6,12 @@ Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public static cl
 $destination = if ($OutDir) { $OutDir } else { Join-Path $here '..\..\src\__fixtures__\gdi' }
 $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force $destination)).Path
 Add-Type -Path (Join-Path $here 'PathGradientSpanProbe.cs') -ReferencedAssemblies System.Drawing
+if ($MidCentre) {
+    # Round 10: the vertex-to-vertex edge with the centre colour swept (path-gradient-edge-stage-mid-centre.json.gz).
+    [PathGradientSpanProbe]::RunEdgesMidCentre($destination)
+    & (Join-Path $here 'capture-environment.ps1') -OutputPath (Join-Path $destination 'environment-path-gradient-edge-mid-centre.json') -Groups 'path-gradient-edge-mid-centre' -Files @((Join-Path $destination 'path-gradient-edge-stage-mid-centre.json.gz'))
+    return
+}
 if ($Centre) {
     # Round 9: the span measured from the centre colour and the three kinds of edge (path-gradient-flat-grid*.json.gz, path-gradient-edge-stage*.json.gz).
     [PathGradientSpanProbe]::RunGrid($destination)
