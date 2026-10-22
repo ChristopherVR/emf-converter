@@ -13,8 +13,9 @@ import { gdiTextCoverage } from './gdi-text-render';
  * quarter pixel off (61 pixels per string; found with prefix copies of the glyph program, each drawn natively and
  * compared with the converter instruction by instruction: identical up to the first of the four SHPIX, 62 pixels after).
  * The rule (`HintedSize.plusShpixX`): a call's shifts apply; an inline shift applies to a point touched in one
- * direction, or in both after both IUPs; not to a point touched in neither (Courier New `R` 22, italic `a` 30) or in
- * both before the IUPs (Times New Roman Italic `T` 22), where applying it costs pixels in the pinned controls. It is only
+ * direction, or in both after both IUPs, or to a point touched in neither after both IUPs when the shift is at least half a
+ * pixel (Arial Bold `2` 40: 328 pixels to exact); not to smaller shifts of untouched points (Courier New `R` 22, 8/64) nor to a
+ * point touched in both before the IUPs (Times New Roman Italic `T` 22, 6/64), where applying them costs pixels in the pinned controls. It is only
  * on at an identity world scale: the uniformly scaled alignment controls (`W` and `AV`) get a few pixels worse otherwise.
  *
  * Everything below is native data: no capture that was exact without the rule is lost.
@@ -64,18 +65,18 @@ describe.skipIf(!windowsFonts())('SHPIX along x in GDI+ grayscale text', () => {
 		const [before, after, lost, pixels] = tally(coverage, (c) => [8 + (c.qx ?? 0) / 4, 48 + (c.qy ?? 0) / 4], 64, red);
 		expect(lost).toEqual([]);
 		// No glyph has more differing pixels than before; Arial Bold 40 `y` (32 origins per hint, two contrasts each) drops from
-		// 2,056 to 60 differing pixels in both hints (the remainder is the stem foot and the right arm's last pixels), `2` by 12.
+		// 2,056 to 60 differing pixels in both hints (the remainder is the stem foot and the right arm's last pixels), `2` (an untouched point shifted by half a pixel) from 328 to exact.
 		expect(Object.entries(pixels).filter(([, v]) => v[1] > v[0])).toEqual([]);
 		expect(Object.fromEntries(Object.entries(pixels).filter(([, v]) => v[0] !== v[1]))).toEqual({
-			'Arial/1/40/y/hint3': [2056, 60], 'Arial/1/40/y/hint4': [2056, 60], 'Arial/1/40/2/hint3': [328, 316], 'Arial/1/40/2/hint4': [328, 316],
+			'Arial/1/40/y/hint3': [2056, 60], 'Arial/1/40/y/hint4': [2056, 60], 'Arial/1/40/2/hint3': [328, 0], 'Arial/1/40/2/hint4': [328, 0],
 		});
-		expect([before, after]).toEqual([2528, 2528]);
+		expect([before, after]).toEqual([2528, 2592]);
 	}, 120000);
 
 	it('gains real glyphs and loses none (text-real-glyphs: 9 to 24 ppem, both gray hints)', () => {
 		const glyphs: Capture[] = load('text-real-glyphs.json.gz');
 		const [before, after, lost] = tally(glyphs, () => [6, 28], 40, (c) => new Uint8Array(Buffer.from(c.gray!, 'base64')));
 		expect(lost).toEqual([]);
-		expect([before, after]).toEqual([17014, 17367]);
+		expect([before, after]).toEqual([17014, 17409]);
 	}, 240000);
 });

@@ -1169,14 +1169,16 @@ export class HintedSize {
 	 * `y` (40 ppem), Arial `W` (12), Times New Roman Italic `T` (22) and Courier New `R` (22) and the 31,584 real glyphs
 	 * (see docs/outstanding-work.md): a shift made by a function call (not a generic per-size helper, `inSizeTweak`)
 	 * applies; one made inline in the glyph program applies to a point touched in exactly one direction, or in both once
-	 * both IUPs have run, and not to a point touched in neither, nor to one touched in both before the IUPs.
+	 * both IUPs have run, or in neither once both have run when it moves at least 32/64 px (Arial Bold `2`); smaller
+	 * shifts of untouched points (Courier New `R` 22) and points touched in both before the IUPs (Times New Roman Italic
+	 * `T` 22) are not applied: either costs pixels in the pinned controls.
 	 */
-	private plusShpixX(p: number): boolean {
+	private plusShpixX(p: number, amt: number): boolean {
 		if (!this.env.shpixX) return false;
 		if (this.callFrames.length > 0) return true;
 		const t = this.zp2.tags[p];
 		const tx = (t & TOUCH_X) !== 0, ty = (t & TOUCH_Y) !== 0;
-		return tx !== ty || (tx && this.iupx && this.iupy);
+		return tx !== ty || (this.iupx && this.iupy && (tx || Math.abs(amt) >= 32));
 	}
 
 	private shpixAlongY(p: number): boolean {
@@ -1719,7 +1721,7 @@ export class HintedSize {
 							!this.ctCompat() ||
 							this.inComposite ||
 							(gs.fvx === 0 && this.shpixAlongY(p)) ||
-							(gs.fvx !== 0 && !this.inSizeTweak() && (!this.env.grayscale || this.plusShpixX(p)));
+							(gs.fvx !== 0 && !this.inSizeTweak() && (!this.env.grayscale || this.plusShpixX(p, amt)));
 						if (keep) {
 							this.moveZp2(p, dx, dy, true);
 						}
