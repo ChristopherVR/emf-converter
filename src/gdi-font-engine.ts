@@ -753,6 +753,14 @@ export class RealizedFont implements GdiRealizedFont {
 			m = roundedRotationMatrix(m, this.ppem);
 		}
 		let o: Outline = this.mode === 'cleartype' && !m && !this.syntheticItalic ? this.ctOutline(index) : src;
+		// GDI's monochrome and grayscale bitmaps are rasterized from the coordinates the glyph program left, not re-anchored
+		// at a left phantom point it moved (Microsoft Sans Serif 7 at 13 px: pp1 SHPIXed by -28/64 pixel).
+		const shift = this.gdiPlus || m || this.mode === 'cleartype' ? 0 : src.rasterShift ?? 0;
+		if (shift !== 0) {
+			const xs = new Float64Array(o.xs.length);
+			for (let i = 0; i < xs.length; i++) xs[i] = o.xs[i] + shift;
+			o = { ...o, xs };
+		}
 		if (this.syntheticItalic || m || subX || subY) {
 			const base = o;
 			const n = base.xs.length;

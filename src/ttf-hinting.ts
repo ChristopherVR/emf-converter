@@ -361,6 +361,12 @@ export interface HintedGlyph {
 	endPts: number[];
 	/** Hinted advance width (26.6). */
 	advance: number;
+	/**
+	 * The fraction of a pixel (26.6) by which the program left the left phantom point off the grid: `xs` are relative to
+	 * that point, as GGO_NATIVE reports them, but GDI places the bitmap on the whole pixel nearest to it, so it is
+	 * rasterized from `xs + rasterShift`.
+	 */
+	rasterShift?: number;
 	/** Linearly scaled (unhinted) advance width (26.6). */
 	linearAdvance: number;
 	/** SCANCTRL outcome: whether dropout control is on for this glyph (meaningful when `scanSet`). */
@@ -529,8 +535,9 @@ export class HintedSize {
 		const { advance } = this.font.hMetrics(g);
 		const res = this.loadRecursive(g, 0);
 		const n = res.zone.n - 4;
-		const pp1x = res.zone.curX[n];
 		const pp2x = res.zone.curX[n + 1];
+		const pp1x = res.zone.curX[n];
+		const rasterShift = pp1x - round64(pp1x);
 		const xs = new Float64Array(n);
 		const ys = new Float64Array(n);
 		const onCurve = new Uint8Array(n);
@@ -545,6 +552,7 @@ export class HintedSize {
 			onCurve,
 			endPts: res.zone.endPts,
 			advance: pp2x - pp1x,
+			rasterShift,
 			linearAdvance: mulFix(advance, this.xScale),
 			scanControl: res.scanControl,
 			scanSet: res.scanSet,

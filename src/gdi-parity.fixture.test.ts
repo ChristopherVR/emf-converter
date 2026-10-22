@@ -447,7 +447,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('text-helv-hm13', 'wmf', 0), // measured 0.000%
 	fontCase('text-helv-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-helv-hp18', 'wmf', 0), // measured 0.000%
-	fontCase('text-msshelldlg-hm13', 'wmf', 0.00061), // measured 0.0571% (round 9; was 0.0900% ceiling) measured 0.057%
+	fontCase('text-msshelldlg-hm13', 'wmf', 0.00015), // measured 0.0139% (round 10: bitmap placed on the pixel nearest a moved left phantom point; 0.0556% in round 9)
 	fontCase('text-msshelldlg-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-msshelldlg-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('text-nosuchfacexyz-hm13', 'wmf', 0), // measured 0.000%
