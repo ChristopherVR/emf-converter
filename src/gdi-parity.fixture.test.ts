@@ -680,9 +680,9 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
  * ClearType fidelity (see the font engine group); single-bit text is exact.
  */
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
-	close('gpx-text-texture', 0.025), // measured 1.977%
-	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.0010), // measured 0.095% after the centre-relative per-vertex model (round 9, W5), 0.692% before; 0.978% before the unpainted outside pixels, 1.649% before the nested copies
+	exact('gpx-text-texture'), // 1.977% before SHPIX along x (round 10, R10-B)
+	close('gpx-text-lingrad', 0), // no pixel differs by more than 1 level (3 pixels); 1.996% before SHPIX along x (round 10, R10-B)
+	close('gpx-text-pathgrad', 0), // no pixel differs by more than 1 level (15 pixels; 0.095% above 8 levels before SHPIX along x, round 10, R10-B) after the centre-relative per-vertex model (round 9, W5), 0.692% before; 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0), // exact (GDI+ ClearType blend arithmetic); 2.802% 3.093% before the size-specific SHPIX tweaks
 ];
@@ -864,7 +864,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
  * 6.39% before, grayscale 6.64%).
  */
 const TEXT_CONTRAST_CASES: ParityCase[] = [
-	close('gpx-rec-textcontrast', 0.0042), // measured 0.413% (diagonal stems); 2.865% before the round 8 gray ClearType GETINFO; GDI+ hinting and shades
+	close('gpx-rec-textcontrast', 0.00085), // measured 0.082% (diagonal stems; 0.413% before SHPIX along x, round 10, R10-B); 2.865% before the round 8 gray ClearType GETINFO; GDI+ hinting and shades
 	close('gpx-rec-textcontrast-cleartype', 0.0012), // measured 0.112% (diagonal stems; GDI+ ClearType blend arithmetic); 3.331% 4.008% before the size-specific SHPIX tweaks
 ];
 
