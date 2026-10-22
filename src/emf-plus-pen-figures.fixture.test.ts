@@ -32,15 +32,15 @@ const EXPECTED: Record<string, number> = {
 	'gpx-pen-inset-round-aa': 0,
 	// Round 8: dashed (flat and round dash caps), nominal-width (0.5 to 1.6 px), PixelOffsetMode Half, and overlapping figures in one path.
 	'gpx-pen-inset-dash-aliased': 0,
-	'gpx-pen-inset-dash-aa': 55,
+	'gpx-pen-inset-dash-aa': 0,
 	'gpx-pen-inset-dashround-aliased': 75,
-	'gpx-pen-inset-dashround-aa': 226,
+	'gpx-pen-inset-dashround-aa': 200,
 	'gpx-pen-inset-thin-aliased': 0,
 	'gpx-pen-inset-thin-aa': 0,
 	'gpx-pen-inset-half-aliased': 0,
 	'gpx-pen-inset-half-aa': 0,
 	'gpx-pen-inset-multi-aliased': 2,
-	'gpx-pen-inset-multi-aa': 133,
+	'gpx-pen-inset-multi-aa': 4,
 	'gpx-pen-inset-multiwind-aliased': 0,
 	'gpx-pen-inset-multiwind-aa': 0,
 };

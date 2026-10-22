@@ -133,22 +133,22 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 	it('PixelOffsetMode Half and Default: the antialiased outline sits on the device pixels', () => {
 		const half = cases.filter((c) => c.kind === 'half');
 		expect(half.length).toBe(80);
-		expect(score(half)).toEqual({ aliased: [80, 0], aa: [78, 38] });
+		expect(score(half)).toEqual({ aliased: [80, 0], aa: [80, 0] });
 	});
 
 	it('dashed Inset pens with flat dash caps: the doubled pen clipped to the figure', () => {
 		const flat = cases.filter((c) => c.kind === 'dash' && c.dashCap === 0);
-		expect(score(flat)).toEqual({ aliased: [59, 1], aa: [56, 26] });
+		expect(score(flat)).toEqual({ aliased: [59, 1], aa: [59, 6] });
 	});
 
 	it('dashed Inset pens with round dash caps: the band along the inside of each edge, clipped', () => {
 		const round = cases.filter((c) => c.kind === 'dash' && c.dashCap === 2);
-		expect(score(round)).toEqual({ aliased: [38, 36], aa: [34, 244] });
+		expect(score(round)).toEqual({ aliased: [38, 36], aa: [38, 202] });
 	});
 
 	it('paths of overlapping closed figures: the even-odd interior is the clip', () => {
 		const multi = cases.filter((c) => c.kind === 'multi');
-		expect(score(multi)).toEqual({ aliased: [49, 721], aa: [6, 3251] });
+		expect(score(multi)).toEqual({ aliased: [49, 721], aa: [45, 1253] });
 	});
 
 	it('control: dashed Center pens, flat and round dash caps', () => {
