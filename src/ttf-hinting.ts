@@ -1158,13 +1158,6 @@ export class HintedSize {
 	}
 
 	/**
-	 * Whether backward-compatible ClearType (and the GDI+ grayscale text that runs the same interpreter) shifts a point by
-	 * a SHPIX along y: it must be touched in y, and a generic per-size helper function (`isSizeTweak`) stops shifting once
-	 * IUP[y] has run. Arial Bold's W calls the helper after both IUPs to lower its two inner apexes by two pixels and raise
-	 * its centre by one at 26 to 58 ppem; native leaves all three where the interpolation put them (private fonts
-	 * `build-shpix-order-fonts.py`: a touched stem top moved by the helper after IUP[y] stays, after IUP[x] alone it moves).
-	 */
-	/**
 	 * GDI+ grayscale text (`shpixX`): which SHPIX shifts along x native honours. Measured with prefix copies of Arial Bold
 	 * `y` (40 ppem), Arial `W` (12), Times New Roman Italic `T` (22) and Courier New `R` (22) and the 31,584 real glyphs
 	 * (see docs/outstanding-work.md): a shift made by a function call (not a generic per-size helper, `inSizeTweak`)
@@ -1181,6 +1174,13 @@ export class HintedSize {
 		return tx !== ty || (this.iupx && this.iupy && (tx || Math.abs(amt) >= 32));
 	}
 
+	/**
+	 * Whether backward-compatible ClearType (and the GDI+ grayscale text that runs the same interpreter) shifts a point by
+	 * a SHPIX along y: it must be touched in y, and a generic per-size helper function (`isSizeTweak`) stops shifting once
+	 * IUP[y] has run. Arial Bold's W calls the helper after both IUPs to lower its two inner apexes by two pixels and raise
+	 * its centre by one at 26 to 58 ppem; native leaves all three where the interpolation put them (private fonts
+	 * `build-shpix-order-fonts.py`: a touched stem top moved by the helper after IUP[y] stays, after IUP[x] alone it moves).
+	 */
 	private shpixAlongY(p: number): boolean {
 		return (this.zp2.tags[p] & TOUCH_Y) !== 0 && !(this.iupy && this.inSizeTweak());
 	}
