@@ -670,7 +670,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 	exact('gpx-pen-styles'),
 	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
 	close('gpx-text-lingrad', 0.14), // measured 10.98% (glyph shapes)
-	close('gpx-text-pathgrad', 0.0602), // measured 6.016% after the centre-relative per-vertex model (round 9, W5), 6.270% before (glyph shapes), 6.53% before the nested copies
+	close('gpx-text-pathgrad', 0.0624), // measured 6.238% on the ubuntu-24.04 20261018 runner image (host glyph shapes: the same commit measured 6.016% on 20261012); 6.016% after the centre-relative per-vertex model (round 9, W5), 6.270% before (glyph shapes), 6.53% before the nested copies
 ];
 
 /**
