@@ -29,6 +29,7 @@ import type { EmfPlusPathGradientShape, TransformMatrix } from './emf-types';
 
 /** A window wider than any surface: the spans are not cut. */
 const UNCLIPPED = 2 ** 30;
+/** The range a solved bilinear parameter may overshoot [0, 1] by: native constants (-0.02 and 1.02), read from gdiplus.dll `GpBilinearTransform::GetSourceParameter`. */
 const TOLERANCE_LOW = f32(-0.02);
 const TOLERANCE_HIGH = f32(1.02);
 
