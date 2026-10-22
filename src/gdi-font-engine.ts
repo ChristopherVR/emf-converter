@@ -1325,7 +1325,7 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 	const KY = vertical ? CLEARTYPE_ROWS : 1;
 	const WT = vertical ? CLEARTYPE_ROW_WEIGHTS : [1];
 	const WSUM = WT.reduce((a, c) => a + c, 0);
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, false, false, true, !truncate);
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, !truncate, !truncate, true, !truncate);
 	if (!r) {
 		return null;
 	}
