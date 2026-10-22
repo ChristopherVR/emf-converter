@@ -30,7 +30,12 @@
  *   at device (0, 0) and the steps per pixel in x and in y) are each rounded
  *   once, so every pixel is exact integer arithmetic from the origin (which
  *   decides which side of a period seam a pixel exactly on it falls, as in
- *   `grad-linear-skew-blend-*`). The colour is the knots either
+ *   `grad-linear-skew-blend-*`). The coefficients come from a float32 matrix chain read
+ *   from gdiplus.dll (`nativeRampInverse`): every operation rounded toward minus infinity, the brush
+ *   matrix (a brush recorded without one gets {@link defaultLinearBrushMatrix}) times the world-to-device matrix, the
+ *   ramp-to-rectangle matrix times that, inverted. All 8,196 steps of `linear-ramp-origin.json.gz` and
+ *   all 7,986 of `linear-ramp-world.json.gz` are exact (a double precision inverse missed 111 of the
+ *   first). The colour is the knots either
  *   side blended by the top 8 fraction bits: `(K[k] * (256 - f) + K[k+1] *
  *   f + 128) >> 8`. Interpolation is on premultiplied colours, as GDI+
  *   blends a translucent gradient (and as Canvas does).
@@ -46,6 +51,7 @@
  * @module emf-plus-linear-ramp
  */
 
+import { down32 } from './float32-down';
 import type {
 	EmfPlusGradientStop,
 	EmfPlusGradientWrapMode,
@@ -370,10 +376,104 @@ export function writeRampPremultiplied(table: LinearRampTable, u: number, out: U
 	}
 }
 
+/** GDI+'s `GpMatrix::MultiplyMatrix` (`a` then `b`, row vectors) in float32 rounded down. */
+function mulF32(a: readonly number[], b: readonly number[]): number[] {
+	return [
+		down32(down32(a[0] * b[0]) + down32(a[1] * b[2])),
+		down32(down32(a[0] * b[1]) + down32(a[1] * b[3])),
+		down32(down32(a[2] * b[0]) + down32(a[3] * b[2])),
+		down32(down32(a[2] * b[1]) + down32(a[3] * b[3])),
+		down32(down32(down32(a[4] * b[0]) + down32(a[5] * b[2])) + b[4]),
+		down32(down32(down32(a[4] * b[1]) + down32(a[5] * b[3])) + b[5]),
+	];
+}
+
+/** GDI+'s `GpMatrix::Invert` in float32 rounded down, or `null` for a singular matrix. */
+function invertF32(m: readonly number[]): number[] | null {
+	const det = down32(down32(m[0] * m[3]) - down32(m[1] * m[2]));
+	if (det === 0) {
+		return null;
+	}
+	const k = down32(1 / det);
+	const r = [
+		down32(m[3] * k),
+		down32(-m[1] * k),
+		down32(-m[2] * k),
+		down32(m[0] * k),
+		down32(down32(down32(m[5] * m[2]) - down32(m[4] * m[3])) * k),
+		down32(down32(down32(m[4] * m[1]) - down32(m[5] * m[0])) * k),
+	];
+	return r.every(Number.isFinite) ? r : null;
+}
+
+/**
+ * The matrix GDI+ gives a linear gradient brush that carries no transform of its own (an EMF+ brush object without the
+ * transform flag, which is what a brush created for a horizontal gradient is recorded as): the affine map of its rectangle's
+ * corners onto themselves (`CalcLinearGradientXform` through `GpMatrix::InferAffineMatrix`, read from
+ * gdiplus.dll, float32 rounded down). Mathematically the identity, it comes out a hair under one (`0.99999994` for a 50 x 60
+ * rectangle) and with sub-1e-7 off-diagonal terms, which moves the pixels that lie within a few units of a 16.16 table
+ * fraction boundary; matches the managed brush's `Transform` for 69 rectangles of every size and sign.
+ */
+export function defaultLinearBrushMatrix(rect: EmfPlusRectF): number[] {
+	const rx = Math.fround(rect.x);
+	const ry = Math.fround(rect.y);
+	const rw = Math.fround(rect.w);
+	const rh = Math.fround(rect.h);
+	const a = [rx, ry];
+	const b = [down32(rx + rw), ry];
+	const c = [rx, down32(ry + rh)];
+	const det = down32(down32(down32(down32(rw + rx) * down32(ry + rh)) - down32(ry * rx)) + down32(down32(-rh * rx) - down32(ry * rw)));
+	if (Math.abs(det) < 1.1920929e-7) {
+		return [1, 0, 0, 1, 0, 0];
+	}
+	const inv = down32(1 / det);
+	const d1 = down32(down32(down32(rx + rw) * down32(ry + rh)) - down32(rx * ry));
+	const k1 = down32(-rx * rh);
+	const k2 = down32(-ry * rw);
+	return [
+		down32(down32(down32(rh * b[0]) + down32(-rh * a[0])) * inv),
+		down32(down32(down32(rh * b[1]) + down32(-rh * a[1])) * inv),
+		down32(down32(down32(rw * c[0]) + down32(-rw * a[0])) * inv),
+		down32(down32(down32(rw * c[1]) + down32(-rw * a[1])) * inv),
+		down32(down32(down32(down32(k1 * b[0]) + down32(d1 * a[0])) + down32(k2 * c[0])) * inv),
+		down32(down32(down32(down32(k1 * b[1]) + down32(d1 * a[1])) + down32(k2 * c[1])) * inv),
+	];
+}
+
+/**
+ * The matrix from device pixels to ramp coordinates (16.16 table intervals) the way GDI+ forms it
+ * (`DpOutputLinearGradientSpan`, read from gdiplus.dll with `GpMatrix::MultiplyMatrix` and `Invert`): the brush matrix
+ * times the world-to-device matrix, then the ramp-to-rectangle matrix times that, then inverted, every operation a float32
+ * one rounded toward minus infinity. Confirmed on the 8,196 steps of `linear-ramp-origin.json.gz` and the 7,986 steps
+ * of `linear-ramp-world.json.gz` (a world rotation, scale and translation): no differing pixel, against 111 steps
+ * for a double precision inverse (and 153 for the same chain rounded to nearest).
+ */
+function nativeRampInverse(
+	rect: EmfPlusRectF,
+	brush: readonly number[],
+	device: readonly number[],
+	intervals: number,
+): number[] | null {
+	const x = Math.fround(rect.x);
+	const y = Math.fround(rect.y);
+	const w = Math.fround(rect.w);
+	const h = Math.fround(rect.h);
+	const span = intervals * FIX_ONE;
+	const right = down32(x + w);
+	const bottom = down32(y + h);
+	const sx = down32(down32(right - x) / span);
+	const sy = down32(down32(bottom - y) / span);
+	const ramp = [sx, 0, 0, sy, down32(right - down32(sx * span)), down32(bottom - down32(sy * span))];
+	const bd = mulF32(brush.map((v) => Math.fround(v)), device.map((v) => Math.fround(v)));
+	return invertF32(mulF32(ramp, bd));
+}
+
 /**
  * The per-device-pixel colour of a linear gradient brush, computed exactly
  * as GDI+ rasterises it (see the module doc). `device` is the world-to-device matrix and
  * `halfPixel` is true under a `PixelOffsetMode` that samples pixel centres.
+ * `canvasShift` is the whole-pixel offset of the canvas from the native device (the sampler is asked for canvas pixels, while GDI+
+ * forms the matrix, and so rounds it, for the native device pixels).
  * Returns a sampler with the {@link DeviceBrushSampler} signature, or `null`
  * for a degenerate brush. Pure apart from writing `out`.
  */
@@ -382,39 +482,27 @@ export function linearRampSampler(
 	device: TransformMatrix,
 	halfPixel: boolean,
 	truncate = false,
+	canvasShift: { x: number; y: number } = { x: 0, y: 0 },
 ): DeviceRampSampler | null {
 	const rect = grad.rect;
 	const ramp = linearRampOf(grad);
 	if (!rect || !ramp || !(Math.abs(rect.w) > 1e-9)) {
 		return null;
 	}
-	const b = grad.transform ?? [1, 0, 0, 1, 0, 0];
-	const full: TransformMatrix = [
-		device[0] * b[0] + device[2] * b[1],
-		device[1] * b[0] + device[3] * b[1],
-		device[0] * b[2] + device[2] * b[3],
-		device[1] * b[2] + device[3] * b[3],
-		device[0] * b[4] + device[2] * b[5] + device[4],
-		device[1] * b[4] + device[3] * b[5] + device[5],
-	];
-	const det = full[0] * full[3] - full[1] * full[2];
-	if (!Number.isFinite(det) || Math.abs(det) < 1e-12) {
-		return null;
-	}
-	// Brush-space x of device point (X, Y): row 0 of the inverse matrix.
-	const ia = full[3] / det;
-	const ic = -full[2] / det;
-	const ie = -(ia * full[4] + ic * full[5]);
 	const table = buildLinearRampTable(ramp, rect);
 	const n = table.intervals;
-	const scale = n / rect.w;
+	const inv = nativeRampInverse(rect, grad.transform ?? defaultLinearBrushMatrix(rect), device, n);
+	if (!inv) {
+		return null;
+	}
 	const off = halfPixel ? 0.5 : 0;
 	// GDI+ evaluates the device-to-ramp mapping as a 16.16 fixed-point
 	// affine form anchored at device (0, 0): each coefficient is rounded
-	// once, so a pixel's coordinate is exact integer arithmetic from there.
-	const du = Math.round(ia * scale * FIX_ONE);
-	const dv = Math.round(ic * scale * FIX_ONE);
-	const u00 = Math.round((ia * off + ic * off + ie - rect.x) * scale * FIX_ONE);
+	// once (the float32 sum with one half, rounded down, then floored), so a
+	// pixel's coordinate is exact integer arithmetic from there.
+	const du = Math.floor(down32(inv[0] + 0.5));
+	const dv = Math.floor(down32(inv[2] + 0.5));
+	const u00 = Math.floor(down32(inv[4] + (inv[0] + inv[2]) * off + 0.5)) - canvasShift.x * du - canvasShift.y * dv;
 	const sampler = (x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray): void => {
 		for (let j = 0; j < h; j++) {
 			let u = u00 + x0 * du + (y0 + j) * dv;
