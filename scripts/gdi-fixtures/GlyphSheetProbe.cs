@@ -19,6 +19,9 @@ public static class GlyphSheetProbe {
     [DllImport("gdi32.dll", CharSet=CharSet.Unicode)] static extern uint GetGlyphOutline(IntPtr dc, uint code, uint format, out Metrics metrics, uint length, byte[] buffer, ref Matrix matrix);
 
     
+    /** GGO_BITMAP (1) or GGO_GRAY4_BITMAP (5) for the "data" field. */
+    public static uint BitmapFormat = 1;
+
     /** One capture per face, signed height and character: GGO_BITMAP and GGO_NATIVE at NONANTIALIASED_QUALITY. */
     public static void Run(string path, string[] families, int[] sizes, int weight, int italic, string chars) {
         using (var file=File.Create(path))
@@ -43,17 +46,17 @@ public static class GlyphSheetProbe {
             foreach (char code in text) {
                 if(!seen.Add(code))continue;
                 var matrix=new Matrix();matrix.xx.value=matrix.yy.value=1;Metrics metrics;
-                uint length=GetGlyphOutline(dc,code,1,out metrics,0,null,ref matrix);
+                uint length=GetGlyphOutline(dc,code,BitmapFormat,out metrics,0,null,ref matrix);
                 if(length==uint.MaxValue)throw new Exception("GetGlyphOutline failed");
                 var data=new byte[length];
-                if(length>0&&GetGlyphOutline(dc,code,1,out metrics,length,data,ref matrix)!=length)throw new Exception("Bitmap capture failed");
+                if(length>0&&GetGlyphOutline(dc,code,BitmapFormat,out metrics,length,data,ref matrix)!=length)throw new Exception("Bitmap capture failed");
                 // GGO_NATIVE: the hinted outline the bitmap is scan converted from.
                 Metrics nm;
                 uint nlen=GetGlyphOutline(dc,code,2,out nm,0,null,ref matrix);
                 var ndata=new byte[nlen==uint.MaxValue?0:nlen];
                 if(ndata.Length>0&&GetGlyphOutline(dc,code,2,out nm,nlen,ndata,ref matrix)!=nlen)throw new Exception("Outline capture failed");
                 if(!first)writer.Write(',');first=false;
-                writer.Write("{\"face\":\""+family+"\",\"height\":"+height+",\"width\":"+width+",\"weight\":"+weight+",\"italic\":"+(italic!=0?"true":"false")+",\"code\":"+(int)code+",\"x\":"+metrics.origin.x+",\"y\":"+metrics.origin.y+",\"w\":"+metrics.width+",\"h\":"+metrics.height+",\"adv\":"+metrics.advanceX+",\"data\":\""+Convert.ToBase64String(data)+"\",\"outline\":\""+Convert.ToBase64String(ndata)+"\"}");
+                writer.Write("{\"face\":\""+family+"\",\"height\":"+height+",\"width\":"+width+",\"weight\":"+weight+",\"italic\":"+(italic!=0?"true":"false")+",\"format\":"+BitmapFormat+",\"code\":"+(int)code+",\"x\":"+metrics.origin.x+",\"y\":"+metrics.origin.y+",\"w\":"+metrics.width+",\"h\":"+metrics.height+",\"adv\":"+metrics.advanceX+",\"data\":\""+Convert.ToBase64String(data)+"\",\"outline\":\""+Convert.ToBase64String(ndata)+"\"}");
             }
         } finally { SelectObject(dc,old); DeleteObject(font); }
     }
