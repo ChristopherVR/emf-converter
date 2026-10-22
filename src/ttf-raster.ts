@@ -1286,9 +1286,11 @@ const GRAY_OVERSAMPLE = 4;
  * pixel box (floor/ceil of the control box) and `hi` the 1-bit sample
  * bitmap covering it, `kx * width` by `ky * height`. `dropout` is the
  * scan converter's dropout mode (2 = none); `stubOvershoot` keeps the
- * FreeType exemption that stops a tall overshoot from counting as a stub.
+ * FreeType exemption that stops a tall overshoot from counting as a stub. `roundImpliedPoints` rounds the on-curve point
+ * implied between two off-curve points to the 26.6 grid of the oversampled outline, halves up, as GDI does (see
+ * {@link Raster.roundImpliedPoints}; ClearType's scan converter works on the 6x outline).
  */
-export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true, fineArcs = false, closedTies = false, squareStubs = false): { box: PixelBox; hi: GlyphBitmap } | null {
+export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true, fineArcs = false, closedTies = false, squareStubs = false, roundImpliedPoints = false): { box: PixelBox; hi: GlyphBitmap } | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -1317,7 +1319,7 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, d
 		onCurve: o.onCurve,
 		endPts: o.endPts,
 	};
-	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot, false, false, false, fineArcs, closedTies, squareStubs);
+	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot, false, roundImpliedPoints, false, fineArcs, closedTies, squareStubs);
 	return hi ? { box, hi } : null;
 }
 
