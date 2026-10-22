@@ -79,14 +79,14 @@ describe('step count under rotated, scaled and sheared transforms', () => {
 
 	// Exact pixels among the native pixels, per category; a wrong step count leaves a capture near 45%
 	// (over the 48 rotation, scale and shear captures the device-bounding-box count scored 61% and the untransformed bounds 74%).
-	// 15 of the 156,236 native pixels are left unpainted by the sampler (boundary pixels at a vertex row); every pixel it paints is exact.
+	// Every one of the 156,238 native pixels is exact (round 11: the ramp and quads of gdiplus.dll; 15 pixels at vertex rows were unpainted before).
 	// [exact pixels, native pixels, lowest per-capture share in thousandths]
 	const pinned: Record<string, [number, number, number]> = {
-		rotation: [59356, 59360, 999],
+		rotation: [59360, 59360, 1000],
 		scale: [7798, 7798, 1000],
 		shear: [14848, 14848, 1000],
-		'rotation and scale': [14846, 14848, 999],
-		matrices: [59373, 59382, 995],
+		'rotation and scale': [14848, 14848, 1000],
+		matrices: [59382, 59382, 1000],
 	};
 
 	it('reproduces every capture to the step', () => {
