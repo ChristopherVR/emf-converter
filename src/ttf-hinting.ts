@@ -173,6 +173,8 @@ export class Zone {
 	curY: Float64Array;
 	tags: Uint8Array;
 	endPts: number[];
+	/** The left phantom point where the program found it (before any instruction moved it). */
+	pp1Init?: number;
 	/**
 	 * Compatible-width ClearType bookkeeping (allocated on first use). The stem shifts are applied to `curX` as soon as a
 	 * pair is found, so the rest of the program runs on the shifted outline: `applied` is the shift each point carries in
@@ -368,6 +370,12 @@ export interface HintedGlyph {
 	endPts: number[];
 	/** Hinted advance width (26.6). */
 	advance: number;
+	/**
+	 * The fraction of a pixel (26.6) by which the program left the left phantom point off the grid: `xs` are relative to
+	 * that point, as GGO_NATIVE reports them, but GDI places the bitmap on the whole pixel nearest to it, so it is
+	 * rasterized from `xs + rasterShift`.
+	 */
+	rasterShift?: number;
 	/** Linearly scaled (unhinted) advance width (26.6). */
 	linearAdvance: number;
 	/** SCANCTRL outcome: whether dropout control is on for this glyph (meaningful when `scanSet`). */
@@ -538,8 +546,11 @@ export class HintedSize {
 		const { advance } = this.font.hMetrics(g);
 		const res = this.loadRecursive(g, 0);
 		const n = res.zone.n - 4;
-		const pp1x = res.zone.curX[n];
 		const pp2x = res.zone.curX[n + 1];
+		const pp1x = res.zone.curX[n];
+		// The bitmap is anchored at the left phantom point's starting position plus the whole pixels the program moved it by.
+		const init = res.zone.pp1Init ?? pp1x;
+		const rasterShift = pp1x - (init + round64(pp1x - init));
 		const xs = new Float64Array(n);
 		const ys = new Float64Array(n);
 		const onCurve = new Uint8Array(n);
@@ -554,6 +565,7 @@ export class HintedSize {
 			onCurve,
 			endPts: res.zone.endPts,
 			advance: pp2x - pp1x,
+			rasterShift,
 			linearAdvance: mulFix(advance, this.xScale),
 			scanControl: res.scanControl,
 			scanSet: res.scanSet,
@@ -745,17 +757,33 @@ export class HintedSize {
 			return hinted;
 		}
 		if (this.hinting && !metricsFrom) {
-			zone.curX[total] = round64(zone.curX[total]);
-			zone.curX[total + 1] = round64(zone.curX[total + 1]);
 			this.hintingGlyph = g;
+			this.roundHorizontalPhantoms(zone, total, round64);
 			this.compatAdvance(zone, total + 1);
 			zone.curY[total + 2] = round64(zone.curY[total + 2]);
 			zone.curY[total + 3] = round64(zone.curY[total + 3]);
 		}
+		zone.pp1Init = zone.curX[total];
 		return { zone, ...lastScan };
 	}
 
 	private hintingGlyph = 0;
+
+	/**
+	 * Places the horizontal phantom points `zone.curX[a]` (left) and `zone.curX[a + 1]` (advance) before the program runs.
+	 * GDI's own interpreter leaves the left point where scaling put it and rounds the advance, so `pp2 = pp1 + round(width)`:
+	 * Times New Roman Italic < and > (lsb 150 against xMin 39 and 37 units) start 39/64 pixel off the grid and native
+	 * GGO_NATIVE shows it from the first instruction on (`prefix-timesi`, 58 prefixes at 11 and 17 px). Every other
+	 * interpreter rounds both points.
+	 */
+	private roundHorizontalPhantoms(zone: Zone, a: number, round: (v: number) => number): void {
+		if (this.gdiMath && !this.env.clearType) {
+			zone.curX[a + 1] = zone.curX[a] + round64(zone.curX[a + 1] - zone.curX[a]);
+			return;
+		}
+		zone.curX[a] = round(zone.curX[a]);
+		zone.curX[a + 1] = round(zone.curX[a + 1]);
+	}
 
 	/** Under compatible-width ClearType the advance phantom point is held at the black-and-white advance. */
 	private compatAdvance(zone: Zone, k: number): void {
@@ -775,12 +803,12 @@ export class HintedSize {
 		if (this.hinting && roundPhantoms) {
 			// ClearType rounds the horizontal phantoms on its 1/16-pixel grid.
 			const rx = this.env.clearType ? (v: number): number => Math.floor((v + 2) / 4) * 4 : round64;
-			zone.curX[n - 4] = rx(zone.curX[n - 4]);
-			zone.curX[n - 3] = rx(zone.curX[n - 3]);
+			this.roundHorizontalPhantoms(zone, n - 4, rx);
 			this.compatAdvance(zone, n - 3);
 			zone.curY[n - 2] = round64(zone.curY[n - 2]);
 			zone.curY[n - 1] = round64(zone.curY[n - 1]);
 		}
+		zone.pp1Init = zone.curX[n - 4];
 		if (!this.glyphHinting || instructions.length === 0) {
 			return { zone, ...this.defaultScan };
 		}
