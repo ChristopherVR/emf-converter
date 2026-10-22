@@ -65,7 +65,7 @@ const CLAMP_EDGE_BIAS = 1e-4;
  * at (`x0`, `y0`) into `out` (non-premultiplied RGBA, row-major, pre-zeroed;
  * pixels the brush does not paint are left transparent).
  */
-export type DeviceBrushSampler = ((x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void) & {
+export type DeviceBrushSampler = ((x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray, coverage?: Uint8ClampedArray) => void) & {
 	/** The same pixels as premultiplied RGBA, for a brush that holds them that way (a linear gradient under SourceCopy). */
 	premultiplied?: (x0: number, y0: number, w: number, h: number, out: Uint8ClampedArray) => void;
 };
@@ -110,12 +110,12 @@ export function textureSampler(
 	if (width <= 0 || height <= 0) {
 		return null;
 	}
-	const inv = invertTextureMatrix(mulMatrix(device, texture.transform ?? IDENTITY));
+	const inv = invertTextureMatrix(mulMatrix(device, texture.transform ?? IDENTITY), halfPixel);
 	if (!inv) {
 		return null;
 	}
-	return (x0, y0, w, h, out) => {
-		writeTextureRect(inv, width, height, rgba, wrapMode, halfPixel, x0, y0, w, h, out);
+	return (x0, y0, w, h, out, coverage) => {
+		writeTextureRect(inv, width, height, rgba, wrapMode, x0, y0, w, h, out, coverage);
 	};
 }
 
@@ -409,7 +409,14 @@ export function deviceBrushSampler(
  * exactly (solid, hatch; a linear gradient in SVG output).
  */
 export function brushSampler(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): DeviceBrushSampler | null {
-	const device = plusWorldMatrix(rCtx);
+	let device = plusWorldMatrix(rCtx);
+	// GDI+ forms a brush matrix for the native device pixels; the canvas is shifted from them by the whole-pixel origin of the
+	// bounds, which the linear ramp (rounded in float32) must not see inside its matrix.
+	const base = rCtx.baseTransform;
+	const canvasShift =
+		base && base[1] === 0 && base[2] === 0 && Number.isInteger(base[4]) && Number.isInteger(base[5]) && !rCtx.ext?.tsDevice
+			? { x: base[4], y: base[5] }
+			: { x: 0, y: 0 };
 	// SVG keeps a hatch brush a vector <pattern> (brushPaint).
 	if (obj.hatch && !isSvgContext(rCtx.ctx)) {
 		const inv = invertAffine(deviceToCanvasMatrix(rCtx));
@@ -427,7 +434,10 @@ export function brushSampler(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): DeviceB
 	// GDI+'s table knots already, see effectiveLinearStops); a raster fill
 	// reproduces GDI+'s fixed-point per-pixel interpolation as well.
 	if (obj.gradient && obj.gradient.type === 'linear' && !isSvgContext(rCtx.ctx)) {
-		return linearRampSampler(obj.gradient, device, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), rCtx.ext?.compositingMode === 1);
+		if (canvasShift.x !== 0 || canvasShift.y !== 0) {
+			device = [device[0], device[1], device[2], device[3], device[4] - canvasShift.x, device[5] - canvasShift.y];
+		}
+		return linearRampSampler(obj.gradient, device, isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0), rCtx.ext?.compositingMode === 1, canvasShift);
 	}
 	return null;
 }
@@ -1004,7 +1014,7 @@ export function compositeBrushCoverage(
 		return false;
 	}
 	const data = new Uint8ClampedArray(box.w * box.h * 4);
-	sampler(box.x, box.y, box.w, box.h, data);
+	sampler(box.x, box.y, box.w, box.h, data, channels === 1 ? coverage : undefined);
 	if (channels === 1 && rCtx.ext?.compositingMode === 1 && typeof ctx.getImageData === 'function') {
 		const dst = canvasGetImageData(ctx, box.x, box.y, box.w, box.h).data;
 		let premultiplied: Uint8ClampedArray | null = null;

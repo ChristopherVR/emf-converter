@@ -13,19 +13,15 @@ import type { EmfPlusLinearGradient, EmfPlusLinearRamp, EmfPlusRectF } from './e
  * `u00` of the converter's affine form `u = u00 + x du + y dv` to a unit at every step, without trusting any
  * model of it. Four brushes: the `gpx-lin-sigma` one (rectangle 5,0,150,30, 60 degrees, `SetSigmaBellShape(0.35, 0.9)`),
  * the same without the bell shape, the bell shape at 0 degrees, and a 30 degree brush of 110 by 40 (the matrix GDI+
- * builds for each step is in the capture). With the converter's rounding of `u00` the sweeps differ from native in
- * 109, 59, 0 and 21 of 983,520 pixels each, and what differs is always the same thing:
+ * builds for each step is in the capture).
  *
- * - `du` and `dv` are right (a single unit on `u00` repairs every pixel of the step, 480 of 480);
- * - the correction is +1 and never -1, on 66, 26, 0 and 19 of the 2,049 steps, and the fractional part of the
- *   converter's unrounded `u00` there is anywhere from 0.05 to 0.95 (sigma sweep) or 0.32 to 0.50 (the others), so no
- *   constant offset of the origin separates them (the 66 sigma steps need an offset of at least 0.83 of a unit while the
- *   steps that need no correction allow less than 0.0005);
- * - the 0 degree brush, whose matrix has no translation to round, never needs it, and the share of steps that do
- *   follows `N / w * 65536` (the 60 degree brush with 64 intervals: 3.2%, with 16: 1.3%; the 30 degree one: 0.9%);
- * - evaluating the inverse matrix in single precision (any order) or the closed form from the angle matches fewer
- *   steps than the double precision one (1,838 of 2,049 for the best single precision form against 1,983).
- * It is a sub-unit offset of the rotated brush's translation that the rounding rule set does not produce.
+ * Round 9 left the converter's double precision origin wrong on 66, 26, 0 and 19 of the 2,049 steps of the four sweeps
+ * (109, 59, 0 and 21 of 983,520 pixels each), always by one unit upward, with no single-precision form that fitted.
+ * Round 11 read `DpOutputLinearGradientSpan` in gdiplus.dll: the coefficients come from the brush matrix, the
+ * ramp-to-rectangle matrix (`(right - x) / (N * 65536)` and `right - m * (N * 65536)` from the float32 rectangle) and their
+ * product, inverted, in float32 with every product, sum and quotient rounded toward minus infinity (rounding to nearest in every operation
+ * leaves 153 steps wrong, and rounding any one stage of the chain to nearest leaves 1 to 69). All four sweeps are
+ * now exact on every pixel; `linear-ramp-world.json.gz` repeats the experiment under a world transform.
  */
 interface Scene {
 	name: string; w: number; rows: number[]; first: number; last: number;
@@ -102,13 +98,13 @@ function analyse(scene: Scene): { cells: number; wrongCells: number; stepsWrong:
 
 describe('linear gradient ramp origin (native, 2^-16 pixel sweeps)', () => {
 	const expected: Record<string, { wrongCells: number; stepsWrong: number }> = {
-		sigma: { wrongCells: 109, stepsWrong: 66 },
-		plain60: { wrongCells: 59, stepsWrong: 26 },
+		sigma: { wrongCells: 0, stepsWrong: 0 },
+		plain60: { wrongCells: 0, stepsWrong: 0 },
 		sigma0: { wrongCells: 0, stepsWrong: 0 },
-		a30: { wrongCells: 21, stepsWrong: 19 },
+		a30: { wrongCells: 0, stepsWrong: 0 },
 	};
 	for (const scene of scenes) {
-		it(`${scene.name}: the converter differs on at most ${expected[scene.name].wrongCells} cells and a +1 on the origin repairs each step`, () => {
+		it(`${scene.name}: the converter is exact on every cell`, () => {
 			expect(scene.last - scene.first + 1).toBe(2049);
 			const r = analyse(scene);
 			expect(r.cells).toBe(983520);
@@ -119,82 +115,4 @@ describe('linear gradient ramp origin (native, 2^-16 pixel sweeps)', () => {
 			expect(Object.keys(r.shifts).every((s) => s === '1')).toBe(true);
 		});
 	}
-});
-
-/**
- * Round 9 (W5): the origin from the inverse of the composite `Scale(w / N, 1) Translate(rect.x, 0) Transform` in single precision, products and
- * sums rounded toward minus infinity and the determinant and quotients to nearest. A step is right when the origin it gives is one that makes
- * every compared pixel of the step exact (a step that the origin does not change counts as right for either). The converter's double precision
- * origin is right on 8,085 of the 8,196 steps; this one on 8,169, but two steps of the 0 degree brush that the converter has exact go wrong,
- * so it is only a measurement (the exact rule is still open).
- */
-describe('linear gradient ramp origin from a single precision composite inverse (measurement, not used)', () => {
-	const f32 = new Float32Array(1);
-	const u32 = new Uint32Array(f32.buffer);
-	const down = (x: number): number => {
-		const r = Math.fround(x);
-		if (r <= x) return r;
-		f32[0] = r;
-		if (r > 0) u32[0] -= 1;
-		else if (r < 0) u32[0] += 1;
-		else u32[0] = 0x80000001;
-		return f32[0];
-	};
-	it('is right on 8,169 of 8,196 steps against 8,085 for the converter', () => {
-		const px = new Uint8ClampedArray(4);
-		let converterRight = 0;
-		let compositeRight = 0;
-		let total = 0;
-		const wrongByScene: Record<string, number> = {};
-		for (const scene of scenes) {
-			const data = Buffer.from(scene.rgb, 'base64');
-			const first = gradientOf(scene, 0);
-			const table = buildLinearRampTable(linearRampOf(first)!, first.rect!);
-			const intervals = table.intervals;
-			for (let i = 0; i <= scene.last - scene.first; i++) {
-				const grad = gradientOf(scene, i);
-				const bd = scene.matrices[i];
-				const b = bd.map(Math.fround);
-				const rect = grad.rect!;
-				const scale = intervals / rect.w;
-				const det0 = bd[0] * bd[3] - bd[1] * bd[2];
-				const ia0 = bd[3] / det0;
-				const ic0 = -bd[2] / det0;
-				const ie0 = -(ia0 * bd[4] + ic0 * bd[5]);
-				const du = Math.round(ia0 * scale * FIX);
-				const dv = Math.round(ic0 * scale * FIX);
-				const u00 = Math.round((ie0 - rect.x) * scale * FIX);
-				const rightFor = (candidate: number): boolean => {
-					for (let r = 0; r < scene.rows.length; r++) {
-						for (let x = 0; x < scene.w; x++) {
-							writeRampColor(table, foldRampCoordinate(candidate + x * du + scene.rows[r] * dv, intervals, 'clamp'), px, 0, false);
-							const o = ((i * scene.rows.length + r) * scene.w + x) * 3;
-							if (data[o] !== px[0] || data[o + 1] !== px[1] || data[o + 2] !== px[2]) return false;
-						}
-					}
-					return true;
-				};
-				// K = Scale(w / N, 1) Translate(rect.x, 0) Transform, its inverse's translation is the origin in units of the ramp
-				const sc = Math.fround(rect.w / intervals);
-				const rx = Math.fround(rect.x);
-				const k0 = down(sc * b[0]);
-				const k1 = down(sc * b[1]);
-				const k4 = down(down(rx * b[0]) + b[4]);
-				const k5 = down(down(rx * b[1]) + b[5]);
-				const det = Math.fround(down(k0 * b[3]) - down(k1 * b[2]));
-				const ia = Math.fround(b[3] / det);
-				const ic = Math.fround(-b[2] / det);
-				const ie = -down(down(ia * k4) + down(ic * k5));
-				const composite = Math.round(ie * FIX);
-				total++;
-				if (rightFor(u00)) converterRight++;
-				if (rightFor(composite)) compositeRight++;
-				else wrongByScene[scene.name] = (wrongByScene[scene.name] ?? 0) + 1;
-			}
-		}
-		expect(total).toBe(8196);
-		expect(converterRight).toBe(8085);
-		expect(compositeRight).toBe(8169);
-		expect(wrongByScene).toEqual({ sigma: 13, plain60: 8, sigma0: 2, a30: 4 });
-	});
 });
