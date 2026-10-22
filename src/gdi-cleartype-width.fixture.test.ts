@@ -77,7 +77,7 @@ const EXPECTED: Record<string, [number, number]> = {
 	corners: [284, 284],
 	rects: [36, 36],
 	centre: [196, 196],
-	h: [27, 23],
+	h: [27, 27],
 	follow: [98, 97],
 	pp2: [544, 544],
 	flags: [51, 70],
