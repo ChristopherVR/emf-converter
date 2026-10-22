@@ -171,9 +171,10 @@ describe('GDI monochrome bitmaps of polygon fonts with hinting machinery that ne
 });
 
 describe('GDI grayscale bitmaps of the private polygon fonts (GetGlyphOutline GGO_GRAY4_BITMAP)', () => {
-	// polygons has no SCANCTRL: GDI draws simple dropouts up to 32 ppem (3,852 of 4,096 would match), the engine none yet.
+	// GDI's scan converter (`ttf-msscan.ts`) reproduces every bitmap: polygons has no SCANCTRL and gets simple dropouts up to 32 ppem,
+	// the others run SCANCTRL / SCANTYPE 0, 1, 4 and 5 (round 11; before it 517, 3,852, 3,747, 4,027 and 4,045 of 4,096 at 8 to 32 ppem).
 	const expected: Record<string, [number, number]> = {
-		polygons: [517, 1019], st0: [3852, 967], st4: [3747, 945], st1: [4027, 1009], st5: [4045, 1009],
+		polygons: [4096, 1024], st0: [4096, 1024], st4: [4096, 1024], st1: [4096, 1024], st5: [4096, 1024],
 	};
 	it.each(Object.keys(expected))('%s', (set) => {
 		expect(gdiExact(set, 5, true)).toEqual([expected[set][0], 4096]);

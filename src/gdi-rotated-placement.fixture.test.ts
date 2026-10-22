@@ -66,14 +66,17 @@ describe.skipIf(!windowsFonts())('rotated glyph placement against native TextOut
 	it('places every glyph of a recorded (Dx) rotated run on its native origin', () => {
 		const r = classify(load('rotated-placement-dx.json.gz'), true);
 		expect(r.placement).toBe(0);
-		expect(r.exact).toBeGreaterThanOrEqual(3731);
+		expect(r.exact).toBeGreaterThanOrEqual(4179); // 3,731 before the native scan converter (round 11)
 		expect(r.glyphs).toBe(4200);
 	}, 120_000);
 
-	it('places a directly drawn rotated run from unrounded linear advances (32 of 4,200 glyphs off by a pixel, 2,100 before; rotated glyph shapes exact for 3,695)', () => {
+	it('places a directly drawn rotated run from unrounded linear advances (33 of 4,200 glyphs off by a pixel, 2,100 before; 4,142 exact, 3,695 before the native scan converter)', () => {
 		const r = classify(load('rotated-placement.json.gz'), false);
-		expect(r.placement).toBeLessThanOrEqual(32);
-		expect(r.exact).toBeGreaterThanOrEqual(3695);
+		// One glyph whose shape was wrong (so counted under `raster`) is now right and shows its pixel of misplacement: the
+		// glyphs that are not exact fall from 505 to 58 (placement 32 -> 33, raster 473 -> 25).
+		expect(r.placement).toBeLessThanOrEqual(33);
+		expect(r.placement + r.raster).toBeLessThanOrEqual(58);
+		expect(r.exact).toBeGreaterThanOrEqual(4142);
 	}, 120_000);
 });
 
