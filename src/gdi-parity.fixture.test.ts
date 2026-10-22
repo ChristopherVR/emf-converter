@@ -572,10 +572,10 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 	// The axis-aligned HighQuality draws (measured integer cubic weights, destination-space reductions, 16.16 phases):
 	// every channel within one level and none beyond it (before the cubic table and the unsnapped phase offsets:
 	// 41 pixels beyond one level on HighQualityBilinear, 10 on HighQualityBicubic and High, 5 under Half, 6 under
-	// HighSpeed; at zero tolerance 1,145 and 1,084 pixels off on the HighQualityBilinear and HighQualityBicubic fixtures, 34 and 121 before round 8, now 7 and 12; Half and HighSpeed now 0).
+	// HighSpeed; at zero tolerance 1,145 and 1,084 pixels off on the HighQualityBilinear and HighQualityBicubic fixtures, 34 and 121 before round 8, then 7 and 12, and since round 10 (the start-position shift of an edge beyond 64 pixels) 1 and 0, the High and HighQualityBicubic fixtures exact; Half and HighSpeed 0).
 	levelExact('gpx-image-highqualitybilinear'),
-	levelExact('gpx-image-highqualitybicubic'),
-	levelExact('gpx-image-high'),
+	exact('gpx-image-highqualitybicubic'),
+	exact('gpx-image-high'),
 	exact('gpx-image-pom-half-highqualitybicubic'),
 	exact('gpx-image-pom-highquality-highqualitybicubic'),
 	exact('gpx-image-pom-highspeed-highqualitybicubic'),
@@ -606,10 +606,10 @@ const IMAGE_ORDER_CASES: ParityCase[] = [close('gpx-image-clip-zorder', 0)];
  */
 const IMAGE_ATTRIBUTE_CASES: ParityCase[] = ['flipxy', 'tile', 'clamp'].flatMap((w) => [
 	close(`gpx-image-attr-${w}-bilinear`, 0),
-	// The wrapped overhang goes through the axis-aligned high-quality weights: within one level except for 1, 13 and 0
-	// pixels (of 15,741) under TileFlipXY, Tile and Clamp (before round 8: 4, 15 and 2; before round 6: 39, 75 and 45;
-	// 3,400 to 3,600 off at zero tolerance, now 41, 90 and 67).
-	{ name: `gpx-image-attr-${w}-highqualitybicubic`, ext: 'emf', tolerance: 1, maxMismatch: { flipxy: 0.00007, tile: 0.00083, clamp: 0 }[w] },
+	// The wrapped overhang goes through the axis-aligned high-quality weights, and the kernel's fifth row past a
+	// sub-rectangle wraps inside the margin-extended rectangle (round 10): exact (before: 41, 90 and 67 pixels off at
+	// zero tolerance under TileFlipXY, Tile and Clamp; 3,400 to 3,600 before round 6).
+	exact(`gpx-image-attr-${w}-highqualitybicubic`),
 ]);
 
 /**
@@ -680,9 +680,9 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
  * ClearType fidelity (see the font engine group); single-bit text is exact.
  */
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
-	close('gpx-text-texture', 0.025), // measured 1.977%
-	close('gpx-text-lingrad', 0.025), // measured 1.996%
-	close('gpx-text-pathgrad', 0.0010), // measured 0.095% after the centre-relative per-vertex model (round 9, W5), 0.692% before; 0.978% before the unpainted outside pixels, 1.649% before the nested copies
+	exact('gpx-text-texture'), // 1.977% before SHPIX along x (round 10, R10-B)
+	close('gpx-text-lingrad', 0), // no pixel differs by more than 1 level (3 pixels); 1.996% before SHPIX along x (round 10, R10-B)
+	close('gpx-text-pathgrad', 0), // no pixel differs by more than 1 level (15 pixels; 0.095% above 8 levels before SHPIX along x, round 10, R10-B) after the centre-relative per-vertex model (round 9, W5), 0.692% before; 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0), // exact (GDI+ ClearType blend arithmetic); 2.802% 3.093% before the size-specific SHPIX tweaks
 ];
@@ -864,7 +864,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
  * 6.39% before, grayscale 6.64%).
  */
 const TEXT_CONTRAST_CASES: ParityCase[] = [
-	close('gpx-rec-textcontrast', 0.0042), // measured 0.413% (diagonal stems); 2.865% before the round 8 gray ClearType GETINFO; GDI+ hinting and shades
+	close('gpx-rec-textcontrast', 0.00085), // measured 0.082% (diagonal stems; 0.413% before SHPIX along x, round 10, R10-B); 2.865% before the round 8 gray ClearType GETINFO; GDI+ hinting and shades
 	close('gpx-rec-textcontrast-cleartype', 0.0012), // measured 0.112% (diagonal stems; GDI+ ClearType blend arithmetic); 3.331% 4.008% before the size-specific SHPIX tweaks
 ];
 

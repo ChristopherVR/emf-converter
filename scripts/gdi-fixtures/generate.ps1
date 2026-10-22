@@ -29,7 +29,7 @@
 #   redeye-zero-fraction, redeye-fallback-strength, redeye-nudge, redeye-fixture-direct, redeye-fallback-centre, redeye-scenes,
 #   redeye-playback, vertical-focus-line, playback-extents, playback-extent-survey,
 #   bicubic-copy, hq-arithmetic, hq-rotated, hq-axis, hq-half-shift,
-#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-step-grid, hq-reduction-grid, hq-half-length, bicubic-boundary,
+#   hq-crop-impulse, hq-crop-alpha, hq-crop-height, hq-wrap-crop, hq-step-grid, hq-reduction-grid, hq-reduction-positions, hq-rotated-fixture, hq-half-length, bicubic-boundary,
 #   halftone-fractional-kernel, halftone-run-2d, halftone-run-phase,
 #   halftone-kernel, halftone-arrangement, halftone-selection, halftone-boundary,
 #   roundrect-half-fix-translation, roundrect-half-fix, bicubic-phases,
@@ -541,6 +541,12 @@ if ($Which -eq 'path-gradient-focus-slants') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'path-gradient-focus-scale-sweep') {
+    Add-Type -Path (Join-Path $here 'PathGradientFocusScaleSweepProbe.cs') -ReferencedAssemblies System.Drawing
+    [PathGradientFocusScaleSweepProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'path-gradient-tile-rotations') {
     Add-Type -Path (Join-Path $here 'PathGradientTileRotateProbe.cs') -ReferencedAssemblies System.Drawing
     [PathGradientTileRotateProbe]::Run($outDir)
@@ -643,6 +649,12 @@ if ($Which -eq 'hq-crop-height') {
     Complete-Fixtures
     return
 }
+if ($Which -eq 'hq-wrap-crop') {
+    Add-Type -Path (Join-Path $here 'HighQualityWrapCropProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityWrapCropProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
 if ($Which -eq 'hq-step-grid') {
     Add-Type -Path (Join-Path $here 'HighQualityStepGridProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityStepGridProbe]::Run($outDir)
@@ -652,6 +664,18 @@ if ($Which -eq 'hq-step-grid') {
 if ($Which -eq 'hq-reduction-grid') {
     Add-Type -Path (Join-Path $here 'HighQualityReductionGridProbe.cs') -ReferencedAssemblies System.Drawing
     [HighQualityReductionGridProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-reduction-positions') {
+    Add-Type -Path (Join-Path $here 'HighQualityReductionPositionProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityReductionPositionProbe]::Run($outDir)
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'hq-rotated-fixture') {
+    Add-Type -Path (Join-Path $here 'HighQualityRotatedFixtureProbe.cs') -ReferencedAssemblies System.Drawing
+    [HighQualityRotatedFixtureProbe]::Run($outDir)
     Complete-Fixtures
     return
 }

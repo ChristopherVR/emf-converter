@@ -334,6 +334,11 @@ export interface HintEnvironment {
 	 */
 	grayClearType?: boolean;
 	/**
+	 * GDI+ grayscale text drawn at an identity world scale: SHPIX along x is honoured (see `plusShpixX`). Compatible
+	 * mode skips it otherwise, as the scaled-alignment controls (a uniform world scale) still need.
+	 */
+	shpixX?: boolean;
+	/**
 	 * GETINFO selector 2048 -> bit 18: the size's `gasp` range asks for symmetric smoothing (GDI ClearType reports it
 	 * from the range, for natural and compatible-width quality alike; GDI+ does not report it).
 	 */
@@ -1158,6 +1163,23 @@ export class HintedSize {
 	}
 
 	/**
+	 * GDI+ grayscale text (`shpixX`): which SHPIX shifts along x native honours. Measured with prefix copies of Arial Bold
+	 * `y` (40 ppem), Arial `W` (12), Times New Roman Italic `T` (22) and Courier New `R` (22) and the 31,584 real glyphs
+	 * (see docs/outstanding-work.md): a shift made by a function call (not a generic per-size helper, `inSizeTweak`)
+	 * applies; one made inline in the glyph program applies to a point touched in exactly one direction, or in both once
+	 * both IUPs have run, or in neither once both have run when it moves at least 32/64 px (Arial Bold `2`); smaller
+	 * shifts of untouched points (Courier New `R` 22) and points touched in both before the IUPs (Times New Roman Italic
+	 * `T` 22) are not applied: either costs pixels in the pinned controls.
+	 */
+	private plusShpixX(p: number, amt: number): boolean {
+		if (!this.env.shpixX) return false;
+		if (this.callFrames.length > 0) return true;
+		const t = this.zp2.tags[p];
+		const tx = (t & TOUCH_X) !== 0, ty = (t & TOUCH_Y) !== 0;
+		return tx !== ty || (this.iupx && this.iupy && (tx || Math.abs(amt) >= 32));
+	}
+
+	/**
 	 * Whether backward-compatible ClearType (and the GDI+ grayscale text that runs the same interpreter) shifts a point by
 	 * a SHPIX along y: it must be touched in y, and a generic per-size helper function (`isSizeTweak`) stops shifting once
 	 * IUP[y] has run. Arial Bold's W calls the helper after both IUPs to lower its two inner apexes by two pixels and raise
@@ -1704,7 +1726,7 @@ export class HintedSize {
 							!this.ctCompat() ||
 							this.inComposite ||
 							(gs.fvx === 0 && this.shpixAlongY(p)) ||
-							(gs.fvx !== 0 && !this.env.grayscale && !this.inSizeTweak());
+							(gs.fvx !== 0 && !this.inSizeTweak() && (!this.env.grayscale || this.plusShpixX(p, amt)));
 						if (keep) {
 							this.moveZp2(p, dx, dy, true);
 						}

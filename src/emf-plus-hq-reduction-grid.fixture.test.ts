@@ -13,11 +13,11 @@
  * 4 + 63/64, still leaves that pixel out, and horizontally steps from the whole pixel (see `offsetU`).
  *
  * Before round 8 the edges were `floor(128 s (edge - position))` in floating point on the snapped edge and this
- * capture had 15,332 values off (73 of 148 draws exact); 144 of 148 draws are exact now and 25 values are off.
+ * capture had 15,332 values off (73 of 148 draws exact); 146 of 148 draws are exact now and 2 values are off (25 values
+ * before the start-position shift of `hqStartShift`, which closed the 64 x 48 to 58 x 20 draws at edge 98: see
+ * `emf-plus-hq-reduction-positions.fixture.test.ts`).
  *
- * What is left: the first two columns of the 64 x 48 to 58 x 20 horizontal reduction (a position one unit of 1/65536
- * texel early, which moves one edge by a bin) and one value in each of the 64 x 40 to 64 x 16 and 64 x 48 to
- * 25.6 x 21.6 tent draws.
+ * What is left: one value in each of the 64 x 40 to 64 x 16 and 64 x 48 to 25.6 x 21.6 tent draws.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -84,8 +84,8 @@ describe('HighQuality reductions in 16.16 fixed point (native captures)', () => 
 			'vertical cubic': { draws: 37, exact: 37, bad: 0 },
 			'horizontal tent': { draws: 35, exact: 35, bad: 0 },
 			'horizontal cubic': { draws: 35, exact: 35, bad: 0 },
-			'fixture tent': { draws: 2, exact: 0, bad: 10 },
-			'fixture cubic': { draws: 2, exact: 1, bad: 14 },
+			'fixture tent': { draws: 2, exact: 1, bad: 1 },
+			'fixture cubic': { draws: 2, exact: 2, bad: 0 },
 		});
 	});
 });

@@ -919,6 +919,22 @@ function hqReductionStep(reciprocal: number): number {
 	return Math.floor(reciprocal + 0.5 + HQ_REDUCTION_STEP_NUDGE);
 }
 
+/**
+ * The shift in 1/65536 texel of a reduced axis' start position by the magnitude of its edge. Native draws of a
+ * reduction at a destination edge beyond 64 pixels start one unit early (horizontally) or late (vertically), and two
+ * units from 256: the first column positions of the `gpx-image-highqualitybicubic` fixture (edge 98) read one unit
+ * early, the exact position when the edge is up to 64 (`hq-reduction-positions`, 336 draws at every edge from 56
+ * to 140, every tenth to 700 and the 64 to 58 scale at fractional edges, both kernels). It is the size of the float32
+ * step at the edge in 16.16 (ulp of `edge 65536`: 1/4 up to 64, 1/2 up to 128, 1 up to 256, 2 up to 512; the
+ * sub-unit sizes round away from zero at a half), the same for every scale measured. Past 512 the draws read 4 to 5
+ * units (and 9 to 10 from 1024) with a scale-dependent extra that is not modelled, so no shift is applied there.
+ */
+function hqStartShift(edge: number): number {	return edge > 512 ? 0 : edge > 256 ? 2 : edge > 64 ? 1 : 0;
+}
+
+/** A horizontal edge this close below a whole pixel (98.9375) does not take the shift (the capture reads zero). */
+const HQ_START_SHIFT_FRACTION_LIMIT = 0.9375 - 1e-9;
+
 /** The tent's running integral at `u = j / 128` kernel units, over 65536 (`512 j - 2 j^2` on `|j| < 128`). */
 function hqTentCdf(j: number): number {
 	if (j <= -128) {
@@ -1099,13 +1115,17 @@ function resampleHqAxisAligned(
 					? Math.round((1 - dx) * stepU)
 					: 0;
 	const offsetV = dy > 1e-9 ? Math.round(dy * stepV) : 0;
+	// A reduction's start position carries the float32 rounding of the edge's magnitude (see `hqStartShift`).
+	const fractionU = rawLeftEdge - Math.floor(rawLeftEdge);
+	const startShiftU = mirrorU || fractionU >= HQ_START_SHIFT_FRACTION_LIMIT ? 0 : -hqStartShift(rawLeftEdge);
+	const startShiftV = hqStartShift(rawTop);
 	const filterU = axisFilter(kernel, scaleU, false);
 	const filterV = axisFilter(kernel, scaleV, false);
 	interface Taps {
 		first: number;
 		weights: number[];
 	}
-	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number, scale: number, mirror = false): Taps[] => {
+	const tapsFor = (filter: ReturnType<typeof axisFilter>, step: number, offset: number, origin: number, from: number, to: number, scale: number, startShift: number, mirror = false): Taps[] => {
 		const taps: Taps[] = [];
 		// A mirrored draw steps backwards from the far end: pixel k sits at (covered pixels + fraction - k) steps.
 		// The far end of the source is a few units off in native draws, growing with the source width (3 at 512 texels, 0 at 13)
@@ -1123,7 +1143,7 @@ function resampleHqAxisAligned(
 		const originBins = origin * HQ_PHASES;
 		const wholeBins = Math.abs(originBins - Math.round(originBins)) < 1e-6;
 		if (scale < 1 && wholeBins) {
-			return hqReductionTaps(cubic, scale, step, position, origin, from, to);
+			return hqReductionTaps(cubic, scale, step, (k) => position(k) + startShift, origin, from, to);
 		}
 		const tabulated = cubic && wholeBins;
 		for (let k = from; k <= to; k++) {
@@ -1148,8 +1168,8 @@ function resampleHqAxisAligned(
 		}
 		return taps;
 	};
-	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst, scaleU, mirrorU);
-	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst, scaleV);
+	const colTaps = tapsFor(filterU, stepU, offsetU, spec.srcX, cx0 - xFirst, cx1 - xFirst, scaleU, startShiftU, mirrorU);
+	const rowTaps = tapsFor(filterV, stepV, offsetV, spec.srcY, cy0 - yFirst, cy1 - yFirst, scaleV, startShiftV);
 	// Source rows the vertical pass reads (rows outside the bitmap are transparent).
 	let rowMin = Infinity;
 	let rowMax = -Infinity;
@@ -1177,12 +1197,22 @@ function resampleHqAxisAligned(
 	// (rounded up, in texels) on each side; a tap farther out is transparent. A unit-scale axis is left open: whether
 	// its margin is that one or one texel wider is a float32 coin toss (see "Cropped sources and mirrors" in
 	// outstanding-work.md). Under a WrapMode the taps wrap instead.
-	const rowMargin = edge || Math.abs(scaleV - 1) < 1e-9 ? Infinity : Math.ceil((cubic ? 2 : 1) / Math.min(1, scaleV));
+	const rowMargin = Math.abs(scaleV - 1) < 1e-9 ? Infinity : Math.ceil((cubic ? 2 : 1) / Math.min(1, scaleV));
 	// Horizontal pass: premultiplied, rounded to 8 bits, limited to the alpha.
 	const inter = new Uint8Array(rows * w * 4);
 	for (let r = 0; r < rows; r++) {
-		const rowTexel = edge ? wrapTap(rowMin + r, 0, height, edge.mirrorY, edge) : rowMin + r;
-		if (rowTexel === OUTSIDE_TRANSPARENT || rowTexel < spec.srcY - rowMargin || rowTexel > spec.srcY + spec.srcH + rowMargin - 1) {
+		let rowTexel = rowMin + r;
+		if (edge) {
+			// Under a WrapMode the rows past the margin wrap inside the margin-extended rectangle cut to the bitmap (period
+			// `srcH + 2 margin` inside a bitmap): a tap at the kernel's fifth row reads `srcY - 2` for Tile, or its mirror image.
+			if (Number.isFinite(rowMargin)) {
+				rowTexel = wrapTap(rowTexel, Math.max(0, spec.srcY - rowMargin), Math.min(height, spec.srcY + spec.srcH + rowMargin), edge.mirrorY, edge);
+			}
+			if (rowTexel !== OUTSIDE_TRANSPARENT && rowTexel !== OUTSIDE_CLAMP) {
+				rowTexel = wrapTap(rowTexel, 0, height, edge.mirrorY, edge);
+			}
+		}
+		if (rowTexel === OUTSIDE_TRANSPARENT || (rowTexel !== OUTSIDE_CLAMP && (rowTexel < spec.srcY - rowMargin || rowTexel > spec.srcY + spec.srcH + rowMargin - 1))) {
 			continue;
 		}
 		const srcRow = rowTexel * width;
