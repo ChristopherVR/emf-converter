@@ -436,9 +436,9 @@ function strokeGdiplus(
 /**
  * The device polygons GDI+ fills for a plain (not custom-capped, not nominal-width) pen on `figures`, as `toFix` maps them to 28.4, and, for an
  * Inset pen on closed figures, the figures themselves (the clip). An Inset stroke on closed figures is the pen at twice its width, centered, clipped
- * to the figure (see emf-plus-inset-outline.ts); dashed, the dash lengths stay in the pen's own width and the dash offset is taken in the doubled
- * one. A dashed Inset pen with Round or Triangle dash caps is the band along the inside of each edge (caps centred on it) instead, clipped to the
- * figure all the same.
+ * to the figure (`GpPath::GetWidenedPath`, see emf-plus-inset-outline.ts); dashed, the dash lengths stay in the pen's own width and the dash offset is
+ * taken in the doubled one, a Round dash cap is a double round cap (a semicircle over each half of the doubled width: only the one inside the figure
+ * survives the clip on a straight edge, but both show at a reflex vertex) and a Triangle one is absent.
  */
 export function widenedPen(
 	figures: ReadonlyArray<DeviceFigure>,
@@ -446,8 +446,8 @@ export function widenedPen(
 	toFix: (poly: ReadonlyArray<{ x: number; y: number }>) => number[],
 ): { fix: FixFigure[]; groups: FixFigure[][]; insetFigures: FixFigure[] | null } {
 	const insetClosed = devicePen.inset && !devicePen.compound && figures.every((f) => f.closed);
-	const insetClip = insetClosed && (!devicePen.dash || devicePen.dashCap === 0);
-	const widenPen = insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2, dashOffset: devicePen.dashOffset * 2 } : devicePen;
+	const insetClip = insetClosed;
+	const widenPen = insetClip ? { ...devicePen, inset: false, half: devicePen.half * 2, dashOffset: devicePen.dashOffset * 2, dashCapWidth: devicePen.half * 2, doubleRoundCap: true } : devicePen;
 	// One group of polygons per figure: the antialiased outline of an Inset stroke is taken for each figure's own pixels.
 	const groups = insetClosed ? figures.map((f) => widenFigures([f], widenPen).map(toFix)) : [widenFigures(figures, widenPen).map(toFix)];
 	const fix = groups.flat();
