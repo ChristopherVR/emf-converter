@@ -1198,3 +1198,11 @@ export function msGrayBitmap(o: MsOutline, flags: number): GlyphBitmap | null {
 	}
 	return { width, height, left, top, data };
 }
+
+/**
+ * The scan flags GDI hands its scan converter: the SCANTYPE word when SCANCTRL left dropout control on, 2 (none) when
+ * it did not. The converter reads bits 0 to 2 only, so a type of 8 or more acts as its low bits do.
+ */
+export function msScanFlags(controlOn: boolean, scanType: number): number {
+	return controlOn ? scanType & 7 : 2;
+}

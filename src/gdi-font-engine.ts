@@ -49,7 +49,7 @@ import { parseRasterFontFile, type RasterFace } from './fnt-font';
 import { pickRasterFace } from './raster-mapper';
 import { parseFontFile, type TtfFont } from './ttf-font';
 import { DEFAULT_DROPOUT_PPEM, HintedSize, type HintedGlyph } from './ttf-hinting';
-import { msGrayBitmap, msMonoBitmap } from './ttf-msscan';
+import { msGrayBitmap, msMonoBitmap, msScanFlags } from './ttf-msscan';
 import { dropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
 
 /** Raw bytes of a `.ttf` or `.ttc` file. */
@@ -809,10 +809,10 @@ export class RealizedFont implements GdiRealizedFont {
 			// sheared glyphs once their outlines follow GDI's hinting arithmetic (mono-condensed.json.gz: 970 to
 			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
-			const dropout = dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType);
+			const controlOn = src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM;
 			bitmap = this.gdiPlus
-				? rasterizeMono(o, dropout, undefined, true, smartGrid, false, false, false, false, true)
-				: msMonoBitmap(o, dropout);
+				? rasterizeMono(o, dropoutMode(controlOn, src.scanType), undefined, true, smartGrid, false, false, false, false, true)
+				: msMonoBitmap(o, msScanFlags(controlOn, src.scanType));
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
@@ -822,7 +822,9 @@ export class RealizedFont implements GdiRealizedFont {
 		} else {
 			// GDI's own scan converter (a font that never runs SCANCTRL gets simple dropouts up to 32 ppem, as in monochrome);
 			// GDI+ AntiAlias keeps its previous behaviour.
-			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : this.gdiPlus || this.ppem > DEFAULT_DROPOUT_PPEM ? 2 : 0;
+			const dropout = this.gdiPlus
+				? src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2
+				: msScanFlags(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType);
 			// GDI+ AntiAlias widens regular/italic Courier New by one grayscale
 			// sample to the right; the grid-fit hint and bold faces do not.
 			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&

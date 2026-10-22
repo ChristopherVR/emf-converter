@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { GdiFontCollection } from './gdi-font-engine';
-import { dropoutMode, rasterizeGray, type Outline } from './ttf-raster';
+import { msGrayBitmap } from './ttf-msscan';
+import { dropoutMode, type Outline } from './ttf-raster';
 import { windowsFonts } from './__fixtures__/gdi-parity-harness';
 
 /**
@@ -118,7 +119,7 @@ function tally(face: string, size: number): Tally | null {
 		const src = font.outline(index);
 		if (outline) {
 			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
-			if (same(levelsOf(rasterizeGray(outline, dropout)), native)) t.rasterOfNativeOutline++;
+			if (same(levelsOf(msGrayBitmap(outline, dropout)), native)) t.rasterOfNativeOutline++;
 			if (outline.xs.length === src.xs.length && outline.xs.every((x, i) => x === src.xs[i] && outline.ys[i] === src.ys[i])) t.hintedOutlineExact++;
 		}
 	}
@@ -126,33 +127,35 @@ function tally(face: string, size: number): Tally | null {
 }
 
 describe.skipIf(!hasFonts)('GDI grayscale glyph bitmaps of real fonts (GGO_GRAY4_BITMAP, GGO_NATIVE)', () => {
-	// face|size -> [glyphs, bitmaps equal, native outline rasterized equal, hinted outlines equal]: floors; the bitmap column measured 16 October 2026 (round 9: a scan line exactly on a horizontal edge is inked, Segoe UI 12 more).
-	// (Segoe UI's GGO_NATIVE outlines are not the outlines its bitmaps come from; Courier New below 40 px is monochrome.)
+	// face|size -> [glyphs, bitmaps equal, native outline scan-converted equal, hinted outlines equal]: floors. Round 11: the native scan
+	// converter (`ttf-msscan.ts`) and the exact ISECT / MUL / IUP arithmetic make every bitmap of Arial, Times New Roman, Tahoma, Segoe UI
+	// and Courier New equal (2,068 of 2,068; before 63 to 94 of 94 per set, Segoe UI 61 to 92) and every native outline of those but
+	// Segoe UI equal when scan-converted. (Segoe UI's GGO_NATIVE outlines are not the outlines its bitmaps come from; Courier New below 40 px is monochrome.)
 	const expected: Record<string, [number, number, number, number]> = {
-		'Arial|18': [94,91,91,94],
-		'Arial|24': [94,92,92,94],
-		'Arial|32': [94,91,91,94],
-		'Arial|48': [94,78,78,94],
-		'Arial|72': [94,63,64,93],
-		'Times New Roman|18': [94,94,93,93],
-		'Times New Roman|24': [94,93,94,93],
-		'Times New Roman|32': [94,89,90,93],
-		'Times New Roman|48': [94,85,86,93],
-		'Times New Roman|72': [94,72,73,93],
+		'Arial|18': [94,94,94,94],
+		'Arial|24': [94,94,94,94],
+		'Arial|32': [94,94,94,94],
+		'Arial|48': [94,94,94,94],
+		'Arial|72': [94,94,94,94],
+		'Times New Roman|18': [94,94,94,94],
+		'Times New Roman|24': [94,94,94,94],
+		'Times New Roman|32': [94,94,94,94],
+		'Times New Roman|48': [94,94,94,94],
+		'Times New Roman|72': [94,94,94,94],
 		'Tahoma|18': [94,94,94,94],
-		'Tahoma|24': [94,92,92,94],
-		'Tahoma|32': [94,91,91,94],
-		'Tahoma|48': [94,83,83,94],
-		'Tahoma|72': [94,75,75,94],
-		'Segoe UI|18': [94,92,16,15],
-		'Segoe UI|24': [94,92,15,16],
-		'Segoe UI|32': [94,88,19,16],
-		'Segoe UI|48': [94,79,18,16],
-		'Segoe UI|72': [94,61,15,17],
-		'Courier New|48': [94,89,89,94],
-		'Courier New|72': [94,73,73,93],
+		'Tahoma|24': [94,94,94,94],
+		'Tahoma|32': [94,94,94,94],
+		'Tahoma|48': [94,94,94,94],
+		'Tahoma|72': [94,94,94,94],
+		'Segoe UI|18': [94,94,16,15],
+		'Segoe UI|24': [94,94,15,16],
+		'Segoe UI|32': [94,94,19,16],
+		'Segoe UI|48': [94,94,18,16],
+		'Segoe UI|72': [94,94,15,17],
+		'Courier New|48': [94,94,94,94],
+		'Courier New|72': [94,94,94,94],
 	};
-	it('pins the capture', () => {
+it('pins the capture', () => {
 		const sizes = new Set(data.map((r) => `${r.face}|${r.size}`));
 		expect(sizes.size).toBe(25);
 		expect(data.length).toBe(25 * 94 * 2);

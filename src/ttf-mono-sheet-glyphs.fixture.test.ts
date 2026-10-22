@@ -5,7 +5,8 @@
  * of the style sheets. It separates a residual of those sheets into hinting (the outline differs) and scan conversion
  * (it does not). Needs the installed fonts the captures were made with.
  *
- * Every glyph not listed below must stay exact, and the lists may only shrink.
+ * Round 11: the native scan converter (`ttf-msscan.ts`) draws every upright regular bitmap from the native outline, and the exact
+ * ISECT, MUL and IUP arithmetic hint every one of them to the native outline, so no glyph is listed any more.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -17,33 +18,10 @@ interface Capture { face: string; height: number; width: number; weight: number;
 const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/mono-sheet-glyphs.json.gz', import.meta.url))).toString());
 const fonts = windowsFonts();
 
-/** Bitmaps that still differ from native (sample counts: 28 differing pixels over 22 glyphs; 175 over 140 before round 9). */
-const INEXACT_BITMAP = new Set([
-	'Arial:-28:400:0:0:97', 'Times New Roman:-72:400:0:0:88', 'Times New Roman:9:400:0:0:97', 'Times New Roman:9:400:0:0:103',
-	'Times New Roman:9:400:0:0:101', 'Times New Roman:56:400:0:0:87', 'Courier New:-9:400:0:0:109', 'Courier New:-24:400:0:0:88',
-	'Courier New:-36:400:0:0:50', 'Courier New:-72:400:0:0:98', 'Courier New:12:400:0:0:109', 'Courier New:26:400:0:0:38',
-	'Courier New:-11:400:0:12:51', 'Courier New:-17:400:0:7:120', 'Segoe UI:-13:400:0:0:51', 'Segoe UI:-36:400:0:0:64',
-	'Segoe UI:-72:400:0:0:64', 'Segoe UI:18:400:0:0:51', 'Segoe UI:-11:400:1:0:112', 'Tahoma:-16:400:0:0:97',
-	'Tahoma:20:400:0:0:97', 'Tahoma:-17:400:0:15:51',
-]);
+/** Bitmaps that still differ from native (6,718 of 6,740 before round 11, the 22 listed in the tests before: now only bold and italic ones, which are not compared). */
+const INEXACT_BITMAP = new Set<string>();
 /** Upright regular glyphs whose hinted outline still differs (the others are point for point native's). */
-const INEXACT_OUTLINE = new Set([
-	'Arial:-8:400:0:0:36', 'Arial:-12:400:0:0:36', 'Arial:-14:400:0:0:36', 'Arial:-16:400:0:0:97', 'Arial:-72:400:0:0:36',
-	'Arial:9:400:0:0:36', 'Arial:10:400:0:0:36', 'Arial:18:400:0:0:97', 'Arial:20:400:0:0:97', 'Arial:26:400:0:0:36', 'Arial:30:400:0:0:101',
-	'Arial:44:400:0:0:36', 'Arial:-17:400:0:15:120', 'Times New Roman:-8:400:0:0:88', 'Times New Roman:-9:400:0:0:88',
-	'Times New Roman:-10:400:0:0:87', 'Times New Roman:-10:400:0:0:88', 'Times New Roman:-12:400:0:0:88', 'Times New Roman:-14:400:0:0:87',
-	'Times New Roman:-14:400:0:0:88', 'Times New Roman:-15:400:0:0:88', 'Times New Roman:-16:400:0:0:87', 'Times New Roman:-16:400:0:0:88',
-	'Times New Roman:-18:400:0:0:88', 'Times New Roman:-20:400:0:0:88', 'Times New Roman:-22:400:0:0:88', 'Times New Roman:-24:400:0:0:87',
-	'Times New Roman:-28:400:0:0:88', 'Times New Roman:-32:400:0:0:88', 'Times New Roman:-36:400:0:0:87', 'Times New Roman:-36:400:0:0:88',
-	'Times New Roman:-48:400:0:0:88', 'Times New Roman:-72:400:0:0:88', 'Times New Roman:10:400:0:0:88', 'Times New Roman:12:400:0:0:88',
-	'Times New Roman:16:400:0:0:87', 'Times New Roman:16:400:0:0:88', 'Times New Roman:18:400:0:0:88', 'Times New Roman:20:400:0:0:88',
-	'Times New Roman:26:400:0:0:87', 'Times New Roman:26:400:0:0:88', 'Times New Roman:30:400:0:0:88', 'Times New Roman:36:400:0:0:88',
-	'Times New Roman:44:400:0:0:87', 'Courier New:-16:400:0:0:88', 'Courier New:-18:400:0:0:51', 'Courier New:-20:400:0:0:51',
-	'Courier New:-22:400:0:0:51', 'Courier New:-24:400:0:0:51', 'Courier New:18:400:0:0:88', 'Courier New:20:400:0:0:51',
-	'Courier New:23:400:0:0:51', 'Courier New:26:400:0:0:51', 'Courier New:-11:400:0:12:120', 'Courier New:-17:400:0:0:120',
-	'Courier New:-17:400:0:0:51', 'Courier New:-17:300:0:0:120', 'Courier New:-17:300:0:0:51', 'Courier New:-17:100:0:0:120',
-	'Courier New:-17:100:0:0:51', 'Courier New:-17:400:0:7:51', 'Courier New:-17:400:0:15:120', 'Courier New:-17:400:0:15:51',
-]);
+const INEXACT_OUTLINE = new Set<string>();
 
 const key = (c: Capture): string => `${c.face}:${c.height}:${c.weight}:${c.italic ? 1 : 0}:${c.width}:${c.code}`;
 function nativeOutlinePoints(encoded: string): Set<string> {
@@ -76,7 +54,7 @@ describe.skipIf(!fonts)('native monochrome glyphs of the text size and style she
 	const realize = (c: Capture): any => collection!.realize({ face: c.face, height: c.height, width: c.width, weight: c.weight, italic: c.italic,
 		charSet: 1, pitchAndFamily: 0, quality: 3, unhinted: false, gdiPlus: false });
 
-	it('draws 6718 of 6,740 glyph bitmaps exactly and no glyph outside the recorded misses', () => {
+	it('draws every glyph bitmap exactly', () => {
 		expect(captures).toHaveLength(6740);
 		let exact = 0, pixels = 0;
 		for (const c of captures) {
@@ -92,11 +70,11 @@ describe.skipIf(!fonts)('native monochrome glyphs of the text size and style she
 			else expect(INEXACT_BITMAP.has(key(c)), key(c)).toBe(true);
 			pixels += differing;
 		}
-		expect(exact).toBeGreaterThanOrEqual(6718);
-		expect(pixels).toBeLessThanOrEqual(28);
+		expect(exact).toBeGreaterThanOrEqual(6740);
+		expect(pixels).toBeLessThanOrEqual(0);
 	});
 
-	it('hints the upright regular glyphs to the native outline, 63 misses aside', () => {
+	it('hints the upright regular glyphs to the native outline', () => {
 		let identical = 0, plain = 0;
 		for (const c of captures) {
 			if (c.italic || c.weight > 400) continue;
@@ -119,6 +97,6 @@ describe.skipIf(!fonts)('native monochrome glyphs of the text size and style she
 			else expect(INEXACT_OUTLINE.has(key(c)), key(c)).toBe(true);
 		}
 		expect(plain).toBe(identical + INEXACT_OUTLINE.size);
-		expect(identical).toBeGreaterThanOrEqual(5477);
+		expect(identical).toBeGreaterThanOrEqual(5540);
 	});
 });

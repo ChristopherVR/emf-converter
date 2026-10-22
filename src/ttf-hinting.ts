@@ -138,6 +138,30 @@ function dotFix14Split(ax: number, ay: number, bx: number, by: number): number {
 }
 
 /**
+ * GDI's `MUL` (`itrp_MUL`): two 26.6 numbers whose magnitudes are at most 46,340 multiply as `(a * b + 32) >> 6`, which
+ * rounds a tie towards plus infinity (-144 * 34 = -76.5 gives -76); larger operands multiply their magnitudes in
+ * 64 bits, round the tie up and take the sign afterwards.
+ */
+function mulGdi(a: number, b: number): number {
+	if (a <= 0xb504 && b <= 0xb504 && a >= -0xb504 && b >= -0xb504) {
+		return (a * b + 32) >> 6;
+	}
+	const negative = (a < 0) !== (b < 0);
+	const product = (BigInt(Math.abs(a)) * BigInt(Math.abs(b)) + 32n) >> 6n;
+	const low = Number(BigInt.asIntN(32, product));
+	return negative ? -low | 0 : low;
+}
+
+/** GDI's `CompDiv`: n / d rounded half away from zero (the divisor's half is truncated first). */
+function compDivGdi(n: number, d: number): number {
+	if (d === 0) {
+		return n < 0 ? 0x80000000 : 0x7fffffff;
+	}
+	const half = Math.trunc(d / 2);
+	return Math.trunc(((n < 0) === (d < 0) ? n + half : n - half) / d);
+}
+
+/**
  * GDI's division `(a * b + c / 2) / c`, truncated toward zero: the rounding term is always added, so a negative
  * quotient is rounded toward zero from its half (-8.59 gives -8, -8.4 gives -7) while a positive one rounds to nearest.
  */
@@ -2016,7 +2040,7 @@ export class HintedSize {
 			case 0x63: {
 				const b = this.pop();
 				const a = this.pop();
-				this.push(mulDiv(a, b, 64));
+				this.push(this.gdiMath ? mulGdi(a, b) : mulDiv(a, b, 64));
 				return true;
 			}
 			case 0x64:
@@ -2103,24 +2127,14 @@ export class HintedSize {
 				return true;
 			}
 			case 0x85: {
-				// SCANCTRL
+				// SCANCTRL. GDI keeps only the last value and evaluates it once the glyph is done (`fsg_ExecuteGlyph`): dropout
+				// control is on when the ppem (at most 255) is at or below the threshold in the low byte and bit 8 is set, or the
+				// glyph is rotated and bit 9 is set, or stretched and bit 10 is set; the "off" bits 11 to 13 play no part and
+				// any other value means off. (A threshold of 0xff without bit 8 is off too.)
 				const v = this.pop();
-				const a = v & 0xff;
 				gs.scanSet = true;
-				if (a === 0xff) {
-					gs.scanControl = true;
-					return true;
-				}
-				if (a === 0) {
-					gs.scanControl = false;
-					return true;
-				}
-				if (v & 0x100 && this.ppem <= a) gs.scanControl = true;
-				if (v & 0x200 && this.env.rotated) gs.scanControl = true;
-				if (v & 0x400 && (this.stretched || this.env.reportStretched)) gs.scanControl = true;
-				if (v & 0x800 && this.ppem > a) gs.scanControl = false;
-				if (v & 0x1000 && this.env.rotated) gs.scanControl = false;
-				if (v & 0x2000 && (this.stretched || this.env.reportStretched)) gs.scanControl = false;
+				gs.scanControl = ((v & 0x100) !== 0 && Math.min(this.ppem, 255) <= (v & 0xff)) ||
+					((v & 0x200) !== 0 && !!this.env.rotated) || ((v & 0x400) !== 0 && (this.stretched || !!this.env.reportStretched));
 				return true;
 			}
 			case 0x86:
@@ -2726,14 +2740,48 @@ export class HintedSize {
 		const day = zp1.curY[a1] - zp1.curY[a0];
 		const dx = zp0.curX[b0] - zp1.curX[a0];
 		const dy = zp0.curY[b0] - zp1.curY[a0];
-		if (this.gdiMath && (dbx === 0 || dby === 0) && dax * -dby + day * dbx !== 0) {
-			// GDI intersects with a horizontal or vertical second line exactly (239 of 240 native results are the
-			// rounded rational intersection; the FreeType formula below gets 151); other lines keep the formula,
-			// whose native counterpart is still unknown (431 of 960 random lines).
-			const den = dax * -dby + day * dbx;
-			const num = dx * -dby + dy * dbx;
-			zp2.curX[p] = zp1.curX[a0] + mulDiv(num, dax, den);
-			zp2.curY[p] = zp1.curY[a0] + mulDiv(num, day, den);
+		if (this.gdiMath) {
+			// GDI's ISECT (`itrp_ISECT`): the point is a0 + (dax, day) * t with t = num / den built from two rounded
+			// divisions, using the form that divides by the larger component of the second line; every division rounds half
+			// away from zero. Parallel lines (den = 0) meet halfway between the two lines' midpoints.
+			const xa0 = zp1.curX[a0];
+			const ya0 = zp1.curY[a0];
+			const xb0 = zp0.curX[b0];
+			const yb0 = zp0.curY[b0];
+			let num: number;
+			let den: number;
+			if (dby === 0) {
+				if (dax === 0) {
+					zp2.curX[p] = xa0;
+					zp2.curY[p] = yb0;
+					zp2.tags[p] |= TOUCH_X | TOUCH_Y;
+					return;
+				}
+				num = ya0 - yb0;
+				den = -day;
+			} else if (dbx === 0) {
+				if (day === 0) {
+					zp2.curX[p] = xb0;
+					zp2.curY[p] = ya0;
+					zp2.tags[p] |= TOUCH_X | TOUCH_Y;
+					return;
+				}
+				num = xa0 - xb0;
+				den = -dax;
+			} else if (Math.abs(dbx) < Math.abs(dby)) {
+				num = xb0 - xa0 + compDivGdi((ya0 - yb0) * dbx, dby);
+				den = dax - compDivGdi(day * dbx, dby);
+			} else {
+				num = ya0 - yb0 - compDivGdi((xa0 - xb0) * dby, dbx);
+				den = compDivGdi(dax * dby, dbx) - day;
+			}
+			if (den === 0) {
+				zp2.curX[p] = (xb0 + (dbx >> 1) + (dax >> 1) + xa0) >> 1;
+				zp2.curY[p] = (yb0 + (dby >> 1) + (day >> 1) + ya0) >> 1;
+			} else {
+				zp2.curY[p] = ya0 + compDivGdi(day * num, den);
+				zp2.curX[p] = xa0 + compDivGdi(dax * num, den);
+			}
 			zp2.tags[p] |= TOUCH_X | TOUCH_Y;
 			return;
 		}
@@ -2862,7 +2910,8 @@ function iupInterpolate(
 	}
 	let orus1 = orus[ref1];
 	let orus2 = orus[ref2];
-	if (orus1 > orus2) {
+	if (orus1 > orus2 || (gdiMath && orus1 === orus2)) {
+		// (GDI's IUP orders touched points of equal font units the other way round: the later one is the first.)
 		const t = orus1;
 		orus1 = orus2;
 		orus2 = t;
@@ -2876,6 +2925,37 @@ function iupInterpolate(
 	const cur2 = curs[ref2];
 	const delta1 = cur1 - org1;
 	const delta2 = cur2 - org2;
+	if (gdiMath) {
+		// GDI's IUP (`itrp_IUP`): with the two touched points' font units equal the untouched ones move by the first's
+		// shift; otherwise a point at or before the first's original position moves by its shift, unless it is also at or
+		// after the second's (that shift then wins), one at or after the second's by the second's shift, and the rest
+		// interpolate in font units: cur1 + ((orus - orus1) * (cur2 - cur1) + span / 2) / span truncated, or through a
+		// 16.16 scale once either span reaches 0x8000.
+		const span = orus2 - orus1;
+		if (span === 0) {
+			for (let i = p1; i <= p2; i++) {
+				curs[i] += delta1;
+			}
+			return;
+		}
+		const curSpan = cur2 - cur1;
+		const scale = span >= 0x8000 || curSpan >= 0x8000 ? compDivGdi(curSpan * 65536, span) : 0;
+		const big = span >= 0x8000 || curSpan >= 0x8000;
+		for (let i = p1; i <= p2; i++) {
+			const o = orgs[i];
+			if (o <= org1) {
+				curs[i] = o >= org2 ? o + delta2 : o + delta1;
+			} else if (o >= org2) {
+				curs[i] = o + delta2;
+			} else if (big) {
+				const v = (orus[i] - orus1) * scale;
+				curs[i] = cur1 + Math.floor((v + 0x8000 - (v < 0 ? 1 : 0)) / 65536);
+			} else {
+				curs[i] = cur1 + Math.trunc(((orus[i] - orus1) * curSpan + (span >> 1)) / span);
+			}
+		}
+		return;
+	}
 	if (cur1 === cur2 || orus1 === orus2) {
 		for (let i = p1; i <= p2; i++) {
 			let x = orgs[i];
