@@ -327,20 +327,14 @@ export function pathGradientSampler(
 		const tiled = fractionalTileSampler(shape, wrap, full);
 		if (tiled) return tiled;
 	}
-	// Native paints a path gradient as nested copies of its boundary, so each pixel
-	// is one of `pathGradientQuantum` steps. Three cases are not reproduced yet and
-	// keep the smooth ratio: surround colours that differ from vertex to vertex with a
-	// focus, Blend or preset (they are Gouraud fan triangles otherwise, see
-	// `vertexGradient` below; a Blend or preset curve is read at the step instead), an anisotropic focus (its
-	// strips put about one pixel in 500 a step off) and a tile cut from a bounding
-	// box on fractional pixels (its colours sit on a shifted grid).
+	// Native paints a path gradient with one of two converters read from gdiplus.dll: Gouraud fan triangles when the surround colours
+	// differ from vertex to vertex (`vertexGradient`, emf-plus-path-gradient-fan.ts) and a ramp of `pathGradientQuantum` steps read
+	// through bilinear quads when they are all equal (`oneD`, emf-plus-path-gradient-oned.ts). A sample off the pixel grid and a tile
+	// cut from a bounding box on fractional pixels keep the smooth ratio (the tile through its own bitmap sampler).
 	const uniformSurround = shape.boundaryArgb.every((color) => color === shape.boundaryArgb[0]);
 	const smooth = !uniformSurround || (wrap !== 'clamp' && !pixelAligned(shape.boundary, full));
 	const quantum = smooth ? 0 : pathGradientQuantum(shape.boundary, full);
-	// Surround colours that differ from vertex to vertex are Gouraud-shaded fan triangles, not nested
-	// copies (see emf-plus-path-gradient-vertices.ts). A tile cut from fractional bounds keeps the old path.
 	const vertexGradient = wrap === 'clamp' || pixelAligned(shape.boundary, full) ? prepareVertexGradient(shape, full) : null;
-	// A uniform surround is nested copies, rasterised from the boundary rounded to 1/16 pixel (see emf-plus-path-gradient-copies.ts).
 	const oneD = quantum > 0 ? prepareOneD(shape, full) : null;
 	const pxX = Math.hypot(full[0], full[1]);
 	const pxY = Math.hypot(full[2], full[3]);

@@ -4,7 +4,7 @@
  * GDI+ sets the SSE control register to `0x3F80` for the duration of its calls (round toward minus infinity, all exceptions
  * masked; the routines that guard the register compare it with `0x3F80` and load it when it differs), so every `addss`,
  * `subss`, `mulss`, `divss` and `sqrtss` of the renderer rounds down, not to nearest. Captures of the per-vertex path gradient
- * fan are exact on all 174,084 painted pixels with it and 1.2 to 6% off with round-to-nearest.
+ * fan are exact on all 174,084 painted pixels with it and 0.5% to 5.9% of each group off with round-to-nearest.
  *
  * The helpers take single-precision values (or whole numbers) and return the largest single-precision value not above the exact
  * result of the one operation; a double holds the exact result of an add, subtract or multiply of two single-precision values

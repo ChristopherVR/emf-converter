@@ -15,9 +15,8 @@ import type { EmfPlusGradientWrapMode, EmfPlusPathGradientShape, TransformMatrix
  * the surface, an ellipse and a ten-point star (aliased, over transparent).
  *
  * The sampler is given the fill's bounding box as its window, which is the window native uses for a rectangle: all 12 images of
- * rectangles and ellipses are exact (the window of an ellipse row is the row's own span, but no span of the ellipse starts inside a
- * triangle edge's rounding), and the star's fan has 2 pixels the window of the box gets wrong that the window of each row's own span
- * gets right (the sampler does not know the rows' spans: open).
+ * rectangles and ellipses are exact, and the star's fan has 2 pixels the window of the box gets wrong that the window of each row's
+ * own span gets right (the sampler does not know the rows' spans: open).
  */
 interface Capture {
 	name: string;

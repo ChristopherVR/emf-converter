@@ -5,7 +5,7 @@ import { pathGradientSampler } from './emf-plus-exact-fill';
 
 /**
  * Pixels exactly on a copy's edge under an isotropic focus. Native finds them in float32 with the focus applied in ABSOLUTE
- * device coordinates (`focusCopyIndex` in `emf-plus-path-gradient-copies.ts`): the boundary point and the point where the
+ * device coordinates (`focusCopyIndex`, the fitted model of rounds 8 to 10; round 11 replaced it by the converter of `emf-plus-path-gradient-oned.ts`, which reproduces every pixel here): the boundary point and the point where the
  * ray meets the focus polygon are positions on the pixel grid, rounded toward minus infinity, and the copy is
  * `floor(N t + 1/2)` with `t = (P - I) / (O - I)`. That decides which side a tie falls on at the right/bottom of the centre
  * and at the left/top, and for a focus that is not a binary fraction it makes the answer depend on the mantissa of the
