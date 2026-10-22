@@ -21,8 +21,9 @@ import { gdiTextCoverage } from './gdi-text-render';
  *    shift that the height along the arm gives (set `height`: 0 at the foot, the whole shift at the stem), where under an
  *    axis projection vector it follows by the whole shift (set `arm`, kinds `axis` and `spvfs-x`).
  *
- * The converter does not reproduce 2 yet (its shifts are applied to the outline after the program); the counts below are
- * what production gets, pinned so that the improvement is visible when it lands.
+ * Round 11 read the native mechanism (the shifts are resolved once, at the first IUP[x], from a table of which point each
+ * point was placed from; the program runs on the unshifted outline, which is what 2 shows), and the converter now does the
+ * same; the counts below are what production gets (before: 190 and 268 default-quality glyphs of 224 and 288).
  */
 interface Capture { set: string; size: number; quality: number; index: number; width: number; x: number; y: number; w: number; h: number; rgb: string }
 interface SetInfo { set: string; file: string; family: string; count: number; meta: Record<string, unknown>; params: number[][] }
@@ -109,8 +110,8 @@ describe('GDI ClearType compatible widths past the stem (gdi-cleartype-arm.json.
 
 	// Exact glyph captures per set at natural quality and at default quality as production renders them (see above).
 	const EXPECTED: Record<string, [number, number]> = {
-		arm: [224, 190],
-		height: [288, 268],
+		arm: [224, 202],
+		height: [288, 287],
 		postiup: [189, 177],
 		postsmall: [64, 64],
 	};
