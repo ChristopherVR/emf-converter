@@ -646,6 +646,17 @@ export class RealizedFont implements GdiRealizedFont {
 		return g;
 	}
 
+	/** Whether glyph `index` advances linearly at this size: `head.flags` bit 4 clear, or `LTSH` (an `hdmx` record for the size comes first). */
+	private ltshLinear(index: number): boolean {
+		if (this.gdiPlus || this.ppemX !== this.ppem) return false;
+		const hd = this.hdmx;
+		if (hd && index < hd.length) return false;
+		// head.flags bit 4 clear: the instructions may not alter the advance width, which is the scaled one, rounded.
+		if ((this.ttf.headFlags & 0x10) === 0) return true;
+		const lt = this.ttf.ltsh;
+		return !!lt && index < lt.length && lt[index] > 0 && this.ppem >= lt[index];
+	}
+
 	/** Integer advance width of glyph `index`, as GetCharWidth32 reports it (GDI+ ClearType: its hinted phantom advance rounded). */
 	advance(index: number): number {
 		const hd = this.hdmx;
@@ -658,6 +669,11 @@ export class RealizedFont implements GdiRealizedFont {
 			base = Math.round((advance * this.stretchWidth) / this.ttf.xAvgCharWidth);
 		} else if (!this.gridFit) {
 			base = this.outline(index).linearAdvance / 64;
+		} else if (this.ltshLinear(index)) {
+			// `LTSH`: from its yPels on a glyph's advance is the linearly scaled one, rounded (GetCharWidth32 and
+			// GGO_METRICS of Times New Roman A: hinted up to 68 px, linear from 69, hdmx records excepted).
+			const { advance } = this.ttf.hMetrics(index < this.ttf.numGlyphs ? index : NOTDEF);
+			base = Math.floor((advance * this.ppemX) / this.ttf.unitsPerEm + 0.5);
 		} else if (this.advanceSize) {
 			let g = this.advanceOutlines.get(index);
 			if (!g) {
