@@ -123,7 +123,7 @@ describe('path-gradient step quantisation', () => {
 		'image 1 world2': [32000, 32000, 0],
 		'image 1 world0.5': [16000, 16000, 0],
 		'image 1 brush2': [16000, 16000, 0],
-		'image 1 focus': [15998, 16000, 0],
+		'image 1 focus': [16000, 16000, 0],
 		'image 1 blend': [8000, 8000, 0],
 		'image 1 preset': [8000, 8000, 0],
 		'image 2 plain': [32000, 32000, 0],
@@ -138,7 +138,7 @@ describe('path-gradient step quantisation', () => {
 		'image 3 world0.5': [16000, 16000, 0],
 		'image 3 brush2': [16000, 16000, 0],
 		'image 3 focus': [16000, 16000, 0],
-		'image 3 blend': [7962, 8000, 0],
+		'image 3 blend': [8000, 8000, 0],
 		'image 3 preset': [8000, 8000, 0],
 	};
 
@@ -246,12 +246,12 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			totals[key] = (totals[key] ?? 0) + exactPixels(c, c.a, c.boundaryArgb!, 'premultiplied');
 		}
 		expect(totals['uniform no focus']).toBeGreaterThanOrEqual(320000); // every pixel; 319858 with the binary-fraction ties, 318577, then 282949 before
-		expect(totals['uniform isotropic focus']).toBeGreaterThanOrEqual(319821); // 319785 before the unpainted outside pixels, 318583, then 292048 before
+		expect(totals['uniform isotropic focus']).toBeGreaterThanOrEqual(320000); // every pixel; 319821 before round 11, 319785 before the unpainted outside pixels, 318583, then 292048 before
 		// Varying surrounds are Gouraud fan triangles (246132, 246030 and 245704 before).
-		expect(totals['uniform anisotropic focus']).toBeGreaterThanOrEqual(319574); // 319529 before the unpainted outside pixels, 289797 before the copies
-		expect(totals['varying no focus']).toBeGreaterThanOrEqual(319926);
-		expect(totals['varying isotropic focus']).toBeGreaterThanOrEqual(319913);
-		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(319920);
+		expect(totals['uniform anisotropic focus']).toBeGreaterThanOrEqual(320000); // every pixel; 319574 before round 11, 319529 before the unpainted outside pixels, 289797 before the copies
+		expect(totals['varying no focus']).toBeGreaterThanOrEqual(320000);
+		expect(totals['varying isotropic focus']).toBeGreaterThanOrEqual(320000);
+		expect(totals['varying anisotropic focus']).toBeGreaterThanOrEqual(320000);
 	});
 
 	it('keeps the focus contours exact to the step when the focus is isotropic', () => {
@@ -262,11 +262,11 @@ describe('exact pixels across the earlier path-gradient captures', () => {
 			const exact = exactPixels(c, 0xffffffff, [0xff000000, 0xff000000, 0xff000000], 'red');
 			if (c.focus![0] === c.focus![1]) isotropic += exact; else anisotropic += exact;
 		}
-		expect(isotropic).toBeGreaterThanOrEqual(287988); // 287982 before the unpainted outside pixels, 269712 of 288000 before
-		expect(anisotropic).toBeGreaterThanOrEqual(1725649); // 1725250 before the unpainted outside pixels, 1594271 before the copies
+		expect(isotropic).toBeGreaterThanOrEqual(288000); // every pixel; 287988 before round 11, 287982 before the unpainted outside pixels, 269712 before
+		expect(anisotropic).toBeGreaterThanOrEqual(1728000); // every pixel; 1725649 before round 11, 1725250 before the unpainted outside pixels, 1594271 before the copies
 		const lines = readSet('path-gradient-vertical-focus-line.json.gz');
 		let line = 0;
 		for (const c of lines) line += exactPixels(c, 0xffc06020, [0xff2080c0, 0xff2080c0, 0xff2080c0], 'rgb');
-		expect(line).toBeGreaterThanOrEqual(863162); // 863072 before the unpainted outside pixels, 811118 before the copies
+		expect(line).toBeGreaterThanOrEqual(864000); // every pixel; 863162 before round 11, 863072 before the unpainted outside pixels, 811118 before the copies
 	});
 });

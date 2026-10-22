@@ -35,6 +35,8 @@ import { mulMatrix, pathGradientColorAt, pathGradientQuantum, pathGradientStepCo
 import { copiesStepAt, prepareCopies } from './emf-plus-path-gradient-copies';
 import { hatchSampler } from './emf-plus-brush-hatch';
 import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
+import { prepareOneD } from './emf-plus-path-gradient-oned';
+import { unpremultipliedArgb } from './emf-plus-path-gradient-fan';
 import { invertTextureMatrix, writeTextureRect } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { linearRampSampler, unpremultiply } from './emf-plus-linear-ramp';
@@ -154,6 +156,18 @@ export function foldIntoTile(v: number, origin: number, size: number, mirror: bo
 		return origin + size - lag - local;
 	}
 	return origin + local;
+}
+
+/** The device columns `[left, right)` of a brush bounding box under `m`: the extent of its corners, each `floor(v + 1/2)`. */
+function tileDeviceColumns(box: { x: number; y: number; w: number; h: number }, m: TransformMatrix): [number, number] {
+	let left = Infinity;
+	let right = -Infinity;
+	for (const [bx, by] of [[box.x, box.y], [box.x + box.w, box.y], [box.x, box.y + box.h], [box.x + box.w, box.y + box.h]]) {
+		const x = m[0] * bx + m[2] * by + m[4];
+		left = Math.min(left, x);
+		right = Math.max(right, x);
+	}
+	return [Math.floor(left + 0.5), Math.floor(right + 0.5)];
 }
 
 /** True when the boundary's device-space bounding box sits on whole pixels. */
@@ -322,7 +336,8 @@ export function pathGradientSampler(
 	// copies (see emf-plus-path-gradient-vertices.ts). A tile cut from fractional bounds keeps the old path.
 	const vertexGradient = wrap === 'clamp' || pixelAligned(shape.boundary, full) ? prepareVertexGradient(shape, full) : null;
 	// A uniform surround is nested copies, rasterised from the boundary rounded to 1/16 pixel (see emf-plus-path-gradient-copies.ts).
-	const copies = quantum > 0 ? prepareCopies(shape, full, quantum) : null;
+	const oneD = quantum > 0 && !process.env.PG_NO_ONED ? prepareOneD(shape, full) : null;
+	const copies = quantum > 0 && !oneD ? prepareCopies(shape, full, quantum) : null;
 	const pxX = Math.hypot(full[0], full[1]);
 	const pxY = Math.hypot(full[2], full[3]);
 	const lagX = pxX > 0 ? 1 / pxX : 0;
@@ -333,7 +348,12 @@ export function pathGradientSampler(
 	// nudged to select the left-inclusive, right-exclusive span; nudging y
 	// paints isolated top vertices and sloped right edges native leaves empty.
 	const bias = wrap === 'clamp' ? CLAMP_EDGE_BIAS : 0;
+	// The window the scan converters are asked for spans in: the fill's own region, or for a tiled brush the device bounds of the tile
+	// bitmap native renders it into (`floor(v + 1/2)` of the bounds' corners).
+	const tileX = wrap === 'clamp' ? null : tileDeviceColumns(box, full);
 	return (x0, y0, w, h, out) => {
+		const windowLeft = tileX ? tileX[0] : x0;
+		const windowRight = tileX ? tileX[1] : x0 + w;
 		for (let j = 0; j < h; j++) {
 			const dy = y0 + j;
 			for (let i = 0; i < w; i++) {
@@ -344,7 +364,7 @@ export function pathGradientSampler(
 					bx = foldIntoTile(bx, box.x, box.w, mirrorX, lagX);
 					by = foldIntoTile(by, box.y, box.h, mirrorY, lagY);
 				}
-				if (wrap === 'clamp' && by >= box.y + box.h) continue;
+				if (wrap === 'clamp' && by >= box.y + box.h && !vertexGradient && !oneD) continue;
 				// The coverage nudge only selects a span: the colour (a collapsed vertical focus
 				// line's constant samples, a step edge) is taken at the unnudged location.
 				const focusPoint = bias
@@ -352,7 +372,7 @@ export function pathGradientSampler(
 				let c: number | null = null;
 				// A whole-pixel sample the nested copies leave outside the boundary is unpainted: the smooth ratio must not paint it.
 				let decided = false;
-				if (vertexGradient || copies) {
+				if (vertexGradient || copies || oneD) {
 					// The scan converter works on whole pixels: the (folded) sample is a device pixel.
 					const fx = wrap === 'clamp' ? x0 + i : full[0] * bx + full[2] * by + full[4];
 					const fy = wrap === 'clamp' ? dy : full[1] * bx + full[3] * by + full[5];
@@ -360,8 +380,12 @@ export function pathGradientSampler(
 					const ry = Math.round(fy);
 					if (Math.abs(fx - rx) < 1e-6 && Math.abs(fy - ry) < 1e-6) {
 						if (vertexGradient) {
-							c = vertexGradientColorAt(vertexGradient, rx, ry);
+							c = vertexGradientColorAt(vertexGradient, rx, ry, windowLeft, windowRight);
 							if (c === null && strictOutside) decided = true;
+						} else if (oneD) {
+							const v = oneD.colorAt(rx, ry, windowLeft, windowRight);
+							if (v !== null) c = unpremultipliedArgb(v >>> 24, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff);
+							else if (strictOutside) decided = true;
 						} else if (copies) {
 							const step = copiesStepAt(copies, rx, ry, bias);
 							if (step !== null) c = pathGradientStepColor(shape, step, quantum);

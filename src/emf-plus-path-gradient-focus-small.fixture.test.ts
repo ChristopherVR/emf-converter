@@ -60,8 +60,8 @@ for (const c of captures) {
 
 /** [images, native pixels, exact pixels (floor), unpainted ceiling, max error ceiling]. */
 const EXPECTED: Record<string, [number, number, number, number, number]> = {
-	sq: [54, 16992, 16956, 0, 6],
-	off: [54, 16992, 16989, 0, 6],
+	sq: [54, 16992, 16992, 0, 0],
+	off: [54, 16992, 16992, 0, 0],
 };
 
 describe('independent focus scales on small shapes', () => {
