@@ -4,6 +4,54 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.22.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.22.0) - 2026-10-22
+
+### Features
+
+- ClearType compatible widths treat black-type MIRPs as stems and pair each point once (round 10, R10-A) ([ca0e152](https://github.com/ChristopherVR/emf-converter/commit/ca0e15247ff8d8ba1664b510b3e1c190ae40cbd1))
+- **gradient:** Decide independent-focus copy ties by containment outside a measured noise band ([f1ba9da](https://github.com/ChristopherVR/emf-converter/commit/f1ba9daa76d2d30b946f8194d28a580b279728c2))
+- **text:** Honour SHPIX along x in unscaled GDI+ grayscale text ([8ae068e](https://github.com/ChristopherVR/emf-converter/commit/8ae068ef2dafbd809dd52daf16b95c1aeb5ff896))
+- **text:** Apply half-pixel SHPIX shifts of untouched points in unscaled GDI+ grayscale text ([5b289ae](https://github.com/ChristopherVR/emf-converter/commit/5b289aec55c06c3224ff0baa64284b79cd899aed))
+- GDI integer advances follow head.flags bit 4 and the LTSH table ([38186d7](https://github.com/ChristopherVR/emf-converter/commit/38186d74caaca016061caf7ad9bb1f94d54cf248))
+- Rasterize GDI mono and gray glyphs from the pixel nearest a moved left phantom point ([f5566f6](https://github.com/ChristopherVR/emf-converter/commit/f5566f6fffa2dca0cb2c4f23ac32f5ea924ed6b3))
+- GDI interpreter leaves the left phantom point unrounded and rounds the advance ([b6d7ba8](https://github.com/ChristopherVR/emf-converter/commit/b6d7ba848d41e24f28602d37e1fb7818d6202bde))
+
+### Bug Fixes
+
+- Wrap a cropped high-quality draw's fifth kernel row inside the margin-extended rectangle ([17cfd4b](https://github.com/ChristopherVR/emf-converter/commit/17cfd4bfad1ee25c9cf117927137cbeef3dcc21c))
+- Start HighQuality reductions at a far destination edge one float32 step early ([dfb01f5](https://github.com/ChristopherVR/emf-converter/commit/dfb01f56b9c3a0f483798ad8374ef9e57ee07c2c))
+- The ClearType compatible-width shift scale keeps the hinted advance, not the LTSH/head.flags linear one ([f25531b](https://github.com/ChristopherVR/emf-converter/commit/f25531b04ff8c1466ae556c98e9ee75572ec25ee))
+- **emf-plus:** Flat dash ends behind a smooth join and the split at a degenerate Bezier (Inset dash sheet) ([686c902](https://github.com/ChristopherVR/emf-converter/commit/686c9026dfd80031bd5ff2dfda52424a280c46b2))
+
+### Other
+
+- Sweep independent focus scales at integer vertices; native noise is not float32 edge arithmetic ([22f9c91](https://github.com/ChristopherVR/emf-converter/commit/22f9c91d49fa6c4ecfb26a74d92871407af24f4c))
+- Sweep the centre colour of the vertex-to-vertex edge; anatomy of the tile ties ([025d01f](https://github.com/ChristopherVR/emf-converter/commit/025d01f043bb92e606341eda4da0298387d1c33a))
+- Decide every independent-focus copy tie within 0.005 of a step by containment ([a3adb24](https://github.com/ChristopherVR/emf-converter/commit/a3adb24db826dd6912f93ef20ead2705d063d594))
+
+### Refactor
+
+- **text:** Keep the SHPIX-along-y doc comment with its method ([d38f773](https://github.com/ChristopherVR/emf-converter/commit/d38f773efeb5464214004db29ef5a87d15271422))
+
+### Documentation
+
+- Record the independent-focus containment band and the candidate trade ([a1430d8](https://github.com/ChristopherVR/emf-converter/commit/a1430d816f7b8ac909f46d5e9eb2f531fe0cbf9b))
+- Correct the sweep denominators ([b77c76a](https://github.com/ChristopherVR/emf-converter/commit/b77c76a5b7d29bdd2fc76a5ff124aea9be36fa47))
+- GDI+ text round 10 R10-B (SHPIX along x) ([b9dd3e9](https://github.com/ChristopherVR/emf-converter/commit/b9dd3e9c0e953bd3b316523856cd4e719b000fec))
+- GDI ClearType stem pairs (round 10, R10-A) ([95d221e](https://github.com/ChristopherVR/emf-converter/commit/95d221e2769c61e0070f3018a575f4ec9b3f902e))
+- Round 10 workstream C (GDI advances, phantom points, curve ties) ([ed56a9a](https://github.com/ChristopherVR/emf-converter/commit/ed56a9a0bca0d5e6755179b2638af46bc6ff3d71))
+- Round 10 Inset dashes, the Widen oracle and what is left ([4e1f060](https://github.com/ChristopherVR/emf-converter/commit/4e1f060619bd5cae46b3e6a4f34c718c29b44454))
+- Dot tilt of round-dash pens ([0522817](https://github.com/ChristopherVR/emf-converter/commit/05228176284d5008950e259a65eb062e304d30aa))
+- List the hq-reduction-positions and hq-rotated-fixture probe modes ([25039c5](https://github.com/ChristopherVR/emf-converter/commit/25039c507c56591ce2916739f8528c6fd8849a77))
+- Record the accepted independent-focus containment trade ([7b24ede](https://github.com/ChristopherVR/emf-converter/commit/7b24eded0020b0e92c29d2a37efe59caa18bb885))
+
+### Testing
+
+- Pin the native GGO_GRAY4_BITMAP of the shifted Microsoft Sans Serif 7 ([3469a53](https://github.com/ChristopherVR/emf-converter/commit/3469a53810ce67b7c62e72f2cde089e6b74105e7))
+- Re-pin the synthetic chain counts after merging main ([32bb1c7](https://github.com/ChristopherVR/emf-converter/commit/32bb1c76dc04363d710c37d9834b407c77254cf3))
+- Bisect the texture-brush coordinate stage to float32 resolution; document the residual JPEG, blur and texture pixels ([b39d1be](https://github.com/ChristopherVR/emf-converter/commit/b39d1beecd651017e87063769ea121e7c1621802))
+- Re-measure the host-font gpx-text-pathgrad bound for the new runner image ([beb2297](https://github.com/ChristopherVR/emf-converter/commit/beb2297f8a448e4943fa5f838f237857238e90bf))
+
 ## [4.21.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.21.0) - 2026-10-17
 
 ### Features
