@@ -29,13 +29,12 @@ export interface Corner {
 
 /**
  * The coverage (0..255 over `box`) of an Inset stroke on closed figures: `strokeGroups`, the stroke at twice the pen's width, centered (28.4
- * device polygons, one group per figure), clipped to the pixels of `figureFix` (the figures themselves) as GDI+'s hard clip does; antialiased,
- * the outline of the surviving pixels is filled instead (see the module comment), the outline of each figure's own pixels (measured on 80 paths
- * of two or three overlapping figures: 3,251 pixels differ against 6,719 for the outline of all the pixels together). `evenOdd` takes the clip as the even-odd interior of the figures
- * (the Alternate fill mode of a GraphicsPath, its default; a polygon or a Winding path clips by the nonzero interior): measured on 80 paths of
- * two or three overlapping closed polygons, a pixel is kept when it lies in an odd number of the figures and in the stroke (49 of 80 exact,
- * from 9 with the nonzero interior). `half` (PixelOffsetMode Half) moves the samples of the aliased mask half a pixel; the antialiased outline is
- * on the device pixels of that mask and is not moved again (exact on 40 of 40 paths, from none when it was).
+ * device polygons, one group per figure), clipped to the pixels of `figureFix` (the figures themselves) as GDI+'s hard clip does. GDI+ then
+ * converts the surviving pixels of each figure's stroke to an outline (see the module comment) and fills the outlines of all the figures together
+ * with the nonzero rule, aliased and antialiased alike. `evenOdd` takes the clip as the even-odd interior of the figures (the Alternate fill mode
+ * of a GraphicsPath, its default; a polygon or a Winding path clips by the nonzero interior): a pixel is kept when it lies in an odd number of the
+ * figures and in the stroke. `half` (PixelOffsetMode Half) moves the samples of the mask half a pixel; the outline of the surviving pixels is on
+ * the device pixels of that mask and is not moved again.
  */
 export function insetStrokeCoverage(
 	strokeGroups: ReadonlyArray<ReadonlyArray<FixFigure>>,
@@ -55,21 +54,12 @@ export function insetStrokeCoverage(
 		}
 		return mask;
 	});
-	if (!antialias) {
-		const out = masks[0] ?? new Uint8ClampedArray(box.w * box.h);
-		for (let k = 1; k < masks.length; k++) {
-			for (let i = 0; i < out.length; i++) {
-				if (masks[k][i] !== 0) {
-					out[i] = 255;
-				}
-			}
-		}
-		return out;
-	}
+	// GDI+ fills the outlines of the regions (all of them in one path, nonzero), aliased and antialiased alike: the outline is on whole pixels, and
+	// the diagonal cuts of its corners decide the pixels the cut passes through.
 	return rasterizePlusFill(
 		masks.flatMap((mask) => insetMaskOutline(mask, box.w, box.h, box.x, box.y)),
 		false,
-		true,
+		antialias,
 		false,
 		box,
 	);
@@ -293,25 +283,45 @@ function traceRegionLoops(bands: Band[], X: number[]): Corner[][] {
 }
 
 /**
- * Which of the traced (rectilinear) loops are holes: those inside an odd number of the others. GDI+ reverses these after converting
- * (`ConvertRegionOutputToWinding`, which tests the loops' bounding boxes against each other; testing the loops themselves is what the captured
- * outlines follow: 300 of 300 contact cases exact, against 299 with the boxes, and the overlapping figures of `gpx-pen-inset-multi-aa`
- * 4 pixels off against 20).
+ * Which loops of a region GDI+ reverses (`ConvertRegionOutputToWinding`): it compares the bounding boxes of the loops and flips a loop that
+ * another one's box contains (edges included). A loop counts as a hole, and is reversed, when it lies in the boxes of an odd number of loops that
+ * are not reversed themselves (the plain parity of all the containing boxes fits 299 of 300 contact cases, this fits all 300). The boxes, not
+ * the loops, decide: a loop inside the box of another without being inside it is reversed too, and where regions of several figures overlap
+ * its reversal cancels the others' winding (the overlapping figures of `gpx-pen-inset-multi-*` are exact only so, 77 of 80 random cases of
+ * `inset-cases.json.gz` against 49 with the loops' true nesting).
  */
-function nestFlags(raw: Corner[][]): boolean[] {
-	return raw.map((l, i) => {
-		const px = l[0].x + 0.5, py = l[0].y + 0.5;
-		let depth = 0;
-		raw.forEach((o, j) => {
-			if (j === i) return;
-			let inside = false;
-			for (let a = 0, b = o.length - 1; a < o.length; b = a++) {
-				const pa = o[a], pb = o[b];
-				if (pa.y > py !== pb.y > py && px < ((pb.x - pa.x) * (py - pa.y)) / (pb.y - pa.y) + pa.x) inside = !inside;
+function reversedLoops(loops: Corner[][]): boolean[] {
+	const boxes = loops.map((l) => {
+		let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+		for (const c of l) {
+			x0 = Math.min(x0, c.x);
+			y0 = Math.min(y0, c.y);
+			x1 = Math.max(x1, c.x);
+			y1 = Math.max(y1, c.y);
+		}
+		return { x0, y0, x1, y1 };
+	});
+	const contains = (a: (typeof boxes)[number], b: (typeof boxes)[number]): boolean => b.x0 >= a.x0 && b.y0 >= a.y0 && a.x1 >= b.x1 && a.y1 >= b.y1;
+	// First every box that contains another toggles it (the containing boxes' parity), then a loop is a hole when an odd number of the containers
+	// that are not holes themselves hold it.
+	const parity = loops.map(() => false);
+	for (let i = 1; i < loops.length; i++) {
+		for (let k = i - 1; k >= 0; k--) {
+			if (contains(boxes[i], boxes[k])) {
+				parity[k] = !parity[k];
+			} else if (contains(boxes[k], boxes[i])) {
+				parity[i] = !parity[i];
 			}
-			if (inside) depth++;
-		});
-		return depth % 2 === 1;
+		}
+	}
+	return loops.map((_, x) => {
+		let n = 0;
+		for (let c = 0; c < loops.length; c++) {
+			if (c !== x && !parity[c] && contains(boxes[c], boxes[x])) {
+				n++;
+			}
+		}
+		return n % 2 === 1;
 	});
 }
 
@@ -326,9 +336,8 @@ export function regionOutline(mask: ArrayLike<number>, w: number, h: number): Co
 		const b = bands[0];
 		return [[{ x: X[b.s], y: b.y0 }, { x: X[b.s + 1], y: b.y0 }, { x: X[b.s + 1], y: b.y1 }, { x: X[b.s], y: b.y1 }]];
 	}
-	const raw = traceRegionLoops(bands, X);
-	const loops = raw.map(diagonalizeLoop);
-	const flags = nestFlags(raw);
+	const loops = traceRegionLoops(bands, X).map(diagonalizeLoop);
+	const flags = reversedLoops(loops);
 	return loops.map((l, i) => (flags[i] ? l.slice().reverse() : l));
 }
 

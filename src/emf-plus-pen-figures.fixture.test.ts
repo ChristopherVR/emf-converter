@@ -39,8 +39,8 @@ const EXPECTED: Record<string, number> = {
 	'gpx-pen-inset-thin-aa': 0,
 	'gpx-pen-inset-half-aliased': 0,
 	'gpx-pen-inset-half-aa': 0,
-	'gpx-pen-inset-multi-aliased': 2,
-	'gpx-pen-inset-multi-aa': 4,
+	'gpx-pen-inset-multi-aliased': 0,
+	'gpx-pen-inset-multi-aa': 0,
 	'gpx-pen-inset-multiwind-aliased': 0,
 	'gpx-pen-inset-multiwind-aa': 0,
 };
