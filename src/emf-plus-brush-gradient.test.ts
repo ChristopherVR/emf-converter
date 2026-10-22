@@ -245,11 +245,11 @@ describe('curved and triangular path-gradient focus against native GDI+', () => 
 
 	// Zero-tolerance ceilings of the independent focus scales (one level at most; the pixels left are copy-edge ties of the
 	// strip solver, see docs/outstanding-work.md). Before containment decided the pixels within 0.005 of a step of a copy
-	// edge but for the noise band: ellipse 0-50 35, 100-25 16, 25-100 12, 25-75 8, 50-0 27, 75-25 18; triangle 0-50 13,
+	// edge: ellipse 0-50 35, 100-25 16, 25-100 12, 25-75 8, 50-0 27, 75-25 18; triangle 0-50 13,
 	// 100-25 9, 25-100 2, 25-75 11, 50-0 10, 75-25 15.
 	it.each([
-		['ellipse-0-50', 22], ['ellipse-100-25', 3], ['ellipse-25-100', 12], ['ellipse-25-75', 3], ['ellipse-50-0', 13], ['ellipse-75-25', 4],
-		['triangle-0-50', 5], ['triangle-100-25', 1], ['triangle-25-100', 1], ['triangle-25-75', 8], ['triangle-50-0', 2], ['triangle-75-25', 3],
+		['ellipse-0-50', 0], ['ellipse-100-25', 2], ['ellipse-25-100', 0], ['ellipse-25-75', 0], ['ellipse-50-0', 0], ['ellipse-75-25', 0],
+		['triangle-0-50', 0], ['triangle-100-25', 0], ['triangle-25-100', 0], ['triangle-25-75', 0], ['triangle-50-0', 0], ['triangle-75-25', 2],
 	] as const)('%s keeps at most %i differing pixels', async (suffix, ceiling) => {
 		const diff = await compareFixture(`grad-path-focus-${suffix}`, 'emf', 0);
 		expect(diff!.mismatched, JSON.stringify(diff)).toBeLessThanOrEqual(ceiling);
