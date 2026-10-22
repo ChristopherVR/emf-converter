@@ -447,7 +447,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('text-helv-hm13', 'wmf', 0), // measured 0.000%
 	fontCase('text-helv-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-helv-hp18', 'wmf', 0), // measured 0.000%
-	fontCase('text-msshelldlg-hm13', 'wmf', 0.00061), // measured 0.0571% (round 9; was 0.0900% ceiling) measured 0.057%
+	fontCase('text-msshelldlg-hm13', 'wmf', 0.00015), // measured 0.0139% (round 10: bitmap placed on the pixel nearest a moved left phantom point; 0.0556% in round 9)
 	fontCase('text-msshelldlg-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-msshelldlg-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('text-nosuchfacexyz-hm13', 'wmf', 0), // measured 0.000%
@@ -535,8 +535,8 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-wmf-opaque-mono', 'wmf', 0.0004), // measured 0.004%
 	fontCase('textx-wmf-segoeui-mono', 'wmf', 0.00001), // measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.015%
 	fontCase('textx-wmf-tahoma-mono', 'wmf', 0.00001), // measured 0.0007% (round 9; was 0.0500% ceiling) measured 0.020%
-	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.00012), // measured 0.0108% (round 9; was 0.0600% ceiling) measured 0.028%
-	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0.00008), // measured 0.0073% (round 9; was 0.0500% ceiling) measured 0.020%
+	fontCase('textx-wmf-timesnewroman-cell-mono', 'wmf', 0.00002), // measured 0.0013% (round 10: LTSH linear advances; 0.0108% in round 9, was 0.0600% ceiling)
+	fontCase('textx-wmf-timesnewroman-mono', 'wmf', 0), // measured 0.000% (round 10: LTSH linear advances; 0.0073% in round 9)
 	fontCase('textx-wmf-timesnewroman-styles-mono', 'wmf', 0.0005), // measured 0.012%
 	fontCase('textx-world-aa', 'emf', 0.00003), // measured 0.0023% (3 px; 13 before round 8) against the native playback (0.265% before)
 	fontCase('textx-world-mono', 'emf', 0.00002), // measured 0.0015% (2 px; 12 before round 8) against the native playback (0.202% before)

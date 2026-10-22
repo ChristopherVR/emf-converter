@@ -649,6 +649,23 @@ export class RealizedFont implements GdiRealizedFont {
 		return g;
 	}
 
+	/** The scaled advance of glyph `index`, rounded once. */
+	private linearAdvance(index: number): number {
+		const { advance } = this.ttf.hMetrics(index < this.ttf.numGlyphs ? index : NOTDEF);
+		return Math.floor((advance * this.ppemX) / this.ttf.unitsPerEm + 0.5);
+	}
+
+	/** Whether glyph `index` advances linearly at this size: `head.flags` bit 4 clear, or `LTSH` (an `hdmx` record for the size comes first). */
+	private ltshLinear(index: number): boolean {
+		if (this.gdiPlus || this.ppemX !== this.ppem) return false;
+		const hd = this.hdmx;
+		if (hd && index < hd.length) return false;
+		// head.flags bit 4 clear: the instructions may not alter the advance width, which is the scaled one, rounded.
+		if ((this.ttf.headFlags & 0x10) === 0) return true;
+		const lt = this.ttf.ltsh;
+		return !!lt && index < lt.length && lt[index] > 0 && this.ppem >= lt[index];
+	}
+
 	/** Integer advance width of glyph `index`, as GetCharWidth32 reports it (GDI+ ClearType: its hinted phantom advance rounded). */
 	advance(index: number): number {
 		const hd = this.hdmx;
@@ -661,6 +678,10 @@ export class RealizedFont implements GdiRealizedFont {
 			base = Math.round((advance * this.stretchWidth) / this.ttf.xAvgCharWidth);
 		} else if (!this.gridFit) {
 			base = this.outline(index).linearAdvance / 64;
+		} else if (this.ltshLinear(index)) {
+			// `LTSH`: from its yPels on a glyph's advance is the linearly scaled one, rounded (GetCharWidth32 and
+			// GGO_METRICS of Times New Roman A: hinted up to 68 px, linear from 69, hdmx records excepted).
+			base = this.linearAdvance(index);
 		} else if (this.advanceSize) {
 			let g = this.advanceOutlines.get(index);
 			if (!g) {
@@ -740,6 +761,14 @@ export class RealizedFont implements GdiRealizedFont {
 			m = roundedRotationMatrix(m, this.ppem);
 		}
 		let o: Outline = this.mode === 'cleartype' && !m && !this.syntheticItalic ? this.ctOutline(index) : src;
+		// GDI's monochrome and grayscale bitmaps are rasterized from the coordinates the glyph program left, not re-anchored
+		// at a left phantom point it moved (Microsoft Sans Serif 7 at 13 px: pp1 SHPIXed by -28/64 pixel).
+		const shift = this.gdiPlus || m || this.mode === 'cleartype' ? 0 : src.rasterShift ?? 0;
+		if (shift !== 0) {
+			const xs = new Float64Array(o.xs.length);
+			for (let i = 0; i < xs.length; i++) xs[i] = o.xs[i] + shift;
+			o = { ...o, xs };
+		}
 		if (this.syntheticItalic || m || subX || subY) {
 			const base = o;
 			const n = base.xs.length;
