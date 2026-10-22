@@ -57,6 +57,10 @@ The report supplies `windowsFonts()` when the complete fixture font set is avail
 
 The monochrome generator also captures 1,200 real-font controls using `MonoCondensedProbe.cs`; `ttf-mono-condensed.fixture.test.ts` preserves every prior per-case ceiling and 970 exact controls. The smart-crossing refinement is restricted to upright, uniformly realized glyphs without synthetic shear or fractional translation. Condensed glyphs retain the previous arithmetic where refinement exposes unresolved hinting/raster interactions; existing real-font residual limits remain unchanged.
 
+## Advance widths and phantom points (round 10)
+
+`powershell.exe -NoProfile -File scripts/gdi-fixtures/generate-advances.ps1` (probes `GdiAdvanceProbe.cs`, `AdvanceFontProbe.cs`, fonts `build-advance-fonts.py`) captures `GetCharWidth32` of U+0020..U+00FF of five faces at 123 em and 91 cell heights (`gdi-advances.json.gz`) and of program-free private fonts with and without `head.flags` bit 4 (`advance-font-*.json.gz`); test `src/gdi-advances.fixture.test.ts`. `generate-ms-sans-glyphs.ps1` (probe `GlyphSheetProbe.cs`, any face, height list and string, `BitmapFormat` 1 or 5) captures Microsoft Sans Serif mono and gray glyphs and Times New Roman Italic `<=>~j4`; tests `ttf-ms-sans-glyphs.fixture.test.ts`, `ttf-times-italic-glyphs.fixture.test.ts`. `PrefixAdvanceProbe.cs` reads the advance of every instruction-prefix variant of `build-hint-prefix-font.py` fonts (hand-run, derived from Microsoft fonts, not committed).
+
 ## Case groups
 
 `rop`, `gradient`, `text`, `pattern`, `rotation`, `rop2`, `image`,
