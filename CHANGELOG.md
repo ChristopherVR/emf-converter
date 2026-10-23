@@ -4,6 +4,56 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.23.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.23.0) - 2026-10-23
+
+### Features
+
+- Port GDI+'s region-to-path conversion for the antialiased Inset outline ([61efa7f](https://github.com/ChristopherVR/emf-converter/commit/61efa7f80804ed96bb6a6e2e455e4b7d1454a77a))
+- Stroke the open figures of an Inset path at the pen's own width ([84c6439](https://github.com/ChristopherVR/emf-converter/commit/84c64396219fce28967496c903b9201a6374d2d8))
+- **gdi+:** Read the linear gradient matrix chain and the texture span step from gdiplus.dll ([5735433](https://github.com/ChristopherVR/emf-converter/commit/57354339c08ec8577db538b4c885746ff6b3b1d5))
+- Path gradients follow the system gdiplus converter (fan triangles and one-dimensional ramp) ([d6362f0](https://github.com/ChristopherVR/emf-converter/commit/d6362f0fcd33d20c1769d55388ab82f2560e918c))
+- Blend and preset curves on the fan, span windows, straight bitmaps; drop the nested-copy model ([ae5c1d1](https://github.com/ChristopherVR/emf-converter/commit/ae5c1d1329cf2486406278008139205f63b45c62))
+- **text:** GDI's scan converter for monochrome and grayscale glyph bitmaps ([3be36d8](https://github.com/ChristopherVR/emf-converter/commit/3be36d80d229ded00c38f5bab766b6cdcaa1b8ae))
+- **gdi:** Resolve compatible-width ClearType stem shifts the way native does ([4bc6c63](https://github.com/ChristopherVR/emf-converter/commit/4bc6c635214620c670e278c8641a8e8717fa6a11))
+- **gdi:** Native vertical ClearType filter weights (4 9 10 9 4) and level snap ([1a438d5](https://github.com/ChristopherVR/emf-converter/commit/1a438d5142edfcad3bca6fe6b51575b984192d99))
+- **gdi:** Round implied on-curve points on the oversampled ClearType grid ([e3b9cad](https://github.com/ChristopherVR/emf-converter/commit/e3b9cad049b3e697734b6bf7fb28f455c7a4b78b))
+- **gdi:** GDI ClearType uses exact arcs and closed horizontal ties ([67d0285](https://github.com/ChristopherVR/emf-converter/commit/67d0285f32140df6bae0ebc5064cd9714c7a1fa4))
+- **gdi:** Link rules of native ClearType width mode (SPVTL line, ISECT line choice, direction flag) ([4ade11d](https://github.com/ChristopherVR/emf-converter/commit/4ade11db0fb144e080784ae7e34c19b2acff8cb4))
+- **gdi:** Native ClearType-direction flag for GDI ClearType, DELTAP rule as native ([5285fe8](https://github.com/ChristopherVR/emf-converter/commit/5285fe8ebd4c7bba0e037e3d03b29d8ecf42cb05))
+- **text:** DirectWrite ClearType arithmetic for installed fonts in GDI+ text (candidate) ([37d98c8](https://github.com/ChristopherVR/emf-converter/commit/37d98c8052811d4b50c1c1556f241ea8c98c3ec6))
+- **text:** DirectWrite arithmetic is the default for installed fonts in GDI+ text (R11-C), re-pinned on the combined tree ([3f7eac3](https://github.com/ChristopherVR/emf-converter/commit/3f7eac343d04359ecba9da9cfb48daddc3a9b44f))
+
+### Bug Fixes
+
+- Inset dashed pens are the doubled pen with double round caps ([33db648](https://github.com/ChristopherVR/emf-converter/commit/33db648c03247854bca1be530678c194fe1ebc5e))
+- Inset stroke outlines are filled together, with GDI+'s loop reversal ([c871dee](https://github.com/ChristopherVR/emf-converter/commit/c871dee41367a6ca583b11ee23d0e659a463937e))
+- **text:** GDI's ISECT, MUL, IUP and SCANCTRL arithmetic ([60204ac](https://github.com/ChristopherVR/emf-converter/commit/60204ac03ee602ed9a79a61303813b214b8b4c9d))
+
+### Other
+
+- Playback mode for ImagePointsBisectProbe (flip set identical to direct draw) ([54e4b8f](https://github.com/ChristopherVR/emf-converter/commit/54e4b8fb2ab6b2b0b265b5c30adaf597d26e59e0))
+- Float32 chain of DrawImage points form (round trip through the inferred matrix), fixture test, playback capture ([e297859](https://github.com/ChristopherVR/emf-converter/commit/e297859abdf175ad37a9710210a040b8bc7a6e86))
+- Image resample: exact float32 matrix chain for plain Bilinear DrawImagePoints ([218acb4](https://github.com/ChristopherVR/emf-converter/commit/218acb417848e0f0526535804f0758e96a186e52))
+
+### Documentation
+
+- Round 11 Inset pens read from the native widener ([72c8b88](https://github.com/ChristopherVR/emf-converter/commit/72c8b88075cabed962929ce5fd30d458d037f488))
+- Record the round 11 (R11-F) reading of the texture and linear-gradient spans ([26483f8](https://github.com/ChristopherVR/emf-converter/commit/26483f86e7a21bbf84969f62b9d5167c28a40e22))
+- Round 11 DrawImage bilinear span reading (negative result) and the float32 image-points bisect probe ([6879ebf](https://github.com/ChristopherVR/emf-converter/commit/6879ebf556170b90cf0f8e9ab012a1894ca492a8))
+- Record the path-gradient converters read from gdiplus.dll (round 11) ([7c4a17d](https://github.com/ChristopherVR/emf-converter/commit/7c4a17db2f66226d0a6a826d1261a74630e4d175))
+- Name the source of the bilinear tolerance constants ([76caabe](https://github.com/ChristopherVR/emf-converter/commit/76caabe7ca0e264c07720d7aa457f867492cf0ca))
+- Docs and tests: R11-G2 DrawImagePoints chain; exact JPEG playbacks ([15e5c96](https://github.com/ChristopherVR/emf-converter/commit/15e5c964dc22f5116b438d849b494ebb66db6e45))
+- Correct vertical comparison ([4e38b4f](https://github.com/ChristopherVR/emf-converter/commit/4e38b4fb450918073d54d2ff29a679ba7eb8d41f))
+- **text:** Round 11 workstream B (native scan converter, hinting arithmetic); tighten text fixture ceilings ([83928e6](https://github.com/ChristopherVR/emf-converter/commit/83928e616acf8b54fa7c806966477f2ffd203691))
+- Round 11 R11-A GDI ClearType findings ([99da553](https://github.com/ChristopherVR/emf-converter/commit/99da5534e7abfaaa60d1acbe3cf8db1204b830b8))
+- R11-C GDI+ text findings (DirectWrite arithmetic) ([2416239](https://github.com/ChristopherVR/emf-converter/commit/2416239ee9885652795da9f656f25e347c1e8617))
+
+### Testing
+
+- **fixtures:** Gray size-sheet glyph probe (GGO_GRAY4_BITMAP of the aa sheets' glyphs) ([af5968d](https://github.com/ChristopherVR/emf-converter/commit/af5968d437cf2ce3e58233eb05dc10000db37372))
+- **gdi:** H set of the compatible-width probe is fully exact now ([86e9a65](https://github.com/ChristopherVR/emf-converter/commit/86e9a65ecbb70aa1e47b07ffbc7125c83fa3294c))
+- Pin the DirectWrite arithmetic model (opt-in) against committed GDI+ grayscale captures ([5f7be17](https://github.com/ChristopherVR/emf-converter/commit/5f7be17209256b5e413a78cda8d35ab41b6e84c7))
+
 ## [4.22.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.22.0) - 2026-10-22
 
 ### Features
