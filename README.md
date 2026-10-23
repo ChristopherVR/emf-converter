@@ -32,14 +32,14 @@ npm install emf-converter
 
 No required dependencies:
 
-- **Browser / Web Worker**: `OffscreenCanvas` or `HTMLCanvasElement` is used automatically for PNG and JPEG. Bundlers select the dedicated browser entry through conditional exports; it contains no native canvas or Node filesystem imports. Installing `@napi-rs/canvas` is only needed for the optional Node backend.
-- **Node.js**: SVG output, and PNG/JPEG output for drawings without text, work out of the box through the built-in rasteriser. For PNG/JPEG output of drawings with text, either pass `fonts` (see [Exact text](#exact-text)) or install the optional [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas) (prebuilt, no `node-gyp`):
+- **Browser / Web Worker**: `OffscreenCanvas` or `HTMLCanvasElement` is used automatically for PNG, JPEG and WebP. Bundlers select the dedicated browser entry through conditional exports; it contains no native canvas or Node filesystem imports. Installing `@napi-rs/canvas` is only needed for the optional Node backend.
+- **Node.js**: SVG and PDF output, and PNG/JPEG/WebP output for drawings without text, work out of the box through the built-in rasteriser. For PNG/JPEG/WebP output of drawings with text, either pass `fonts` (see [Exact text](#exact-text)) or install the optional [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas) (prebuilt, no `node-gyp`):
 
   ```bash
   npm install @napi-rs/canvas
   ```
 
-  Without either, PNG/JPEG conversion of a drawing that contains text returns `null` rather than an image missing its text.
+  Without either, PNG/JPEG/WebP conversion of a drawing that contains text returns `null` rather than an image missing its text.
 
 ## Quick start
 
@@ -301,7 +301,7 @@ Every conversion function accepts this. Typed arrays, `DataView`s and Node.js `B
 
 | Parameter   | Type                           | Description                                                       |
 | ----------- | ------------------------------ | ----------------------------------------------------------------- |
-| `buffer`    | `MetafileInput`                | Raw EMF or WMF file (format is auto-detected)                     |
+| `input`     | `MetafileInput`                | Raw EMF or WMF file (format is auto-detected)                     |
 | `options`   | `ConvertOptions` (optional)    | `format` (`'png'` default, `'jpeg'`, `'webp'`, `'svg'`) plus that format's options |
 | **Returns** | `Promise<ConvertedImage \| null>` | The encoded file, or `null` on failure                          |
 
@@ -460,7 +460,7 @@ Node.js only (returns `[]` elsewhere; the package stays browser-safe). Reads the
 
 ## How it works
 
-A three-phase pipeline: **parse → replay → export**. Records are replayed by the GDI, EMF+ or WMF handlers onto a Canvas (or the built-in pure-JavaScript rasteriser) for PNG and JPEG, or onto a recording context for SVG. GDI and GDI+ shapes, raster operations, brushes, clipping, text and WMF playback are all fitted to output painted by Windows itself.
+A three-phase pipeline: **parse → replay → export**. Records are replayed by the GDI, EMF+ or WMF handlers onto a Canvas (or the built-in pure-JavaScript rasteriser) for PNG, JPEG and WebP, or onto a recording context for SVG and PDF. GDI and GDI+ shapes, raster operations, brushes, clipping, text and WMF playback are all fitted to output painted by Windows itself.
 
 See [How it works](docs/how-it-works.md) for the pipeline, the Windows-parity details and the full list of supported records.
 
