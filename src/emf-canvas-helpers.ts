@@ -30,10 +30,8 @@ import { decodePng, isPng } from './png-decoder';
 import { decodeImageCodecFallback } from './image-codec-fallback';
 import { jpegFamily } from './jpeg-decoder';
 import { loadNodeCanvasModule } from './node-canvas-loader';
-import { encodePng } from './png-encoder';
 import { cosmeticStyle } from './gdi-raster';
 import { SoftwareRasterCanvas } from './software-raster';
-import { bytesToBase64 } from './svg-tree';
 import type { AnyCanvas, CanvasContext, DrawState, GdiObject } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -655,53 +653,6 @@ export function getStockObject(index: number): GdiObject | null {
 		default:
 			return null;
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Canvas export helpers
-// ---------------------------------------------------------------------------
-
-export async function blobToDataUrl(blob: Blob): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => resolve(reader.result as string);
-		reader.onerror = () => reject(reader.error);
-		reader.readAsDataURL(blob);
-	});
-}
-
-export async function exportCanvasToPngDataUrl(canvas: AnyCanvas): Promise<string | null> {
-	if ((canvas as unknown) instanceof SoftwareRasterCanvas) {
-		const soft = canvas as unknown as SoftwareRasterCanvas;
-		emfLog(`exportCanvasToPngDataUrl: encoding the software raster (${soft.width}×${soft.height})`);
-		const png = await encodePng(soft.pixels, soft.width, soft.height);
-		return `data:image/png;base64,${bytesToBase64(png)}`;
-	}
-	if (typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas) {
-		emfLog(
-			`exportCanvasToPngDataUrl: using OffscreenCanvas.convertToBlob (${canvas.width}×${canvas.height})`,
-		);
-		const blob = await canvas.convertToBlob({ type: 'image/png' });
-		emfLog(`exportCanvasToPngDataUrl: blob size=${blob.size} bytes, type=${blob.type}`);
-		return blobToDataUrl(blob);
-	}
-
-	if (typeof HTMLCanvasElement !== 'undefined' && canvas instanceof HTMLCanvasElement) {
-		emfLog(
-			`exportCanvasToPngDataUrl: using HTMLCanvasElement.toDataURL (${canvas.width}×${canvas.height})`,
-		);
-		return canvas.toDataURL('image/png');
-	}
-
-	if (nodeCanvasModule && canvas instanceof nodeCanvasModule.Canvas) {
-		emfLog(
-			`exportCanvasToPngDataUrl: using @napi-rs/canvas toDataURLAsync (${canvas.width}×${canvas.height})`,
-		);
-		return canvas.toDataURLAsync();
-	}
-
-	emfWarn('exportCanvasToPngDataUrl: no canvas type matched, returning null');
-	return null;
 }
 
 // ---------------------------------------------------------------------------
