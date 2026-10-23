@@ -50,6 +50,7 @@ import { pickRasterFace } from './raster-mapper';
 import { parseFontFile, type TtfFont } from './ttf-font';
 import { DEFAULT_DROPOUT_PPEM, HintedSize, type HintedGlyph } from './ttf-hinting';
 import { msGrayBitmap, msMonoBitmap, msScanFlags } from './ttf-msscan';
+import { snapClearTypeLevels } from './gdi-cleartype-levels';
 import { dropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
 
 /** Raw bytes of a `.ttf` or `.ttc` file. */
@@ -1303,9 +1304,14 @@ function clearTypeGridFits(ttf: TtfFont, ppem: number): boolean {
 	return range ? (range.behavior & 1) !== 0 : true;
 }
 
-/** GDI ClearType with symmetric smoothing samples five rows per pixel, weighted 1 2 3 2 1 (see `rasterizeClearType`). */
+/**
+ * GDI ClearType with symmetric smoothing samples five rows per pixel. Native `ulClearTypeFilter_6x5` (fontdrvhost.exe) adds
+ * the five rows' per-channel levels (0 to 6, the 3-tap box over the 2-sample subpixels) with the weights 4 9 10 9 4 and
+ * rounds the sum over 36 (a table that steps at 18, 54, ... 198), so the weights are not the 1 2 3 2 1 that the bars of
+ * `gdi-cleartype-raster.json.gz` also fit (see `rasterizeClearType`).
+ */
 const CLEARTYPE_ROWS = 5;
-const CLEARTYPE_ROW_WEIGHTS = [1, 2, 3, 2, 1];
+const CLEARTYPE_ROW_WEIGHTS = [4, 9, 10, 9, 4];
 
 /**
  * Whether GDI's ClearType smooths vertically at this size: the `gasp` range holding the ppem has GASP_SYMMETRIC_SMOOTHING
@@ -1327,8 +1333,10 @@ function clearTypeSmoothsVertically(ttf: TtfFont, ppem: number): boolean {
  * subpixel's coverage is averaged with its two neighbours (a 3-tap box
  * filter across subpixels), giving one 0..255 alpha per colour channel.
  * With `vertical` (symmetric smoothing) each pixel row is sampled at five
- * rows, weighted 1 2 3 2 1 (`gdi-cleartype-raster.json.gz`: bars, slanted
- * edges and bars with both edges fractional at 32 ppem, all 1,070 exact;
+ * rows, weighted 4 9 10 9 4 and rounded to the seven levels as native does
+ * (`gdi-cleartype-raster.json.gz`: bars, slanted edges and bars with both
+ * edges fractional at 32 ppem, all 1,070 exact, and 256 random polygons that
+ * differ by 341 isolated pixels of 43,544 against 397 with weights 1 2 3 2 1;
  * otherwise one sample row per pixel).
  * Fitted to the edge profiles of `textx-arial-cleartype` (an Arial stem at
  * 72 px reproduces to within 1 level per channel). GDI+ truncates the
@@ -1341,7 +1349,7 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 	const KY = vertical ? CLEARTYPE_ROWS : 1;
 	const WT = vertical ? CLEARTYPE_ROW_WEIGHTS : [1];
 	const WSUM = WT.reduce((a, c) => a + c, 0);
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, false, false, true);
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, !truncate, !truncate, true, !truncate);
 	if (!r) {
 		return null;
 	}
@@ -1376,7 +1384,16 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 			if (spread && acc === 1 && sub[j] === 0 && ((j % 3 === 0 && before === 1) || ((j + 1) % 3 === 0 && after === 1))) {
 				acc = 0;
 			}
-			data[y * n + j] = (truncate ? Math.floor : Math.round)((255 * acc) / (3 * S * WSUM));
+			data[y * n + j] = vertical
+				? Math.floor((acc + WSUM / 2) / WSUM)
+				: (truncate ? Math.floor : Math.round)((255 * acc) / (3 * S * WSUM));
+		}
+		if (vertical) {
+			// Native keeps only the level triples one row can produce (see `snapClearTypeLevels`).
+			for (let j = 0; j < n; j += 3) {
+				const q = snapClearTypeLevels(data[y * n + j], data[y * n + j + 1], data[y * n + j + 2]);
+				for (let c = 0; c < 3; c++) data[y * n + j + c] = Math.round((255 * q[c]) / (3 * S));
+			}
 		}
 	}
 	return { width, height, left: box.xMin, top: box.yMax, data, channels: 3 };

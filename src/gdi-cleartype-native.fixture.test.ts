@@ -90,6 +90,6 @@ describe.skipIf(!windowsFonts())('GDI ExtTextOut ClearType scan conversion (gdi-
 		expect(polygons).toHaveLength(256);
 		let bad = 0;
 		for (const c of polygons) bad += mismatches(c);
-		expect(bad).toBeLessThanOrEqual(397);
+		expect(bad).toBeLessThanOrEqual(340);
 	});
 });

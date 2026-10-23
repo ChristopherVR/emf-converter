@@ -180,11 +180,22 @@ const ceil64 = (x: number): number => floor64(x + 63);
 /** Point flags. */
 const ON_CURVE = 1;
 const TOUCH_X = 8;
-/** Narrowest pair of points (26.6, a quarter pixel) the compatible-width mode treats as the sides of a stem. */
-const STEM_MIN_WIDTH = 16;
-/** Stem shifts under this many 1/64 px (a thirty-second of a pixel) are applied as before the stem-pair rules. */
-const STEM_SMALL_SHIFT = 4;
 const TOUCH_Y = 16;
+
+/**
+ * Compatible-width ClearType link table of one glyph program (native keeps twelve bytes per point, see `phaseShift`):
+ * `w0` and `w1` are the points a point was placed from (one reference, or the two it was interpolated between), `w2` the
+ * other side of the stem a point belongs to, `flags` bit 0 a dependency conflict, bit 1 "shift resolved", bit 2 "being
+ * resolved", `cache` the resolved shift. `done` once the links were resolved (the first IUP[x]).
+ */
+interface CtLinks {
+	w0: Int16Array;
+	w1: Int16Array;
+	w2: Int16Array;
+	flags: Uint8Array;
+	cache: Int32Array;
+	done: boolean;
+}
 
 /** A glyph or twilight zone. Coordinates are 26.6 (orus: font units). */
 export class Zone {
@@ -199,16 +210,8 @@ export class Zone {
 	endPts: number[];
 	/** The left phantom point where the program found it (before any instruction moved it). */
 	pp1Init?: number;
-	/**
-	 * Compatible-width ClearType bookkeeping (allocated on first use). The stem shifts are applied to `curX` as soon as a
-	 * pair is found, so the rest of the program runs on the shifted outline: `applied` is the shift each point carries in
-	 * `curX` (set by a pair, inherited by a point placed or interpolated from shifted points), `shifted` marks the points a
-	 * pair or a follower has claimed, and `carry` is the share of the advance phantom point's black-and-white offset a point
-	 * inherited by being placed relative to it (also in `curX`, so every pair that takes the point cancels it again).
-	 */
-	applied?: Float64Array;
-	shifted?: Uint8Array;
-	carry?: Float64Array;
+	/** Compatible-width ClearType link table of the glyph program running over this zone (see `CtLinks`). */
+	links?: CtLinks;
 
 	constructor(n: number, endPts: number[] = []) {
 		this.n = n;
@@ -371,8 +374,7 @@ export interface HintEnvironment {
 	smoothingBit18?: boolean;
 	/**
 	 * Black-and-white advance width (whole pixels) of glyph `g`. Under compatible widths GDI holds the advance phantom
-	 * point there, and shifts every stem a program sets with MIRP/MSIRP by half the difference to the natural advance
-	 * (see `pairShift`).
+	 * point there and scales the stems the program links (see `CtLinks`).
 	 */
 	bwAdvance?: (g: number) => number;
 	/**
@@ -472,6 +474,8 @@ export class HintedSize {
 	private inPrep = false;
 	/** The projection vector was set by SPVTL (for the ClearType RDTG exception). */
 	private pvFromSpvtl = false;
+	/** The ClearType-direction flag (see `ctDirection`). */
+	private ctFlag = false;
 	/** Active function-call frames (for the ClearType legacy-function signatures). */
 	private callFrames: Array<{ def: FuncDef }> = [];
 	/** The glyph program being run belongs to a composite glyph. */
@@ -480,8 +484,10 @@ export class HintedSize {
 	private iupy = false;
 	/** IUP[x] has run in the current glyph program. */
 	private iupx = false;
-	/** Points that belong to a stem pair shifted so far in the glyph program (compatible-width ClearType). */
-	private stemPoints = new Set<number>();
+	/** 16.16 ratio of the black-and-white to the natural advance (compatible-width ClearType). */
+	private phaseScale = 0x10000;
+	/** The two points of the last SDPVTL since the last SVTCA (native keeps them for the link rules), or null. */
+	private pvLine: [number, number] | null = null;
 	private count = 0;
 
 	constructor(font: TtfFont, ppemX: number, ppemY: number, env: HintEnvironment, hinting = true) {
@@ -812,7 +818,7 @@ export class HintedSize {
 	/** Under compatible-width ClearType the advance phantom point is held at the black-and-white advance. */
 	private compatAdvance(zone: Zone, k: number): void {
 		const bw = this.env.clearType && this.env.compatibleWidths !== false ? this.env.bwAdvance?.(this.hintingGlyph) : undefined;
-		if (bw !== undefined) {
+		if (bw !== undefined && !this.linkMode()) {
 			zone.curX[k] = bw * 64;
 		}
 	}
@@ -845,14 +851,14 @@ export class HintedSize {
 		this.stack = [];
 		this.iupy = false;
 		this.iupx = false;
-		this.stemPoints.clear();
+		this.beginLinks(zone);
 		this.computeFuncs();
 		try {
 			this.execute(instructions);
 		} catch {
 			// Keep the partially hinted outline.
 		}
-		this.endStemShifts(zone);
+		this.finishLinks(zone);
 		return { zone, scanControl: this.gs.scanControl, scanSet: this.gs.scanSet, scanType: this.gs.scanType };
 	}
 
@@ -1016,10 +1022,17 @@ export class HintedSize {
 		return at([0x01, 0xb0, 24, 0x43, 0x58]) || at([0x01, 0x18, 0xb0, 24, 0x43, 0x58]);
 	}
 
-	/** True when the projection vector points (mostly) along x, ClearType's direction. */
+	/**
+	 * Whether the projection vector is in ClearType's direction. GDI's interpreter keeps a flag beside the projection
+	 * vector (read from fontdrvhost.exe): SVTCA, SPVTCA, SPVTL, SDPVTL and SPVFS raise it under ClearType unless the
+	 * vector is exactly the y axis, and the freedom-vector instructions leave it as it was. It selects the 1/16-pixel
+	 * rounding, the cut-in, the minimum distance and the link recording (`ctFlag`). GDI+ keeps the earlier test, "the
+	 * vector points mostly along x" (the new one gains in GDI+ too, but loses two string ceilings by one and six pixels,
+	 * see docs/outstanding-work.md).
+	 */
 	private ctDirection(): boolean {
-		const gs = this.gs;
-		return !!this.env.clearType && Math.abs(gs.pvx) > Math.abs(gs.pvy);
+		if (!this.gdiMath) return !!this.env.clearType && Math.abs(this.gs.pvx) > Math.abs(this.gs.pvy);
+		return !!this.env.clearType && this.ctFlag;
 	}
 
 	/** Backward-compatible ClearType: ClearType on and the font has not set INSTCTRL selector 3. */
@@ -1277,6 +1290,7 @@ export class HintedSize {
 		// the size's lifetime, so once a size had run about a million instructions every later glyph aborted at
 		// its first instruction and kept its unhinted outline.
 		this.count = 0;
+		this.ctFlag = !!this.env.clearType;
 		let ip = 0;
 		let cur = code;
 		while (true) {
@@ -1508,6 +1522,8 @@ export class HintedSize {
 					gs.pvx = gs.dvx = ax;
 					gs.pvy = gs.dvy = ay;
 					this.pvFromSpvtl = false;
+					this.pvLine = null;
+					this.ctFlag = x;
 				}
 				if (op < 2 || op >= 4) {
 					gs.fvx = ax;
@@ -1543,23 +1559,8 @@ export class HintedSize {
 				if (op < 8) {
 					gs.pvx = gs.dvx = vx;
 					gs.pvy = gs.dvy = vy;
-					if (this.env.clearType && this.env.compatibleWidths !== false && !!this.env.bwAdvance && this.ctCompat()) {
-						// The projection vector follows the shifted points, the dual vector the original ones (private arms:
-						// a point placed along an arm with SPVTL[1] and with SDPVTL[1] ends on the same line).
-						let ox = this.zp1.orgX[a0] - this.zp2.orgX[a1];
-						let oy = this.zp1.orgY[a0] - this.zp2.orgY[a1];
-						let oop: number = op;
-						if (ox === 0 && oy === 0) {
-							ox = 0x4000;
-							oop = 0;
-						}
-						if (oop & 1) {
-							const c = oy;
-							oy = ox;
-							ox = -c;
-						}
-						[gs.dvx, gs.dvy] = this.normalize(ox, oy);
-					}
+					this.pvLine = [a1, a0];
+					this.ctFlag = !(vx === 0 && vy === 0x4000);
 					this.pvFromSpvtl = true;
 				} else {
 					gs.fvx = vx;
@@ -1581,6 +1582,8 @@ export class HintedSize {
 					gs.pvx = gs.dvx = vx;
 					gs.pvy = gs.dvy = vy;
 					this.pvFromSpvtl = false;
+					this.pvLine = null;
+					this.ctFlag = !(vx === 0 && vy === 0x4000);
 				} else {
 					gs.fvx = vx;
 					gs.fvy = vy;
@@ -1737,7 +1740,7 @@ export class HintedSize {
 				}
 				let d = 0;
 				if (op & 1) {
-					const c = this.project(this.zp0.curX[p] - (this.gs.pvy === 0 ? this.naturalOffset(this.zp0, p) : 0), this.zp0.curY[p]);
+					const c = this.project(this.zp0.curX[p], this.zp0.curY[p]);
 					d = this.round(c) - c;
 				}
 				this.move(this.zp0, p, d);
@@ -1823,9 +1826,8 @@ export class HintedSize {
 						target = org;
 					}
 				}
+				this.linkStem(p, 1);
 				this.move(this.zp1, p, target - dist);
-				this.carryFrom(p);
-				this.pairShift(gs.rp0, p, true);
 				gs.rp1 = gs.rp0;
 				gs.rp2 = p;
 				if (op & 1) {
@@ -1842,8 +1844,8 @@ export class HintedSize {
 							this.zp1.curX[p] - this.zp0.curX[gs.rp0],
 							this.zp1.curY[p] - this.zp0.curY[gs.rp0],
 						);
+						this.linkPlaced(p);
 						this.move(this.zp1, p, -d);
-						this.carryFrom(p, true);
 					}
 					gs.loop--;
 				}
@@ -1910,7 +1912,7 @@ export class HintedSize {
 				this.push(
 					op & 1
 						? this.dualProject(this.zp2.orgX[p], this.zp2.orgY[p])
-						: this.project(this.zp2.curX[p] - this.naturalOffset(this.zp2, p), this.zp2.curY[p]),
+						: this.project(this.zp2.curX[p], this.zp2.curY[p]),
 				);
 				return true;
 			}
@@ -1940,10 +1942,7 @@ export class HintedSize {
 				}
 				let d: number;
 				if (op & 1) {
-					d = this.project(
-						this.zp0.curX[l] - this.zp1.curX[k] - (this.naturalOffset(this.zp0, l) - this.naturalOffset(this.zp1, k)),
-						this.zp0.curY[l] - this.zp1.curY[k],
-					);
+					d = this.project(this.zp0.curX[l] - this.zp1.curX[k], this.zp0.curY[l] - this.zp1.curY[k]);
 				} else if (gs.gep0 === 0 || gs.gep1 === 0) {
 					d = this.dualProject(this.zp0.orgX[l] - this.zp1.orgX[k], this.zp0.orgY[l] - this.zp1.orgY[k]);
 				} else {
@@ -2245,7 +2244,7 @@ export class HintedSize {
 			const p = this.pop();
 			if (disp && p >= 0 && p < this.zp2.n) {
 				this.moveZp2(p, disp.dx, disp.dy, true);
-				this.shpFollow(p, disp.zone, disp.ref);
+				this.linkShifted(p, disp.zone, disp.ref);
 			}
 			gs.loop--;
 		}
@@ -2312,8 +2311,6 @@ export class HintedSize {
 			this.zp0.curX[p] = this.zp0.orgX[p];
 			this.zp0.curY[p] = this.zp0.orgY[p];
 		}
-		const shifted = gs.pvy === 0 ? this.naturalOffset(this.zp0, p) : 0;
-		this.zp0.curX[p] -= shifted;
 		const orgDist = this.project(this.zp0.curX[p], this.zp0.curY[p]);
 		if (op & 1) {
 			if (Math.abs(distance - orgDist) > this.cutIn()) {
@@ -2322,7 +2319,6 @@ export class HintedSize {
 			distance = this.round(distance);
 		}
 		this.move(this.zp0, p, distance - orgDist);
-		this.zp0.curX[p] += shifted;
 		gs.rp0 = gs.rp1 = p;
 	}
 
@@ -2357,194 +2353,307 @@ export class HintedSize {
 		}
 		const cur = this.project(this.zp1.curX[p] - this.zp0.curX[gs.rp0], this.zp1.curY[p] - this.zp0.curY[gs.rp0]);
 		this.move(this.zp1, p, distance - cur);
-		this.carryFrom(p, true);
+		this.linkPlaced(p);
 		gs.rp1 = gs.rp0;
 		gs.rp2 = p;
 		if (op & 16) gs.rp0 = p;
 	}
 
 	// -----------------------------------------------------------------------
-	// Compatible-width ClearType: stem shifts
+	// Compatible-width ClearType: phase control
 	// -----------------------------------------------------------------------
 	//
-	// Native GDI ClearType at default quality keeps the black-and-white advance width. The programs run with the advance
-	// phantom point at that width (`compatAdvance`), and, measured on private fonts (`build-cleartype-width-fonts.py`,
-	// `build-cleartype-arm-fonts.py`), every stem the program sets with MIRP or MSIRP between two glyph points is moved
-	// rigidly, both edges and the points that follow them, by (centre of the pair) * (BW / natural advance - 1) with the
-	// centre taken from the original outline: stems are scaled in position and keep their hinted widths. A point that the
-	// program placed relative to the advance phantom point already carries that point's offset, which the pair's shift
-	// replaces. Pairs are stems: the segment between the two points runs through ink, and they are at least a quarter
-	// pixel apart. Nothing else (MDAP, MDRP, MIAP, a single MIRP from a phantom point) shifts by itself.
-	//
-	// The shift acts on the outline while the program is still running (round 9): a point that MDRP, ALIGNRP, MIRP, SHP or
-	// IP places from shifted points inherits the shift through the geometry (a projection vector set perpendicular to an
-	// arm with SPVTL or SDPVTL is read from the shifted points, so a point placed along the arm follows by the share the
-	// height gives), while the absolute measures a program takes (MDAP / MIAP rounding, GC, MD, and the ratio an IP
-	// interpolates) see the outline without the shift. A stem the program sets after IUP[x] is not shifted at all.
+	// Native GDI ClearType at default quality keeps the black-and-white advance width. Round 11 read how fontdrvhost.exe
+	// does it (AddDistance, AddProportion, DoubleCheckLinkColor, IndirectlyDependsOn, PhaseShift and ExecutePhaseControl;
+	// this is a reimplementation of the behaviour, confirmed by the private-font sets of `gdi-cleartype-width.json.gz`,
+	// `gdi-cleartype-arm.json.gz` and `ctc-chain.json.gz` and the Windows-font captures of `gdi-cleartype-compat.json.gz`).
+	// While a glyph program runs in the ClearType direction, MIRP, MSIRP, MDRP, ALIGNRP, IP, SHP and ISECT only record which
+	// point each point was placed from (`CtLinks`); the program itself sees the outline without any shift. At the first
+	// IUP[x] (or at the end of a program with none) the recorded links are resolved once (`phaseShift`): a point placed from
+	// one reference takes that point's shift, a point interpolated between two takes the interpolated shift, the two sides
+	// of a stem (a MIRP or MSIRP between adjacent points of a contour with ink between them, `linkColor`) move together by
+	// the sum of their hinted x times (S - 1) / 2, S being the black-and-white over the natural advance, and a point placed
+	// from an advance phantom point carries that point's shift. Nothing is linked after that IUP[x]: a stem a program sets
+	// later keeps its position.
 
-	private widthShiftOn(): boolean {
-		return !!this.env.clearType && this.env.compatibleWidths !== false && !!this.env.bwAdvance && this.ctDirection() && this.ctCompat();
+	/** Whether the compatible-width link bookkeeping applies to this glyph program (the mode, not the projection vector). */
+	private linkMode(): boolean {
+		return !!this.env.clearType && this.env.compatibleWidths !== false && !!this.env.bwAdvance && this.ctCompat();
 	}
 
-	/** The shift point `p` of `z` carries in its x (zero outside the compatible-width mode). */
-	private naturalOffset(z: Zone, p: number): number {
-		return z.applied ? z.applied[p] : 0;
+	/** The link table of the running glyph program while recording applies (before the first IUP[x]). */
+	private recorder(direction = true): CtLinks | undefined {
+		const links = this.pts.links;
+		return links && !links.done && (!direction || this.ctDirection()) ? links : undefined;
+	}
+
+	private beginLinks(zone: Zone): void {
+		zone.links = undefined;
+		this.phaseScale = 0x10000;
+		this.pvLine = null;
+		if (!this.linkMode()) {
+			return;
+		}
+		const n = zone.n;
+		const nat = zone.orgX[n - 3] - zone.orgX[n - 4];
+		const bw = (this.env.bwAdvance?.(this.hintingGlyph) ?? 0) * 64;
+		if (nat > 0 && bw) {
+			// round(bw / nat) in 16.16, half away from zero (native: (bw << 16 +- nat / 2) / nat).
+			const num = bw * 65536;
+			this.phaseScale = Math.trunc((num + (num < 0 ? -Math.floor(nat / 2) : Math.floor(nat / 2))) / nat);
+		}
+		zone.links = {
+			w0: new Int16Array(n).fill(-1),
+			w1: new Int16Array(n).fill(-1),
+			w2: new Int16Array(n).fill(-1),
+			flags: new Uint8Array(n),
+			cache: new Int32Array(n),
+			done: false,
+		};
+	}
+
+	/** End of a glyph program: resolves the links when no IUP[x] did. */
+	private finishLinks(zone: Zone): void {
+		const links = zone.links;
+		if (links && !links.done) {
+			this.executePhase(zone, links);
+		}
+		zone.links = undefined;
+	}
+
+	/** Whether `p` depends on `target` through the links, with native's depth budget (an exhausted budget counts as yes). */
+	private linkDepends(links: CtLinks, p: number, target: number, depth: number): boolean {
+		depth--;
+		if (depth < 0) {
+			return true;
+		}
+		const a = links.w0[p];
+		if (a === -1) {
+			return false;
+		}
+		const b = links.w1[p];
+		if (b === -1) {
+			return a === target || this.linkDepends(links, a, target, depth - 1);
+		}
+		if (a === target || b === target) {
+			return true;
+		}
+		return this.linkDepends(links, a, target, depth - 1) || this.linkDepends(links, b, target, depth - 1);
 	}
 
 	/**
-	 * Records that point `p`, just moved relative to rp0, carries the advance phantom point's offset and the stem shift
-	 * rp0 carries (`follow`: an MDRP or ALIGNRP point also joins rp0's shifted points).
+	 * Point `b` was placed from reference point `a`. `color` 1 is a stem (ink between the two points): then the reference
+	 * (or the first point of its same-x chain) takes `b` as the other side of its stem.
 	 */
-	private carryFrom(p: number, follow = false): void {
-		if (!this.widthShiftOn()) {
+	private linkDistance(z: Zone, a: number, b: number, color: number): void {
+		const links = z.links;
+		if (!links || links.done || a < 0 || a >= z.n || b < 0 || b >= z.n || a === b) {
 			return;
 		}
-		const z = this.zp1;
-		const r = this.gs.rp0;
-		if (this.zp0 !== z || r < 0 || r >= z.n || p < 0 || p >= z.n) {
+		let root = a;
+		if (this.linkDepends(links, a, b, 100)) {
+			links.flags[b] |= 1;
+		} else if (links.w0[b] === -1) {
+			for (let e = links.w0[root]; e !== -1 && z.orusX[root] === z.orusX[e]; e = links.w0[root]) {
+				root = e;
+			}
+			links.w0[b] = root;
+			links.w1[b] = -1;
+		}
+		if (color !== 1 || links.w2[root] !== -1 || links.w2[b] === root) {
 			return;
 		}
-		z.carry ??= new Float64Array(z.n);
-		z.carry[p] = r === z.n - 3 ? 1 : z.carry[r];
-		z.applied ??= new Float64Array(z.n);
-		z.shifted ??= new Uint8Array(z.n);
-		z.applied[p] = r >= z.n - 4 ? 0 : z.applied[r];
-		if (follow && z.shifted[r]) {
-			z.shifted[p] = 1;
+		const e = links.w0[root];
+		if (e !== -1 && links.w2[e] === root) {
+			links.flags[b] |= 1;
+			return;
+		}
+		links.w2[root] = b;
+	}
+
+	/** Point `p` was interpolated between `a` and `b`. */
+	private linkProportion(z: Zone, a: number, p: number, b: number): void {
+		const links = z.links;
+		if (!links || links.done || a < 0 || a >= z.n || b < 0 || b >= z.n || p < 0 || p >= z.n || a === p || b === p || a === b) {
+			return;
+		}
+		if (this.linkDepends(links, a, p, 100) || this.linkDepends(links, b, p, 100)) {
+			links.flags[p] |= 1;
+		} else if (links.w0[p] === -1 && links.w1[p] === -1) {
+			links.w0[p] = a;
+			links.w1[p] = b;
 		}
 	}
 
-	/** A MIRP or MSIRP just placed `p` relative to rp0: if the two are the sides of a stem, shift the stem. */
-	private pairShift(rp0: number, p: number, black: boolean): void {
-		// Native leaves a stem alone once IUP[x] has run (private bars with the pair after IUP[x], alone or with IUP[y] before
-		// or after it: 108 of 108 glyphs identical at the two qualities; Tahoma 'V', 'A' and 'W' set their diagonal caps
-		// after both IUPs and are unshifted).
-		if (!this.widthShiftOn() || this.iupx) {
-			return;
-		}
+	/** An MDRP or ALIGNRP placed `p` from rp0, or, along a line set by SDPVTL, between its two points. */
+	private linkPlaced(p: number): void {
+		const links = this.recorder();
 		const z = this.zp1;
-		const n = z.n - 4;
-		if (this.zp0 !== z || rp0 < 0 || p < 0 || rp0 >= n || p >= n) {
+		if (!links || z !== this.pts || this.zp0 !== z) {
 			return;
 		}
-		const org2 = z.orgX[n + 1] - z.orgX[n];
-		const bw = (this.env.bwAdvance?.(this.hintingGlyph) ?? 0) * 64;
-		if (!org2 || !bw || Math.abs(z.orgX[rp0] - z.orgX[p]) < STEM_MIN_WIDTH) {
-			return;
-		}
-		const mx = (z.orgX[rp0] + z.orgX[p]) / 2;
-		const my = (z.orgY[rp0] + z.orgY[p]) / 2;
-		if (!this.inkAt(z, mx, my) && !this.inkAt(z, mx, my + 2) && !this.inkAt(z, mx, my - 2)) {
-			return;
-		}
-		z.applied ??= new Float64Array(z.n);
-		z.shifted ??= new Uint8Array(z.n);
-		const centre = (z.orgX[rp0] + z.orgX[p]) / 2;
-		const shift = Math.round(centre * (bw / org2 - 1));
-		// Round 10 (private zigzag chains, `ctc-chain.json.gz`, 16 flag values): only a MIRP whose distance type is black (flag
-		// bits 0 and 1 = 01) is a stem, whatever its min-distance, rounding and set-rp0 bits; and a point that already belongs
-		// to a stem is not the first edge of another one: the point of a later MIRP from it scales with its own position
-		// (the stems of Arial's W alternate along the chain, and X's four arms from the central crotch scale one by one).
-		// Shifts below SMALL (1/32 px) keep the earlier behaviour, which the native captures cannot tell apart.
-		if (!black && Math.abs(shift) >= STEM_SMALL_SHIFT) {
-			return;
-		}
-		if (this.stemPoints.has(rp0) && Math.abs(shift) >= STEM_SMALL_SHIFT) {
-			z.applied ??= new Float64Array(z.n);
-			const own = Math.round(z.orgX[p] * (bw / org2 - 1)) - (z.carry ? z.carry[p] * (bw - org2) : 0);
-			z.curX[p] += own - z.applied[p];
-			z.applied[p] = own;
-			return;
-		}
-		this.stemPoints.add(rp0);
-		this.stemPoints.add(p);
-		const offset = bw - org2;
-		const lo = Math.min(z.curX[rp0], z.curX[p]);
-		const hi = Math.max(z.curX[rp0], z.curX[p]);
-		for (let i = 0; i < n; i++) {
-			if (i === rp0 || i === p || (!z.shifted[i] && z.tags[i] & TOUCH_X && z.curX[i] >= lo - 1 && z.curX[i] <= hi + 1)) {
-				const total = shift - (z.carry ? z.carry[i] * offset : 0);
-				z.curX[i] += total - z.applied[i];
-				z.applied[i] = total;
-				z.shifted[i] = 1;
+		const line = this.pvLine;
+		if (line) {
+			const lo = Math.min(z.orusX[line[0]], z.orusX[line[1]]);
+			const hi = Math.max(z.orusX[line[0]], z.orusX[line[1]]);
+			if (z.orusX[p] >= lo && z.orusX[p] <= hi) {
+				this.linkProportion(z, line[0], p, line[1]);
+				return;
 			}
 		}
-	}
-
-	/** A point moved by SHP with reference point `ref` takes the reference point's carried offset and stem shift. */
-	private shpFollow(p: number, refZone: Zone, ref: number): void {
-		const z = this.zp2;
-		if (refZone !== z || !this.widthShiftOn()) {
-			return;
-		}
-		if (z.carry) {
-			z.carry[p] = ref === z.n - 3 ? 1 : z.carry[ref];
-		}
-		z.applied ??= new Float64Array(z.n);
-		z.applied[p] = ref >= z.n - 4 ? 0 : z.applied[ref];
+		this.linkDistance(z, this.gs.rp0, p, 3);
 	}
 
 	/**
-	 * A point interpolated by IP between rp1 and rp2 (on the outline without the shifts, see `insIP`) takes the
-	 * interpolated carried offset and stem shift.
+	 * Native's colour of the segment between adjacent points `a` and `b` of a contour: 1 where the ink lies between them
+	 * (both corners turn the same way, as the convex corners of an outer contour of the standard winding do), 2 for white,
+	 * 0 when the segment is steeper than 2:1 or the corners disagree; points that are not neighbours keep `flagColor`.
 	 */
-	private shiftInterpolate(p: number, rp1: number, rp2: number, orgDist: number, oldRange: number): void {
-		const z = this.zp2;
-		if (this.zp0 !== z || this.zp1 !== z || !this.widthShiftOn()) {
-			return;
+	private linkColor(z: Zone, a: number, b: number, flagColor: number): number {
+		const ends = z.endPts;
+		const contourOf = (p: number): number => {
+			let c = 0;
+			while (c < ends.length && p > ends[c]) {
+				c++;
+			}
+			return c;
+		};
+		const ca = contourOf(a);
+		const cb = contourOf(b);
+		if (ca >= ends.length || cb >= ends.length) {
+			return 0;
 		}
-		if (rp1 < 0 || rp2 < 0 || rp1 >= z.n || rp2 >= z.n || p < 0 || p >= z.n) {
-			return;
+		if (ca !== cb) {
+			return flagColor;
 		}
-		const t = oldRange ? orgDist / oldRange : 0;
-		z.carry ??= new Float64Array(z.n);
-		const c1 = rp1 === z.n - 3 ? 1 : z.carry[rp1];
-		const c2 = rp2 === z.n - 3 ? 1 : z.carry[rp2];
-		z.carry[p] = c1 + (c2 - c1) * t;
-		z.applied ??= new Float64Array(z.n);
-		const a1 = rp1 >= z.n - 4 ? 0 : z.applied[rp1];
-		const a2 = rp2 >= z.n - 4 ? 0 : z.applied[rp2];
-		const inherited = Math.round(a1 + (a2 - a1) * t);
-		if (this.gs.pvy === 0) {
-			z.curX[p] += inherited - z.applied[p];
+		const start = ca === 0 ? 0 : ends[ca - 1] + 1;
+		const end = ends[ca];
+		const next = (p: number): number => (p === end ? start : p + 1);
+		const prev = (p: number): number => (p === start ? end : p - 1);
+		if (b !== next(a) && b !== prev(a)) {
+			return flagColor;
 		}
-		z.applied[p] = inherited;
+		const x = z.orusX;
+		const y = z.orusY;
+		const turn = (p: number): boolean => {
+			const q = prev(p);
+			const r = next(p);
+			return (x[p] - x[q]) * (y[r] - y[p]) < (y[p] - y[q]) * (x[r] - x[p]);
+		};
+		const ta = turn(a);
+		if (ta !== turn(b)) {
+			return 0;
+		}
+		if (Math.abs(x[b] - x[a]) * 2 < Math.abs(y[b] - y[a])) {
+			return 0;
+		}
+		return (ta ? 0 : 1) + 1;
 	}
 
-	/** Forgets the shifts at IUP[x] and at the end of the program (they are in `curX` already). */
-	private endStemShifts(z: Zone): void {
-		if (!z.applied) {
+	/** An SHP moved `p` with reference point `ref`: `p` takes the reference's shift. */
+	private linkShifted(p: number, refZone: Zone, ref: number): void {
+		const z = this.zp2;
+		if (z !== this.pts || !this.recorder() || refZone.n === 0) {
 			return;
 		}
-		z.applied.fill(0);
-		if (z.carry && z.shifted) {
-			for (let i = 0; i < z.n - 4; i++) {
-				if (z.shifted[i]) {
-					z.carry[i] = 0;
+		this.linkDistance(z, ref, p, 3);
+	}
+
+	/** A MIRP or MSIRP placed `p` from rp0 (`flagColor`: the instruction's distance type). */
+	private linkStem(p: number, flagColor: number): void {
+		const z = this.zp1;
+		const links = this.recorder();
+		const a = this.gs.rp0;
+		if (!links || z !== this.pts || a < 0 || a >= z.n || p < 0 || p >= z.n || a === p) {
+			return;
+		}
+		this.linkDistance(z, a, p, this.linkColor(z, a, p, flagColor));
+	}
+
+	/** round(sum * (S - 1) / 2), half away from zero (native: `sum` is twice a position). */
+	private phaseProportion(sum: number): number {
+		const prod = sum * (this.phaseScale - 0x10000);
+		return prod >= 0 ? Math.floor((prod + 0x10000) / 0x20000) : -Math.floor((0x10000 - prod) / 0x20000);
+	}
+
+	/** The shift of point `pt`; where native moves the point itself, `curX` is moved here. */
+	private phaseShift(z: Zone, links: CtLinks, pt: number, conflict: boolean): number {
+		if (pt === -1) {
+			return 0;
+		}
+		let f = links.flags[pt];
+		if (f & 4) {
+			return 0;
+		}
+		links.flags[pt] = f |= 4;
+		if (!(f & 2)) {
+			const lastEp = z.n - 5;
+			const w0 = links.w0[pt];
+			let shift = 0;
+			if (pt > lastEp && pt <= lastEp + 2) {
+				shift = this.phaseProportion(2 * z.curX[pt]);
+			} else if (w0 === -1) {
+				if (conflict) shift = this.phaseProportion(2 * z.curX[pt]);
+			} else {
+				const w1 = links.w1[pt];
+				if (w1 === -1) {
+					shift = this.phaseShift(z, links, w0, conflict);
+				} else {
+					const s1 = this.phaseShift(z, links, w1, conflict);
+					const s0 = this.phaseShift(z, links, w0, conflict);
+					if (s0 === s1) {
+						shift = s0;
+					} else {
+						let loOrg = z.orgX[w0];
+						let hiOrg = z.orgX[w1];
+						let loShift = s0;
+						let hiShift = s1;
+						if (loOrg >= hiOrg) {
+							[loOrg, hiOrg, loShift, hiShift] = [hiOrg, loOrg, s1, s0];
+						}
+						const span = hiOrg - loOrg;
+						const here = z.orgX[pt];
+						shift = span === 0 ? Math.trunc((loShift + hiShift) / 2) : Math.trunc(((hiOrg - here) * loShift + (here - loOrg) * hiShift) / span);
+					}
 				}
 			}
+			if (!(links.flags[pt] & 2)) {
+				const partner = links.w2[pt];
+				if (partner !== -1 && !(links.flags[partner] & 2)) {
+					if (w0 === -1 || links.w1[pt] === -1) {
+						shift = this.phaseProportion(z.curX[partner] + z.curX[pt]);
+					}
+					z.curX[pt] += shift;
+					z.curX[partner] += shift;
+					links.flags[partner] |= 2;
+					links.cache[partner] = shift;
+				} else {
+					if (conflict && links.w1[pt] === -1 && (w0 === -1 || z.orgX[pt] !== z.orgX[w0])) {
+						shift = this.phaseProportion(2 * z.curX[pt]);
+					}
+					if (w0 !== -1) z.curX[pt] += shift;
+				}
+				links.flags[pt] |= 2;
+				links.cache[pt] = shift;
+			}
 		}
-		z.shifted?.fill(0);
+		links.flags[pt] &= ~4;
+		return links.cache[pt];
 	}
 
-	/** Nonzero-winding test of (x, y) against the original outline's control polygon. */
-	private inkAt(z: Zone, x: number, y: number): boolean {
-		let winding = 0;
-		let start = 0;
-		for (const end of z.endPts) {
-			for (let i = start; i <= end; i++) {
-				const j = i === end ? start : i + 1;
-				const x0 = z.orgX[i];
-				const y0 = z.orgY[i];
-				const x1 = z.orgX[j];
-				const y1 = z.orgY[j];
-				if (y0 <= y) {
-					if (y1 > y && (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0) > 0) winding++;
-				} else if (y1 <= y && (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0) < 0) winding--;
+	/** Resolves the links of the glyph once (native: ExecutePhaseControl, which the first IUP[x] also runs). */
+	private executePhase(z: Zone, links: CtLinks): void {
+		links.done = true;
+		let conflict = false;
+		for (let i = 0; i < z.n; i++) {
+			if (links.flags[i] & 1) {
+				conflict = true;
+				break;
 			}
-			start = end + 1;
 		}
-		return winding !== 0;
+		for (let i = 0; i < z.n; i++) {
+			this.phaseShift(z, links, i, conflict);
+		}
 	}
 
 	private insMIRP(op: number): void {
@@ -2594,9 +2703,8 @@ export class HintedSize {
 				distance = -this.minDistance();
 			}
 		}
+		this.linkStem(p, op & 3);
 		this.move(this.zp1, p, distance - curDist);
-		this.carryFrom(p);
-		this.pairShift(gs.rp0, p, (op & 3) === 1);
 		gs.rp1 = gs.rp0;
 		if (op & 16) gs.rp0 = p;
 		gs.rp2 = p;
@@ -2609,9 +2717,6 @@ export class HintedSize {
 		const rp2 = gs.rp2;
 		let oldRange = 0;
 		let curRange = 0;
-		// With the stem shifts in curX the ratio is taken on the outline without them; `shiftInterpolate` adds the
-		// interpolated shift back (the shifts of the references interpolate, a rounding of the shifted ratio does not).
-		const unshift = gs.pvy === 0 && this.ctCompat() && this.env.compatibleWidths !== false;
 		if (rp1 < 0 || rp1 >= this.zp0.n) {
 			gs.loop = 1;
 			return;
@@ -2626,10 +2731,7 @@ export class HintedSize {
 					this.zp1.orusY[rp2] - this.zp0.orusY[rp1],
 				);
 			}
-			curRange = this.project(
-				this.zp1.curX[rp2] - this.zp0.curX[rp1] - (unshift ? this.naturalOffset(this.zp1, rp2) - this.naturalOffset(this.zp0, rp1) : 0),
-				this.zp1.curY[rp2] - this.zp0.curY[rp1],
-			);
+			curRange = this.project(this.zp1.curX[rp2] - this.zp0.curX[rp1], this.zp1.curY[rp2] - this.zp0.curY[rp1]);
 		}
 		while (gs.loop > 0) {
 			const p = this.pop();
@@ -2643,10 +2745,7 @@ export class HintedSize {
 			} else {
 				orgDist = this.dualProjectOrusRaw(this.zp2.orusX[p] - this.zp0.orusX[rp1], this.zp2.orusY[p] - this.zp0.orusY[rp1]);
 			}
-			const curDist = this.project(
-				this.zp2.curX[p] - this.zp0.curX[rp1] - (unshift ? this.naturalOffset(this.zp2, p) - this.naturalOffset(this.zp0, rp1) : 0),
-				this.zp2.curY[p] - this.zp0.curY[rp1],
-			);
+			const curDist = this.project(this.zp2.curX[p] - this.zp0.curX[rp1], this.zp2.curY[p] - this.zp0.curY[rp1]);
 			let newDist: number;
 			if (orgDist) {
 				newDist = oldRange ? mulDiv(orgDist, curRange, oldRange) : orgDist;
@@ -2654,7 +2753,7 @@ export class HintedSize {
 				newDist = 0;
 			}
 			this.move(this.zp2, p, newDist - curDist);
-			this.shiftInterpolate(p, rp1, rp2, orgDist, oldRange);
+			if (this.zp2 === this.pts && this.recorder()) this.linkProportion(this.zp2, rp1, p, rp2);
 		}
 		gs.loop = 1;
 	}
@@ -2675,7 +2774,7 @@ export class HintedSize {
 		if (!xAxis) this.iupy = true;
 		if (xAxis) this.iupx = true;
 		const z = this.pts;
-		if (xAxis) this.endStemShifts(z);
+		if (xAxis && z.links && !z.links.done) this.executePhase(z, z.links);
 		const mask = xAxis ? TOUCH_X : TOUCH_Y;
 		const orgs = xAxis ? z.orgX : z.orgY;
 		const curs = xAxis ? z.curX : z.curY;
@@ -2733,6 +2832,13 @@ export class HintedSize {
 			p < 0 || p >= zp2.n || a0 < 0 || a0 >= zp1.n || a1 < 0 || a1 >= zp1.n || b0 < 0 || b0 >= zp0.n || b1 < 0 || b1 >= zp0.n
 		) {
 			return;
+		}
+		if (zp2 === this.pts && this.recorder(false)) {
+			// Native links the point to the steeper of the two lines (the first, B, unless |dyA * dxB| > |dxA * dyB|).
+			const mul = (u: number, v: number): number => Math.abs(Math.floor((u * v + 32) / 64));
+			const steeperA =
+				mul(zp1.curY[a1] - zp1.curY[a0], zp0.curX[b1] - zp0.curX[b0]) > mul(zp1.curX[a1] - zp1.curX[a0], zp0.curY[b1] - zp0.curY[b0]);
+			this.linkProportion(zp2, steeperA ? a0 : b0, p, steeperA ? a1 : b1);
 		}
 		const dbx = zp0.curX[b1] - zp0.curX[b0];
 		const dby = zp0.curY[b1] - zp0.curY[b0];
@@ -2832,6 +2938,8 @@ export class HintedSize {
 		}
 		[gs.pvx, gs.pvy] = this.normalize(A, B);
 		this.pvFromSpvtl = false;
+		this.pvLine = [p1, p2];
+		this.ctFlag = !(gs.pvx === 0 && gs.pvy === 0x4000);
 		gs.fvIsPv = false;
 		this.computeFuncs();
 	}
@@ -2862,7 +2970,7 @@ export class HintedSize {
 				// against private fonts (`iup-a.ttf`), also once IUP[y] has run
 				// (IUP[x] alone does not stop them; SHPIX, MSIRP and the other
 				// moves are not stopped by either).
-				if (this.ctCompat() && (this.iupy || !(this.gs.fvx === 0 && (this.zp0.tags[a] & TOUCH_Y) !== 0))) {
+				if (this.ctCompat() && !this.inComposite && (this.iupy || !(this.gs.pvx === 0 && this.gs.pvy === 0x4000 && (this.zp0.tags[a] & TOUCH_Y) !== 0))) {
 					continue;
 				}
 				this.move(this.zp0, a, s);
