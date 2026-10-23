@@ -23,7 +23,10 @@ public static class MonoSheetGlyphProbe {
     const string Sample = "Hamburgefonstiv 0123 AVWX &@%$";
     const string Styled = "Styled text: Quick fox jumps 0123";
 
-    public static void Run(string directory, string name) {
+    public static void Run(string directory, string name) { Run(directory, name, 3, 1); }
+
+    /// <summary>The same sheets with another font quality and bitmap format (4 and 5: ANTIALIASED_QUALITY, GGO_GRAY4_BITMAP).</summary>
+    public static void Run(string directory, string name, uint quality, uint bitmapFormat) {
         int[] sizes = { -8, -9, -10, -11, -12, -13, -14, -15, -16, -18, -20, -22, -24, -28, -32, -36, -48, -72, 9, 10, 12, 14, 16, 18, 20, 23, 26, 30, 36, 44, 56 };
         int[][] v = {
             new[] { 400, 0, 0 }, new[] { 700, 0, 0 }, new[] { 400, 1, 0 }, new[] { 700, 1, 0 }, new[] { 900, 0, 0 },
@@ -36,10 +39,10 @@ public static class MonoSheetGlyphProbe {
             foreach (string family in new[] {"Arial","Times New Roman","Courier New","Segoe UI","Tahoma"}) {
                 IntPtr dc=CreateCompatibleDC(IntPtr.Zero);
                 try {
-                    foreach (int h in sizes) Capture(dc, writer, ref first, family, h, 400, 0, 0, Sample);
+                    foreach (int h in sizes) Capture(dc, writer, ref first, family, h, 400, 0, 0, Sample, quality, bitmapFormat);
                     foreach (int h in new[] { -11, -17 }) foreach (int[] s in v) {
                         int w = s[2] == 0 ? 0 : (h < -12 ? s[2] + 3 : s[2]);
-                        Capture(dc, writer, ref first, family, h, s[0], s[1], w, Styled);
+                        Capture(dc, writer, ref first, family, h, s[0], s[1], w, Styled, quality, bitmapFormat);
                     }
                 } finally { DeleteDC(dc); }
             }
@@ -47,8 +50,8 @@ public static class MonoSheetGlyphProbe {
         }
     }
 
-    static void Capture(IntPtr dc, StreamWriter writer, ref bool first, string family, int height, int weight, int italic, int width, string text) {
-        IntPtr font=CreateFont(height,width,0,0,weight,(uint)italic,0,0,1,0,0,3,0,family),old=SelectObject(dc,font);
+    static void Capture(IntPtr dc, StreamWriter writer, ref bool first, string family, int height, int weight, int italic, int width, string text, uint quality, uint bitmapFormat) {
+        IntPtr font=CreateFont(height,width,0,0,weight,(uint)italic,0,0,1,0,0,quality,0,family),old=SelectObject(dc,font);
         try {
             var face=new StringBuilder(100); GetTextFace(dc,100,face);
             if(face.ToString()!=family) throw new Exception("Font fallback: "+face);
@@ -56,10 +59,10 @@ public static class MonoSheetGlyphProbe {
             foreach (char code in text) {
                 if(!seen.Add(code))continue;
                 var matrix=new Matrix();matrix.xx.value=matrix.yy.value=1;Metrics metrics;
-                uint length=GetGlyphOutline(dc,code,1,out metrics,0,null,ref matrix);
+                uint length=GetGlyphOutline(dc,code,bitmapFormat,out metrics,0,null,ref matrix);
                 if(length==uint.MaxValue)throw new Exception("GetGlyphOutline failed");
                 var data=new byte[length];
-                if(length>0&&GetGlyphOutline(dc,code,1,out metrics,length,data,ref matrix)!=length)throw new Exception("Bitmap capture failed");
+                if(length>0&&GetGlyphOutline(dc,code,bitmapFormat,out metrics,length,data,ref matrix)!=length)throw new Exception("Bitmap capture failed");
                 // GGO_NATIVE: the hinted outline the bitmap is scan converted from.
                 Metrics nm;
                 uint nlen=GetGlyphOutline(dc,code,2,out nm,0,null,ref matrix);
