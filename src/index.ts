@@ -42,3 +42,10 @@ export {
 	type SvgJsxOptions,
 	type CreateElement,
 } from './svg-tree';
+export {
+	getMetafileInfo,
+	type MetafileFont,
+	type MetafileInfo,
+	type MetafileInfoOptions,
+	type MetafileRect,
+} from './metafile-info';
