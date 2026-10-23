@@ -8,12 +8,13 @@
  * coordinate to a thousandth of a bin, independently of any model. What it shows:
  *
  * - the inverse matrix is float32 with every operation rounded toward minus infinity (`invertTextureMatrix`; also
- *   checked on 4,000 random native `Matrix.Invert` results below);
- * - a row's first position is formed from it with products and sums that round the same way, and every further
- *   pixel adds the x step in float32 rounded toward minus infinity, so the position drifts below the exact one
- *   by up to a float32 unit per pixel (3 bins of 1/2048 by pixel 156 of a 0.45x reduction, 8 bins at u of 500),
- *   which is the residual the per-pixel model left on the recorded texture fixtures;
- * - the row starts at the left edge of the fill, whether that is a rectangle or a clip, and rows are independent.
+ *   checked on 4,000 random native `Matrix.Invert` results below), and `PixelOffsetMode` Half is part of the matrix before
+ *   it is inverted (`T(0.5) m T(-0.5)`; the same offset added to the inverse's translation misses 678 flips);
+ * - a span's positions are not stepped by the matrix's x entry: native transforms the span's two end pixels through the
+ *   inverse, divides the difference by the pixel count and adds that step once per pixel (all float32 rounded toward
+ *   minus infinity, `DpOutputBilinearSpan::OutputSpan`), so the start, the step and the loss per addition depend on the
+ *   span's own ends. Every flip of all 16 sweeps (61,916) is reproduced; round 10's per-pixel stepper missed 1,959;
+ * - the span starts at the left edge of the fill, whether that is a rectangle or a clip, and rows are independent.
  *
  * Each pixel is tested at its recorded flips: the model must change the filtered red/green between the draw before
  * the flip and the flip. The few misses left are single draws (one float32 unit of 2^-k) at the start of a row.
@@ -63,10 +64,10 @@ function missedFlips(c: Capture): number {
 	const positions = (j: number, y: number): [Float64Array, Float64Array] => {
 		const tx = fround(c.matrix[4] + fround(j * c.sx));
 		const ty = fround(c.matrix[5] + fround(j * c.sy));
-		const inv = invertTextureMatrix([c.matrix[0], c.matrix[1], c.matrix[2], c.matrix[3], tx, ty] as TransformMatrix)!;
+		const inv = invertTextureMatrix([c.matrix[0], c.matrix[1], c.matrix[2], c.matrix[3], tx, ty] as TransformMatrix, c.half === 1)!;
 		const us = new Float64Array(c.width);
 		const vs = new Float64Array(c.width);
-		textureRowPositions(inv, c.half === 1, c.x0, c.y0 + y, us, vs);
+		textureRowPositions(inv, c.x0, c.y0 + y, us, vs);
 		return [us, vs];
 	};
 	let missed = 0;
@@ -123,10 +124,8 @@ describe('native texture-brush source coordinates', () => {
 
 	// Flips not reproduced, of 2,747 to 5,216 recorded per sweep (61,916 in all). Without the stepper (every position
 	// computed per pixel from the double-precision inverse) 34,903 of them are missed (1,608 to 3,856 per sweep, none
-	// for the identity matrix); with it 1,959 are, each a
-	// single draw (one float32 unit of 2^-k) at the start of the row. The sweeps that start at a negative coordinate
-	// (0, 3, 5, 7, 8) and Half (9, 10) keep most of them: the first position's rounding is not exact there.
-	const bounds = [224, 27, 0, 96, 0, 40, 0, 616, 104, 496, 335, 0, 0, 0, 0, 21];
+	// for the identity matrix); with the per-pixel stepper of round 10 1,959 are; with the span model, none.
+	const bounds = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 	for (const [index, c] of captures.entries()) {
 		it(`sweep ${index}: ${c.matrix.join(',')} at ${c.x0}, half ${c.half}, geometry ${c.geo}`, () => {
 			expect(missedFlips(c)).toBeLessThanOrEqual(bounds[index]);

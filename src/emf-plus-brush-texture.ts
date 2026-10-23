@@ -178,10 +178,16 @@ export function writeTextureColorAt(
 
 /**
  * The device-to-texture matrix as GDI+ forms it: every operation is a float32 one rounded toward minus infinity
- * (checked against 4,000 native matrix inversions, shears included, with no exception).
+ * (checked against 4,000 native `Matrix.Invert` results, shears included, with no exception). `halfPixel`
+ * (`PixelOffsetMode` Half) is folded into the matrix before it is inverted: the point is moved half a pixel and the texel
+ * grid back, `m` becomes `T(0.5) m T(-0.5)`, whose translation is `m`'s plus half the sum of each column of the
+ * linear part, less one half (the three orders of those float32 operations tried agree on the 7,820 flips of the two
+ * Half sweeps of `texture-coordinate.json.gz`, which the same offset applied to the inverse's translation misses 678 of).
  */
-export function invertTextureMatrix(m: TransformMatrix): TransformMatrix | null {
+export function invertTextureMatrix(m: TransformMatrix, halfPixel: boolean = false): TransformMatrix | null {
 	const [a, b, c, d, e, f] = [m[0], m[1], m[2], m[3], m[4], m[5]].map(Math.fround);
+	const ex = halfPixel ? down32(down32(down32(down32(0.5 * a) + down32(0.5 * c)) + e) - 0.5) : e;
+	const fy = halfPixel ? down32(down32(down32(down32(0.5 * b) + down32(0.5 * d)) + f) - 0.5) : f;
 	const det = down32(down32(a * d) - down32(b * c));
 	if (!Number.isFinite(det) || det === 0) {
 		return null;
@@ -192,17 +198,16 @@ export function invertTextureMatrix(m: TransformMatrix): TransformMatrix | null 
 		down32(-b * r),
 		down32(-c * r),
 		down32(a * r),
-		down32(down32(down32(c * f) - down32(d * e)) * r),
-		down32(down32(down32(b * e) - down32(a * f)) * r),
+		down32(down32(down32(c * fy) - down32(d * ex)) * r),
+		down32(down32(down32(b * ex) - down32(a * fy)) * r),
 	];
 }
 
 /**
  * Writes the brush colour of every pixel of a `w` x `h` rectangle at (`x0`, `y0`) into `out`, stepping the
- * texel-space position across each row the way GDI+ does: the row's first position is formed from the
- * float32 inverse matrix (round down), and every further pixel adds the matrix's x step in float32 rounded
- * toward minus infinity, so the position drifts below the exact one by up to a float32 unit per pixel (about a
- * level on a 0.45x reduction 150 pixels wide) instead of being recomputed per pixel. Rows are independent.
+ * texel-space position across each span the way GDI+ does (see {@link textureRowPositions}). A span is a row of the
+ * rectangle, or, given `coverage` (one byte per pixel of the rectangle), each run of covered pixels of a row; pixels
+ * outside every span are left untouched. Rows are independent.
  */
 export function writeTextureRect(
 	inv: TransformMatrix,
@@ -210,53 +215,81 @@ export function writeTextureRect(
 	height: number,
 	rgba: Uint8ClampedArray,
 	wrap: EmfPlusGradientWrapMode,
-	halfPixel: boolean,
 	x0: number,
 	y0: number,
 	w: number,
 	h: number,
 	out: Uint8ClampedArray,
+	coverage?: Uint8ClampedArray,
 ): void {
 	const us = new Float64Array(w);
 	const vs = new Float64Array(w);
 	for (let j = 0; j < h; j++) {
-		textureRowPositions(inv, halfPixel, x0, y0 + j, us, vs);
-		for (let i = 0; i < w; i++) {
-			writeTextureColorAt(us[i], vs[i], width, height, rgba, wrap, out, (j * w + i) * 4);
+		// GDI+ hands the brush one span per run of covered pixels, and forms the row's positions from the span's own ends.
+		let i = 0;
+		while (i < w) {
+			let end = w;
+			if (coverage) {
+				while (i < w && coverage[j * w + i] === 0) {
+					i++;
+				}
+				if (i >= w) {
+					break;
+				}
+				end = i;
+				while (end < w && coverage[j * w + end] !== 0) {
+					end++;
+				}
+			}
+			const n = end - i;
+			const u = us.subarray(i, end);
+			const v = vs.subarray(i, end);
+			textureRowPositions(inv, x0 + i, y0 + j, u, v, n);
+			for (let k = 0; k < n; k++) {
+				writeTextureColorAt(u[k], v[k], width, height, rgba, wrap, out, (j * w + i + k) * 4);
+			}
+			i = end;
 		}
 	}
 }
 
 /**
- * The texel-space positions GDI+ filters at along device row `y`, from pixel `x0`: `us.length` pixels. The first
- * is formed from the float32 inverse matrix `inv` (see {@link invertTextureMatrix}) by products and sums that
- * round toward minus infinity (`PixelOffsetMode` Half moves the point by half a pixel and the texel grid back),
- * and each further pixel adds the matrix's x step the same way. Measured on native sweeps
- * (`texture-coordinate.json.gz`); the positions drift below the exact ones by up to a float32 unit per pixel.
+ * The texel-space positions GDI+ filters at along one span of device row `y`, from pixel `x0` for `us.length` pixels
+ * (`DpOutputBilinearSpan::OutputSpan`, read from gdiplus.dll). Native does not step by the matrix's x entry: it
+ * transforms the span's two end pixels, `x0` and `x0 + n`, through the float32 inverse matrix `inv` (see
+ * {@link invertTextureMatrix}), divides the difference by the span's pixel count `n`, and adds that step to the start
+ * position once per pixel; every operation is a float32 one rounded toward minus infinity. That reproduces every one of
+ * the 6,238 flips of the native bisection captures (`texture-bisect-*.json.gz`; the bare matrix step reproduced 1,759 of
+ * 2,379 of them), where the start, the step and the loss per addition all depend on the span's own pixel range.
+ * (`PixelOffsetMode` Half is part of the matrix, see {@link invertTextureMatrix}.)
  */
 export function textureRowPositions(
 	inv: TransformMatrix,
-	halfPixel: boolean,
 	x0: number,
 	y: number,
 	us: Float64Array,
 	vs: Float64Array,
+	count: number = us.length,
 ): void {
-	const off = halfPixel ? 0.5 : 0;
-	const [a, b, c, d, e, f] = inv;
-	const yw = y + off;
-	const xs = x0 + off;
-	let u = down32(down32(down32(a * xs) + down32(c * yw)) + e);
-	let v = down32(down32(down32(b * xs) + down32(d * yw)) + f);
-	if (off) {
-		u = down32(u - off);
-		v = down32(v - off);
+	if (count <= 0) {
+		return;
 	}
-	for (let i = 0; i < us.length; i++) {
+	const [a, b, c, d, e, f] = inv;
+	const at = (x: number): [number, number] => [
+		down32(down32(down32(a * x) + down32(c * y)) + e),
+		down32(down32(down32(b * x) + down32(d * y)) + f),
+	];
+	const [us0, vs0] = at(x0);
+	const [us1, vs1] = at(x0 + count);
+	const su = down32(down32(us1 - us0) / count);
+	const sv = down32(down32(vs1 - vs0) / count);
+	let u = us0;
+	let v = vs0;
+	for (let i = 0; i < count; i++) {
 		us[i] = u;
 		vs[i] = v;
-		u = down32(u + a);
-		v = down32(v + b);
+		u = down32(u + su);
+		v = down32(v + sv);
 	}
 }
 

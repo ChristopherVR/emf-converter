@@ -9,7 +9,7 @@ import { pathGradientSampler } from './emf-plus-exact-fill';
  * that one step is five to six levels). Each copy is the boundary scaled per axis about the centre point
  * (`f + (1 - f) (m + 1/2) / N` on each axis; the off-centre captures rule out scaling about the middle or a corner of the
  * focus rectangle), and the pixels on a vertical or horizontal edge of a copy follow the rules measured for the uniform
- * copies (`emf-plus-path-gradient-copies.ts`). A pixel on a slanted edge keeps the half-way colour. 16,161 and 16,894 of
+ * copies (the fitted model of rounds 7 to 10; now the converter of `emf-plus-path-gradient-oned.ts`). A pixel on a slanted edge keeps the half-way colour. 16,161 and 16,894 of
  * the 16,992 pixels of each group were exact before those rules (the half-way colour of a tie is three levels off).
  */
 interface Capture {
@@ -60,8 +60,8 @@ for (const c of captures) {
 
 /** [images, native pixels, exact pixels (floor), unpainted ceiling, max error ceiling]. */
 const EXPECTED: Record<string, [number, number, number, number, number]> = {
-	sq: [54, 16992, 16956, 0, 6],
-	off: [54, 16992, 16989, 0, 6],
+	sq: [54, 16992, 16992, 0, 0],
+	off: [54, 16992, 16992, 0, 0],
 };
 
 describe('independent focus scales on small shapes', () => {

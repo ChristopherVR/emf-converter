@@ -1,6 +1,6 @@
 /**
- * Float32 arithmetic rounded toward minus infinity, the rounding the GDI+ path-gradient code was
- * measured to use (see `emf-plus-path-gradient-copies.ts` and `emf-plus-brush-gradient.ts`).
+ * Float32 arithmetic rounded toward minus infinity, the rounding GDI+ runs with (it sets the SSE control register to round
+ * down for the duration of its calls, see `gdiplus-float.ts`).
  *
  * @module float32-down
  */
