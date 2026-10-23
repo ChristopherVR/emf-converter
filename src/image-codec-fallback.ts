@@ -4,6 +4,7 @@ import { parseGIF, decompressFrame, type Frame } from 'gifuct-js';
 import * as UTIF from 'utif';
 import { normalizeGroup3 } from './tiff-group3';
 import { decodeJpegTiff } from './tiff-jpeg';
+import { decodeWebp } from './webp-decoder';
 
 interface Pixels { data: Uint8ClampedArray; width: number; height: number }
 const validSize = (w: number, h: number): boolean => Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 8192 && h <= 8192;
@@ -14,6 +15,9 @@ export function decodeImageCodecFallback(bytes: Uint8Array): Pixels | null {
 		if (bytes[0] === 0xff && bytes[1] === 0xd8) {
 			const p = decodeJpegPixels(bytes);
 			return validSize(p.width, p.height) ? { ...p, data: new Uint8ClampedArray(p.data) } : null;
+		}
+		if (bytes.length >= 20 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+			return decodeWebp(bytes);
 		}
 		if (bytes.length >= 13 && String.fromCharCode(...bytes.subarray(0, 6)).match(/^GIF8[79]a$/)) {
 			const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
