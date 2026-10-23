@@ -23,6 +23,7 @@
 import { effectedDraw } from './emf-plus-draw-image';
 import { encodePng } from './png-encoder';
 import { encodeJpeg } from './jpeg-encoder';
+import { encodeWebp } from './webp-encoder';
 import {
 	canvasDrawImage,
 	canvasGetImageData,
@@ -213,6 +214,22 @@ export interface JpegConvertOptions extends EmfConvertOptions {
 	 * lines and text free of colour fringes.
 	 */
 	chromaSubsampling?: boolean;
+}
+
+/**
+ * Options for {@link convertMetafileToWebpDataUrl}: every
+ * {@link EmfConvertOptions} field plus the WebP encoding settings.
+ */
+export interface WebpConvertOptions extends EmfConvertOptions {
+	/**
+	 * `true` (the default) writes lossless WebP: exact pixels, transparency
+	 * kept. `false` writes lossy WebP at {@link WebpConvertOptions.quality}.
+	 */
+	lossless?: boolean;
+	/**
+	 * Lossy quality from 0 to 1. Default 0.8. Ignored when `lossless` is true.
+	 */
+	quality?: number;
 }
 
 /**
@@ -574,18 +591,19 @@ async function processDeferredImages(
 }
 
 /** Output formats of {@link convertMetafile}. */
-export type MetafileOutputFormat = 'png' | 'jpeg' | 'svg';
+export type MetafileOutputFormat = 'png' | 'jpeg' | 'webp' | 'svg';
 
 /** Options for {@link convertMetafile}: the target `format` plus that format's options. */
 export type ConvertOptions =
 	| (EmfConvertOptions & { format?: 'png' })
 	| (JpegConvertOptions & { format: 'jpeg' })
+	| (WebpConvertOptions & { format: 'webp' })
 	| (SvgConvertOptions & { format: 'svg' });
 
 /** An encoded image produced by {@link convertMetafile}. */
 export interface ConvertedImage {
 	format: MetafileOutputFormat;
-	/** `image/png`, `image/jpeg` or `image/svg+xml`. */
+	/** `image/png`, `image/jpeg`, `image/webp` or `image/svg+xml`. */
 	mimeType: string;
 	/** The file bytes (UTF-8 markup for SVG). */
 	data: Uint8Array;
@@ -604,16 +622,17 @@ export interface RgbaImage {
 const MIME_TYPES: Record<MetafileOutputFormat, string> = {
 	png: 'image/png',
 	jpeg: 'image/jpeg',
+	webp: 'image/webp',
 	svg: 'image/svg+xml',
 };
 
 /**
- * Converts an EMF or WMF file (format auto-detected) to PNG, JPEG or SVG
+ * Converts an EMF or WMF file (format auto-detected) to PNG, JPEG, WebP or SVG
  * bytes. This is the binary form of the `*DataUrl` functions: write
  * `data` to a file, wrap it in a `Blob`, or send it over the network
  * without the base64 round trip.
  *
- * PNG and JPEG are encoded by the bundled encoders, so the bytes are the
+ * PNG, JPEG and WebP are encoded by the bundled encoders, so the bytes are the
  * same in browsers and Node.js. The `null` cases are those of
  * {@link convertMetafileToDataUrl} (raster) and {@link convertMetafileToSvg}
  * (SVG).
@@ -655,6 +674,12 @@ export async function convertMetafile(
 				quality: jpegOptions.quality,
 				background: parseBackground(jpegOptions.background),
 				chromaSubsampling: jpegOptions.chromaSubsampling,
+			}));
+		} else if (format === 'webp') {
+			const webpOptions = options as WebpConvertOptions;
+			data = runSync(budget, () => encodeWebp(pixels, width, height, {
+				lossy: webpOptions.lossless === false,
+				quality: webpOptions.quality,
 			}));
 		} else {
 			data = await runSync(budget, () => encodePng(pixels, width, height));
@@ -758,6 +783,27 @@ export async function convertMetafileToJpegDataUrl(
 
 function toDataUrl(image: ConvertedImage | null): string | null {
 	return image ? `data:${image.mimeType};base64,${bytesToBase64(image.data)}` : null;
+}
+
+/**
+ * Converts an EMF or WMF buffer (format auto-detected) to a WebP data URL.
+ *
+ * The drawing is rendered exactly as for {@link convertMetafileToDataUrl}
+ * (same options, same backends, same `null` cases) and encoded by the
+ * bundled WebP encoder, so the bytes do not depend on the canvas backend.
+ * The default is lossless WebP, which keeps the pixels and the transparent
+ * background exactly; set {@link WebpConvertOptions.lossless} to `false`
+ * for smaller, lossy output (transparency is still kept).
+ *
+ * @param input   - The raw EMF or WMF file, as for {@link convertMetafile}.
+ * @param options - Optional {@link WebpConvertOptions}.
+ * @returns A `data:image/webp;base64,...` string, or `null` on failure.
+ */
+export async function convertMetafileToWebpDataUrl(
+	input: MetafileInput,
+	options?: WebpConvertOptions,
+): Promise<string | null> {
+	return toDataUrl(await convertMetafile(input, { ...options, format: 'webp' }));
 }
 
 /** Parses a `#rgb` / `#rrggbb` background colour; anything else is white. */

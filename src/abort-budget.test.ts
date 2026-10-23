@@ -5,6 +5,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { convertMetafile, convertMetafileToImageData } from './emf-converter';
+import { convertMetafileToPdf } from './pdf-convert';
 import { ensureNodeCanvasModule } from './emf-canvas-helpers';
 
 beforeAll(async () => {
@@ -100,6 +101,13 @@ describe('signal / timeoutMs', () => {
 		const { reason, ms } = await rejection(convertMetafile(SLOW, slow(format, { signal: AbortSignal.timeout(80) })));
 		expect((reason as DOMException).name).toBe('TimeoutError');
 		expect(ms).toBeLessThan(1500);
+	});
+
+	it('pdf and webp share the same budget', async () => {
+		const pdf = await rejection(convertMetafileToPdf(SLOW, { gdiAntialias: false, timeoutMs: 100 }));
+		expect((pdf.reason as DOMException).name).toBe('TimeoutError');
+		const webp = await rejection(convertMetafile(SLOW, { format: 'webp', timeoutMs: 100 }));
+		expect((webp.reason as DOMException).name).toBe('TimeoutError');
 	});
 
 	it('abort() from another task rejects with the given reason', async () => {
