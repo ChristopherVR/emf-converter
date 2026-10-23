@@ -11,6 +11,8 @@
  *   which needs a font engine): {@link convertMetafileToDataUrl}
  * - JPEG data URLs from the same rendering, encoded by the bundled
  *   encoder: {@link convertMetafileToJpegDataUrl}
+ * - WebP data URLs (lossless by default, or lossy) from the same rendering,
+ *   encoded by the bundled encoder: {@link convertMetafileToWebpDataUrl}
  * - SVG, by replaying the same drawing onto an SVG recorder that needs no
  *   canvas at all: {@link convertMetafileToSvg} (markup),
  *   {@link convertMetafileToSvgDataUrl} (base64 data URL), and
@@ -34,6 +36,7 @@ export {
 	convertMetafileToSvg,
 	convertMetafileToSvgDataUrl,
 	convertMetafileToSvgTree,
+	convertMetafileToWebpDataUrl,
 	type ConvertOptions,
 	type ConvertedImage,
 	type MetafileOutputFormat,
@@ -41,6 +44,7 @@ export {
 	type EmfConvertOptions,
 	type JpegConvertOptions,
 	type SvgConvertOptions,
+	type WebpConvertOptions,
 } from './emf-converter';
 export type { MetafileInput } from './metafile-input';
 export { DEFAULT_DPI_SCALE } from './emf-canvas-helpers';
