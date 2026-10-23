@@ -2,13 +2,14 @@
  * Inset pens beyond the plain solid pen on one polygon, against GDI+ (`inset-cases-probe`, `inset-cases.json.gz`): 440 closed paths drawn with
  * `DrawPath`, aliased and antialiased.
  *
- *  - dash: dashed Inset pens (Dash, Dot, DashDot, DashDotDot and a custom pattern; dash offsets 0, 0.5 and 1.25). With flat dash caps the stroke
- *    is the pen at twice its width, centered, with the dash lengths in the pen's own width and the dash offset in the doubled one, clipped to
- *    the figure; with round caps it is the band along the inside of each edge, the caps centred on it, also clipped.
+ *  - dash: dashed Inset pens (Dash, Dot, DashDot, DashDotDot and a custom pattern; dash offsets 0, 0.5 and 1.25). The stroke is the pen at twice
+ *    its width, centered, with the dash lengths in the pen's own width and the dash offset in the doubled one, clipped to the figure; a Round
+ *    dash cap is a double round cap (a semicircle over each half of the doubled width, `GpPathWidener::SetDoubleRoundCap`).
  *  - thin: pens of 0.5 to 1.5 pixels are nominal-width lines whatever the alignment (1.6 and 2 are ordinary Inset pens).
  *  - half: PixelOffsetMode Half moves the aliased samples half a pixel; the antialiased outline of the surviving pixels is not moved again.
  *  - multi: two or three overlapping closed polygons in one path. The clip is the interior by the path's fill mode (Alternate here: a pixel
- *    is kept when it lies in an odd number of the figures).
+ *    is kept when it lies in an odd number of the figures); the figures' regions are converted to outlines one by one and filled together, so
+ *    a loop reversed by GDI+'s bounding-box test cancels the others' winding where regions overlap.
  *  - dashc: the dash cases with a Center pen (control): a closed figure with a Round dash cap keeps the straight part of each dash at its
  *    END, the other way round from an open line.
  */
@@ -133,22 +134,22 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 	it('PixelOffsetMode Half and Default: the antialiased outline sits on the device pixels', () => {
 		const half = cases.filter((c) => c.kind === 'half');
 		expect(half.length).toBe(80);
-		expect(score(half)).toEqual({ aliased: [80, 0], aa: [78, 38] });
+		expect(score(half)).toEqual({ aliased: [80, 0], aa: [80, 0] });
 	});
 
 	it('dashed Inset pens with flat dash caps: the doubled pen clipped to the figure', () => {
 		const flat = cases.filter((c) => c.kind === 'dash' && c.dashCap === 0);
-		expect(score(flat)).toEqual({ aliased: [59, 1], aa: [56, 26] });
+		expect(score(flat)).toEqual({ aliased: [59, 1], aa: [59, 6] });
 	});
 
-	it('dashed Inset pens with round dash caps: the band along the inside of each edge, clipped', () => {
+	it('dashed Inset pens with round dash caps: the doubled pen with double round caps, clipped to the figure', () => {
 		const round = cases.filter((c) => c.kind === 'dash' && c.dashCap === 2);
-		expect(score(round)).toEqual({ aliased: [38, 36], aa: [34, 244] });
+		expect(score(round)).toEqual({ aliased: [47, 18], aa: [47, 106] });
 	});
 
 	it('paths of overlapping closed figures: the even-odd interior is the clip', () => {
 		const multi = cases.filter((c) => c.kind === 'multi');
-		expect(score(multi)).toEqual({ aliased: [49, 721], aa: [6, 3251] });
+		expect(score(multi)).toEqual({ aliased: [77, 34], aa: [77, 73] });
 	});
 
 	it('control: dashed Center pens, flat and round dash caps', () => {

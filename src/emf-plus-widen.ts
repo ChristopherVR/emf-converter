@@ -73,6 +73,13 @@ export interface DevicePen {
 	compound: number[] | null;
 	/** PenAlignment Inset: a closed figure's stroke lies wholly inside it. */
 	inset: boolean;
+	/**
+	 * The pen is the doubled pen GDI+ widens an Inset stroke with (centered on the figure, clipped to it afterwards): its Round dash caps are
+	 * double round caps, a semicircle over each half of the width (`GpPathWidener::SetDoubleRoundCap`), not one over the whole.
+	 */
+	doubleRoundCap?: boolean;
+	/** The width the dash caps shorten the pattern by when it is not the pen's own (an Inset pen is widened at twice its width, its pattern adjusted for the pen's own). */
+	dashCapWidth?: number;
 }
 
 type Pt = { x: number; y: number };
@@ -210,7 +217,7 @@ function joinPoints(p: Pt, f1: ReturnType<typeof frame>, f2: ReturnType<typeof f
  * `o2` along the left normal of `f`. Points run from the `o2` side to the
  * `o1` side.
  */
-function capPoints(p: Pt, f: ReturnType<typeof frame>, o1: number, o2: number, cap: number, half: number): Pt[] {
+function capPoints(p: Pt, f: ReturnType<typeof frame>, o1: number, o2: number, cap: number, half: number, double = false): Pt[] {
 	const at = (o: number, ext: number): Pt => ({ x: p.x + f.nx * o + f.ux * ext, y: p.y + f.ny * o + f.uy * ext });
 	const base = cap & 0x0f;
 	// Anchors are separate polygons in widenFigures; NoAnchor and Custom are flat.
@@ -221,6 +228,15 @@ function capPoints(p: Pt, f: ReturnType<typeof frame>, o1: number, o2: number, c
 			// corner), where one would be rounded to 28.4 off the edge.
 			return [at(o2, half), at(o1, half)];
 		case 2: {
+			if (double) {
+				// Two semicircles of half the width's radius, one over each half of the band, meeting on the centre line (`SetDoubleRoundCap`).
+				const r = Math.abs(o2 - o1) / 4;
+				const a0 = Math.atan2(f.ny, f.nx);
+				const mid = (o1 + o2) / 2;
+				const c2 = (o2 + mid) / 2;
+				const c1 = (o1 + mid) / 2;
+				return [at(o2, 0), ...arcPoints(at(c2, 0), r, a0, -Math.PI), at(mid, 0), ...arcPoints(at(c1, 0), r, a0, -Math.PI), at(o1, 0)];
+			}
 			// A band that does not straddle the line (an Inset pen's) is capped round about its own centre line.
 			const c = (o1 + o2) / 2;
 			const r = Math.abs(o2 - o1) / 2;
@@ -231,6 +247,10 @@ function capPoints(p: Pt, f: ReturnType<typeof frame>, o1: number, o2: number, c
 			return [at(o2, 0), ...arcPoints(centre, r, a0, sweep), at(o1, 0)];
 		}
 		case 3:
+			if (double) {
+				// The doubled pen of an Inset stroke shows no Triangle cap: the dash is cut flat where its straight part ends (measured: 46 of 48 renderings of the Inset Triangle sheet cases exact; `SetTriangleCap` would add a tip a pen width long).
+				return [at(o2, 0), at(o1, 0)];
+			}
 			// An Inset pen draws the band along the inside of the line (o1, o2 on one side of it) with no triangle at all: the dash is just cut flat at the end of its straight part (measured: 85 pixels differ over 48 Inset Triangle-dash cases, against 11,286 with the tip).
 			if (Math.abs(o1 + o2) > 1e-9) {
 				return [at(o2, 0), at(o1, 0)];
@@ -266,10 +286,11 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen, splits?: Readonl
 	// its straight part a full pen width early, the caps then reaching half
 	// a width beyond both ends (measured with GraphicsPath.Widen: a 12-pixel
 	// dash of a 4-pixel pen is straight for 8, a 4-pixel dot for none).
-	const shorten = pen.dashCap !== 0 ? 2 * pen.half : 0;
+	const capWidth = pen.dashCapWidth ?? 2 * pen.half;
+	const shorten = pen.dashCap !== 0 ? capWidth : 0;
 	const dash = (pen.dash as number[]).map((v, i) => {
 		if (i % 2 === 0) {
-			return Math.max(v - shorten, MIN_DASH * 2 * pen.half);
+			return Math.max(v - shorten, MIN_DASH * capWidth);
 		}
 		// The next dash starts one `shorten` after this dash's straight part ends, however short the dash was: a dash shorter than the cap
 		// still takes the cap's whole length of the pattern (measured: the pattern 2, 1, 0.5, 1.5 of a width 2 pen repeats every 11 pixels, not 10).
@@ -552,10 +573,10 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 				const f0 = frame(pp[1], pp[0]); // outward at the start (reversed direction)
 				const endCap = endCapOverride ?? (piece.last && !(pen.dash && closed) ? pen.endCap : pen.dashCap);
 				const startCap = startCapOverride ?? (piece.first && !(pen.dash && closed) ? pen.startCap : pen.dashCap);
-				const capEnd = capPoints(pp[pp.length - 1], fEnd, o1, o2, endCap, h);
+				const capEnd = capPoints(pp[pp.length - 1], fEnd, o1, o2, endCap, h, pen.doubleRoundCap);
 				// At the start the outward frame is reversed, so its left normal is the
 				// line's right: the band runs from -o1 (the line's o1 side) to -o2.
-				const capStart = capPoints(pp[0], f0, -o2, -o1, startCap, h);
+				const capStart = capPoints(pp[0], f0, -o2, -o1, startCap, h, pen.doubleRoundCap);
 				if (endCap === 0 && capEnd.length === 2 && left.length > 2 && right.length > 2) {
 					// A flat end whose corner would lie behind the offset point before it (the last segment shorter than the reach of a smooth join,
 					// on the inner side of the turn) ends at that point instead: measured against GraphicsPath.Widen of dashed curves, where the

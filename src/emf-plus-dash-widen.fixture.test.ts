@@ -177,11 +177,11 @@ describe('dashed pens against GDI+ (dash-widen.json.gz)', () => {
 		expect(score(selected).aliased[0]).toBe(selected.length);
 	});
 
-	it('Inset pens on the sheet figures with Triangle dash caps: the band, cut flat at the end of the straight part (11,286 differing pixels with the tip)', () => {
-		expect(score(cases.filter((c) => c.inset && c.dashCap === 3))).toEqual({ aliased: [16, 80], aa: [12, 613] });
+	it('Inset pens on the sheet figures with Triangle dash caps: the doubled pen clipped to the figure, dashes cut flat at the end of the straight part', () => {
+		expect(score(cases.filter((c) => c.inset && c.dashCap === 3))).toEqual({ aliased: [46, 2], aa: [46, 6] });
 	});
 
-	it('Inset pens on the sheet figures with Round dash caps (the band along the inside of each edge)', () => {
-		expect(score(cases.filter((c) => c.inset && c.dashCap === 2))).toEqual({ aliased: [20, 141], aa: [15, 602] });
+	it('Inset pens on the sheet figures with Round dash caps: the doubled pen with double round caps, clipped to the figure (exact)', () => {
+		expect(score(cases.filter((c) => c.inset && c.dashCap === 2))).toEqual({ aliased: [48, 0], aa: [48, 0] });
 	});
 });

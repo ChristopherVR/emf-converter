@@ -30,8 +30,8 @@ interface Case {
 }
 
 const SIZE = 130;
-const EXPECTED_AA_EXACT = 114;
-const EXPECTED_AA_TOTAL = 130;
+const EXPECTED_AA_EXACT = 120;
+const EXPECTED_AA_TOTAL = 0;
 const EXPECTED_WIDEN_TOTAL = 0;
 const cases: Case[] = JSON.parse(gunzipSync(readFileSync(fixturePath('inset-outline.json.gz'))).toString());
 
@@ -136,29 +136,35 @@ describe('insetMaskOutline', () => {
 		return insetMaskOutline(mask, w, h, 0, 0).map((l) => l.map((v) => v / 16));
 	};
 
-	it('a single pixel is the triangle of its top left, top right and bottom right corners', () => {
-		expect(outline(['..', '.#']).map((l) => l.join(','))).toEqual(['1,1,2,1,2,2']);
+	it('a region of one rectangle keeps its four corners', () => {
+		expect(outline(['..', '.#']).map((l) => l.join(','))).toEqual(['1,1,2,1,2,2,1,2']);
+		expect(outline(['....', '.###']).map((l) => l.join(','))).toEqual(['1,1,4,1,4,2,1,2']);
+	});
+
+	it('in a region of several loops a single pixel is the triangle of its top left, bottom right and top right corners (walked counterclockwise from the top left, the bottom left one dropped)', () => {
+		expect(outline(['#...', '....', '...#']).map((l) => l.join(','))).toEqual(['0,0,1,1,1,0', '3,2,4,3,4,2']);
 	});
 
 	it('a horizontal run loses its bottom left corner, a tall column its bottom right', () => {
-		expect(outline(['....', '.###']).map((l) => l.join(','))).toEqual(['1,1,4,1,4,2']);
-		expect(outline(['..', '.#', '.#']).map((l) => l.join(','))).toEqual(['1,1,2,1,1,3']);
+		expect(outline(['###.', '....', '...#']).map((l) => l.join(','))).toEqual(['0,0,3,1,3,0', '3,2,4,3,4,2']);
+		expect(outline(['#...', '#...', '....', '...#']).map((l) => l.join(','))).toEqual(['0,0,0,2,1,0', '3,3,4,4,4,3']);
 	});
 
 	it('a staircase stepping right under runs of three rows keeps both corners of each step; stepping left it is cut to a diagonal', () => {
 		expect(outline(['.#######', '.#######', '.#######', '..######', '..######', '..######', '...#####', '...#####', '...#####']).map((l) => l.join(','))).toEqual([
-			'1,0,8,0,8,9,3,9,3,6,2,6,2,3,1,3',
+			'1,0,1,3,2,3,2,6,3,6,3,9,8,9,8,0',
 		]);
 		expect(outline(['...#####', '...#####', '...#####', '..######', '..######', '..######', '.#######', '.#######', '.#######']).map((l) => l.join(','))).toEqual([
-			'3,0,8,0,8,9,1,9,1,6,2,3',
+			'3,0,2,3,1,6,1,9,8,9,8,0',
 		]);
 	});
 });
 
 describe('Inset stroke outline: corner contacts (inset-contacts.json.gz)', () => {
 	// 300 random polygons (triangles, self-crossing polygons, stars) with an Inset pen of width 1.6 to 9 (`inset-contacts-probe`). The
-	// pairing of set pixels that touch only at a corner: a hole that touches itself is traced as separate holes (3,000 cases surveyed: every
-	// differing contact of that kind is paired so; the other contacts keep their set pixels apart).
+	// pairing of set pixels that touch only at a corner is the one GDI+'s region walker makes (`DpRegion::GetOutlinePoints`, ported in
+	// `traceRegionLoops`); the hand-measured rule before it (a hole that touches itself is traced as separate holes, other contacts keep their
+	// set pixels apart) left 51 of the 300 inexact.
 	const contacts: Array<{ aliased: Rows; aa: Rows }> = JSON.parse(gunzipSync(readFileSync(fixturePath('inset-contacts.json.gz'))).toString());
 	const box = { x: 0, y: 0, w: SIZE, h: SIZE };
 	const diffs = contacts.map((c) => {
@@ -170,8 +176,8 @@ describe('Inset stroke outline: corner contacts (inset-contacts.json.gz)', () =>
 		expect(contacts.length).toBe(300);
 	});
 
-	it('reproduces the antialiased outline on most cases (556 pixels differ, from 945 with every contact traced apart)', () => {
-		expect({ exact: diffs.filter((n) => n === 0).length, total: diffs.reduce((s, n) => s + n, 0) }).toEqual({ exact: 249, total: 556 });
+	it('reproduces the antialiased outline on every case (all 300 exact, from 556 differing pixels with the hand-fitted corner rule and 945 with every contact traced apart)', () => {
+		expect({ exact: diffs.filter((n) => n === 0).length, total: diffs.reduce((s, n) => s + n, 0) }).toEqual({ exact: 300, total: 0 });
 	});
 });
 
