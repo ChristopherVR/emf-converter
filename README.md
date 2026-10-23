@@ -226,9 +226,9 @@ See [How it works](docs/how-it-works.md) for the pipeline, the Windows-parity de
 
 ## Limitations
 
-Everything is measured against output painted by Windows itself, and a few areas still differ from it: some image effects, text with ClearType and EMF+ antialiasing, diagonal and curved glyph hinting, the last 0.26% of CMYK JPEG values, and rotated high-quality `DrawImage` sampling (within one level). Metric WMF map modes assume a 96 dpi device unless you pass `wmfReferenceDpi`.
+Output is tested pixel for pixel against what Windows itself paints: 885 of 910 test pictures match exactly. The rest differ by a few pixels, mostly in ClearType and EMF+ text, a few EMF+ pens and gradients, and one-level image sampling differences. Text matches Windows only when the metafile's fonts are passed in `fonts`.
 
-See [Limitations](docs/limitations.md) for the details and [Outstanding work](docs/outstanding-work.md) for what is still open.
+See [Limitations](docs/limitations.md) for the list, [Parity notes](docs/parity-notes.md) for the measurements and [Outstanding work](docs/outstanding-work.md) for what is still open.
 
 ## License
 

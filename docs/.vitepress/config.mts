@@ -46,6 +46,7 @@ export default defineConfig({
 					{ text: 'Usage', link: '/usage' },
 					{ text: 'How it works', link: '/how-it-works' },
 					{ text: 'Limitations', link: '/limitations' },
+					{ text: 'Parity notes', link: '/parity-notes' },
 					{ text: 'Outstanding work', link: '/outstanding-work' },
 					{ text: 'Native parity review', link: '/native-parity-review' },
 				],

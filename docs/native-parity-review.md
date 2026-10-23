@@ -103,7 +103,7 @@ For complex shaping, [HarfBuzz](https://harfbuzz.github.io/shaping-and-shape-pla
 
 Twelve workstreams, each starting from a native probe that isolates one stage, were merged together and measured as one tree. Against the same 870 report comparisons as the baseline at `ebac1db` (v4.20.3), **752 are RGB-exact, up from 646**. 174 comparisons improve, none worsens, and the mismatched pixels over those comparisons fall from 269,403 to 78,594. With the 28 new mirrored wide-pen sheets the report covers 898 comparisons, 777 exact and 769 with complete ink coverage. There are no render failures, no omitted reference ink, and 9 comparisons with rendered ink beyond the captured reference (11 before). Some text comparisons now use native playback references (`playback-references.json`), because a metafile records GDI's rounded advances and the directly drawn PNGs cannot be reproduced from the recording.
 
-Native rules recovered in this round (details in [Limitations](./limitations.md) and [Outstanding work](./outstanding-work.md)):
+Native rules recovered in this round (details in [Parity notes](./parity-notes.md) and [Outstanding work](./outstanding-work.md)):
 
 - **EMF+ image effects** run on the premultiplied playback bitmap; the shared 96-pixel residual of about 30 effect fixtures and the blur and sharpen residuals are closed.
 - **EMF+ sampling coordinates** step in float32 rounded toward minus infinity, with a float32 inverse matrix; translucent clamp colours are literal premultiplied bytes; rotated plain Bicubic uses the integer pipeline.
