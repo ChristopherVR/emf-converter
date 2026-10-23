@@ -12,6 +12,7 @@
         "@types/utif": "^3.0.6",
         "gifuct-js": "2.1.2",
         "jpeg-js": "0.4.4",
+        "pdfjs-dist": "^6.4.299",
         "react": "^19.3.0",
         "react-dom": "^19.3.0",
         "tsup": "^8.5.1",
@@ -507,6 +508,8 @@
     "path-browserify": ["path-browserify@1.0.1", "", {}, "sha512-b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g=="],
 
     "pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
+
+    "pdfjs-dist": ["pdfjs-dist@6.4.299", "", { "optionalDependencies": { "@napi-rs/canvas": "^1.0.10" } }, "sha512-AVl138zALtfaAPvADulE0PZThbYzCBS79nL4pOSL/6Sm/4AH5A21BD9VHt97OlCuzJuCpmeZtAtkinisF4Vb1g=="],
 
     "perfect-debounce": ["perfect-debounce@1.0.0", "", {}, "sha512-xCy9V055GLEqoFaHoC1SoLIaLmWctgCUaBaWxDZ7/Zx4CTyX7cJQLJOok/orfjZAh9kEYpjJa4d0KcJmCbctZA=="],
 

@@ -46,6 +46,8 @@ export {
 	type SvgConvertOptions,
 	type WebpConvertOptions,
 } from './emf-converter';
+export { convertMetafileToPdf, type PdfConvertOptions } from './pdf-convert';
+export { svgTreeToPdf, type PdfOptions, type PdfDecodedImage } from './pdf-svg';
 export type { MetafileInput } from './metafile-input';
 export { DEFAULT_DPI_SCALE } from './emf-canvas-helpers';
 export { loadSystemFonts, type LoadSystemFontsOptions } from './load-system-fonts';

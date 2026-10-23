@@ -74,7 +74,8 @@ function zlibStored(raw: Uint8Array): Uint8Array {
 	return out;
 }
 
-async function zlibDeflate(raw: Uint8Array): Promise<Uint8Array> {
+/** zlib-compresses `raw` (platform CompressionStream, stored blocks when it is missing). */
+export async function zlibDeflate(raw: Uint8Array): Promise<Uint8Array> {
 	if (typeof CompressionStream === 'function' && typeof Response === 'function') {
 		try {
 			const stream = new Blob([raw as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new CompressionStream('deflate'));
