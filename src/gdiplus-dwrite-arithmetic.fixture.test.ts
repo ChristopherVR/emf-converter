@@ -9,7 +9,8 @@ import { gdiTextCoverage } from './gdi-text-render';
 /**
  * DirectWrite's ClearType arithmetic for installed fonts under GDI+ grayscale text (round 11, `HintEnvironment.dwriteArithmetic`):
  * per-product projections and the every-vector-but-y ClearType direction, read in DWrite.dll and confirmed here against the
- * committed native captures. Exact captures with the model on and off; the model is opt-in on this branch.
+ * committed native captures. Exact captures with the model on and off; the model is the default for installed fonts (`installedFonts`, true unless a
+ * private-font collection says otherwise).
  */
 const load = (name: string): any[] => JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}`, import.meta.url))).toString());
 const red = (c: any): Uint8Array => { const b = Buffer.from(c.rgba, 'base64'), o = new Uint8Array(64 * 64); for (let i = 0; i < o.length; i++) o[i] = b[i * 4]; return o; };
@@ -36,6 +37,10 @@ function exact(installed: boolean, file: string, size: number, origin: (c: any) 
 }
 
 describe.skipIf(!windowsFonts())('DirectWrite arithmetic for installed fonts (GDI+ grayscale)', () => {
+	it('is the default for a font collection; a private-font collection turns it off', () => {
+		expect(new GdiFontCollection(windowsFonts()!).installedFonts).toBe(true);
+		expect(new GdiFontCollection(windowsFonts()!, 'cleartype', { installedFonts: false }).installedFonts).toBe(false);
+	});
 	it('text-real-glyphs: 17,411 exact without, 19,496 with (17,409 and 19,494 before the SCANCTRL and DELTAP rules of round 11)', () => {
 		const g = (c: any) => new Uint8Array(Buffer.from(c.gray, 'base64'));
 		expect(exact(false, 'text-real-glyphs.json.gz', 40, () => [6, 28], g)).toBe(17411);

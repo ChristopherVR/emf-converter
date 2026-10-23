@@ -72,7 +72,7 @@ describe.skipIf(!windowsFonts())('native Courier New GDI+ grayscale', () => {
 		const lost = measured.flatMap((v, i) => bounds.systemBefore[i] === 0 && v > 0 ? [i] : []);
 		expect(excessive).toEqual([]);
 		expect(lost).toEqual([]);
-		expect(measured.filter(v => v === 0).length).toBeGreaterThanOrEqual(4845);
+		expect(measured.filter(v => v === 0).length).toBeGreaterThanOrEqual(5328);
 		expect(bounds.systemBefore.filter(v => v === 0)).toHaveLength(4188);
 	});
 
@@ -83,15 +83,16 @@ describe.skipIf(!windowsFonts())('native Courier New GDI+ grayscale', () => {
 			exact[key] = (exact[key] ?? 0) + (measured[i] === 0 ? 1 : 0);
 			if (c.hint === 3 || c.style & 1) expect(measured[i]).toBeLessThanOrEqual(bounds.systemBefore[i]);
 		}
-		const minimum = { '0/3': 768, '0/4': 337, '1/3': 752, '1/4': 656,
-			'2/3': 784, '2/4': 320, '3/3': 678, '3/4': 550 };
+		// Raised in round 11 (DirectWrite's arithmetic, the default for installed fonts): 4,861 to 5,328 exact.
+		const minimum = { '0/3': 784, '0/4': 368, '1/3': 768, '1/4': 672,
+			'2/3': 784, '2/4': 496, '3/3': 768, '3/4': 688 };
 		for (const [key, count] of Object.entries(minimum)) expect(exact[key]).toBeGreaterThanOrEqual(count);
 	});
 
-	it('pins the broader regular-face corpus, including all 653 newly exact AntiAlias glyphs', () => {
+	it('pins the broader regular-face corpus, including all 771 exact AntiAlias glyphs (653 before round 11)', () => {
 		expect(broad.flatMap((v, i) => v > bounds.regular[i] ? [i] : [])).toEqual([]);
 		expect(broad.flatMap((v, i) => bounds.regularBefore[i] === 0 && v > 0 ? [i] : [])).toEqual([]);
-		expect(regular.filter((c, i) => c.hint === 4 && broad[i] === 0).length).toBeGreaterThanOrEqual(653);
+		expect(regular.filter((c, i) => c.hint === 4 && broad[i] === 0).length).toBeGreaterThanOrEqual(771);
 	});
 
 	it('exposes and bounds the five previously inexact captures that increase slightly', () => {

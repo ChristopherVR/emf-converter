@@ -1043,9 +1043,10 @@ export class HintedSize {
 	 * Whether the projection vector is in ClearType's direction. GDI's interpreter keeps a flag beside the projection
 	 * vector (read from fontdrvhost.exe): SVTCA, SPVTCA, SPVTL, SDPVTL and SPVFS raise it under ClearType unless the
 	 * vector is exactly the y axis, and the freedom-vector instructions leave it as it was. It selects the 1/16-pixel
-	 * rounding, the cut-in, the minimum distance and the link recording (`ctFlag`). GDI+ keeps the earlier test, "the
-	 * vector points mostly along x" (the new one gains in GDI+ too, but loses two string ceilings by one and six pixels,
-	 * see docs/outstanding-work.md).
+	 * rounding, the cut-in, the minimum distance and the link recording (`ctFlag`). GDI+ text of installed fonts uses the
+	 * DirectWrite rule (`dwrite`, below); GDI+ text of private fonts keeps the earlier test, "the vector points mostly along
+	 * x". Round 11 measured the flag rule for GDI+ (installed, private, both) on the combined tree against every pinned
+	 * capture and fixture: not one pixel differs from the DirectWrite rule / the earlier test (docs/outstanding-work.md, R11-C).
 	 */
 	private ctDirection(): boolean {
 		const gs = this.gs;

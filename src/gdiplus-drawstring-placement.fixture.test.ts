@@ -36,7 +36,7 @@ function renderCapture(c: Capture, fonts: GdiFontCollection): Uint8ClampedArray 
 }
 
 describe.skipIf(!windowsFonts())('native DrawString placement: what the unclosed captures are', () => {
- it('96 of 144 are exact; the 48 others are the W and g glyph shapes, and no whole-pixel shift of our output reduces any of them', async () => {
+ it('140 of 144 are exact (96 before round 11 made DirectWrite arithmetic the default for installed fonts); the 4 others are Arial 40 g, and no whole-pixel shift of our output reduces any of them', async () => {
   await ensureNodeCanvasModule();
   const fonts = new GdiFontCollection(windowsFonts()!);
   let exact = 0;
@@ -59,10 +59,8 @@ describe.skipIf(!windowsFonts())('native DrawString placement: what the unclosed
     expect(differs(dx, dy), key).toBeGreaterThanOrEqual(home);
    }
   }
-  expect(exact).toBe(96);
-  expect(Object.fromEntries(inexact)).toEqual({
-   'Arial 16 W': 8, 'Arial 40 W': 12, 'Arial 40 g': 4, 'Times New Roman 22 W': 12, 'Times New Roman 22 g': 12,
-  });
+  expect(exact).toBe(140);
+  expect(Object.fromEntries(inexact)).toEqual({ 'Arial 40 g': 4 });
  });
 });
 
