@@ -877,6 +877,10 @@ export interface DeferredImageResample {
 	 * unit-scale axis (see `mirroredUnitBias` in `emf-plus-image-resample.ts`).
 	 */
 	pointsForm?: boolean;
+	/** The record's three destination points (world coordinates, flat x, y), for the float32 matrix chain of a points draw. */
+	worldPoints?: number[];
+	/** The world-to-device matrix the points draw runs under (with `worldPoints`). */
+	worldMatrix?: TransformMatrix;
 	/**
 	 * The axis-aligned scale of a draw as GDI+ rounds it to float32 (nearest) before it inverts the matrix, which
 	 * is what the 16.16 step of a high-quality draw comes from. `toDevice` holds the same scale rounded toward

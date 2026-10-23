@@ -179,10 +179,13 @@ export function invertDown(m: readonly number[]): Mat6 | null {
  */
 export function spanPositions(inv: Mat6, x0: number, y: number, n: number, us: Float64Array, vs: Float64Array): void {
 	const [a, b, c, d, e, f] = inv;
-	const at = (x: number): [number, number] => [
-		addDown(addDown(mul(a, x), mul(c, y)), e),
-		addDown(addDown(mul(b, x), mul(d, y)), f),
-	];
+	const complexity = matrixComplexity(inv);
+	const at = (x: number): [number, number] => {
+		if (complexity === 0) return [x, y];
+		if ((complexity & ~1) === 0) return [addDown(x, e), addDown(y, f)];
+		if ((complexity & ~3) === 0) return [addDown(mul(x, a), e), addDown(mul(y, d), f)];
+		return [addDown(addDown(mul(a, x), mul(c, y)), e), addDown(addDown(mul(b, x), mul(d, y)), f)];
+	};
 	const [u0, v0] = at(x0);
 	const [u1, v1] = at(x0 + n);
 	const su = div(sub(u1, u0), n);

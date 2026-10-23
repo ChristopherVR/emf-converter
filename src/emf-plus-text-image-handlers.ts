@@ -109,6 +109,7 @@ function imageResampleSpec(
 	toWorld: (sx: number, sy: number, sw: number, sh: number) => TransformMatrix,
 	points: boolean,
 	nominalScale?: (sw: number, sh: number) => [number, number] | undefined,
+	worldPoints?: number[],
 ): DeferredImageResample | undefined {
 	const { view } = rCtx;
 	const kernel = resampleKernelFor(rCtx.interpolationMode ?? 0);
@@ -131,6 +132,7 @@ function imageResampleSpec(
 		kernel,
 		halfPixelOffset: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0),
 		...(points ? { pointsForm: true } : {}),
+		...(points && worldPoints ? { worldPoints, worldMatrix: plusWorldMatrix(rCtx) } : {}),
 		...(nominalScale ? { nominalScale: nominalScale(srcW, srcH) } : {}),
 		...imageAttributesWrap(rCtx, view.getUint32(dataOff, true)),
 	};
@@ -157,6 +159,7 @@ function drawOrDeferImage(
 	effect: EmfPlusImageEffect | null = null,
 	points = false,
 	nominalScale?: (sw: number, sh: number) => [number, number] | undefined,
+	worldPoints?: number[],
 ): void {
 	if (!imgObj.data) {
 		return;
@@ -170,7 +173,7 @@ function drawOrDeferImage(
 		dh,
 		transform: plusWorldMatrix(rCtx),
 		isMetafile,
-		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld, points, nominalScale),
+		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld, points, nominalScale, worldPoints),
 	};
 	const { view } = rCtx;
 	const source = {
@@ -900,7 +903,7 @@ export function handleEmfPlusTextImageRecord(
 						return [a, b, c, d, p1x - a * sx - c * sy, p1y - b * sx - d * sy];
 					}, effect, true, p2y === p1y && p3x === p1x
 						? (sw, sh) => [Math.fround((p2x - p1x) / sw), Math.fround((p3y - p1y) / sh)]
-						: undefined);
+						: undefined, [p1x, p1y, p2x, p2y, p3x, p3y]);
 				} else {
 					const hasData = imgObj && imgObj.kind === 'plus-image' && imgObj.data;
 					emfWarn(
