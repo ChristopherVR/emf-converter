@@ -171,7 +171,7 @@ describe('tiled path gradients under a rotation', () => {
 		const flipped = stretched(pick('rect-24x24-20.3-15.7-TileFlipX-brot90'));
 		expect(flipped.exact).toBe(flipped.pixels);
 		const fractional = stretched(pick('rect-40.5x30.25-20.5-15.5-Tile-brot90'));
-		expect(fractional.exact).toBeGreaterThanOrEqual(16800);
+		expect(fractional.exact).toBeGreaterThanOrEqual(16812);
 		expect(fractional.within / fractional.pixels).toBeGreaterThan(0.99);
 	});
 });

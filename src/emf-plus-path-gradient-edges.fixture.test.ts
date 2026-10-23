@@ -9,7 +9,7 @@ import { pathGradientSampler } from './emf-plus-exact-fill';
  * (`ri-`) and on a pixel centre (`rh-`), the same 400 drawn counter-clockwise (`c-`), eight sizes from each corner in
  * both windings (`o-`) and six sizes translated by whole and sixteenth pixels (`t-`). Each capture stores red and alpha.
  *
- * The rule that `emf-plus-path-gradient-copies.ts` implements was found on these (see docs/outstanding-work.md):
+ * The nested-copy rule of rounds 4 to 10 was fitted on these and is now the ramp of `emf-plus-path-gradient-oned.ts`, read from gdiplus.dll (see docs/outstanding-work.md):
  * - Copy `q` of `N` has its edge on pixel (x, y) when the ratio of the pixel to the boundary is exactly `(2q + 1) / (2N)`.
  *   Native holds the ratio in binary fixed point, so the pixel is outside the copy when that fraction is a binary fraction
  *   (the odd part of `N` divides `2q + 1`) and inside when it is not, for a pixel that reads the exact coordinate of the
