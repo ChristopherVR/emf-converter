@@ -172,14 +172,14 @@ it('plays an EMF+ DrawImage of a progressive 4:2:0 arithmetic JPEG with restart 
 	}
 	// The decoded 37 x 19 source is exact (above); the one-level differences are the 7x enlargement done by DrawImage.
 	// Native 11-bit bilinear shares raise exact channel values from 148,274 to 151,082; the float32 round-down row stepper raises them to 151,178;
-	// the vertical position of a DrawImagePoints draw runs a relative 2^-21 above the exact one (`emf-plus-image-points.fixture.test.ts`): 151,188.
-	expect(exact).toBe(151188);
+	// the vertical position of a DrawImagePoints draw runs a relative 2^-21 above the exact one (`emf-plus-image-points.fixture.test.ts`): 151,188; the float32 matrix chain of `gdiplus-image-points.ts` (round-trip through the inferred matrix) makes all 151,200 exact.
+	expect(exact).toBe(151200);
 	expect(max).toBeLessThanOrEqual(1);
 });
 
 it.each([
-	['arithmetic', 151199, 1],
-	['cmyk-photo', 151197, 1],
+	['arithmetic', 151200, 1],
+	['cmyk-photo', 151200, 1],
 ])('plays an EMF+ DrawImage of the %s JPEG like GDI+ (exact channel values, largest error)', async (name, exactCount, maxError) => {
 	const rendered = (await renderFixture(`codec-jpeg-${name}-playback.emf`))!;
 	const reference = await loadReference(`codec-jpeg-${name}-playback`);

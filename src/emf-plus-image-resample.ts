@@ -709,7 +709,7 @@ export function resampleImage(
 	// A plain Bilinear DrawImagePoints draw runs the float32 matrix chain of `gdiplus-image-points.ts` (the points go
 	// through the inferred matrix twice, and the inverse and the span positions are exact round-down arithmetic).
 	let exactInv: Mat6 | null = null;
-	if (steppedInv && spec.pointsForm && spec.worldPoints && spec.worldMatrix && kernel === 'bilinear' && axisAligned && !spec.halfPixelOffset) {
+	if (steppedInv && spec.pointsForm && spec.worldPoints && spec.worldMatrix && kernel === 'bilinear' && axisAligned && !spec.halfPixelOffset && !spec.wrap) {
 		const device = drawImagePointsDeviceMatrix(spec.worldPoints, [spec.srcX, spec.srcY, spec.srcW, spec.srcH], spec.worldMatrix);
 		exactInv = device && invertDown(device);
 	}
