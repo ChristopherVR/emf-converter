@@ -15,11 +15,45 @@
 
 import { decodeAnsiRecord } from './emf-ansi';
 import { computeSurfaceSize, readUtf16LE } from './emf-canvas-helpers';
-import * as K from './emf-constants';
+import {
+	EMFPLUS_DRAWDRIVERSTRING,
+	EMFPLUS_DRAWSTRING,
+	EMFPLUS_HEADER,
+	EMFPLUS_OBJECTTYPE_FONT,
+	EMFPLUS_OBJECTTYPE_IMAGE,
+	EMFPLUS_SIGNATURE,
+	EMR_ALPHABLEND,
+	EMR_BITBLT,
+	EMR_COMMENT,
+	EMR_EOF,
+	EMR_EXTCREATEFONTINDIRECTW,
+	EMR_EXTTEXTOUTA,
+	EMR_EXTTEXTOUTW,
+	EMR_MASKBLT,
+	EMR_PLGBLT,
+	EMR_POLYTEXTOUTA,
+	EMR_POLYTEXTOUTW,
+	EMR_SETDIBITSTODEVICE,
+	EMR_SMALLTEXTOUT,
+	EMR_STRETCHBLT,
+	EMR_STRETCHDIBITS,
+	EMR_TRANSPARENTBLT,
+	MAX_RECORDS_DEFAULT,
+	MAX_RECORDS_EMFPLUS_DEFAULT,
+	META_CREATEFONTINDIRECT,
+	META_DIBBITBLT,
+	META_DIBSTRETCHBLT,
+	META_EOF,
+	META_EXTTEXTOUT,
+	META_SETDIBTODEV,
+	META_STRETCHDIB,
+	META_TEXTOUT,
+} from './emf-constants';
 import { getRenderableEmfBounds, parseEmfHeader, parseWmfHeader } from './emf-header-parser';
 import { sniffImageMime } from './emf-image-payload';
 import { emfWarn } from './emf-logging';
 import { readMetafileInput, type MetafileInput } from './metafile-input';
+import { recordNameTables } from './metafile-record-names';
 import { walkEmfPlusObjects } from './emf-plus-texture-predecode';
 import { extractEmbeddedEmf } from './wmf-embedded-emf';
 import { wmfPlayback } from './wmf-mapping';
@@ -108,29 +142,11 @@ const MAX_NESTING = 3;
 // Record names
 // ---------------------------------------------------------------------------
 
-let nameTables: { emr: Map<number, string>; meta: Map<number, string>; plus: Map<number, string> } | null = null;
+let nameTables: ReturnType<typeof recordNameTables> | null = null;
 
-/** Reverse lookup tables over the constants in `emf-constants.ts`, built on first use. */
-function names(): NonNullable<typeof nameTables> {
-	if (nameTables) {
-		return nameTables;
-	}
-	const emr = new Map<number, string>();
-	const meta = new Map<number, string>();
-	const plus = new Map<number, string>();
-	for (const [key, value] of Object.entries(K)) {
-		if (typeof value !== 'number') {
-			continue;
-		}
-		if (key.startsWith('EMR_') && !key.startsWith('EMR_COMMENT_')) {
-			emr.set(value, key);
-		} else if (key.startsWith('META_')) {
-			meta.set(value, key);
-		} else if (key.startsWith('EMFPLUS_') && value >= 0x4001 && value <= 0x403f) {
-			plus.set(value, key);
-		}
-	}
-	nameTables = { emr, meta, plus };
+/** Record name tables, built on first use. */
+function names(): ReturnType<typeof recordNameTables> {
+	nameTables ??= recordNameTables();
 	return nameTables;
 }
 
@@ -241,18 +257,18 @@ function parseEmfHeaderSafe(view: DataView): ReturnType<typeof parseEmfHeader> {
 // ---------------------------------------------------------------------------
 
 /** EMF records that draw text. */
-const EMF_TEXT = new Set([K.EMR_EXTTEXTOUTA, K.EMR_EXTTEXTOUTW, K.EMR_POLYTEXTOUTA, K.EMR_POLYTEXTOUTW, K.EMR_SMALLTEXTOUT]);
+const EMF_TEXT = new Set([EMR_EXTTEXTOUTA, EMR_EXTTEXTOUTW, EMR_POLYTEXTOUTA, EMR_POLYTEXTOUTW, EMR_SMALLTEXTOUT]);
 
 /** Byte offset of `offBmi` from the record start, for the EMF records that carry a source DIB. */
 const EMF_OFF_BMI: Record<number, number> = {
-	[K.EMR_BITBLT]: 84,
-	[K.EMR_STRETCHBLT]: 84,
-	[K.EMR_MASKBLT]: 84,
-	[K.EMR_ALPHABLEND]: 84,
-	[K.EMR_TRANSPARENTBLT]: 84,
-	[K.EMR_PLGBLT]: 96,
-	[K.EMR_SETDIBITSTODEVICE]: 48,
-	[K.EMR_STRETCHDIBITS]: 48,
+	[EMR_BITBLT]: 84,
+	[EMR_STRETCHBLT]: 84,
+	[EMR_MASKBLT]: 84,
+	[EMR_ALPHABLEND]: 84,
+	[EMR_TRANSPARENTBLT]: 84,
+	[EMR_PLGBLT]: 96,
+	[EMR_SETDIBITSTODEVICE]: 48,
+	[EMR_STRETCHDIBITS]: 48,
 };
 
 /** Counts the EMF stream's records and collects GDI fonts and DIBs. */
@@ -272,14 +288,14 @@ function scanEmfRecords(view: DataView, scan: Scan, maxRecords: number, maxPlusR
 		}
 		scan.recordCount++;
 		bump(scan.recordTypes, table.get(type) ?? `UNKNOWN_0x${type.toString(16)}`);
-		if (type === K.EMR_EXTCREATEFONTINDIRECTW) {
+		if (type === EMR_EXTCREATEFONTINDIRECTW) {
 			// The converter's own layout and length gate (emf-gdi-object-handlers.ts).
 			if (size >= 332) {
 				addFont(scan, readUtf16LE(view, off + 8 + 32, 32), 'gdi');
 			}
 		} else if (EMF_TEXT.has(type)) {
 			scan.hasText = true;
-		} else if (type === K.EMR_COMMENT) {
+		} else if (type === EMR_COMMENT) {
 			scanEmfPlusComment(view, off + 8, off + size, scan, maxPlusRecords);
 		} else if (type in EMF_OFF_BMI) {
 			const at = EMF_OFF_BMI[type];
@@ -293,7 +309,7 @@ function scanEmfRecords(view: DataView, scan: Scan, maxRecords: number, maxPlusR
 					}
 				}
 			}
-		} else if (type === K.EMR_EOF) {
+		} else if (type === EMR_EOF) {
 			return;
 		}
 		off += size;
@@ -306,7 +322,7 @@ function scanEmfPlusComment(view: DataView, dataOff: number, end: number, scan: 
 		return;
 	}
 	const commentSize = view.getUint32(dataOff, true);
-	if (view.getUint32(dataOff + 4, true) !== K.EMFPLUS_SIGNATURE || commentSize <= 4) {
+	if (view.getUint32(dataOff + 4, true) !== EMFPLUS_SIGNATURE || commentSize <= 4) {
 		return;
 	}
 	const table = names().plus;
@@ -326,10 +342,10 @@ function scanEmfPlusComment(view: DataView, dataOff: number, end: number, scan: 
 		}
 		scan.emfPlusRecordCount++;
 		bump(scan.recordTypes, table.get(type) ?? `UNKNOWN_0x${type.toString(16)}`);
-		if (type === K.EMFPLUS_HEADER && scan.plus === 'none') {
+		if (type === EMFPLUS_HEADER && scan.plus === 'none') {
 			// Flags bit 0 is EmfPlusDual: the GDI records repeat the picture.
 			scan.plus = (flags & 1) !== 0 ? 'dual' : 'only';
-		} else if (type === K.EMFPLUS_DRAWSTRING || type === K.EMFPLUS_DRAWDRIVERSTRING) {
+		} else if (type === EMFPLUS_DRAWSTRING || type === EMFPLUS_DRAWDRIVERSTRING) {
 			scan.hasText = true;
 		}
 		off += size;
@@ -343,13 +359,13 @@ function scanEmfPlusObjects(view: DataView, scan: Scan, depth: number, maxRecord
 		const v = obj.view;
 		const o = obj.dataOff;
 		const n = obj.dataSize;
-		if (type === K.EMFPLUS_OBJECTTYPE_FONT && n >= 28) {
+		if (type === EMFPLUS_OBJECTTYPE_FONT && n >= 28) {
 			// EmfPlusFont: Version, EmSize, SizeUnit, FontStyleFlags, Reserved, Length, Family.
 			const len = v.getUint32(o + 20, true);
 			if (len > 0 && 24 + len * 2 <= n) {
 				addFont(scan, readUtf16LE(v, o + 24, len), 'emfPlus');
 			}
-		} else if (type === K.EMFPLUS_OBJECTTYPE_IMAGE && n >= 8) {
+		} else if (type === EMFPLUS_OBJECTTYPE_IMAGE && n >= 8) {
 			const imgType = v.getUint32(o + 4, true);
 			if (imgType === 1 && n >= 28) {
 				// EmfPlusBitmap: Width, Height, Stride, PixelFormat, Type (0 pixels, 1 compressed).
@@ -410,8 +426,8 @@ function inspectEmf(view: DataView, header: NonNullable<ReturnType<typeof parseE
 		return null;
 	}
 	const scan = newScan();
-	scanEmfRecords(view, scan, opts.maxRecords ?? K.MAX_RECORDS_DEFAULT, opts.maxRecords ?? K.MAX_RECORDS_EMFPLUS_DEFAULT);
-	scanEmfPlusObjects(view, scan, 0, opts.maxRecords ?? K.MAX_RECORDS_DEFAULT);
+	scanEmfRecords(view, scan, opts.maxRecords ?? MAX_RECORDS_DEFAULT, opts.maxRecords ?? MAX_RECORDS_EMFPLUS_DEFAULT);
+	scanEmfPlusObjects(view, scan, 0, opts.maxRecords ?? MAX_RECORDS_DEFAULT);
 	// The same helper createCanvas uses, at the converter's default options.
 	const size = computeSurfaceSize(render.right - render.left, render.bottom - render.top);
 	const frame: MetafileRect = {
@@ -459,10 +475,10 @@ function finish(scan: Scan, head: InfoHead): MetafileInfo {
 
 /** Bytes between the record's parameters start and the DIB, for the WMF records that carry one. */
 const WMF_DIB_AT: Record<number, number> = {
-	[K.META_DIBBITBLT]: 16,
-	[K.META_DIBSTRETCHBLT]: 20,
-	[K.META_STRETCHDIB]: 22,
-	[K.META_SETDIBTODEV]: 18,
+	[META_DIBBITBLT]: 16,
+	[META_DIBSTRETCHBLT]: 20,
+	[META_STRETCHDIB]: 22,
+	[META_SETDIBTODEV]: 18,
 };
 
 function scanWmfRecords(view: DataView, start: number, scan: Scan, maxRecords: number, ansiCodePage: number | undefined): void {
@@ -479,14 +495,14 @@ function scanWmfRecords(view: DataView, start: number, scan: Scan, maxRecords: n
 			scan.truncated = true;
 			return;
 		}
-		if (type === K.META_EOF) {
+		if (type === META_EOF) {
 			return;
 		}
 		scan.recordCount++;
 		bump(scan.recordTypes, table.get(type) ?? `UNKNOWN_0x${type.toString(16)}`);
 		const d = off + 6;
 		const end = off + size;
-		if (type === K.META_CREATEFONTINDIRECT) {
+		if (type === META_CREATEFONTINDIRECT) {
 			if (size >= 24) {
 				// The 16-bit LOGFONT's face name (byte 18) is in the device code page, as in wmf-objects.ts.
 				const bytes: number[] = [];
@@ -499,7 +515,7 @@ function scanWmfRecords(view: DataView, start: number, scan: Scan, maxRecords: n
 				}
 				addFont(scan, String.fromCharCode(...decodeAnsiRecord(bytes, 1, { ansi: ansiCodePage }).codes), 'gdi');
 			}
-		} else if (type === K.META_TEXTOUT || type === K.META_EXTTEXTOUT) {
+		} else if (type === META_TEXTOUT || type === META_EXTTEXTOUT) {
 			scan.hasText = true;
 		} else if (type in WMF_DIB_AT) {
 			const dib = d + WMF_DIB_AT[type];
@@ -525,7 +541,7 @@ function inspectWmf(view: DataView, opts: MetafileInfoOptions): MetafileInfo | n
 		return null;
 	}
 	const scan = newScan();
-	scanWmfRecords(view, header.headerSize, scan, opts.maxRecords ?? K.MAX_RECORDS_DEFAULT, opts.ansiCodePage);
+	scanWmfRecords(view, header.headerSize, scan, opts.maxRecords ?? MAX_RECORDS_DEFAULT, opts.ansiCodePage);
 	const playback = wmfPlayback(view, header);
 	const surface = computeSurfaceSize(playback.width, playback.height);
 	let width = surface.w;
