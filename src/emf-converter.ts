@@ -23,6 +23,7 @@
 import { effectedDraw } from './emf-plus-draw-image';
 import { encodePng } from './png-encoder';
 import { encodeJpeg } from './jpeg-encoder';
+import { encodeWebp } from './webp-encoder';
 import {
 	canvasDrawImage,
 	canvasGetImageData,
@@ -184,6 +185,22 @@ export interface JpegConvertOptions extends EmfConvertOptions {
 	 * lines and text free of colour fringes.
 	 */
 	chromaSubsampling?: boolean;
+}
+
+/**
+ * Options for {@link convertMetafileToWebpDataUrl}: every
+ * {@link EmfConvertOptions} field plus the WebP encoding settings.
+ */
+export interface WebpConvertOptions extends EmfConvertOptions {
+	/**
+	 * `true` (the default) writes lossless WebP: exact pixels, transparency
+	 * kept. `false` writes lossy WebP at {@link WebpConvertOptions.quality}.
+	 */
+	lossless?: boolean;
+	/**
+	 * Lossy quality from 0 to 1. Default 0.8. Ignored when `lossless` is true.
+	 */
+	quality?: number;
 }
 
 /**
@@ -626,6 +643,45 @@ export async function convertMetafileToJpegDataUrl(
 		return `data:image/jpeg;base64,${bytesToBase64(jpeg)}`;
 	} catch (err) {
 		emfWarn('convertMetafileToJpegDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
+		return null;
+	}
+}
+
+/**
+ * Converts an EMF or WMF buffer (format auto-detected) to a WebP data URL.
+ *
+ * The drawing is rendered exactly as for {@link convertMetafileToDataUrl}
+ * (same options, same backends, same `null` cases) and encoded by the
+ * bundled WebP encoder, so the bytes do not depend on the canvas backend.
+ * The default is lossless WebP, which keeps the pixels and the transparent
+ * background exactly; set {@link WebpConvertOptions.lossless} to `false`
+ * for smaller, lossy output (transparency is still kept).
+ *
+ * @param buffer  - The raw EMF or WMF file bytes.
+ * @param options - Optional {@link WebpConvertOptions}.
+ * @returns A `data:image/webp;base64,...` string, or `null` on failure.
+ */
+export async function convertMetafileToWebpDataUrl(
+	buffer: ArrayBuffer,
+	options?: WebpConvertOptions,
+): Promise<string | null> {
+	const raster = await renderRaster(buffer, options, 0, 'convertMetafileToWebpDataUrl');
+	if (!raster) {
+		return null;
+	}
+	try {
+		const { canvas, ctx } = raster;
+		const pixels = (canvas as unknown) instanceof SoftwareRasterCanvas
+			? (canvas as unknown as SoftwareRasterCanvas).pixels
+			: canvasGetImageData(ctx, 0, 0, canvas.width, canvas.height).data;
+		const webp = encodeWebp(pixels, canvas.width, canvas.height, {
+			lossy: options?.lossless === false,
+			quality: options?.quality,
+		});
+		return `data:image/webp;base64,${bytesToBase64(webp)}`;
+	} catch (err) {
+		emfWarn('convertMetafileToWebpDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
 		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
 		return null;
 	}
