@@ -467,6 +467,7 @@ export class RealizedFont implements GdiRealizedFont {
 		private readonly gdiPlus = false,
 		private readonly playbackStretched = false,
 		plusUnscaled = false,
+		private readonly installed = true,
 	) {
 		this.ttf = ttf;
 		this.gridFit = gridFit;
@@ -516,7 +517,7 @@ export class RealizedFont implements GdiRealizedFont {
 		// AntiAlias also runs these programs, while keeping linear advances.
 		this.hinted = new HintedSize(ttf, ppemX, ppem,
 			gdiPlus && mode === 'gray'
-				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false, grayClearType: true, shpixX: plusUnscaled }
+				? { version: 40, grayscale: true, clearType: true, compatibleWidths: false, grayClearType: true, shpixX: plusUnscaled, dwriteArithmetic: installed }
 				: { version: 35, grayscale: mode !== 'mono', gdiArithmetic: !gdiPlus, reportStretched: playbackStretched }, gridFit || (gdiPlus && mode === 'gray'));
 		this.hdmx = ppemX === ppem ? ttf.hdmx.get(ppem) : undefined;
 		if (gdiPlus && mode === 'gray' && gridFit) {
@@ -615,6 +616,7 @@ export class RealizedFont implements GdiRealizedFont {
 			clearType: true,
 			compatibleWidths: !this.gdiPlus && !this.naturalWidths,
 			gdiArithmetic: !this.gdiPlus,
+			dwriteArithmetic: this.gdiPlus && this.installed,
 			smoothingBit18: !this.gdiPlus && gridFit && clearTypeSmoothsVertically(this.ttf, this.ppem),
 			reportStretched: this.playbackStretched,
 			bwAdvance: !this.gdiPlus && !this.naturalWidths && gridFit ? (g: number): number => this.advance(g, true) : undefined,
@@ -911,9 +913,16 @@ export class GdiFontCollection {
 	private readonly rasterFamilies = new Map<string, RasterFace[]>();
 	private readonly realized = new Map<string, GdiRealizedFont | null>();
 	readonly defaultSmoothing: DefaultTextSmoothing;
+	/**
+	 * Whether the fonts are installed system fonts. GDI+ draws those through DirectWrite's in-process rasteriser
+	 * (`HintEnvironment.dwriteArithmetic`); a font from a private collection or a per-user install goes through another
+	 * process with other arithmetic, which the diagnostic fixtures built on private fonts pin.
+	 */
+	readonly installedFonts: boolean;
 
-	constructor(sources: readonly FontSource[], defaultSmoothing: DefaultTextSmoothing = 'cleartype') {
+	constructor(sources: readonly FontSource[], defaultSmoothing: DefaultTextSmoothing = 'cleartype', options: { installedFonts?: boolean } = {}) {
 		this.defaultSmoothing = defaultSmoothing;
+		this.installedFonts = options.installedFonts !== false;
 		for (const src of sources) {
 			for (const face of parseRasterFontFile(src)) {
 				const k = face.family.toLowerCase().trim();
@@ -1103,6 +1112,7 @@ export class GdiFontCollection {
 					spec.gdiPlus,
 					!!spec.playbackStretch && playbackStretchReacts(best, spec.height, spec.playbackStretch),
 					!!spec.unscaledText,
+					this.installedFonts,
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				return tt;

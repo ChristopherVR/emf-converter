@@ -13,7 +13,8 @@ const captures: Capture[] = JSON.parse(gunzipSync(fixture('text-diagonal-coverag
 // Baseline error ceilings belong to the test, never the native capture or runtime.
 // Zero ceilings preserve every independently exact image as arithmetic changes.
 const bounds: Record<string, [number, number]> = JSON.parse(fixture('text-diagonal-coverage-bounds.json').toString());
-const fonts = new GdiFontCollection(['movement', 'projection', 'vectors'].map(kind => fixture(`diagonal-${kind}.ttf`)));
+// Private fonts: GDI+ renders them outside the system-font rasteriser (`HintEnvironment.dwriteArithmetic` is off).
+const fonts = new GdiFontCollection(['movement', 'projection', 'vectors'].map(kind => fixture(`diagonal-${kind}.ttf`)), 'cleartype', { installedFonts: false });
 
 describe('public GDI+ private-font diagonal instruction coverage', () => {
 	it.each(['movement', 'projection', 'vectors'] as const)('preserves every %s rendering-mode control', kind => {

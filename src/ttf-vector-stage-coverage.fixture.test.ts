@@ -13,7 +13,8 @@ const captures: Capture[] = JSON.parse(gunzipSync(fixture('text-vector-stage-cov
 // Baseline error ceilings belong to the test, never the native capture or runtime.
 // Zero ceilings preserve every independently exact image as arithmetic changes.
 const bounds: Record<string, [number, number]> = JSON.parse(fixture('text-vector-stage-coverage-bounds.json').toString());
-const fonts = new GdiFontCollection(['dual', 'mdoriginal', 'mdrp', 'mirp', 'scfs'].map(kind => fixture(`vector-stage-${kind}.ttf`)));
+// Private fonts: GDI+ renders them outside the system-font rasteriser (`HintEnvironment.dwriteArithmetic` is off).
+const fonts = new GdiFontCollection(['dual', 'mdoriginal', 'mdrp', 'mirp', 'scfs'].map(kind => fixture(`vector-stage-${kind}.ttf`)), 'cleartype', { installedFonts: false });
 
 describe('public GDI+ private-font unequal projection-vector stage coverage', () => {
 	it.each(['dual', 'mdoriginal', 'mdrp', 'mirp', 'scfs'] as const)('preserves every %s rendering-mode control', kind => {
