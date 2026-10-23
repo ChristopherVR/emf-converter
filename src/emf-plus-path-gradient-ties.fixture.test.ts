@@ -6,8 +6,8 @@ import { pathGradientSampler } from './emf-plus-exact-fill';
 /**
  * Pixels exactly on the edge of a nested copy of a uniform path gradient (`PathGradientTieProbe.cs`: integer-sized
  * rectangles and diamonds centred on a pixel, so a copy at half scale has an edge on a pixel row, column or
- * diagonal). `emf-plus-path-gradient-copies.ts` decides them with the rule measured on `path-gradient-edges.json.gz`
- * (see `emf-plus-path-gradient-edges.fixture.test.ts`): all 46,868 rectangle pixels and all 15,056 diamond pixels are
+ * diagonal). The converter of `emf-plus-path-gradient-oned.ts` decides them (rounds 4 to 10 fitted a rule on
+ * `path-gradient-edges.json.gz`, see `emf-plus-path-gradient-edges.fixture.test.ts`): all 46,868 rectangle pixels and all 15,056 diamond pixels are
  * exact (46,861 and 15,050 with the earlier binary-fraction rule, 46,082 and 14,804 with the half-way colour before that).
  */
 interface Capture {

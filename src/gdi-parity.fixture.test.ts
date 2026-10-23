@@ -114,14 +114,15 @@ const LINEAR_TILE_CASES: ParityCase[] = [
  * light held in 10 bits), translucent end colours (their exact half-level
  * knots rounding down), and `PixelOffsetMode` Half: every pixel equal to
  * GDI+'s. `gpx-lin-blend-ellipse` (four blend factors, rotated, on an
- * aliased ellipse) is exact too. `gpx-lin-sigma` keeps two pixels one
- * level off (a ramp coordinate 1 in 65,536 short of a table-fraction boundary; the coefficient rounding that would fix them breaks others).
+ * aliased ellipse) and `gpx-lin-sigma` are exact too (the device-to-ramp matrix is GDI+'s float32 chain, see
+ * `emf-plus-linear-ramp.ts`; `gpx-lin-sigma` had two pixels one level off, a ramp coordinate 1 in 65,536 short of a
+ * table-fraction boundary).
  */
 const LINEAR_RAMP_CASES: ParityCase[] = [
 	exact('gpx-lin-preset5-small'),
 	exact('gpx-lin-preset5-large'),
 	exact('gpx-lin-preset5-huge'),
-	levelExact('gpx-lin-sigma'), // measured 0.013% one level off (tolerance 0)
+	exact('gpx-lin-sigma'), // two pixels one level off before the float32 matrix chain (round 11, R11-F)
 	exact('gpx-lin-triangular'),
 	exact('gpx-lin-gamma'),
 	exact('gpx-lin-gamma-preset'),
@@ -649,7 +650,7 @@ const TEXTURE_SAMPLING_CASES: ParityCase[] = [
 	'nearest-tile',
 	'hqbicubic-flipxy',
 	'pom-half-tile',
-].map((w) => levelExact(`gpx-texture-${w}`));
+].map((w) => exact(`gpx-texture-${w}`));
 
 /**
  * Pens and text painted with a texture, linear-gradient or path-gradient
@@ -665,7 +666,7 @@ const TEXTURE_SAMPLING_CASES: ParityCase[] = [
  */
 const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
 	close('gpx-pen-texture', 0.001), // measured 0.019%
-	close('gpx-pen-lingrad', 0.001), // measured 0.019%
+	exact('gpx-pen-lingrad'), // 13 pixels one level off before the float32 matrix chain (round 11, R11-F)
 	exact('gpx-pen-pathgrad'), // 0.070% before the nested copies, 0.013% before the unpainted outside pixels
 	exact('gpx-pen-styles'),
 	close('gpx-text-texture', 0.14), // measured 10.84% (glyph shapes)
@@ -681,7 +682,7 @@ const PEN_TEXT_BRUSH_CASES: ParityCase[] = [
  */
 const TEXT_BRUSH_FONT_CASES: ParityCase[] = [
 	exact('gpx-text-texture'), // 1.977% before SHPIX along x (round 10, R10-B)
-	close('gpx-text-lingrad', 0), // no pixel differs by more than 1 level (3 pixels); 1.996% before SHPIX along x (round 10, R10-B)
+	exact('gpx-text-lingrad'), // 3 pixels one level off before the float32 matrix chain (round 11, R11-F); 1.996% before SHPIX along x (round 10, R10-B)
 	close('gpx-text-pathgrad', 0), // no pixel differs by more than 1 level (15 pixels; 0.095% above 8 levels before SHPIX along x, round 10, R10-B) after the centre-relative per-vertex model (round 9, W5), 0.692% before; 0.978% before the unpainted outside pixels, 1.649% before the nested copies
 	exact('gpx-text-texture-mono'),
 	close('gpx-text-texture-cleartype', 0), // exact (GDI+ ClearType blend arithmetic); 2.802% 3.093% before the size-specific SHPIX tweaks
@@ -720,7 +721,7 @@ const PLUS_ALIASED_CASES: ParityCase[] = [
 	{ ...exact('gpx-metafile-scaled'), options: { gdiAntialias: false } }, // 0.065% before
 	{ ...exact('gpx-metafile-clip-zorder'), options: { gdiAntialias: false } }, // 0.039% before
 	plusAliased('gpx-pen-texture', 0.001), // measured 0.019%
-	plusAliased('gpx-pen-lingrad', 0.001), // measured 0.019%
+	plusAliased('gpx-pen-lingrad', 0), // measured 0%
 	plusAliased('gpx-pen-pathgrad', 0.002), // measured 0.070%
 	plusAliased('gpx-image-clip-zorder', 0), // measured 0%
 	plusAliased('gpx-texture-tile', 0), // measured 0%

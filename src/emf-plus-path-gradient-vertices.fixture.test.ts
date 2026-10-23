@@ -85,28 +85,27 @@ for (const c of captures) {
 
 /**
  * [images, native pixels, exact pixels (floor), pixels within one level (floor), max error ceiling].
- * Before the fan-triangle model the same groups were exact on 29% (rgb), 22% (shape), 52% (redonly),
- * 0.8% (rand), 0.08% (randa), 0.5% (randf, focus scales), 1.0% (randr) and 0.2 to 0.6% (randt) of
- * their native pixels. Native ignores FocusScales when the surrounds differ per vertex.
+ * Every pixel of every group is exact since round 11 (the converter of gdiplus.dll, see `emf-plus-path-gradient-fan.ts`; 99.36% before,
+ * with the fitted edge and span arithmetic of round 9). Native ignores FocusScales when the surrounds differ per vertex.
  */
 const EXPECTED: Record<string, [number, number, number, number, number]> = {
-	rgb: [4, 33632, 33591, 33632, 1],
-	shape: [8, 17484, 17198, 17484, 1],
-	redonly: [6, 11655, 11625, 11655, 1],
-	two: [1, 1843, 1842, 1843, 1],
-	quad: [1, 3320, 3289, 3320, 1],
-	pentagon: [1, 3702, 3679, 3702, 1],
-	small: [2, 408, 401, 408, 1],
-	rand: [120, 44454, 44205, 44454, 1],
-	randa: [60, 20463, 20421, 20463, 1],
-	randf: [40, 14766, 14691, 14766, 1],
-	randr: [30, 7815, 7634, 7719, 24],
-	randt_0: [10, 1686, 1683, 1686, 1],
-	randt_1: [10, 1061, 1051, 1061, 1],
-	randt_2: [10, 2951, 2940, 2951, 1],
-	randt_3: [10, 2951, 2937, 2951, 1],
-	randt_4: [10, 2949, 2855, 2878, 23],
-	randt_5: [10, 2944, 2927, 2944, 1],
+	rgb: [4, 33632, 33632, 33632, 0],
+	shape: [8, 17484, 17484, 17484, 0],
+	redonly: [6, 11655, 11655, 11655, 0],
+	two: [1, 1843, 1843, 1843, 0],
+	quad: [1, 3320, 3320, 3320, 0],
+	pentagon: [1, 3702, 3702, 3702, 0],
+	small: [2, 408, 408, 408, 0],
+	rand: [120, 44454, 44454, 44454, 0],
+	randa: [60, 20463, 20463, 20463, 0],
+	randf: [40, 14766, 14766, 14766, 0],
+	randr: [30, 7815, 7815, 7815, 0],
+	randt_0: [10, 1686, 1686, 1686, 0],
+	randt_1: [10, 1061, 1061, 1061, 0],
+	randt_2: [10, 2951, 2951, 2951, 0],
+	randt_3: [10, 2951, 2951, 2951, 0],
+	randt_4: [10, 2949, 2949, 2949, 0],
+	randt_5: [10, 2944, 2944, 2944, 0],
 };
 
 describe('per-vertex surround colours (Gouraud fan triangles)', () => {
