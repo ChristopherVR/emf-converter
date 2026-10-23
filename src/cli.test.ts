@@ -134,7 +134,7 @@ describe('emf-converter CLI', () => {
 		await writeFile(join(dir, 'notes.txt'), 'hello');
 		const captured = captureIo();
 		expect(await main([join(dir, 'notes.txt')], captured.io)).toBe(1);
-		expect(captured.stderr).toContain('unsupported input type');
+		expect(captured.stderr).toContain('not a readable EMF or WMF file');
 	});
 
 	it('exits 2 for usage errors and converts nothing', async () => {

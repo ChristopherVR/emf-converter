@@ -17,7 +17,15 @@ export const cliConfig: Options = {
 	banner: { js: '#!/usr/bin/env node' },
 	// The optional canvas peer stays external, as in the library build.
 	external: ['@napi-rs/canvas'],
-	noExternal: ['jpeg-js', 'gifuct-js', 'js-binary-schema-parser', 'utif', 'pako'],
+	esbuildPlugins: [{
+		// Load the library from the published `dist/index.mjs` next to the
+		// command instead of bundling a second copy of it.
+		name: 'library-external',
+		setup(build) {
+			build.onResolve({ filter: /^\.\/index$/ }, (args) =>
+				args.importer.endsWith('cli.ts') ? { path: './index.mjs', external: true } : undefined);
+		},
+	}],
 };
 
 export default defineConfig(cliConfig);

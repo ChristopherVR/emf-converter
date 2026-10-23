@@ -339,10 +339,9 @@ async function expandPattern(pattern: string, cwd: string): Promise<Job[]> {
 	return matches.sort().map((match) => fileJob(match, resolve(cwd, match)));
 }
 
+// Files named explicitly are converted whatever their extension (the library
+// detects EMF, WMF and gzip from the bytes); wildcards only pick metafile extensions.
 function fileJob(label: string, path: string): Job {
-	if (!INPUT_EXTENSIONS.includes(extname(path).toLowerCase())) {
-		return { kind: 'error', label, message: 'unsupported input type (expected .emf, .wmf, .emz or .wmz)' };
-	}
 	return { kind: 'file', label, path };
 }
 
