@@ -17,7 +17,45 @@ public static class ImagePointsBisectProbe {
     static float FromBits(int b) { return BitConverter.ToSingle(BitConverter.GetBytes(b), 0); }
     // The JPEG playbacks' geometry: a 37 x 19 source rectangle of a 227 x 149 bitmap to (20.000030517578125, 10.000015258789062) .. (280, 180).
     public const string DefaultSpec = "227,149,37,19,20.000030517578125,10.000015258789062,280,10.000015258789062,180,100,22-278";
-    public static void Run(string directory, string name, string spec) {
+    static byte[] Record(Bitmap source, int srcW, int srcH) {
+        string path = Path.Combine(Path.GetTempPath(), "ipb-" + Guid.NewGuid().ToString("N") + ".emf");
+        try {
+            using (var surface = new Bitmap(300, 200))
+            using (var host = Graphics.FromImage(surface)) {
+                IntPtr hdc = host.GetHdc();
+                try {
+                    using (var recording = new Metafile(path, hdc, EmfType.EmfPlusOnly))
+                    using (var g = Graphics.FromImage(recording)) {
+                        g.Clear(Color.White);
+                        g.DrawImage(source, new Rectangle(20, 10, 260, 170), 0, 0, srcW, srcH, GraphicsUnit.Pixel);
+                    }
+                } finally { host.ReleaseHdc(hdc); }
+            }
+            return File.ReadAllBytes(path);
+        } finally { try { File.Delete(path); } catch { } }
+    }
+    static int ReadPlayback(byte[] template, Bitmap dest, float x0, float tx, int pixel, int row) {
+        byte[] data = (byte[])template.Clone();
+        byte[] key = BitConverter.GetBytes(x0), repl = BitConverter.GetBytes(tx);
+        int hits = 0;
+        for (int i = 0; i + 4 <= data.Length; i++) {
+            if (data[i] == key[0] && data[i + 1] == key[1] && data[i + 2] == key[2] && data[i + 3] == key[3]) { Array.Copy(repl, 0, data, i, 4); hits++; }
+        }
+        if (hits != 2) throw new Exception("expected 2 recorded origins, found " + hits + " for " + F(x0));
+        using (var mf = new Metafile(new MemoryStream(data)))
+        using (var g = Graphics.FromImage(dest)) {
+            g.Clear(Color.Magenta);
+            g.DrawImage(mf, new Rectangle(0, 0, mf.Width, mf.Height), 0, 0, mf.Width, mf.Height, GraphicsUnit.Pixel);
+        }
+        var bits = dest.LockBits(new Rectangle(0, 0, dest.Width, 200), ImageLockMode.ReadOnly, dest.PixelFormat);
+        try { return Marshal.ReadByte(bits.Scan0, row * bits.Stride + pixel * 4 + 2); }
+        finally { dest.UnlockBits(bits); }
+    }
+    public static void Run(string directory, string name, string spec) { Run(directory, name, spec, false); }
+    // playback = true records the three-point DrawImage (fixture geometry: Rectangle(20,10,260,170), source rectangle srcW x srcH) into an
+    // EMF+ metafile on a 300 x 200 host, patches the recorded x of the first and third point to each searched origin and reads the
+    // native playback (DrawImage(metafile, 0, 0, Width, Height)), the way codec-jpeg-*-playback.png was made.
+    public static void Run(string directory, string name, string spec, bool playback) {
         var json = new StringBuilder("[");
         foreach (string caseSpec in spec.Split(';')) {
             string[] p = caseSpec.Split(',');
@@ -34,9 +72,11 @@ public static class ImagePointsBisectProbe {
             }
             var queries = new StringBuilder();
             using (var source = new Bitmap(sw, sh, PixelFormat.Format32bppArgb))
-            using (var dest = new Bitmap(320, 200, PixelFormat.Format32bppPArgb)) {
+            using (var dest = playback ? new Bitmap(300, 200, PixelFormat.Format32bppArgb) : new Bitmap(320, 200, PixelFormat.Format32bppPArgb)) {
                 for (int y = 0; y < sh; y++) for (int x = 0; x < sw; x++) source.SetPixel(x, y, Color.FromArgb(255, x % 2, y % 2, 0));
+                byte[] template = playback ? Record(source, srcW, srcH) : null;
                 Func<float, int, int> read = (tx, pixel) => {
+                    if (playback) return ReadPlayback(template, dest, x0, tx, pixel, row);
                     using (var g = Graphics.FromImage(dest)) {
                         g.CompositingMode = CompositingMode.SourceCopy;
                         g.Clear(Color.Transparent);
@@ -44,7 +84,7 @@ public static class ImagePointsBisectProbe {
                         g.PixelOffsetMode = PixelOffsetMode.None;
                         g.DrawImage(source, new PointF[] { new PointF(tx, y0), new PointF(x1, y1), new PointF(tx, y2) }, new RectangleF(0, 0, srcW, srcH), GraphicsUnit.Pixel);
                     }
-                    var bits = dest.LockBits(new Rectangle(0, 0, 320, 200), ImageLockMode.ReadOnly, dest.PixelFormat);
+                    var bits = dest.LockBits(new Rectangle(0, 0, dest.Width, 200), ImageLockMode.ReadOnly, dest.PixelFormat);
                     try { return Marshal.ReadByte(bits.Scan0, row * bits.Stride + pixel * 4 + 2); }
                     finally { dest.UnlockBits(bits); }
                 };
@@ -70,9 +110,10 @@ public static class ImagePointsBisectProbe {
                 }
                 // the first and last covered columns of the row at the centre origin
                 read(x0, 0);
+                if (playback) { /* read() already drew the playback into dest */ }
                 int first = -1, last = -1;
-                var bd = dest.LockBits(new Rectangle(0, 0, 320, 200), ImageLockMode.ReadOnly, dest.PixelFormat);
-                try { for (int c = 0; c < 320; c++) if (Marshal.ReadByte(bd.Scan0, row * bd.Stride + c * 4 + 3) != 0) { if (first < 0) first = c; last = c; } }
+                var bd = dest.LockBits(new Rectangle(0, 0, dest.Width, 200), ImageLockMode.ReadOnly, dest.PixelFormat);
+                try { for (int c = 0; c < dest.Width; c++) if (Marshal.ReadByte(bd.Scan0, row * bd.Stride + c * 4 + 3) != 0) { if (first < 0) first = c; last = c; } }
                 finally { dest.UnlockBits(bd); }
                 if (json.Length > 1) json.Append(',');
                 json.Append("{\"sw\":").Append(sw).Append(",\"sh\":").Append(sh).Append(",\"srcW\":").Append(srcW).Append(",\"srcH\":").Append(srcH)

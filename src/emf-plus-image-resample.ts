@@ -72,6 +72,7 @@
  */
 
 import { invertTextureMatrix } from './emf-plus-brush-texture';
+import { drawImagePointsDeviceMatrix, invertDown, spanPositions, type Mat6 } from './gdiplus-image-points';
 import { down32 } from './float32-down';
 import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
@@ -705,7 +706,24 @@ export function resampleImage(
 	// own origin is already snapped, and measured against 600 native rotated captures the stepper trades
 	// as many pixels as it fixes there.
 	const steppedInv = !plainRotatedPass && (kernel === 'bilinear' || (kernel === 'bicubic' && !axisAligned)) ? invertTextureMatrix(m) : null;
-	if (steppedInv && spec.pointsForm && kernel === 'bilinear' && axisAligned) {
+	// A plain Bilinear DrawImagePoints draw runs the float32 matrix chain of `gdiplus-image-points.ts` (the points go
+	// through the inferred matrix twice, and the inverse and the span positions are exact round-down arithmetic).
+	let exactInv: Mat6 | null = null;
+	if (steppedInv && spec.pointsForm && spec.worldPoints && spec.worldMatrix && kernel === 'bilinear' && axisAligned && !spec.halfPixelOffset && !spec.wrap) {
+		const device = drawImagePointsDeviceMatrix(spec.worldPoints, [spec.srcX, spec.srcY, spec.srcW, spec.srcH], spec.worldMatrix);
+		exactInv = device && invertDown(device);
+	}
+	const runU = new Float64Array(w);
+	const runV = new Float64Array(w);
+	let runBase = 0;
+	const covers = (px: number, py: number): boolean => {
+		const cx = px + COVERAGE_NUDGE_X;
+		const cy = py + COVERAGE_NUDGE_Y;
+		const eu = inv[0] * cx + inv[2] * cy + inv[4];
+		const ev = inv[1] * cx + inv[3] * cy + inv[5];
+		return !(eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax);
+	};
+	if (steppedInv && !exactInv && spec.pointsForm && kernel === 'bilinear' && axisAligned) {
 		// The horizontal step of an axis-aligned DrawImagePoints draw is the nearest float32 reciprocal of the scale,
 		// not the round-down chain of the matrix inverse (`image-points.json.gz`: a 100 -> 100 draw with a 10 -> 8
 		// vertical reduction goes from 3,155 differing pixels of 27,648 to 2, a 360 -> 162 reduction from 31 to 6; the
@@ -736,7 +754,19 @@ export function resampleImage(
 			if (rasterCoverage ? !rasterCoverage[j * w + i] : eu < spec.srcX || ev < spec.srcY || eu >= uMax || ev >= vMax) {
 				continue;
 			}
-			if (steppedInv) {
+			if (exactInv) {
+				if (start < 0) {
+					start = i;
+					runBase = i;
+					let end = i + 1;
+					while (end < w && (rasterCoverage ? rasterCoverage[j * w + end] !== 0 : covers(bx0 + end + o, py))) {
+						end++;
+					}
+					spanPositions(exactInv, bx0 + i, by0 + j, end - i, runU, runV);
+				}
+				u = runU[i - runBase];
+				v = runV[i - runBase];
+			} else if (steppedInv) {
 				if (start < 0) {
 					start = i;
 					stepAt = i;
