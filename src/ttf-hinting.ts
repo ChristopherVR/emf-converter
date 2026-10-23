@@ -354,6 +354,17 @@ export interface HintEnvironment {
 	 * which keep FreeType's combined rounding until measured.
 	 */
 	gdiArithmetic?: boolean;
+	/**
+	 * DirectWrite's ClearType interpreter running an installed font, which is what GDI+ text goes through (round 11,
+	 * read in `DWrite.dll`: `itrp_Project`, `itrp_OldProject`, `ComputeAndCheck_PF_Proj`, `itrp_SPVTL`, `itrp_SDPVTL`;
+	 * confirmed by native captures of Arial, Times New Roman, Tahoma and Courier New). A projection rounds each product
+	 * of a 26.6 coordinate and a 2.14 vector component alone before summing (the dual projection and the
+	 * freedom/projection dot product alike), where the other interpreters here round the sum; and the ClearType
+	 * direction (the 1/16-pixel grid, the cut-in at 1/16, the minimum distance at 1/2) is every projection vector
+	 * except exactly y, a diagonal one included. Fonts loaded from a private GDI+ collection or a per-user install
+	 * run in another process whose arithmetic these captures do not match, so the flag stays off for them.
+	 */
+	dwriteArithmetic?: boolean;
 	/** Symmetric (vertically smoothed) ClearType: GETINFO bit 15. */
 	symmetricSmoothing?: boolean;
 	/**
@@ -471,6 +482,10 @@ export class HintedSize {
 	private fDotP = 0x4000;
 	/** `HintEnvironment.gdiArithmetic`. */
 	private readonly gdiMath: boolean;
+	/** `HintEnvironment.dwriteArithmetic` under ClearType: DirectWrite's ClearType direction. */
+	private readonly dwrite: boolean;
+	/** Projections, the dual projection and the freedom/projection dot product round each product alone. */
+	private readonly splitDot: boolean;
 	private inPrep = false;
 	/** The projection vector was set by SPVTL (for the ClearType RDTG exception). */
 	private pvFromSpvtl = false;
@@ -494,6 +509,8 @@ export class HintedSize {
 		this.font = font;
 		this.env = env;
 		this.gdiMath = !!env.gdiArithmetic;
+		this.dwrite = !!env.dwriteArithmetic && !!env.clearType;
+		this.splitDot = this.gdiMath || this.dwrite;
 		this.hinting = hinting;
 		const upem = font.unitsPerEm;
 		this.xScale = divFix(ppemX * 64, upem);
@@ -868,29 +885,29 @@ export class HintedSize {
 
 	private computeFuncs(): void {
 		const gs = this.gs;
-		if (!this.gdiMath && gs.fvx === 0x4000) {
+		if (!this.splitDot && gs.fvx === 0x4000) {
 			this.fDotP = gs.pvx;
-		} else if (!this.gdiMath && gs.fvy === 0x4000) {
+		} else if (!this.splitDot && gs.fvy === 0x4000) {
 			this.fDotP = gs.pvy;
 		} else {
 			// GDI: no axis shortcut. fv = (16384, y) or (x, 16384) with a small other component still has a dot product
 			// that involves both projection components, and the clamp below depends on its sign.
-			this.fDotP = this.gdiMath
+			this.fDotP = this.splitDot
 				? dotFix14Split(gs.pvx, gs.pvy, gs.fvx, gs.fvy)
 				: Math.floor((gs.pvx * gs.fvx + gs.pvy * gs.fvy) / 16384);
 		}
 		if (Math.abs(this.fDotP) < 0x400) {
 			// GDI keeps the sign (a freedom vector nearly perpendicular to the projection vector moves the other way)
-			this.fDotP = this.gdiMath && this.fDotP < 0 ? -0x4000 : 0x4000;
+			this.fDotP = this.splitDot && this.fDotP < 0 ? -0x4000 : 0x4000;
 		}
 	}
 
 	private project(dx: number, dy: number): number {
-		return (this.gdiMath ? dotFix14Split : dotFix14)(dx, dy, this.gs.pvx, this.gs.pvy);
+		return (this.splitDot ? dotFix14Split : dotFix14)(dx, dy, this.gs.pvx, this.gs.pvy);
 	}
 
 	private dualProject(dx: number, dy: number): number {
-		return (this.gdiMath ? dotFix14Split : dotFix14)(dx, dy, this.gs.dvx, this.gs.dvy);
+		return (this.splitDot ? dotFix14Split : dotFix14)(dx, dy, this.gs.dvx, this.gs.dvy);
 	}
 
 	/** Dual projection of an orus (font unit) difference, scaled to 26.6. */
@@ -1031,8 +1048,14 @@ export class HintedSize {
 	 * see docs/outstanding-work.md).
 	 */
 	private ctDirection(): boolean {
-		if (!this.gdiMath) return !!this.env.clearType && Math.abs(this.gs.pvx) > Math.abs(this.gs.pvy);
-		return !!this.env.clearType && this.ctFlag;
+		const gs = this.gs;
+		if (this.gdiMath) return !!this.env.clearType && this.ctFlag;
+		if (this.dwrite && this.ctCompat()) {
+			// DirectWrite flags the vector once, when it is set: backward-compatible ClearType treats every projection
+			// vector but exactly y as the ClearType direction, whatever its angle.
+			return !(gs.pvx === 0 && gs.pvy === 0x4000);
+		}
+		return !!this.env.clearType && Math.abs(gs.pvx) > Math.abs(gs.pvy);
 	}
 
 	/** Backward-compatible ClearType: ClearType on and the font has not set INSTCTRL selector 3. */

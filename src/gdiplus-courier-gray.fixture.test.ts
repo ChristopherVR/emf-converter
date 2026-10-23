@@ -60,7 +60,7 @@ function mismatches(fonts: GdiFontCollection, c: Capture, size: number, privateN
 describe.skipIf(!windowsFonts())('native Courier New GDI+ grayscale', () => {
 	const source = windowsFonts() ?? [];
 	const fonts = new GdiFontCollection(source);
-	const privateFonts = new GdiFontCollection(source);
+	const privateFonts = new GdiFontCollection(source, 'cleartype', { installedFonts: false });
 	const measured = source.length ? system.map(c => mismatches(fonts, c, 64)) : [];
 	const broad = source.length ? regular.map(c => mismatches(fonts, c, 40)) : [];
 	const privateMeasured = source.length ? renamed.map(c => mismatches(privateFonts, c, 64, true)) : [];
