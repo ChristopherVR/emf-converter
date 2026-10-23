@@ -56,6 +56,7 @@ import { createBrushTexture } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { emfPlusPathClipShape } from './emf-plus-path';
 import { clipPixelRects } from './emf-plus-raster';
+import { down32 } from './float32-down';
 import { isSvgContext } from './svg-context';
 import type {
 	EmfPlusBrush,
@@ -68,6 +69,41 @@ import type {
 // ---------------------------------------------------------------------------
 // Shared utilities
 // ---------------------------------------------------------------------------
+
+/**
+ * `GpMatrix::Rotate` of GDI+, read from gdiplus.dll: the angle goes through a float32 product with the float32
+ * degrees-to-radians constant, the sine and cosine are float32 values, and every product and sum is a float32 operation,
+ * all rounded toward minus infinity (the mode GDI+ runs its matrix code in; the same rounding of the angle product, the sine
+ * and the cosine reproduces the world matrix of 132 native Translate-and-Rotate scenes of `linear-ramp-world.json.gz`,
+ * where rounding to nearest misses 112 and a double precision rotation is up to a float32 unit off:
+ * `cos(-25 degrees)` rounds to the float above the one GDI+ holds, enough to move a pixel of a gradient that sits
+ * within a unit of a table fraction boundary, `gpx-lin-blend-ellipse`). `append` multiplies the rotation after the matrix,
+ * otherwise before it.
+ */
+export function rotateWorldTransform(m: TransformMatrix, degrees: number, append: boolean): TransformMatrix {
+	const f = down32;
+	const rad = f(Math.fround(degrees) * Math.fround(0.0174532924));
+	const s = f(Math.sin(rad));
+	const c = f(Math.cos(rad));
+	if (append) {
+		return [
+			f(f(m[0] * c) - f(m[1] * s)),
+			f(f(m[0] * s) + f(m[1] * c)),
+			f(f(m[2] * c) - f(m[3] * s)),
+			f(f(m[2] * s) + f(m[3] * c)),
+			f(f(m[4] * c) - f(m[5] * s)),
+			f(f(m[4] * s) + f(m[5] * c)),
+		];
+	}
+	return [
+		f(f(m[0] * c) + f(m[2] * s)),
+		f(f(m[3] * s) + f(m[1] * c)),
+		f(f(m[2] * c) - f(m[0] * s)),
+		f(f(m[3] * c) - f(m[1] * s)),
+		m[4],
+		m[5],
+	];
+}
 
 /** Multiply two affine matrices [a,b,c,d,e,f]. */
 export function multiplyMatrix(m1: TransformMatrix, m2: TransformMatrix): TransformMatrix {
@@ -829,15 +865,7 @@ export function handleEmfPlusStateRecord(
 		case EMFPLUS_ROTATEWORLDTRANSFORM: {
 			dropTsDevice(rCtx);
 			if (recDataSize >= 4) {
-				const angle = (view.getFloat32(dataOff, true) * Math.PI) / 180;
-				const cos = Math.cos(angle);
-				const sin = Math.sin(angle);
-				const xf: TransformMatrix = [cos, sin, -sin, cos, 0, 0];
-				if (recFlags & 0x2000) {
-					rCtx.worldTransform = multiplyMatrix(rCtx.worldTransform, xf);
-				} else {
-					rCtx.worldTransform = multiplyMatrix(xf, rCtx.worldTransform);
-				}
+				rCtx.worldTransform = rotateWorldTransform(rCtx.worldTransform, view.getFloat32(dataOff, true), (recFlags & 0x2000) !== 0);
 			}
 			return true;
 		}

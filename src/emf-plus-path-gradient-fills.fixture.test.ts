@@ -50,7 +50,7 @@ describe('path-gradient pens, text and fills take the brush path\'s copies', () 
 	// [native pixels, pixels differing at zero tolerance (ceiling), pixels beyond one level (ceiling), unpainted, extra]
 	const EXPECTED: Record<string, [number, number, number, number, number]> = {
 		'rect-base': [4800, 0, 0, 0, 0],
-		'tri-base': [7500, 42, 0, 0, 0],
+		'tri-base': [7500, 0, 0, 0, 0],
 		'ell-base': [8382, 0, 0, 0, 0],
 	};
 	for (const [name, [native, differ, beyond, unpainted, extra]] of Object.entries(EXPECTED)) {

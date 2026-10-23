@@ -13,8 +13,9 @@
  *   the boundary polygon's surround colours to the centre colour, shaped by
  *   the boundary itself (not a circle). Clamp paints the boundary and
  *   independently scaled focus contours; the tile modes repeat the boundary's
- *   bounding box. GDI+ draws it as nested copies of the boundary, so the ratio
- *   is rounded to one of `pathGradientQuantum` steps (see there).
+ *   bounding box. The exact renderer follows the converters of gdiplus.dll
+ *   (`emf-plus-path-gradient-oned.ts`, `emf-plus-path-gradient-fan.ts`: a ramp of
+ *   `pathGradientQuantum` steps over bilinear quads, or Gouraud fan triangles).
  *
  * Both are rasterised once into a brush-space tile at device resolution and
  * installed as a `CanvasPattern` whose matrix is the full brush transform,
@@ -38,7 +39,7 @@ import {
 	createImageDataCompat,
 	createTempCanvas,
 } from './emf-canvas-helpers';
-import { down32 } from './float32-down';
+import { rampSteps } from './emf-plus-path-gradient-oned';
 import { emfLog } from './emf-logging';
 import { buildLinearRampTable, linearRampOf, linearRampStops } from './emf-plus-linear-ramp';
 import type {
@@ -114,18 +115,12 @@ function lerpUniformPathArgb(a: number, b: number, t: number): number {
  * Number of distance steps GDI+ quantises a path gradient's centre-to-boundary
  * ratio into: `ceil(|M(w, h)| + |M(w, -h)|)` for the `w` x `h` bounding box
  * of the boundary in brush space and the linear part `M` of the brush-to-device
- * matrix, that is the sum of the two device-space diagonals of the bounds. With
- * no rotation or shear both diagonals are `hypot(w sx, h sy)`, so this is
- * `ceil(2 * hypot(w, h))` for the device-space size `w` x `h` (`4 * L` rounded
- * up for the half diagonal `L`, so the ratio moves in quarter-pixel steps along
- * the longest possible ray). Measured on rectangle path gradients of every size
- * (a row through the centre is `round(255 * k / N)` for the step count `k`); the
- * same count reproduces triangles and ellipses, a 2x world or brush scale
- * doubles it, and a rotation leaves it alone (the diagonals keep their length;
- * the device bounding box of the rotated shape would grow it, which native does
- * not do). Under shear the two diagonals differ and their sum is the count that
- * scores best against every one of the 70 rotated, scaled and sheared captures
- * (no other count within 12 steps of it does).
+ * matrix, that is the sum of the two device-space diagonals of the bounds
+ * (`rampSteps`, the arithmetic of `DpOutputOneDGradientSpan::AllocateOneDData`).
+ * With no rotation or shear both diagonals are `hypot(w sx, h sy)`, so this is
+ * `ceil(2 * hypot(w, h))` for the device-space size `w` x `h`. A 2x world or brush
+ * scale doubles it and a rotation leaves it alone (the diagonals keep their
+ * length); under shear the two diagonals differ and their sum is the count.
  *
  * `matrix` maps the boundary's brush space to device pixels.
  */
@@ -133,29 +128,8 @@ export function pathGradientQuantum(
 	boundary: ReadonlyArray<{ x: number; y: number }>,
 	matrix: TransformMatrix = IDENTITY,
 ): number {
-	let x0 = Infinity;
-	let y0 = Infinity;
-	let x1 = -Infinity;
-	let y1 = -Infinity;
-	for (const p of boundary) {
-		x0 = Math.min(x0, p.x);
-		y0 = Math.min(y0, p.y);
-		x1 = Math.max(x1, p.x);
-		y1 = Math.max(y1, p.y);
-	}
-	const w = x1 - x0;
-	const h = y1 - y0;
-	const first = Math.hypot(matrix[0] * w + matrix[2] * h, matrix[1] * w + matrix[3] * h);
-	const second = Math.hypot(matrix[0] * w - matrix[2] * h, matrix[1] * w - matrix[3] * h);
-	const steps = Math.ceil(first + second);
-	return Number.isFinite(steps) && steps > 0 ? steps : 0;
+	return rampSteps(boundary, matrix);
 }
-
-/** A level within this of an exact half counts as a tie (float noise of the colour arithmetic). */
-const TIE_LEVEL = 1e-9;
-
-/** A ratio within this of an exact half step counts as a tie (float noise of the geometry). */
-const TIE_EPSILON = 1e-7;
 
 /**
  * The ratio of brush-space point (`x`, `y`) (0 at the centre or inside the focus, 1 on the boundary,
@@ -169,134 +143,7 @@ export function pathGradientRatio(
 	focusPoint?: { x: number; y: number },
 ): number | null {
 	const report = { s: NaN };
-	return pathGradientColorAt(shape, x, y, focusPoint, 0, report) === null ? null : report.s;
-}
-
-/**
- * The path-gradient colour at share `t` of the centre colour (0 boundary,
- * 1 centre) once GDI+ has quantised the ratio into `quantum` steps.
- *
- * GDI+ paints a path gradient as `quantum` nested copies of the boundary,
- * each a step smaller and a step closer to the centre colour, so a pixel
- * takes the colour of the innermost copy that holds it and the ratio rounds
- * to a whole step. The ramp is accumulated from the centre colour in float32
- * (see {@link centreWeight}); the premultiplied channels and alpha are
- * interpolated together and rounded to nearest, a tie toward the centre colour.
- *
- * A ratio exactly half way between two steps lies on a copy's edge, and which
- * side native paints it depends on that edge's float arithmetic (the same
- * geometry traversed in the opposite vertex order flips about half of them), so
- * the tie keeps the unquantised ratio, which is within a level of either answer.
- */
-function quantisedPathArgb(surround: number, centre: number, t: number, quantum: number): number {
-	const scaled = t * quantum;
-	const tie = Math.abs(scaled - Math.floor(scaled) - 0.5) < TIE_EPSILON;
-	return quantisedStepArgb(surround, centre, tie ? scaled : Math.floor(scaled + 0.5), quantum, t < 0.5);
-}
-
-/** Rounds `v` to the nearest level, a tie (within `TIE_LEVEL`) toward `target`. */
-function roundTowards(v: number, target: number): number {
-	const floor = Math.floor(v);
-	const fraction = v - floor;
-	if (Math.abs(fraction - 0.5) < TIE_LEVEL) return target > v ? floor + 1 : floor;
-	return fraction > 0.5 ? floor + 1 : floor;
-}
-
-const centreWeightTables = new Map<number, Float64Array>();
-
-/**
- * The position of ring j counted from the centre colour (0 at the centre, just under 1 at the boundary) of
- * `quantum` rings. Native builds the ramp by accumulation: the step 1 / quantum and the running sum are
- * float32 rounded toward minus infinity, so the position falls a little short of j / quantum (about
- * 6e-6 levels per ring, 0.007 levels at the boundary of a 1,000-ring gradient). That shortfall is why a
- * value exactly half way between two levels rounds toward the centre colour, and why 24 steps of the large
- * captures, 0.0005 to 0.009 of a level under a half, round up.
- */
-function centreWeight(quantum: number, j: number): number {
-	let table = centreWeightTables.get(quantum);
-	if (!table) {
-		table = new Float64Array(quantum + 1);
-		const step = down32(1 / quantum);
-		let w = 0;
-		for (let i = 1; i <= quantum; i++) {
-			w = down32(w + step);
-			table[i] = w;
-		}
-		if (centreWeightTables.size > 64) centreWeightTables.clear();
-		centreWeightTables.set(quantum, table);
-	}
-	return table[j];
-}
-
-/** The colour of whole step k of quantum rings, interpolated from the centre colour by {@link centreWeight}. */
-function centreWeightArgb(surround: number, centre: number, k: number, quantum: number): number {
-	const w = centreWeight(quantum, quantum - k);
-	const aS = (surround >>> 24) & 0xff;
-	const aC = (centre >>> 24) & 0xff;
-	const level = (s: number, c: number): number => roundTowards(c + (s - c) * w, c);
-	const alpha = level(aS, aC);
-	if (alpha <= 0) return 0;
-	const ch = (shift: number): number => {
-		const p = level(((surround >>> shift) & 0xff) * aS / 255, ((centre >>> shift) & 0xff) * aC / 255);
-		return Math.min(255, Math.max(0, Math.round(p * 255 / alpha)));
-	};
-	return ((alpha << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
-}
-
-/** The colour of step `k` of `quantum` (0 the boundary colour, `quantum` the centre colour); see {@link quantisedPathArgb}. */
-function quantisedStepArgb(surround: number, centre: number, k: number, quantum: number, fromBoundary: boolean): number {
-	if (Number.isInteger(k)) return centreWeightArgb(surround, centre, k, quantum);
-	const w = (fromBoundary ? k : quantum - k) / quantum;
-	const aS = (surround >>> 24) & 0xff;
-	const aC = (centre >>> 24) & 0xff;
-	const mix = (s: number, c: number): number => (fromBoundary ? s + (c - s) * w : c + (s - c) * w);
-	// A value exactly half way between two levels rounds toward the centre colour (a fractional step, the
-	// half-way colour of a pixel on a copy's edge, keeps plain rounding).
-	const whole = Number.isInteger(k);
-	const level = (s: number, c: number): number => (whole ? roundTowards(mix(s, c), c) : Math.floor(mix(s, c) + 0.5));
-	const alpha = level(aS, aC);
-	if (alpha <= 0) return 0;
-	const ch = (shift: number): number => {
-		const p = level(((surround >>> shift) & 0xff) * aS / 255, ((centre >>> shift) & 0xff) * aC / 255);
-		return Math.min(255, Math.max(0, Math.round(p * 255 / alpha)));
-	};
-	return ((alpha << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)) >>> 0;
-}
-
-/**
- * The position (0 boundary, 1 centre) once rounded to a whole step of `quantum`
- * (see {@link quantisedPathArgb}); a Blend or InterpolationColors curve is read at
- * this position, so a custom curve steps exactly as the plain ramp does. An exact
- * half step keeps its unquantised position.
- */
-function quantisedPosition(pos: number, quantum: number): number {
-	const scaled = pos * quantum;
-	const tie = Math.abs(scaled - Math.floor(scaled) - 0.5) < TIE_EPSILON;
-	return (tie ? scaled : Math.floor(scaled + 0.5)) / quantum;
-}
-
-/**
- * The colour of step `k` (0 the boundary, `quantum` the centre) of a uniform path gradient, the
- * way {@link pathGradientColorAt} colours a pixel whose step it has rounded: the preset curve and
- * the Blend curve are read at `k / quantum`, and the plain ramp rounds from whichever end is nearer.
- */
-export function pathGradientStepColor(shape: EmfPlusPathGradientShape, k: number, quantum: number): number {
-	const pos = k / quantum;
-	if (shape.preset && shape.preset.positions.length > 0) {
-		const { positions, argb } = shape.preset;
-		if (pos <= positions[0]) return argb[0];
-		for (let i = 1; i < positions.length; i++) {
-			if (pos <= positions[i]) {
-				const span = positions[i] - positions[i - 1];
-				return lerpArgb(argb[i - 1], argb[i], span > 0 ? (pos - positions[i - 1]) / span : 1);
-			}
-		}
-		return argb[positions.length - 1];
-	}
-	const surround = shape.boundaryArgb[0] ?? shape.centerArgb;
-	if (!shape.blend) return quantisedStepArgb(surround, shape.centerArgb, k, quantum, k * 2 < quantum);
-	const t = Math.min(1, Math.max(0, piecewise(shape.blend.positions, shape.blend.factors, pos)));
-	return (surround >>> 24) !== (shape.centerArgb >>> 24) ? lerpUniformPathArgb(surround, shape.centerArgb, t) : lerpArgb(surround, shape.centerArgb, t);
+	return pathGradientColorAt(shape, x, y, focusPoint, report) === null ? null : report.s;
 }
 
 /** Piecewise-linear lookup of `ys` at `x` over ascending `xs` (clamped at both ends). */
@@ -357,8 +204,6 @@ export function pathGradientColorAt(
 	// Scanline coverage may nudge x, but a collapsed focus line keeps the
 	// original sample location. Direct callers already supply that location.
 	focusPoint?: { x: number; y: number },
-	// Distance steps GDI+ quantises the ratio into (see pathGradientQuantum).
-	quantum?: number,
 	// Receives the ratio (0 at the centre or inside the focus, 1 on the boundary) the colour is read at.
 	report?: { s: number },
 ): number | null {
@@ -390,9 +235,9 @@ export function pathGradientColorAt(
 		}
 		// Later triangles paint over earlier ones, as GDI+ fills them in order.
 		found = i;
-		// The quantised ratio is taken at the unnudged sample location.
-		const alphaU = quantum ? (ux * ey - uy * ex) / det : alpha;
-		const betaU = quantum ? (ax * uy - ay * ux) / det : beta;
+		// The ratio is taken at the unnudged sample location.
+		const alphaU = (ux * ey - uy * ex) / det;
+		const betaU = (ax * uy - ay * ux) / det;
 		bestS = Math.max(0, alphaU);
 		bestU = alphaU > 0 ? Math.min(1, Math.max(0, betaU / alphaU)) : 0;
 	}
@@ -483,8 +328,7 @@ export function pathGradientColorAt(
 	}
 	if (found < 0 || !Number.isFinite(s)) return null;
 	if (report) report.s = s;
-	const exactPos = 1 - s;
-	const pos = quantum && quantum > 0 ? quantisedPosition(exactPos, quantum) : exactPos;
+	const pos = 1 - s;
 	if (shape.preset && shape.preset.positions.length > 0) {
 		const { positions, argb } = shape.preset;
 		if (pos <= positions[0]) {
@@ -503,9 +347,6 @@ export function pathGradientColorAt(
 	const surround = lerpArgb(c0, c1, bestU);
 	const factor = shape.blend ? piecewise(shape.blend.positions, shape.blend.factors, pos) : pos;
 	const t = Math.min(1, Math.max(0, factor));
-	if (quantum && quantum > 0 && !shape.blend && boundaryArgb.every((color) => color === boundaryArgb[0])) {
-		return quantisedPathArgb(surround, shape.centerArgb, Math.min(1, Math.max(0, exactPos)), quantum);
-	}
 	// Independent native alpha captures confirm the uniform-surround path.
 	// Varying surrounds follow a different, still unmodelled interpolation.
 	return (surround >>> 24) !== (shape.centerArgb >>> 24) && boundaryArgb.every((color) => color === boundaryArgb[0])
