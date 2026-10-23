@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createCanvas, exportCanvasToPngDataUrl } from './emf-canvas-helpers';
+import { canvasGetImageData, createCanvas } from './emf-canvas-helpers';
 import { convertMetafileToDataUrl } from './emf-converter';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
 import { replayEmfRecords } from './emf-record-replay';
@@ -20,7 +20,7 @@ vi.mock<typeof import('./emf-header-parser')>(import('./emf-header-parser'), () 
 
 vi.mock<typeof import('./emf-canvas-helpers')>(import('./emf-canvas-helpers'), () => ({
 	createCanvas: vi.fn<() => void>(),
-	exportCanvasToPngDataUrl: vi.fn<() => void>(),
+	canvasGetImageData: vi.fn<() => void>(),
 	ensureNodeCanvasModule: vi.fn<() => Promise<null>>().mockResolvedValue(null),
 	decodeDeferredImageBytes: vi.fn<() => Promise<null>>().mockResolvedValue(null),
 	DEFAULT_DPI_SCALE: 2,
@@ -47,11 +47,25 @@ function makeCtxStub() {
 	};
 }
 
+/** The rendered pixels are read back and PNG-encoded by the bundled encoder. */
+function mockReadback(fails?: boolean) {
+	const readback = canvasGetImageData as ReturnType<typeof vi.fn>;
+	if (fails) {
+		readback.mockImplementation(() => {
+			throw new Error('readback boom');
+		});
+	} else {
+		readback.mockImplementation((_ctx, _x, _y, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }));
+	}
+}
+
+const PNG_DATA_URL = /^data:image\/png;base64,iVBORw0KGgo/;
+
 function setupEmfMocks(options?: {
 	headerNull?: boolean;
 	boundsNull?: boolean;
 	canvasNull?: boolean;
-	dataUrl?: string | null;
+	readbackFails?: boolean;
 }) {
 	const opts = options ?? {};
 	const header = opts.headerNull
@@ -68,8 +82,7 @@ function setupEmfMocks(options?: {
 
 	(replayEmfRecords as ReturnType<typeof vi.fn>).mockReturnValue([]);
 
-	const dataUrl = opts.dataUrl !== undefined ? opts.dataUrl : 'data:image/png;base64,AAAA';
-	(exportCanvasToPngDataUrl as ReturnType<typeof vi.fn>).mockResolvedValue(dataUrl);
+	mockReadback(opts.readbackFails);
 
 	return { ctx, canvas };
 }
@@ -78,7 +91,7 @@ function setupWmfMocks(options?: {
 	headerNull?: boolean;
 	invalidDims?: boolean;
 	canvasNull?: boolean;
-	dataUrl?: string | null;
+	readbackFails?: boolean;
 }) {
 	const opts = options ?? {};
 	// Detection tries the EMF path first, so force it to fail here regardless
@@ -104,8 +117,7 @@ function setupWmfMocks(options?: {
 
 	(replayWmfRecords as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
 
-	const dataUrl = opts.dataUrl !== undefined ? opts.dataUrl : 'data:image/png;base64,BBBB';
-	(exportCanvasToPngDataUrl as ReturnType<typeof vi.fn>).mockResolvedValue(dataUrl);
+	mockReadback(opts.readbackFails);
 
 	return { ctx, canvas };
 }
@@ -123,7 +135,7 @@ describe('convertMetafileToDataUrl (EMF path)', () => {
 		setupEmfMocks();
 		const buf = new ArrayBuffer(100);
 		const result = await convertMetafileToDataUrl(buf);
-		expect(result).toBe('data:image/png;base64,AAAA');
+		expect(result).toMatch(PNG_DATA_URL);
 	});
 
 	it('returns null when parseEmfHeader returns null', async () => {
@@ -208,8 +220,8 @@ describe('convertMetafileToDataUrl (EMF path)', () => {
 		expect(ctx.restore).toHaveBeenCalled();
 	});
 
-	it('returns null when exportCanvasToPngDataUrl returns null', async () => {
-		setupEmfMocks({ dataUrl: null });
+	it('returns null when the pixels cannot be read back', async () => {
+		setupEmfMocks({ readbackFails: true });
 		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toBeNull();
 	});
@@ -241,7 +253,7 @@ describe('convertMetafileToDataUrl (WMF path)', () => {
 	it('returns a data URL on success', async () => {
 		setupWmfMocks();
 		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
-		expect(result).toBe('data:image/png;base64,BBBB');
+		expect(result).toMatch(PNG_DATA_URL);
 	});
 
 	it('returns null when parseWmfHeader returns null', async () => {
@@ -305,7 +317,7 @@ describe('convertMetafileToDataUrl (format auto-detection)', () => {
 	it('routes EMF-shaped input (parseEmfHeader succeeds) to the EMF replay path', async () => {
 		setupEmfMocks();
 		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
-		expect(result).toBe('data:image/png;base64,AAAA');
+		expect(result).toMatch(PNG_DATA_URL);
 		expect(replayEmfRecords).toHaveBeenCalled();
 		expect(replayWmfRecords).not.toHaveBeenCalled();
 	});
@@ -313,7 +325,7 @@ describe('convertMetafileToDataUrl (format auto-detection)', () => {
 	it('routes WMF-shaped input (parseEmfHeader fails, parseWmfHeader succeeds) to the WMF replay path', async () => {
 		setupWmfMocks();
 		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
-		expect(result).toBe('data:image/png;base64,BBBB');
+		expect(result).toMatch(PNG_DATA_URL);
 		expect(replayWmfRecords).toHaveBeenCalled();
 		expect(replayEmfRecords).not.toHaveBeenCalled();
 	});
