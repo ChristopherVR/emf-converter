@@ -35,6 +35,9 @@
 	"module": "dist/index.mjs",
 	"browser": "dist/browser.mjs",
 	"types": "dist/index.d.ts",
+	"bin": {
+		"emf-converter": "dist/cli.mjs"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
@@ -47,7 +50,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tsup && tsup --config tsup.browser.config.ts",
+		"build": "tsup && tsup --config tsup.browser.config.ts && tsup --config tsup.cli.config.ts",
 		"dev": "tsup --watch",
 		"typecheck": "tsc --noEmit --pretty",
 		"test": "vitest run",
@@ -67,6 +70,7 @@
 		"@types/utif": "^3.0.6",
 		"gifuct-js": "2.1.2",
 		"jpeg-js": "0.4.4",
+		"pdfjs-dist": "^6.4.299",
 		"react": "^19.3.0",
 		"react-dom": "^19.3.0",
 		"tsup": "^8.5.1",
