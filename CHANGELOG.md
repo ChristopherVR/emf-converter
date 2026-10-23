@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.23.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.23.1) - 2026-10-23
+
+### Documentation
+
+- Short user-facing Limitations page; the measured detail moves to Parity notes ([7080252](https://github.com/ChristopherVR/emf-converter/commit/7080252db12c743f093d6a3022fdf434735ece26))
+- Short Outstanding work list; the round-by-round record moves to Parity log ([deb1b5a](https://github.com/ChristopherVR/emf-converter/commit/deb1b5a88608706066d3d6515680e4bf6ece1fab))
+
 ## [4.23.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.23.0) - 2026-10-23
 
 ### Features
