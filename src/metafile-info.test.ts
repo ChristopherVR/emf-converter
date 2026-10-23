@@ -139,6 +139,14 @@ describe('getMetafileInfo', () => {
 		expect(await getMetafileInfo(load('gdi/codec-gif.png'))).toBeNull();
 	});
 
+	it('accepts typed arrays and Blobs', async () => {
+		const bytes = new Uint8Array(load('sample-crown.wmf'));
+		const a = await getMetafileInfo(bytes);
+		const b = await getMetafileInfo(new Blob([bytes]));
+		expect(a!.width).toBe(770);
+		expect(b).toEqual(a);
+	});
+
 	it('honours maxRecords and flags truncation', async () => {
 		const info = await getMetafileInfo(load('sample-crown.wmf'), { maxRecords: 10 });
 		expect(info!.recordCount).toBe(10);

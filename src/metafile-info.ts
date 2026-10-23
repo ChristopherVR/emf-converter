@@ -19,6 +19,7 @@ import * as K from './emf-constants';
 import { getRenderableEmfBounds, parseEmfHeader, parseWmfHeader } from './emf-header-parser';
 import { sniffImageMime } from './emf-image-payload';
 import { emfWarn } from './emf-logging';
+import { readMetafileInput, type MetafileInput } from './metafile-input';
 import { walkEmfPlusObjects } from './emf-plus-texture-predecode';
 import { extractEmbeddedEmf } from './wmf-embedded-emf';
 import { wmfPlayback } from './wmf-mapping';
@@ -597,12 +598,16 @@ function inspectWmf(view: DataView, opts: MetafileInfoOptions): MetafileInfo | n
  * nested WMFs are not; images in a dual-mode file are counted in each
  * record stream that has them.
  *
- * @param buffer  - The raw EMF or WMF file bytes.
+ * @param input   - The metafile bytes (`ArrayBuffer`, typed array / `Buffer` or `Blob`; gzip is inflated).
  * @param options - Optional {@link MetafileInfoOptions}.
  * @returns A {@link MetafileInfo}, or `null` when the buffer is not a metafile.
  */
-export async function getMetafileInfo(buffer: ArrayBuffer, options?: MetafileInfoOptions): Promise<MetafileInfo | null> {
+export async function getMetafileInfo(input: MetafileInput, options?: MetafileInfoOptions): Promise<MetafileInfo | null> {
 	try {
+		const buffer = await readMetafileInput(input);
+		if (!buffer) {
+			return null;
+		}
 		const view = new DataView(buffer);
 		const opts = options ?? {};
 		const emfHeader = parseEmfHeaderSafe(view);
