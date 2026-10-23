@@ -100,6 +100,17 @@ describe('emf-converter CLI', () => {
 		expect(await readFile(join(dir, 'drawing.svg'), 'utf8')).toContain('<svg');
 	});
 
+	it('writes WebP (lossless and --lossy) and PDF from the --out extension', async () => {
+		const captured = captureIo();
+		expect(await main([EMF, '-o', join(dir, 'drawing.webp'), '--fonts', 'none'], captured.io)).toBe(0);
+		expect(await main([EMF, '-o', join(dir, 'lossy.webp'), '--lossy', '--fonts', 'none'], captured.io)).toBe(0);
+		expect(await main([EMF, '-o', join(dir, 'drawing.pdf'), '--fonts', 'none'], captured.io)).toBe(0);
+		const webp = await readFile(join(dir, 'drawing.webp'));
+		expect(webp.subarray(0, 4).toString('latin1') + webp.subarray(8, 16).toString('latin1')).toBe('RIFFWEBPVP8L');
+		expect((await readFile(join(dir, 'lossy.webp'))).subarray(12, 16).toString('latin1')).toMatch(/^VP8[ X]$/);
+		expect((await readFile(join(dir, 'drawing.pdf'))).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+	});
+
 	it('writes several inputs into a directory it creates', async () => {
 		const out = join(dir, 'converted');
 		const captured = captureIo();

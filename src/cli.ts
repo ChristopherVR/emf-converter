@@ -1,6 +1,6 @@
 /**
  * Command-line interface behind `npx emf-converter`: converts EMF, EMF+,
- * WMF and gzip-compressed (`.emz` / `.wmz`) files to PNG, JPEG or SVG.
+ * WMF and gzip-compressed (`.emz` / `.wmz`) files to PNG, JPEG, WebP, SVG or PDF.
  *
  * Node.js only. Nothing in the library entry points imports this module;
  * `src/cli-bin.ts` is the thin process wrapper that the `dist/cli.mjs`
@@ -15,7 +15,7 @@ import * as fs from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { convertMetafile, loadSystemFonts, type ConvertOptions } from './index';
+import { convertMetafile, convertMetafileToPdf, loadSystemFonts, type ConvertOptions, type PdfConvertOptions } from './index';
 
 /**
  * Output formats the CLI writes. The first extension is the default for
@@ -25,7 +25,9 @@ import { convertMetafile, loadSystemFonts, type ConvertOptions } from './index';
 const CLI_FORMATS = [
 	{ name: 'png', extensions: ['.png'] },
 	{ name: 'jpeg', extensions: ['.jpg', '.jpeg'] },
+	{ name: 'webp', extensions: ['.webp'] },
 	{ name: 'svg', extensions: ['.svg'] },
+	{ name: 'pdf', extensions: ['.pdf'] },
 ] as const;
 
 type CliFormat = (typeof CLI_FORMATS)[number]['name'];
@@ -52,6 +54,7 @@ const OPTIONS = {
 	quality: { type: 'string' },
 	background: { type: 'string' },
 	antialias: { type: 'boolean' },
+	lossy: { type: 'boolean' },
 	fonts: { type: 'string' },
 	quiet: { type: 'boolean', short: 'q' },
 	help: { type: 'boolean', short: 'h' },
@@ -67,6 +70,7 @@ type CliValues = {
 	quality?: string;
 	background?: string;
 	antialias?: boolean;
+	lossy?: boolean;
 	fonts?: string;
 	quiet?: boolean;
 	help?: boolean;
@@ -77,15 +81,15 @@ type CliValues = {
 const HELP_TEXT = `Usage: emf-converter <files...> [options]
 
 Convert EMF, EMF+, WMF and gzip-compressed (.emz, .wmz) metafiles to PNG,
-JPEG or SVG.
+JPEG, WebP, SVG or PDF.
 
 Inputs:
   <files...>            Files to convert. "-" reads one file from stdin.
                         Wildcards (* and ?) are expanded by the CLI itself.
 
 Options:
-  -f, --format <fmt>    Output format: png, jpeg or svg. Default: from the
-                        --out extension, else png.
+  -f, --format <fmt>    Output format: png, jpeg, webp, svg or pdf. Default:
+                        from the --out extension, else png.
   -o, --out <path>      Output file for one input, or a directory (created if
                         missing) for several. Default: next to each input,
                         with the new extension. "-" writes to stdout.
@@ -93,7 +97,9 @@ Options:
       --width <px>      Maximum output width in pixels.
       --height <px>     Maximum output height in pixels.
       --scale <n>       DPI scale factor (default 1; the library clamps to 4).
-      --quality <0-1>   JPEG quality (default 0.92). JPEG only.
+      --quality <0-1>   JPEG quality (default 0.92), or lossy WebP quality
+                        (default 0.8).
+      --lossy           Lossy WebP instead of the default lossless WebP.
       --background <c>  JPEG colour under transparent areas, #rgb or #rrggbb
                         (default #ffffff). JPEG only.
       --antialias       Smooth shape edges instead of reproducing Windows'
@@ -209,7 +215,9 @@ async function run(argv: readonly string[], io: CliIo): Promise<number> {
 			const bytes = job.kind === 'stdin' ? await readStdin() : await fs.readFile(job.path);
 			const fontList = await loadFonts();
 			const options = { ...settings, format, ...(fontList ? { fonts: fontList } : {}) } as ConvertOptions;
-			const image = await convertMetafile(bytes, options);
+			const image = format === 'pdf'
+				? await convertMetafileToPdf(bytes, options as PdfConvertOptions).then((data) => data && { data })
+				: await convertMetafile(bytes, options);
 			if (!image) {
 				fail(job.label, 'not a readable EMF or WMF file, or the conversion failed');
 				continue;
@@ -281,6 +289,9 @@ function convertSettings(values: CliValues): Record<string, unknown> {
 	}
 	if (values.antialias) {
 		settings.gdiAntialias = true;
+	}
+	if (values.lossy) {
+		settings.lossless = false;
 	}
 	return settings;
 }
