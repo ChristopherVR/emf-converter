@@ -34,6 +34,7 @@ import type {
 	EmfPlusTextureCache,
 } from './emf-types';
 import { createEmfPlusState } from './emf-types';
+import { checkBudget, runToEnd, yieldDue } from './abort-budget';
 
 // ---------------------------------------------------------------------------
 // Record-name lookup (debug logging only)
@@ -144,6 +145,26 @@ export function replayEmfPlusRecords(
 	textureCache?: EmfPlusTextureCache,
 	fonts?: import('./gdi-font-engine').GdiFontCollection,
 ): DeferredImageDraw[] {
+	return runToEnd(
+		replayEmfPlusRecordsSteps(view, offset, length, ctx, canvasW, canvasH, state, dpiScale, maxRecords, fontFamilyMap, textureCache, fonts),
+	);
+}
+
+/** {@link replayEmfPlusRecords} as a generator that yields between records when the time slice is spent. */
+export function* replayEmfPlusRecordsSteps(
+	view: DataView,
+	offset: number,
+	length: number,
+	ctx: CanvasContext,
+	canvasW: number,
+	canvasH: number,
+	state?: EmfPlusState,
+	dpiScale: number = 1,
+	maxRecords: number = MAX_RECORDS_EMFPLUS_DEFAULT,
+	fontFamilyMap?: Record<string, string>,
+	textureCache?: EmfPlusTextureCache,
+	fonts?: import('./gdi-font-engine').GdiFontCollection,
+): Generator<void, DeferredImageDraw[]> {
 	const s = state ?? createEmfPlusState();
 	const rCtx: EmfPlusReplayCtx = {
 		ctx,
@@ -185,6 +206,10 @@ export function replayEmfPlusRecords(
 	emfLog(`replayEmfPlusRecords: offset=0x${offset.toString(16)}, length=${length}`);
 
 	while (offset + 12 <= end && recordCount < maxRecords) {
+		checkBudget();
+		if (yieldDue()) {
+			yield;
+		}
 		const recType = view.getUint16(offset, true);
 		const recFlags = view.getUint16(offset + 2, true);
 		const recSize = view.getUint32(offset + 4, true);

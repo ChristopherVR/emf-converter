@@ -47,7 +47,8 @@ import { emfLog, emfWarn } from './emf-logging';
 import { resampleImage } from './emf-plus-image-resample';
 import { preDecodeEmfPlusImages } from './emf-plus-image-predecode';
 import { preDecodeEmfPlusTextures } from './emf-plus-texture-predecode';
-import { replayEmfRecords } from './emf-record-replay';
+import { replayEmfRecordsSteps } from './emf-record-replay';
+import { BUDGET, Budget, budgetFor, runSliced, runSync } from './abort-budget';
 import type { AnyCanvas, CanvasContext, DeferredImageDraw, DeferredImageResample } from './emf-types';
 import { SoftwareRasterCanvas } from './software-raster';
 import { SvgContext } from './svg-context';
@@ -57,7 +58,7 @@ import type { SvgNode } from './svg-tree';
 import { readMetafileInput, type MetafileInput } from './metafile-input';
 import { extractEmbeddedEmf } from './wmf-embedded-emf';
 import { wmfPlayback } from './wmf-mapping';
-import { replayWmfRecords } from './wmf-replay';
+import { replayWmfRecordsSteps } from './wmf-replay';
 
 /**
  * Configuration options for EMF/WMF conversion.
@@ -161,6 +162,34 @@ export interface EmfConvertOptions {
 	 * antialiasing) or `'mono'` (smoothing off). Only used with `fonts`.
 	 */
 	fontSmoothing?: 'cleartype' | 'gray' | 'mono';
+	/**
+	 * Cancels the conversion. When the signal aborts, the conversion stops and
+	 * the returned promise rejects with `signal.reason` (as `fetch` does),
+	 * which is different from the `null` that means "not a valid metafile".
+	 * Replay checks the signal at every record and, while a signal is
+	 * supplied, yields to the event loop about every 16 ms so that
+	 * `AbortSignal.timeout()` timers and `abort()` calls from other tasks can
+	 * fire mid-conversion. A single very long record (one huge bitmap blit)
+	 * cannot be interrupted before it finishes. An already-aborted signal
+	 * rejects immediately.
+	 */
+	signal?: AbortSignal;
+	/**
+	 * Wall-clock budget in milliseconds, counted from the call. When it runs
+	 * out the promise rejects with a `DOMException` named `TimeoutError`, as
+	 * `AbortSignal.timeout()` does. Checked at every record, so the overrun is
+	 * at most one record's work (plus an encode, which is checked before it
+	 * starts). Needs no event-loop turn: it works without a `signal`.
+	 */
+	timeoutMs?: number;
+}
+
+/** Options as passed between internal entry points, carrying the shared budget. */
+type InternalOptions = EmfConvertOptions & { [BUDGET]?: Budget };
+
+/** The options with this call's budget attached, so nested conversions share it. */
+function withBudget<T extends object | undefined>(options: T, budget: Budget | null): T {
+	return (budget ? { ...options, [BUDGET]: budget } : options) as T;
 }
 
 /**
@@ -294,6 +323,7 @@ async function replayMetafile(
 		);
 	}
 	const opts = options ?? {};
+	const budget = budgetFor(opts as InternalOptions);
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
 	let view = new DataView(buffer);
 
@@ -336,6 +366,7 @@ async function replayMetafile(
 			// Likewise every EMF+ Image object, so DrawImage paints in record order
 			// under the clip active at that record (emf-plus-draw-image.ts).
 			const imageCache = await preDecodeEmfPlusImages(view);
+			budget?.check();
 			const renderBounds = getRenderableEmfBounds(emfHeader);
 			if (!renderBounds) {
 				emfLog('replayMetafile: getRenderableEmfBounds returned null');
@@ -350,7 +381,7 @@ async function replayMetafile(
 				return null;
 			}
 			surface.ctx.save();
-			const deferredImages = replayEmfRecords(
+			const deferredImages = await runSliced(budget, replayEmfRecordsSteps(
 				view,
 				surface.ctx,
 				renderBounds,
@@ -367,12 +398,13 @@ async function replayMetafile(
 					gdiAntialias: opts.gdiAntialias,
 					fonts: fontCollection(opts),
 				},
-			);
+			));
 			// Clears any clipping regions record handlers installed.
 			surface.ctx.restore();
 			emfLog(`replayMetafile: EMF replay done, ${deferredImages.length} deferred images`);
 			return { surface, deferredImages };
 		} catch (err) {
+			budget?.throwIfTripped();
 			emfWarn('replayMetafile: EMF EXCEPTION:', err instanceof Error ? err.message : err);
 			console.warn('[emf-converter] EMF conversion failed:', err instanceof Error ? err.message : err);
 			return null;
@@ -397,7 +429,7 @@ async function replayMetafile(
 			return null;
 		}
 		surface.ctx.save();
-		replayWmfRecords(view, surface.ctx, header, surface.width, surface.height, {
+		await runSliced(budget, replayWmfRecordsSteps(view, surface.ctx, header, surface.width, surface.height, {
 			wmfReferenceDpi: opts.wmfReferenceDpi,
 			wmfAnsiCodePage: opts.wmfAnsiCodePage,
 			codePages: { ansi: opts.ansiCodePage, oem: opts.oemCodePage },
@@ -405,10 +437,11 @@ async function replayMetafile(
 			fontFamilyMap: opts.fontFamilyMap,
 			gdiAntialias: opts.gdiAntialias,
 			fonts: fontCollection(opts),
-		});
+		}));
 		surface.ctx.restore();
 		return { surface, deferredImages: [] };
 	} catch (err) {
+		budget?.throwIfTripped();
 		emfWarn('replayMetafile: WMF EXCEPTION:', err instanceof Error ? err.message : err);
 		console.warn('[emf-converter] WMF conversion failed:', err instanceof Error ? err.message : err);
 		return null;
@@ -490,11 +523,13 @@ async function processDeferredImages(
 	ctx: CanvasContext,
 	deferredImages: DeferredImageDraw[],
 	recursionDepth: number,
+	budget: Budget | null,
 ): Promise<boolean> {
 	emfLog(`processDeferredImages: ${deferredImages.length} deferred images (recursionDepth=${recursionDepth})`);
 	let complete = true;
 	for (let idx = 0; idx < deferredImages.length; idx++) {
 		let img = deferredImages[idx];
+		budget?.check();
 		try {
 			const plainBuffer = toPlainBuffer(img.imageData);
 			// Restore the affine transform active when the draw was recorded.
@@ -507,7 +542,7 @@ async function processDeferredImages(
 					emfWarn(`  Deferred image [${idx}]: skipping embedded metafile, recursion depth ${recursionDepth}`);
 					continue;
 				}
-				const nested = await convertMetafile(plainBuffer, { format: 'png' }, recursionDepth + 1);
+				const nested = await convertMetafile(plainBuffer, withBudget<ConvertOptions>({ format: 'png' }, budget), recursionDepth + 1);
 				if (!nested) {
 					emfWarn(`  Deferred image [${idx}]: metafile conversion returned null`);
 					complete = false;
@@ -539,6 +574,7 @@ async function processDeferredImages(
 				complete = false;
 			}
 		} catch (imgErr) {
+			budget?.throwIfTripped();
 			complete = false;
 			const errMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
 			emfWarn(`  Deferred image [${idx}]: DRAW FAILED: ${errMsg}`);
@@ -612,12 +648,17 @@ export async function convertMetafile(
 	recursionDepth: number = 0,
 ): Promise<ConvertedImage | null> {
 	const format = options?.format ?? 'png';
+	const budget = budgetFor(options as InternalOptions);
+	budget?.check();
+	options = withBudget(options, budget);
 	if (format === 'svg') {
 		const svg = await replayToSvgContext(input, options as SvgConvertOptions, recursionDepth);
 		if (!svg) {
 			return null;
 		}
+		budget?.check();
 		const markup = svgTreeToString(await svg.toTree({ includeSize: (options as SvgConvertOptions).includeSize }));
+		budget?.check();
 		return { format, mimeType: MIME_TYPES.svg, data: new TextEncoder().encode(markup), width: svg.canvas.width, height: svg.canvas.height };
 	}
 	const image = await convertMetafileToImageData(input, options, recursionDepth);
@@ -629,22 +670,24 @@ export async function convertMetafile(
 		let data: Uint8Array;
 		if (format === 'jpeg') {
 			const jpegOptions = options as JpegConvertOptions;
-			data = encodeJpeg(pixels, width, height, {
+			data = runSync(budget, () => encodeJpeg(pixels, width, height, {
 				quality: jpegOptions.quality,
 				background: parseBackground(jpegOptions.background),
 				chromaSubsampling: jpegOptions.chromaSubsampling,
-			});
+			}));
 		} else if (format === 'webp') {
 			const webpOptions = options as WebpConvertOptions;
-			data = encodeWebp(pixels, width, height, {
+			data = runSync(budget, () => encodeWebp(pixels, width, height, {
 				lossy: webpOptions.lossless === false,
 				quality: webpOptions.quality,
-			});
+			}));
 		} else {
-			data = await encodePng(pixels, width, height);
+			data = await runSync(budget, () => encodePng(pixels, width, height));
 		}
+		budget?.check();
 		return { format, mimeType: MIME_TYPES[format], data, width, height };
 	} catch (err) {
+		budget?.throwIfTripped();
 		emfWarn('convertMetafile: EXCEPTION:', err instanceof Error ? err.message : err);
 		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
 		return null;
@@ -665,8 +708,11 @@ export async function convertMetafileToImageData(
 	options?: EmfConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<RgbaImage | null> {
+	const budget = budgetFor(options as InternalOptions);
+	budget?.check();
 	const buffer = await readMetafileInput(input);
-	const raster = buffer ? await renderRaster(buffer, options, recursionDepth, 'convertMetafileToImageData') : null;
+	budget?.check();
+	const raster = buffer ? await renderRaster(buffer, withBudget(options, budget), recursionDepth, 'convertMetafileToImageData') : null;
 	if (!raster) {
 		return null;
 	}
@@ -677,6 +723,7 @@ export async function convertMetafileToImageData(
 			: canvasGetImageData(ctx, 0, 0, canvas.width, canvas.height).data;
 		return { data, width: canvas.width, height: canvas.height };
 	} catch (err) {
+		budget?.throwIfTripped();
 		emfWarn('convertMetafileToImageData: EXCEPTION:', err instanceof Error ? err.message : err);
 		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
 		return null;
@@ -784,6 +831,7 @@ async function renderRaster(
 	recursionDepth: number,
 	caller: string,
 ): Promise<{ canvas: AnyCanvas; ctx: CanvasContext } | null> {
+	const budget = budgetFor(options as InternalOptions);
 	// Resolve (and cache) the optional Node.js canvas backend once, up front,
 	// before any synchronous replay work begins.
 	await ensureNodeCanvasModule();
@@ -793,6 +841,7 @@ async function renderRaster(
 	}
 	// Raster output reproduces what Windows paints unless smoothing is asked for.
 	const opts: EmfConvertOptions = { ...options, gdiAntialias: options?.gdiAntialias ?? false };
+	budget?.check();
 	let canvas: AnyCanvas | null = null;
 	const result = await replayMetafile(buffer, opts, (w, h) => {
 		const setup = createCanvas(
@@ -813,7 +862,7 @@ async function renderRaster(
 		return null;
 	}
 	try {
-		const complete = await processDeferredImages(result.surface.ctx, result.deferredImages, recursionDepth);
+		const complete = await processDeferredImages(result.surface.ctx, result.deferredImages, recursionDepth, budget);
 		const soft = (canvas as unknown) instanceof SoftwareRasterCanvas ? (canvas as unknown as SoftwareRasterCanvas) : null;
 		if (soft && (soft.textDraws > 0 || !complete)) {
 			// The software rasteriser has no font engine, and no decoder for
@@ -828,6 +877,7 @@ async function renderRaster(
 		}
 		return { canvas, ctx: result.surface.ctx };
 	} catch (err) {
+		budget?.throwIfTripped();
 		emfWarn(`${caller}: EXCEPTION:`, err instanceof Error ? err.message : err);
 		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
 		return null;
@@ -899,9 +949,11 @@ async function processDeferredImagesSvg(
 	deferredImages: DeferredImageDraw[],
 	options: SvgConvertOptions,
 	recursionDepth: number,
+	budget: Budget | null,
 ): Promise<void> {
 	for (let idx = 0; idx < deferredImages.length; idx++) {
 		let img = deferredImages[idx];
+		budget?.check();
 		try {
 			let bytes = toPlainBuffer(img.imageData);
 			if (img.effect && !img.isMetafile) {
@@ -977,6 +1029,7 @@ async function processDeferredImagesSvg(
 				svg.fillSlot(slot, payload, img.transform, img.dx, img.dy, img.dw, img.dh);
 			}
 		} catch (err) {
+			budget?.throwIfTripped();
 			emfWarn(`  Deferred image [${idx}]: SVG embed failed: ${err instanceof Error ? err.message : err}`);
 		}
 	}
@@ -1017,33 +1070,46 @@ export async function replayToSvgContext(
 	options?: SvgConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<SvgContext | null> {
+	const budget = budgetFor(options as InternalOptions);
+	budget?.check();
 	await ensureNodeCanvasModule();
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
 		return null;
 	}
 	const buffer = await readMetafileInput(input);
+	budget?.check();
 	if (!buffer) {
 		return null;
 	}
-	const opts = options ?? {};
+	const opts = withBudget(options ?? {}, budget);
 	const dpiScale = opts.dpiScale ?? DEFAULT_DPI_SCALE;
-	const idPrefix = opts.idPrefix ?? `emf${++svgDocumentCounter}-`;
+	const documentNumber = opts.idPrefix === undefined ? ++svgDocumentCounter : 0;
+	const idPrefix = opts.idPrefix ?? `emf${documentNumber}-`;
 	let svg: SvgContext | null = null;
-	const result = await replayMetafile(buffer, opts, (lw, lh) => {
-		const size = computeSurfaceSize(lw, lh, opts.maxWidth, opts.maxHeight, dpiScale, opts.maxCanvasDimension);
-		const shadow =
-			opts.exactRasterOps === false
-				? null
-				: (createCanvas(lw, lh, opts.maxWidth, opts.maxHeight, dpiScale, opts.maxCanvasDimension)?.ctx ?? null);
-		svg = new SvgContext(size.w, size.h, { shadow, idPrefix, imageResampling: opts.imageResampling });
-		return { ctx: svg as unknown as CanvasContext, width: size.w, height: size.h };
-	});
-	if (!result || !svg) {
-		return null;
+	try {
+		const result = await replayMetafile(buffer, opts, (lw, lh) => {
+			const size = computeSurfaceSize(lw, lh, opts.maxWidth, opts.maxHeight, dpiScale, opts.maxCanvasDimension);
+			const shadow =
+				opts.exactRasterOps === false
+					? null
+					: (createCanvas(lw, lh, opts.maxWidth, opts.maxHeight, dpiScale, opts.maxCanvasDimension)?.ctx ?? null);
+			svg = new SvgContext(size.w, size.h, { shadow, idPrefix, imageResampling: opts.imageResampling });
+			return { ctx: svg as unknown as CanvasContext, width: size.w, height: size.h };
+		});
+		if (!result || !svg) {
+			return null;
+		}
+		const target: SvgContext = svg;
+		await processDeferredImagesSvg(target, result.deferredImages, opts, recursionDepth, budget);
+		return target;
+	} catch (err) {
+		// An aborted conversion hands its auto-numbered id prefix back (when no
+		// later conversion has taken the next number), so aborts leave no gap.
+		if (documentNumber !== 0 && svgDocumentCounter === documentNumber) {
+			svgDocumentCounter--;
+		}
+		throw err;
 	}
-	const target: SvgContext = svg;
-	await processDeferredImagesSvg(target, result.deferredImages, opts, recursionDepth);
-	return target;
 }
 
 /**
