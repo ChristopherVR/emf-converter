@@ -65,18 +65,18 @@ describe.skipIf(!windowsFonts())('SHPIX along x in GDI+ grayscale text', () => {
 		const [before, after, lost, pixels] = tally(coverage, (c) => [8 + (c.qx ?? 0) / 4, 48 + (c.qy ?? 0) / 4], 64, red);
 		expect(lost).toEqual([]);
 		// No glyph has more differing pixels than before; Arial Bold 40 `y` (32 origins per hint, two contrasts each) drops from
-		// 2,056 to 60 differing pixels in both hints (the remainder is the stem foot and the right arm's last pixels), `2` (an untouched point shifted by half a pixel) from 328 to exact.
+		// 2,056 to exact in both hints (60 differing pixels before DirectWrite's arithmetic became the default for installed fonts: the stem foot and the right arm's last pixels), `2` (an untouched point shifted by half a pixel) from 328 to exact.
 		expect(Object.entries(pixels).filter(([, v]) => v[1] > v[0])).toEqual([]);
 		expect(Object.fromEntries(Object.entries(pixels).filter(([, v]) => v[0] !== v[1]))).toEqual({
-			'Arial/1/40/y/hint3': [2056, 60], 'Arial/1/40/y/hint4': [2056, 60], 'Arial/1/40/2/hint3': [328, 0], 'Arial/1/40/2/hint4': [328, 0],
+			'Arial/1/40/y/hint3': [2056, 0], 'Arial/1/40/y/hint4': [2056, 0], 'Arial/1/40/2/hint3': [328, 0], 'Arial/1/40/2/hint4': [328, 0],
 		});
-		expect([before, after]).toEqual([2528, 2592]);
+		expect([before, after]).toEqual([2786, 2914]); // [2528, 2592] with the legacy arithmetic (before round 11's DirectWrite default for installed fonts);
 	}, 120000);
 
 	it('gains real glyphs and loses none (text-real-glyphs: 9 to 24 ppem, both gray hints)', () => {
 		const glyphs: Capture[] = load('text-real-glyphs.json.gz');
 		const [before, after, lost] = tally(glyphs, () => [6, 28], 40, (c) => new Uint8Array(Buffer.from(c.gray!, 'base64')));
 		expect(lost).toEqual([]);
-		expect([before, after]).toEqual([17016, 17411]); // 17,014 and 17,409 before round 11 (SCANCTRL: the last value alone, and the compatible-ClearType DELTAP rule: one each)
+		expect([before, after]).toEqual([18916, 19496]); // [17016, 17411] with the legacy arithmetic (17,014 and 17,409 before the SCANCTRL and DELTAP rules of round 11, one each)
 	}, 240000);
 });

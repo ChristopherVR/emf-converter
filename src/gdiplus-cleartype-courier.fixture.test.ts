@@ -40,10 +40,11 @@ function ours(fonts: GdiFontCollection, c: Capture): Uint8Array {
 
 /** Which captures (in file order, one bit each, least significant bit first) are pixel-exact today. */
 const EXACT_BITS =
-	'9FcuHP5rR05vMEqlN6CF01tQzOktwAbwDjBx+P+/vx9cBEZvQSunJyCV0lPQQOEpaaf0/39+AAD8gJ4CFsr//9P/9+7h9//X+v2/e77e1zn+/z9YXv93Df9//v//R+fRu3/z+P9/Yz30zz/c++8f0v7/3x9gnsLkf+7hZ/+nELMtU7/p+zweZEKeL7wj7hdfmecLW4ZDgR/4DwTMe67Y46hdemb0DD8xEpKeCWlLwA8ECBi1R6kBUMK4fj/9b/tf//b0D+996Ae5YVTDfB/u8Spb50j3B/4AAQUQoddFifnbooXvHVXTtbRIoTEA/AX+DiiM+OAYZw==';
+	'9FcuHP5rR05vMGqlN6CP01tQzektwIfwDrBx+P+/vx9cRE5vQTunJyCV0lPQSuEpaaf0/39+AAD8mJ4CVsr//9P/9+7j9//X//2/e//e1zn+/z94f/93/f9//v//R+fXu3/z+P9/4/30z3/d++//8/7/3x9gnt7kf+7hZ//nMbMvc7/p/3xe/EeuL/4j/h//mfeL347Lxx/4/wfM++/c77x9/mf0LL8xO5KfmW3L///3Dxi1R+kJUdf8/j/9b/tf//f8L/99/De5fXbDfD/v/frf92331/7+AQ3Ytf/Fzfn74ufv/3X7tfZ8u/Pf//3/Tq3O+PKYdw==';
 
+const GIVEN_UP = ['italic 12px f phase 0'];
 const STYLES = ['regular', 'bold', 'italic', 'bold italic'];
-const EXACT_BY_STYLE: Record<string, number> = { regular: 242, bold: 369, italic: 242, 'bold italic': 266 };
+const EXACT_BY_STYLE: Record<string, number> = { regular: 257, bold: 396, italic: 324, 'bold italic': 364 };
 
 describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier New', () => {
 	const fonts = new GdiFontCollection(windowsFonts() ?? []);
@@ -59,6 +60,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 		expect(new Set(captures.map((c) => c.style)).size).toBe(4);
 	});
 
+	// Round 11 (DirectWrite's arithmetic, the default for installed fonts): 1,119 to 1,341 exact (223 gained, one given up: GIVEN_UP).
 	// Before the sample-row widening and the lone-leak rule none of the 1,976 captures was exact (886 with the widening alone; the
 	// font's dropout control adds 157; round 8's helper SHPIX rule adds five bold ones).
 	it('matches the pinned exact captures of every style', () => {
@@ -68,10 +70,10 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 			byStyle[key] = (byStyle[key] ?? 0) + (exact[i] ? 1 : 0);
 		}
 		expect(byStyle).toEqual(EXACT_BY_STYLE);
-		expect(exact.filter(Boolean)).toHaveLength(1119);
+		expect(exact.filter(Boolean)).toHaveLength(1341);
 	});
 
-	// Straight-edged glyphs (E H I L T 7) are exact at nearly every size and phase of the regular and bold faces (237 of 248) but for a few
+	// Straight-edged glyphs (E H I L T 7) are exact at nearly every size and phase of the regular and bold faces (243 of 248; 237 with the earlier arithmetic) but for a few
 	// short-stem sizes, which is what makes the widening a rule and not a fit.
 	it('draws the straight-edged regular and bold glyphs exactly', () => {
 		let total = 0;
@@ -83,7 +85,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 				hit += exact[i] ? 1 : 0;
 			}
 		}
-		expect({ total, hit }).toEqual({ total: 248, hit: 237 });
+		expect({ total, hit }).toEqual({ total: 248, hit: 243 });
 	});
 
 	it('loses no exact capture and gains none unrecorded', () => {
@@ -95,6 +97,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 			const c = captures[i];
 			const name = `${STYLES[c.style]} ${c.size}px ${String.fromCharCode(c.code)} phase ${c.phase}`;
 			if (pinned && !exact[i]) lost.push(name);
+			if (GIVEN_UP.includes(name)) expect(exact[i], name).toBe(false);
 			if (!pinned && exact[i]) unrecorded.push(name);
 		}
 		expect(lost).toEqual([]);

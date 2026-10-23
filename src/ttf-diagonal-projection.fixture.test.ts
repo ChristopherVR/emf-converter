@@ -18,6 +18,9 @@ import { gdiTextCoverage } from './gdi-text-render';
  * grayscale (64 captures). Per instruction, the captures determine a projection of Arial's MDRP to be
  * combined-rounded and two projections of Times New Roman Italic's MIRP and MDRP to be per-product rounded, so
  * no opcode, function or vector-equality condition separates them.
+ *
+ * It studies the interpreter that private-collection fonts still run (`installedFonts: false`): installed fonts now take
+ * DirectWrite's per-product arithmetic by default (round 11, R11-C), see gdiplus-dwrite-arithmetic.fixture.test.ts.
  */
 interface Capture { face: string; size: number; style: number; hint: number; contrast: number; code: number; qx: number; qy: number; rgba: string }
 const load = (name: string): Capture[] => JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}`, import.meta.url))).toString());
@@ -54,7 +57,7 @@ function realize(fonts: GdiFontCollection, c: Capture) {
 
 /** Exactness of every grayscale capture of the three origin sets under a patch of the private interpreter. */
 function exactness(patch?: (hs: any) => void): boolean[][] {
-	const fonts = new GdiFontCollection(windowsFonts()!);
+	const fonts = new GdiFontCollection(windowsFonts()!, 'cleartype', { installedFonts: false });
 	return sets.map((set) => set.captures.map((c) => {
 		if (c.hint === 5) return false;
 		const font = realize(fonts, c);
@@ -122,7 +125,7 @@ describe.skipIf(!windowsFonts())('call-level determination of the disagreeing pr
 	function enumerate(face: string, size: number, ch: string, style: number): { calls: Call[]; masks: number[] } {
 		const cap = coverage.find((c) => c.face === face && c.size === size && String.fromCharCode(c.code) === ch && c.hint === 4 && c.style === style && c.contrast === 0 && c.qx === 0 && c.qy === 0)!;
 		const run = (pick: (n: number) => boolean, collect?: Call[]): boolean => {
-			const fonts = new GdiFontCollection(windowsFonts()!);
+			const fonts = new GdiFontCollection(windowsFonts()!, 'cleartype', { installedFonts: false });
 			const font = realize(fonts, cap);
 			const hs = (font as any).hinted;
 			let n = -1, op = -1;

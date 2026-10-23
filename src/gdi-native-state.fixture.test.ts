@@ -20,7 +20,8 @@ import { gdiTextCoverage } from './gdi-text-render';
  * twice as many of the differing images as the combined one, and state A reproduces with neither; in the committed
  * `text-coverage` captures the combined arithmetic was ahead (94 to 64) until round 8, when the helper SHPIX rule and
  * the gray ClearType GETINFO answers moved the per-product count to 192. A stateless converter cannot match both, so
- * the per-product candidate (still excluded: it loses 30 committed Arial 16 `y` captures) stays excluded.
+ * the per-product candidate (it loses 30 committed Arial 16 `y` captures) was excluded until round 11, which ships it for installed
+ * fonts anyway (R11-C: it closes far more than it loses); the studies below still run the legacy interpreter.
  */
 const json = (name: string): any => JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}`, import.meta.url))).toString());
 const perProduct = (x: number, y: number, vx: number, vy: number) => Math.floor((x * vx + 8192) / 16384) + Math.floor((y * vy + 8192) / 16384);
@@ -43,7 +44,8 @@ describe('call-level first divergences of the projection arithmetic (state B)', 
 });
 
 describe.skipIf(!windowsFonts())('native glyph output differs between runs on one machine', () => {
-	const fonts = { combined: new GdiFontCollection(windowsFonts() ?? []), perProduct: new GdiFontCollection(windowsFonts() ?? []) };
+	// The legacy interpreter (`installedFonts: false`): this study patches its projection from outside; installed fonts now run DirectWrite's per-product arithmetic by default (round 11, R11-C).
+	const fonts = { combined: new GdiFontCollection(windowsFonts() ?? [], 'cleartype', { installedFonts: false }), perProduct: new GdiFontCollection(windowsFonts() ?? [], 'cleartype', { installedFonts: false }) };
 	function render(kind: 'combined' | 'perProduct', c: any, side: number, x: number, y: number, scale: number, contrast: number): Uint8Array {
 		const font = fonts[kind].realize({ face: c.face, height: -c.size, width: 0, weight: c.style & 1 ? 700 : 400, italic: !!(c.style & 2), charSet: 1, pitchAndFamily: 0, quality: 4, unhinted: c.hint === 4, ignoreGasp: c.hint === 4, gdiPlus: true })!;
 		const hinted = (font as any).hinted;
