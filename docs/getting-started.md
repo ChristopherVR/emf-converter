@@ -1,6 +1,6 @@
 # Getting started
 
-emf-converter converts Windows metafiles into PNG, JPEG or SVG:
+emf-converter converts Windows metafiles into PNG, JPEG, WebP, SVG or PDF:
 
 | Format | Description                    | Coordinate system       |
 | ------ | ------------------------------ | ----------------------- |
@@ -36,13 +36,13 @@ The package has no required dependencies.
 
 ### Browser and Web Workers
 
-`OffscreenCanvas` or `HTMLCanvasElement` is used automatically for PNG and JPEG output.
+`OffscreenCanvas` or `HTMLCanvasElement` is used automatically for PNG, JPEG and WebP output. SVG and PDF output do not need a canvas.
 
 ### Node.js
 
-SVG output works without a canvas. PNG and JPEG output of drawings without text uses the built-in JavaScript rasteriser.
+SVG and PDF output work without a canvas. PNG, JPEG and WebP output of drawings without text uses the built-in JavaScript rasteriser.
 
-For PNG or JPEG output of drawings that contain text, do one of the following:
+For PNG, JPEG or WebP output of drawings that contain text, do one of the following:
 
 - Pass font files with the `fonts` option. See [Exact text](./usage.md#exact-text).
 - Install the optional [`@napi-rs/canvas`](https://www.npmjs.com/package/@napi-rs/canvas) package. It ships prebuilt binaries and does not need `node-gyp`.
@@ -51,7 +51,7 @@ For PNG or JPEG output of drawings that contain text, do one of the following:
   npm install @napi-rs/canvas
   ```
 
-If neither is available, PNG conversion of a drawing with text returns `null` instead of an image without its text.
+If neither is available, PNG, JPEG or WebP conversion of a drawing with text returns `null` instead of an image without its text.
 
 ## First conversion
 
@@ -65,15 +65,28 @@ const png = await convertMetafileToDataUrl(buffer);
 
 The function returns `Promise<string | null>`. The result is `null` when the buffer is not a valid metafile, or, in plain Node.js, when the drawing has text and neither `fonts` nor `@napi-rs/canvas` is available.
 
-Reading a file in Node.js:
+Reading a file in Node.js. A `Buffer` can be passed straight to any conversion function:
 
 ```ts
 import { readFile } from 'node:fs/promises';
 import { convertMetafileToSvg } from 'emf-converter';
 
 const bytes = await readFile('drawing.emf');
-const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-const svg = await convertMetafileToSvg(buffer);
+const svg = await convertMetafileToSvg(bytes);
 ```
+
+To write the converted file itself, use `convertMetafile`, which returns the bytes and their MIME type:
+
+```ts
+import { readFile, writeFile } from 'node:fs/promises';
+import { convertMetafile } from 'emf-converter';
+
+const image = await convertMetafile(await readFile('drawing.emf'), { format: 'webp' });
+if (image) {
+	await writeFile('drawing.webp', image.data);
+}
+```
+
+The package also installs an `emf-converter` command line tool. See [Usage](./usage.md#command-line).
 
 Next: [Usage](./usage.md).

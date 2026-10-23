@@ -2,10 +2,38 @@
 
 All functions are named exports of `emf-converter`.
 
+## MetafileInput
+
+```ts
+type MetafileInput = ArrayBuffer | ArrayBufferView | Blob;
+```
+
+Every conversion function accepts this. Typed arrays, `DataView`s and Node.js `Buffer`s are read from their viewed bytes only, so pass the `Buffer` itself rather than its `.buffer`. Gzip-compressed `.emz` and `.wmz` files are inflated automatically; this needs `DecompressionStream` (browsers and Node.js 18+), and the inflated size is capped at 256 MiB.
+
+## convertMetafile
+
+```ts
+function convertMetafile(buffer: MetafileInput, options?: ConvertOptions): Promise<ConvertedImage | null>;
+```
+
+Converts an EMF or WMF file to PNG, JPEG, WebP or SVG bytes. It is the binary form of the `*DataUrl` functions: write `data` to a file, wrap it in a `Blob`, or send it over the network without the base64 round trip. The `null` cases are those of `convertMetafileToDataUrl` (raster) and `convertMetafileToSvg` (SVG).
+
+`ConvertOptions` is `format` (`'png'` by default, `'jpeg'`, `'webp'` or `'svg'`) together with that format's options: `EmfConvertOptions`, `JpegConvertOptions`, `WebpConvertOptions` or `SvgConvertOptions`.
+
+### ConvertedImage
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `format` | `'png' \| 'jpeg' \| 'webp' \| 'svg'` | The output format. |
+| `mimeType` | `string` | `image/png`, `image/jpeg`, `image/webp` or `image/svg+xml`. |
+| `data` | `Uint8Array` | The file bytes. |
+| `width` | `number` | Pixel width, or the SVG's `width`. |
+| `height` | `number` | Pixel height, or the SVG's `height`. |
+
 ## convertMetafileToDataUrl
 
 ```ts
-function convertMetafileToDataUrl(buffer: ArrayBuffer, options?: EmfConvertOptions): Promise<string | null>;
+function convertMetafileToDataUrl(buffer: MetafileInput, options?: EmfConvertOptions): Promise<string | null>;
 ```
 
 Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is not a valid metafile, or, in plain Node.js, if the drawing contains text and neither `fonts` nor `@napi-rs/canvas` is available.
@@ -27,6 +55,8 @@ Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is n
 | `fonts`              | `Array<ArrayBuffer \| ArrayBufferView>` |                     | TrueType (`.ttf`, `.ttc`) and raster (`.fon`, `.fnt`) font files used for GDI text rendering. |
 | `fontSmoothing`      | `'cleartype' \| 'gray' \| 'mono'`       | `'cleartype'`       | Rendering used for fonts with `DEFAULT_QUALITY`, `DRAFT_QUALITY` or `PROOF_QUALITY`. |
 | `fontFamilyMap`      | `Record<string, string>`                |                     | Used without `fonts`. Maps Windows face names (case-insensitive) to local font families, for example `{ calibri: 'Carlito' }`. |
+| `signal`             | `AbortSignal`                           |                     | Cancels the conversion. On abort the promise rejects with `signal.reason` (an `AbortError` if there is none). `null` still means "not a valid metafile". |
+| `timeoutMs`          | `number`                                |                     | Rejects with a `DOMException` named `TimeoutError` after this many milliseconds. |
 
 `DEFAULT_DPI_SCALE` is exported as the default value of `dpiScale` (`1`).
 
@@ -41,7 +71,7 @@ The converter does not infer these values from the file bytes or browser languag
 ## convertMetafileToJpegDataUrl
 
 ```ts
-function convertMetafileToJpegDataUrl(buffer: ArrayBuffer, options?: JpegConvertOptions): Promise<string | null>;
+function convertMetafileToJpegDataUrl(buffer: MetafileInput, options?: JpegConvertOptions): Promise<string | null>;
 ```
 
 Converts an EMF or WMF file to a JPEG data URL (`data:image/jpeg;base64,...`). The drawing is rendered exactly as for `convertMetafileToDataUrl`, with the same options and the same `null` cases, then encoded by the bundled baseline JPEG encoder, so the output does not depend on the canvas backend. JPEG has no transparency: the transparent background and translucent pixels are composited over `background`.
@@ -56,12 +86,29 @@ Extends `EmfConvertOptions`.
 | `background`        | `string`  | `'#ffffff'` | Colour under transparent pixels, as `#rgb` or `#rrggbb`. Other values fall back to white. |
 | `chromaSubsampling` | `boolean` | `false`     | `true` stores colour at half resolution (4:2:0) for a smaller file. The default keeps full-resolution colour (4:4:4), so coloured lines and text have no colour fringes. |
 
+## convertMetafileToWebpDataUrl
+
+```ts
+function convertMetafileToWebpDataUrl(buffer: MetafileInput, options?: WebpConvertOptions): Promise<string | null>;
+```
+
+Converts an EMF or WMF file to a WebP data URL (`data:image/webp;base64,...`). The drawing is rendered exactly as for `convertMetafileToDataUrl`, with the same options, backends and `null` cases, then encoded by the bundled WebP encoder. Images larger than 16383 pixels on a side return `null`.
+
+### WebpConvertOptions
+
+Extends `EmfConvertOptions`.
+
+| Option     | Type      | Default | Description |
+| ---------- | --------- | ------- | ----------- |
+| `lossless` | `boolean` | `true`  | `true` writes lossless WebP: exact pixels, and the transparent background kept exactly. `false` writes lossy WebP at `quality`; transparency is still kept. |
+| `quality`  | `number`  | `0.8`   | Lossy quality from `0` to `1`. Ignored when `lossless` is `true`. The lossy encoder is simple: for line art and text it is usually much larger than lossless, so use it for smooth, photo-like content. |
+
 ## SVG functions
 
 ```ts
-function convertMetafileToSvg(buffer: ArrayBuffer, options?: SvgConvertOptions): Promise<string | null>;
-function convertMetafileToSvgDataUrl(buffer: ArrayBuffer, options?: SvgConvertOptions): Promise<string | null>;
-function convertMetafileToSvgTree(buffer: ArrayBuffer, options?: SvgConvertOptions): Promise<SvgNode | null>;
+function convertMetafileToSvg(buffer: MetafileInput, options?: SvgConvertOptions): Promise<string | null>;
+function convertMetafileToSvgDataUrl(buffer: MetafileInput, options?: SvgConvertOptions): Promise<string | null>;
+function convertMetafileToSvgTree(buffer: MetafileInput, options?: SvgConvertOptions): Promise<SvgNode | null>;
 ```
 
 | Function                      | Returns |
@@ -136,6 +183,74 @@ The default directories are:
 - Windows: `%WINDIR%\Fonts` and `%LOCALAPPDATA%\Microsoft\Windows\Fonts`
 - Linux: `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.fonts`, `~/.local/share/fonts`
 - macOS: `/Library/Fonts`, `/System/Library/Fonts`, `~/Library/Fonts`
+
+## convertMetafileToPdf
+
+```ts
+function convertMetafileToPdf(buffer: MetafileInput, options?: PdfConvertOptions): Promise<Uint8Array | null>;
+function svgTreeToPdf(tree: SvgNode, options?: PdfOptions): Promise<Uint8Array | null>;
+```
+
+Converts an EMF or WMF file to a one-page vector PDF 1.7, or returns `null` for an invalid or empty metafile. It uses the same replay as the SVG output. Paths, clipping, gradients, patterns, opacity, blend modes and images are kept as vectors or embedded (JPEG is embedded unchanged). `svgTreeToPdf` makes the same PDF from an existing `SvgNode` tree. The output does not include PDF/A or tagged PDF.
+
+### PdfConvertOptions
+
+Extends `SvgConvertOptions` and `PdfOptions`.
+
+| Option       | Type                                             | Default     | Description |
+| ------------ | ------------------------------------------------ | ----------- | ----------- |
+| `pageSize`   | `'drawing' \| { width: number; height: number }` | `'drawing'` | `'drawing'` makes the page the drawing itself (1 pixel = 0.75 pt). `{ width, height }` in points makes a page of that size, with the drawing scaled to fit and centred. |
+| `fonts`      | `Array<ArrayBuffer \| ArrayBufferView>`          |             | TrueType (`.ttf`, `.ttc`) files. Text in a matching font is embedded as a subset of that face, so it stays selectable and searchable. Other text uses the standard PDF fonts (Helvetica, Times, Courier), whose glyph shapes differ. |
+| `compress`   | `boolean`                                        | `true`      | Deflate content streams and image data. |
+| `title`      | `string`                                         |             | Document title in the PDF information dictionary. |
+| `decodeImage`| `(bytes: Uint8Array, mime: string) => PdfDecodedImage \| null` (may be async) |  | Decodes an embedded image format that is neither JPEG nor handled by the bundled decoders (PNG, BMP, GIF, TIFF, WebP). Returns straight RGBA, or `null` to skip the image. |
+
+## convertMetafileToImageData
+
+```ts
+function convertMetafileToImageData(buffer: MetafileInput, options?: EmfConvertOptions): Promise<RgbaImage | null>;
+```
+
+Renders the same drawing that the PNG output encodes and returns the pixels: `{ data: Uint8ClampedArray, width, height }`, straight (non-premultiplied) RGBA, row-major and top-down, like `ImageData`. Pass `data` to `putImageData`, or to any encoder (for example `sharp(data, { raw: { width, height, channels: 4 } })`).
+
+## getMetafileInfo
+
+```ts
+function getMetafileInfo(buffer: MetafileInput, options?: MetafileInfoOptions): Promise<MetafileInfo | null>;
+```
+
+Reads the header and records without rendering, and returns `null` for an invalid metafile. The main use is finding which font files to pass as `fonts`: `fonts` lists the faces the file declares. The list is of declared fonts, so not every one is necessarily drawn with, and fonts inside nested WMFs are not collected. `width` and `height` are the PNG size at default options, so they ignore `maxWidth` and `dpiScale`.
+
+### MetafileInfoOptions
+
+| Option         | Type     | Default               | Description |
+| -------------- | -------- | --------------------- | ----------- |
+| `maxRecords`   | `number` | As for the converters | Record limit per stream, as for the converters. |
+| `ansiCodePage` | `number` | `1252`                | ANSI code page for WMF face names, as `ansiCodePage` for the converters. |
+
+### MetafileInfo
+
+| Field                | Type                                     | Description |
+| -------------------- | ---------------------------------------- | ----------- |
+| `format`             | `'emf' \| 'emf+' \| 'emf+dual' \| 'wmf'` | `'emf+'` is EMF+ only (the GDI records are a stub); `'emf+dual'` has a GDI fallback. |
+| `placeable`          | `boolean`                                | WMF only: the file has an Aldus placeable header. |
+| `playsEmbeddedEmf`   | `boolean`                                | WMF only: the file carries its original EMF in `META_ESCAPE` comments, which the converter plays instead of the WMF records. |
+| `bounds`             | `MetafileRect`                           | EMF: the header's device-pixel bounds (inclusive). WMF: the bounding box in logical units. |
+| `frame`              | `MetafileRect \| null`                   | EMF: the picture frame in .01 mm. Placeable WMF: the bounding box in .01 mm. Otherwise `null`. |
+| `unitsPerInch`       | `number`                                 | WMF only: logical units per inch from the placeable header (96 when absent). |
+| `device`             | `{ width, height } \| null`              | EMF only: the reference device size in pixels. |
+| `deviceMm`           | `{ width, height } \| null`              | EMF only: the reference device size in millimetres. |
+| `dpi`                | `{ x, y }`                               | Reference device resolution (96 when unknown). |
+| `width`, `height`    | `number`                                 | Pixel size `convertMetafileToDataUrl` produces at default options. |
+| `recordCount`        | `number`                                 | Records read from the stream. |
+| `emfPlusRecordCount` | `number`                                 | Records read from the EMF+ streams inside `EMR_COMMENT` records. |
+| `recordTypes`        | `Record<string, number>`                 | Count by record name (`EMR_*`, `META_*`, `EMFPLUS_*`). |
+| `fonts`              | `MetafileFont[]`                         | Declared font faces, each `{ name, gdi, emfPlus }`. `gdi` is set when a GDI font record names it, `emfPlus` when an EMF+ font object does. |
+| `hasText`            | `boolean`                                | `true` when any text-drawing record is present. |
+| `images`             | `{ count, mimeTypes }`                   | Embedded images, including DIBs, EMF+ image objects and nested metafiles. |
+| `embeddedMetafiles`  | `number`                                 | Nested metafiles among `images`. |
+| `description`        | `string \| null`                         | The EMF header's application and document names. |
+| `truncated`          | `boolean`                                | `true` when the record limit was hit or the stream ends in a damaged record. |
 
 ## Supported records
 

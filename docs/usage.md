@@ -1,6 +1,6 @@
 # Usage
 
-All conversion functions take the raw file bytes as an `ArrayBuffer` and detect EMF or WMF from the contents.
+All conversion functions take the raw file bytes and detect EMF or WMF from the contents. The input can be an `ArrayBuffer`, a typed array or Node.js `Buffer` (only the bytes it views are read, so pass the `Buffer` itself), or a `Blob`. Gzip-compressed `.emz` and `.wmz` files are inflated automatically.
 
 ## PNG
 
@@ -35,6 +35,20 @@ const preview = await convertMetafileToJpegDataUrl(buffer, { quality: 0.7, backg
 ```
 
 JPEG output is the PNG rendering (same options, same backends) encoded by the bundled JPEG encoder, so the bytes are the same in the browser and in Node.js. JPEG has no transparency, so the metafile's transparent background is filled with `background` (white by default). Colour is kept at full resolution unless you set `chromaSubsampling: true`. Use PNG or SVG when you need transparency or exact pixels.
+
+## WebP
+
+```ts
+import { convertMetafileToWebpDataUrl } from 'emf-converter';
+
+const webp = await convertMetafileToWebpDataUrl(buffer);
+// "data:image/webp;base64,UklGR..."
+
+// Lossy WebP at quality 0-1 (default 0.8), with a size limit.
+const small = await convertMetafileToWebpDataUrl(buffer, { lossless: false, quality: 0.8, maxWidth: 800 });
+```
+
+WebP output is the PNG rendering (same options, same backends) encoded by the bundled WebP encoder, so the bytes are the same in the browser and in Node.js. The default is lossless, which keeps the pixels and the transparent background exactly, and the file is usually smaller than the PNG. Lossy WebP is a simple encoder: for line art and text it is usually much larger than lossless, so use it only for smooth, photo-like content. Images larger than 16383 pixels on a side return `null`.
 
 ## SVG
 
@@ -124,6 +138,80 @@ const png = await convertMetafileToDataUrl(buffer, { fontFamilyMap: { calibri: '
 
 SVG output always keeps text as `<text>` elements. With `fonts`, the elements carry the per-glyph positions computed by the GDI text engine.
 
+## PDF
+
+```ts
+import { convertMetafileToPdf, loadSystemFonts } from 'emf-converter';
+
+const fonts = await loadSystemFonts(); // Node.js only
+const pdf = await convertMetafileToPdf(buffer, { fonts, title: 'Drawing' });
+// Uint8Array holding a PDF file, or null
+```
+
+The output is a one-page vector PDF 1.7. It uses the same replay as the SVG output, so paths, clipping, gradients, patterns, opacity, blend modes and images stay vector or embedded (JPEG is embedded unchanged). By default the page is the drawing itself, at 1 pixel = 0.75 pt. Pass `pageSize: { width, height }` (in points) to fit the drawing to a page of that size instead.
+
+Text is real text. With `fonts`, the matching TrueType face is embedded as a subset, so the text is selectable and searchable. Without `fonts`, text uses the standard PDF fonts (Helvetica, Times or Courier), whose glyph shapes differ from the original font. The output does not include PDF/A or tagged PDF.
+
+## Raw RGBA pixels
+
+```ts
+import { convertMetafileToImageData } from 'emf-converter';
+
+const image = await convertMetafileToImageData(buffer);
+// { data: Uint8ClampedArray, width, height }
+```
+
+This is the same rendering the PNG output encodes, without the encoding step. `data` is straight (non-premultiplied) RGBA, row-major and top-down. Pass it to `putImageData`, or to any encoder.
+
+## Inspecting a file
+
+`getMetafileInfo` reads the header and records without rendering, so you can see what a file contains before converting it:
+
+```ts
+import { getMetafileInfo } from 'emf-converter';
+
+const info = await getMetafileInfo(buffer);
+// info.format: 'emf' | 'emf+' | 'emf+dual' | 'wmf'
+// info.width, info.height: the PNG size at default options
+// info.fonts: [{ name: 'Segoe UI', gdi: true, emfPlus: false }, ...]
+```
+
+The main use is finding out which font files to pass as `fonts`. `info.fonts` lists the face names the file declares, so you know which fonts to supply for exact text. Not every declared font is necessarily drawn with. Fonts inside nested WMFs are not collected, and `width` and `height` ignore `maxWidth` and `dpiScale`. The other fields (record counts, `images`, `description`, `truncated`) are listed in the [API reference](./api.md#metafileinfo).
+
+## Cancellation
+
+Every conversion function accepts `signal` (an `AbortSignal`) and `timeoutMs`:
+
+```ts
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), 5000);
+try {
+	const png = await convertMetafileToDataUrl(buffer, { signal: controller.signal });
+} finally {
+	clearTimeout(timer);
+}
+
+// Or reject after a time limit, with a DOMException named TimeoutError.
+const quick = await convertMetafileToDataUrl(buffer, { timeoutMs: 5000 });
+```
+
+When the signal aborts, the promise rejects with `signal.reason` (an `AbortError` when there is none). A `null` result still means the buffer is not a valid metafile. Conversion checks the signal at every record, so it stops within about one record's work. A single very large record, such as one giant blit, can overrun. With a `signal`, conversion yields to the event loop about every 16 ms.
+
+## Command line
+
+The package installs an `emf-converter` command, which `npx emf-converter` runs. It converts files to PNG, JPEG, WebP, SVG or PDF:
+
+```sh
+npx emf-converter drawing.emf                          # drawing.png, next to the input
+npx emf-converter drawing.emf --width 1200 -o drawing.jpg
+npx emf-converter "charts/*.wmf" -f svg -o out/        # wildcards are expanded by the CLI
+cat drawing.emz | npx emf-converter - -f png > drawing.png
+```
+
+Run `emf-converter --help` for every option. Exit code 0 means all files converted, 1 means one or more failed (the rest are still converted), and 2 is a usage error. `--fonts system` (the default) loads the installed fonts, so text matches Windows.
+
+## How it works
+
 ANSI text records are decoded by the LOGFONT charset, with or without `fonts`: ANSI and default, Macintosh, Shift-JIS, Hangul, GB2312, Big5, the Windows Greek, Turkish, Vietnamese, Hebrew, Arabic, Baltic, Cyrillic, Thai and Central European pages, Johab, OEM and Symbol. ANSI and default text use the playback device's ANSI code page (`ansiCodePage`, Windows-1252 by default) and OEM text its OEM code page (`oemCodePage`, 437 by default), as Windows does. Code pages the host's `TextDecoder` does not provide fall back to Windows-1252.
 
 ## How it works
@@ -132,7 +220,7 @@ Conversion has three steps: parse, replay and export.
 
 1. The header parser reads the drawing bounds. A placeable WMF is sized from the units-per-inch value in its header.
 2. An output surface is created, limited by `maxCanvasDimension`, and the records are replayed in order by the GDI, EMF+ or WMF handlers.
-3. PNG output draws onto a canvas: `OffscreenCanvas`, `HTMLCanvasElement`, `@napi-rs/canvas`, or the built-in JavaScript rasteriser. SVG output draws onto `SvgContext`, a recorder that implements the part of the Canvas 2D API used by the replay. Where a raster operation needs to read the destination, it is mirrored onto a hidden raster.
+3. PNG, JPEG and WebP output draw onto a canvas: `OffscreenCanvas`, `HTMLCanvasElement`, `@napi-rs/canvas`, or the built-in JavaScript rasteriser, and are then encoded by the bundled encoders. SVG output draws onto `SvgContext`, a recorder that implements the part of the Canvas 2D API used by the replay. Where a raster operation needs to read the destination, it is mirrored onto a hidden raster. PDF output uses the SVG recorder and serialises the result as a one-page PDF.
 
 Per-fixture comparison bounds against Windows output are in `src/gdi-parity.fixture.test.ts`.
 

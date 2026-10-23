@@ -16,5 +16,7 @@ The converter is tested by comparing its output pixel for pixel with what Window
 
 - **Fonts.** Text matches Windows only when the metafile's fonts are passed in the `fonts` option. Without them, text is drawn by the host's canvas font engine (see [Usage](./usage.md)). GDI+ text follows Windows' arithmetic for installed fonts. Windows renders a font loaded privately (for example through a private font collection) slightly differently.
 - **Playback stretch.** When Windows plays back a compatible-mode recording, it stretches recorded text by the ratio of the recording and target device sizes (about 1.0006 in the test files). That ratio belongs to the playing device, so it is not applied. A few Segoe UI line heights can therefore differ from a Windows playback by one stem width.
+- **Lossy WebP.** The lossy encoder is simple, so prefer lossless WebP (the default) for drawings. Lossy suits smooth, photo-like content.
+- **PDF text without `fonts`.** Text uses the standard PDF fonts, so glyph shapes differ from the original font.
 - **12-bit JPEG.** Windows refuses to decode it and draws nothing, so the converter draws nothing too.
 - **Windows' own variation.** On Windows, GDI+ glyph output for a small share of glyphs changes from one process to the next. The converter reproduces one fixed state.
