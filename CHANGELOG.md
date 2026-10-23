@@ -4,6 +4,38 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.24.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.24.0) - 2026-10-23
+
+### Features
+
+- **api:** Byte and RGBA outputs, Buffer/Blob/.emz input, bundled PNG encoding ([150cb44](https://github.com/ChristopherVR/emf-converter/commit/150cb44538f6668d00de538a9dde8458da4eae6f))
+- **api:** Signal and timeoutMs to cancel or time-limit a conversion ([169e153](https://github.com/ChristopherVR/emf-converter/commit/169e153a8534b3de7bc43b2f207c777651875ec3))
+- **info:** GetMetafileInfo inspects a metafile without rendering it ([aee0a25](https://github.com/ChristopherVR/emf-converter/commit/aee0a25331f0c1b0d38ed90f4525035d588bc625))
+- **info:** GetMetafileInfo accepts MetafileInput (typed arrays, Blob, gzip) ([ad47546](https://github.com/ChristopherVR/emf-converter/commit/ad475468fef5819a5ad51649595882305663da86))
+- **cli:** Emf-converter command for converting files to PNG, JPEG or SVG ([c9cb652](https://github.com/ChristopherVR/emf-converter/commit/c9cb6527bd8011d80cbcc01051c0011f369b9730))
+- **webp:** Bundled WebP encoder (lossless VP8L, lossy VP8) and convertMetafileToWebpDataUrl ([7e8a943](https://github.com/ChristopherVR/emf-converter/commit/7e8a9435a08eda860f6c0a4ce82b198600d979c1))
+- **webp:** Merge main; add 'webp' to convertMetafile formats ([49239ce](https://github.com/ChristopherVR/emf-converter/commit/49239ce786606c10f3a78de2125d29a483a109ee))
+- **pdf:** Vector PDF output from the SVG tree (convertMetafileToPdf, svgTreeToPdf) ([78e5eac](https://github.com/ChristopherVR/emf-converter/commit/78e5eac95d89c286da71655677bf6115e8d40876))
+- **cli:** Webp and pdf formats, --lossy ([2fa88ff](https://github.com/ChristopherVR/emf-converter/commit/2fa88ff6b581b9a55f8cd0d6a813fa98b71a5e45))
+- **webp:** Bundled WebP decoder (VP8, VP8L, ALPH, first animation frame) for the no-canvas raster path ([81f44be](https://github.com/ChristopherVR/emf-converter/commit/81f44be4f875b00a01a35b7836e3f6a1f386ac15))
+
+### Bug Fixes
+
+- **cli:** Load the library from dist/index.mjs; convert named files of any extension ([e3ddb1f](https://github.com/ChristopherVR/emf-converter/commit/e3ddb1fda27dd6770c436a48cc6e1f1a41c48164))
+
+### Refactor
+
+- **info:** Compact record-name table instead of a constants namespace import ([77e85f6](https://github.com/ChristopherVR/emf-converter/commit/77e85f6da7be3158cc559ab5b9147f6a2265af88))
+
+### Documentation
+
+- WebP and PDF output, byte/RGBA outputs, inputs, getMetafileInfo, cancellation, CLI ([a09d58a](https://github.com/ChristopherVR/emf-converter/commit/a09d58a76b2022c3b43f1e139d968b20367b31d7))
+- **readme:** WebP and PDF in the install and pipeline notes ([83b39dc](https://github.com/ChristopherVR/emf-converter/commit/83b39dc22f1fd2122bd69d6e97a590548ace4a54))
+
+### Testing
+
+- **pdf:** WebP images embed through the bundled decoder ([ef3c03b](https://github.com/ChristopherVR/emf-converter/commit/ef3c03bba2c6f397f52edacbcd6153e8a0361bf0))
+
 ## [4.23.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.23.1) - 2026-10-23
 
 ### Documentation
