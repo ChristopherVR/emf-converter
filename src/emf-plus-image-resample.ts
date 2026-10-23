@@ -918,7 +918,7 @@ function mirroredUnitIsExact(spec: DeferredImageResample): boolean {
  * exact 7/8 phase on the next bin). A rounded points draw is the general path: an image translated two texels
  * from the exact mirror, which the model already describes, one unit higher in the position (the float32
  * rounding of the matrix is a coin toss for this unit, so it is fitted: see "Cropped sources and mirrors" in
- * outstanding-work.md). Reductions of a rounded points draw want the same unit; upscales want none.
+ * parity-log.md). Reductions of a rounded points draw want the same unit; upscales want none.
  */
 function mirroredBias(spec: DeferredImageResample, scale: number, fractionalEdge: boolean): number {
 	if (mirroredUnitIsExact(spec)) {
@@ -941,7 +941,7 @@ function hqStep(scale: number): number {
  * The 16.16 step of a reduced axis (scale below one) from its unrounded reciprocal. Native steps a reduction up
  * from a fraction of about 0.47 instead of 0.5: the reciprocals 124,830.48 (21/40) and 90,394.48 (29/40) step by
  * 124,831 and 90,395 where 73,156.47 (43/48) and every fraction up to 0.40 step down, in 62 reduction sweeps of
- * both kernels on both axes (`hq-reduction-grid`, see "Round 8" in outstanding-work.md). The threshold is fitted
+ * both kernels on both axes (`hq-reduction-grid`, see "Round 8" in parity-log.md). The threshold is fitted
  * between 0.469 and 0.477; an upscale keeps the plain rounding (1.37x, 47,836.496, steps down).
  */
 const HQ_REDUCTION_STEP_NUDGE = 0.027;
@@ -1226,7 +1226,7 @@ function resampleHqAxisAligned(
 	// The vertical pass of a scaled draw reads the source rectangle's rows plus a margin of the kernel's radius
 	// (rounded up, in texels) on each side; a tap farther out is transparent. A unit-scale axis is left open: whether
 	// its margin is that one or one texel wider is a float32 coin toss (see "Cropped sources and mirrors" in
-	// outstanding-work.md). Under a WrapMode the taps wrap instead.
+	// parity-log.md). Under a WrapMode the taps wrap instead.
 	const rowMargin = Math.abs(scaleV - 1) < 1e-9 ? Infinity : Math.ceil((cubic ? 2 : 1) / Math.min(1, scaleV));
 	// Horizontal pass: premultiplied, rounded to 8 bits, limited to the alpha.
 	const inter = new Uint8Array(rows * w * 4);

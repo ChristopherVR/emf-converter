@@ -24,7 +24,7 @@ import { pathGradientSampler } from './emf-plus-exact-fill';
  *   an isotropic focus at six values (a slanted edge of 65 slopes, 12,091 pixels per focus; 600 wrong before) and with eight
  *   pairs of independent scales (the strip solver, open: counts pinned as floors).
  * - `path-gradient-focus-slants.json.gz` (`PathGradientFocusSlantProbe.cs`): the same triangle at 16 slopes with the focus at
- *   every float32 neighbour of 0.5, 0.6 and 0.3, the data for the slanted ties still open (see docs/outstanding-work.md).
+ *   every float32 neighbour of 0.5, 0.6 and 0.3, the data for the slanted ties still open (see docs/parity-log.md).
  */
 interface Capture {
 	name: string;

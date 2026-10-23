@@ -205,7 +205,7 @@ describe('GDI+ DrawDriverString images of the private polygon fonts', () => {
 	// AntiAlias images would match), and AntiAliasGridFit on a font without gasp draws GDI's monochrome bitmap from 9
 	// to 17 ppem (3,907 of 4,096 would match). Applying either as a default exceeds committed per-case ceilings of the
 	// private diagonal-hinting coverage tests (30 captures whose residual is the unresolved diagonal hinting), so
-	// neither ships; docs/outstanding-work.md has the figures.
+	// neither ships; docs/parity-log.md has the figures.
 	it('AntiAlias, a font without SCANCTRL', () => {
 		expect(plusExact('polygons', 4, true)).toEqual([517, 4096]);
 		expect(plusExact('polygons', 4, false)).toEqual([1019, 1024]);

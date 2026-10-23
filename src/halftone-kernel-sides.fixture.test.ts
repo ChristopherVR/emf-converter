@@ -11,7 +11,7 @@ import { KERNEL_SIDE_IMAGES, KERNEL_SIDE_PAIRS, KERNEL_SIDE_SEEDS, KERNEL_SIDE_T
  * wrong side in about 4% of them, always within 0.0035 of the integer and in mirror pairs (the native shares are exactly
  * mirror-symmetric): the native cumulative shares differ from the formula by about 5e-4 and at most a few thousandths, a few
  * units in the last place of a float32 near 1 (2^-23 * 8192 = 1e-3). Everything tried to explain that is recorded in
- * docs/outstanding-work.md (float32 at every site and combination of sites, the exponents, quantisation of the weights, the
+ * docs/parity-log.md (float32 at every site and combination of sites, the exponents, quantisation of the weights, the
  * cover and the kernel, a tabulated kernel): none gets more than a handful of labels right that the formula misses.
  */
 interface Capture { seeds: number[]; pairs: number; images: number; threshold: number; boundaries: number[][] }

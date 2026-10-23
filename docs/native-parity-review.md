@@ -18,7 +18,7 @@ Running `bun scripts/gdi-fixtures/report.ts` with the available Windows fixture 
 | Comparisons omitting captured reference ink | 0 |
 | Comparisons with rendered ink outside the captured reference | 14 |
 
-These are local measurements, not a universal compatibility percentage. The report composites over white, compares RGB, and aligns device coordinates; it does not independently establish alpha equality. Some captures have smaller extents than the converter output. Passing tolerance-based tests also does not mean that every pixel matches. The historical measurements in [Outstanding work](./outstanding-work.md) remain useful but describe earlier revisions and environments.
+These are local measurements, not a universal compatibility percentage. The report composites over white, compares RGB, and aligns device coordinates; it does not independently establish alpha equality. Some captures have smaller extents than the converter output. Passing tolerance-based tests also does not mean that every pixel matches. The historical measurements in [Parity log](./parity-log.md) remain useful but describe earlier revisions and environments.
 
 The largest visible residuals are still text. Image sampling, gradients and geometry also retain smaller differences, often one channel level. Older font references and state-dependent native behaviour require environment provenance rather than guessed arithmetic changes.
 
@@ -34,7 +34,7 @@ The same 870-fixture report after these changes has **646 exact common-area RGB 
 
 First-round validation: **206 test files, 7,095 tests passed**. Library/documentation type checks, package build, browser ESM/CJS and Vite checks with the optional canvas absent, and the documentation build also pass. Existing expected mismatch counts were tightened where rendering improved; no existing tolerance was widened.
 
-The probes also retain evidence of an existing translucent-clamp limitation: GDI+ can write premultiplied colour channels greater than alpha, which the current straight-RGBA intermediate cannot represent. Opaque clamp controls pass; arbitrary translucent clamp output is not claimed as exact. Text, some effects, transformed gradients, and sampling coordinate ties remain priorities in [Outstanding work](./outstanding-work.md).
+The probes also retain evidence of an existing translucent-clamp limitation: GDI+ can write premultiplied colour channels greater than alpha, which the current straight-RGBA intermediate cannot represent. Opaque clamp controls pass; arbitrary translucent clamp output is not claimed as exact. Text, some effects, transformed gradients, and sampling coordinate ties remain priorities in [Parity log](./parity-log.md).
 
 Reproducible standalone generators and environment manifests accompany the new tests; see the [fixture generator documentation](https://github.com/ChristopherVR/emf-converter/blob/main/scripts/gdi-fixtures/README.md). Existing references were not regenerated or replaced.
 
@@ -93,7 +93,7 @@ A further GPT-6.1 Sol fanout improves ClearType baselines, scaled text alignment
 
 Three expanded native references now reproduce every RGB pixel of their original captures and include 328 previously uncaptured ink pixels. They cover two mirrored geometry cases and a mapped clipping-region case. The negative control-point bound of one geometry case contains no painted ink; preserving the original device grid avoids the native playback differences introduced by translating that bound. This closes three coverage gaps without replacing any original reference or changing rendering. The validated extent set grows from 101 to 104, with 73 exact controls rather than 71.
 
-Image-coordinate experiments were unshipped on 12 October 2026 (float32 sample/term rounding and fixed-point row steppers reduced some bilinear phase errors but increased others). Round 7 (15 October 2026) found why: GDI+ steps a row in float32 rounded toward minus infinity from a float32 inverse matrix that is itself formed with that rounding, and the drift is a function of the coordinate's magnitude, so neither candidate captured it. The model is shipped with the native sweeps that isolate the stage; see "Round 7" in [Outstanding work](./outstanding-work.md).
+Image-coordinate experiments were unshipped on 12 October 2026 (float32 sample/term rounding and fixed-point row steppers reduced some bilinear phase errors but increased others). Round 7 (15 October 2026) found why: GDI+ steps a row in float32 rounded toward minus infinity from a float32 inverse matrix that is itself formed with that rounding, and the drift is a function of the coordinate's magnitude, so neither candidate captured it. The model is shipped with the native sweeps that isolate the stage; see "Round 7" in [Parity log](./parity-log.md).
 
 Final validation for this batch: **217 test files and 7,229 tests pass**. Library and documentation type checking, package and documentation builds, and browser ESM/CJS/Vite checks with optional canvas absent pass. All 29 input/reference hashes in the four new environment manifests match. The 870-metafile report has no increased mismatched-pixel counts and retains 646 exact common-area comparisons; validated complete RGB coverage increases from 642 to 644, with the uncaptured-reference count reduced from 14 to 11. Render failures and omitted native ink remain zero. The whole-metafile set does not exercise every newly improved text control, so its exact common-area count is unchanged.
 
@@ -103,7 +103,7 @@ For complex shaping, [HarfBuzz](https://harfbuzz.github.io/shaping-and-shape-pla
 
 Twelve workstreams, each starting from a native probe that isolates one stage, were merged together and measured as one tree. Against the same 870 report comparisons as the baseline at `ebac1db` (v4.20.3), **752 are RGB-exact, up from 646**. 174 comparisons improve, none worsens, and the mismatched pixels over those comparisons fall from 269,403 to 78,594. With the 28 new mirrored wide-pen sheets the report covers 898 comparisons, 777 exact and 769 with complete ink coverage. There are no render failures, no omitted reference ink, and 9 comparisons with rendered ink beyond the captured reference (11 before). Some text comparisons now use native playback references (`playback-references.json`), because a metafile records GDI's rounded advances and the directly drawn PNGs cannot be reproduced from the recording.
 
-Native rules recovered in this round (details in [Parity notes](./parity-notes.md) and [Outstanding work](./outstanding-work.md)):
+Native rules recovered in this round (details in [Parity notes](./parity-notes.md) and [Parity log](./parity-log.md)):
 
 - **EMF+ image effects** run on the premultiplied playback bitmap; the shared 96-pixel residual of about 30 effect fixtures and the blur and sharpen residuals are closed.
 - **EMF+ sampling coordinates** step in float32 rounded toward minus infinity, with a float32 inverse matrix; translucent clamp colours are literal premultiplied bytes; rotated plain Bicubic uses the integer pipeline.

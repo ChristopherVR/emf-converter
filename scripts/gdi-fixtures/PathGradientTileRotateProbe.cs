@@ -1,7 +1,7 @@
 // Public PathGradientBrush controls for TILED path gradients under a rotation, shear or scale of the brush or the world: the
 // white-to-black rectangle of PathGradientTileProbe.cs (whole and fractional bounds) in Tile and TileFlipX, painted over a
 // 200 x 160 canvas through a brush transform (rotation, shear, scale with rotation) or a world rotation. Native renders the
-// gradient into a tile bitmap and draws it as a texture (see docs/outstanding-work.md); this separates the bitmap size and
+// gradient into a tile bitmap and draws it as a texture (see docs/parity-log.md); this separates the bitmap size and
 // origin from the texture mapping. Output rows are 2 bytes per pixel (red, alpha).
 using System; using System.Collections.Generic; using System.Drawing; using System.Drawing.Drawing2D; using System.Drawing.Imaging; using System.Runtime.InteropServices; using System.IO; using System.IO.Compression; using System.Text; using System.Globalization;
 public static class PathGradientTileRotateProbe {

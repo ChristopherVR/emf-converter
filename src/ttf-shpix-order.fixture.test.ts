@@ -14,7 +14,7 @@ import { gdiTextCoverage } from './gdi-text-render';
 // always moves the stem top, touched or not, before or after the IUPs. A helper function's SHPIX moves it only when the
 // point is touched in y, and stops once IUP[y] has run (IUP[x] alone does not stop it). The converter follows all of this
 // except the shifts of points never touched in y (six kinds, pinned below): Arial, Times New Roman and Courier New programs
-// rely on the touched-in-y rule at other sizes, and dropping it loses more glyphs than it gains (see docs/outstanding-work.md).
+// rely on the touched-in-y rule at other sizes, and dropping it loses more glyphs than it gains (see docs/parity-log.md).
 const KINDS = ['ipy-inline', 'mdap-inline', 'ipx-ipy-inline', 'ipy-call', 'mdapx-inline', 'ipy-loop', 'untouched-inline', 'ipx-only-inline',
 	'pre-ipy-inline', 'ipy-iupx-inline', 'ipy-iupy-inline', 'pre-untouched-inline', 'iupy-untouched-inline', 'iupx-untouched-inline',
 	'post-touched-helper', 'post-untouched-helper', 'pre-touched-helper', 'pre-untouched-helper', 'post-touched-helper-eq',

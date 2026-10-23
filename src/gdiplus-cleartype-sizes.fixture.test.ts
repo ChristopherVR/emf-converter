@@ -56,7 +56,7 @@ const EXACT_BY_FACE: Record<string, number> = {
 /**
  * Captures that were exact before ClearType used the font's dropout control and are not now: our geometry has a thin tail
  * end there that native's does not, and the dropout rule keeps the sample the old rendering happened to lack. The rule
- * gains 645 captures; these two were the price (see docs/outstanding-work.md, "ClearType dropout control"). Round 9
+ * gains 645 captures; these two were the price (see docs/parity-log.md, "ClearType dropout control"). Round 9
  * decides a stub by the specification's squares instead of FreeType's profile rule, which returns 'Arial 11px g'
  * (with 'Arial 12px g' and 'Arial italic 9px n'); only 'Tahoma bold 18px y' was still given up.
  * Round 11 (DirectWrite's arithmetic, the default for installed fonts): 3,079 to 3,324 exact (247 gained, 'Tahoma bold 18px y' among

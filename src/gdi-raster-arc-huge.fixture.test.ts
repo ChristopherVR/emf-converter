@@ -22,7 +22,7 @@
  *    model agrees with the native end points to 3e-7 radians (rms 2.6e-7 at 2^22 and 3.8e-7 at 2^24 pixels, no better than the
  *    quantisation of the float32 product), and the shared offset of the two controls (tangent-line intersection) is 40 to 740
  *    units of 1e-7 at 0.05 degrees, which is `ulp / sin(sweep)` of single precision unit vectors that the float32 candidates of
- *    `gdi-raster-arc-small.fixture.test.ts` do not reproduce. See docs/outstanding-work.md.
+ *    `gdi-raster-arc-small.fixture.test.ts` do not reproduce. See docs/parity-log.md.
  *
  * Counts below are the arcs whose four points (both directions) are all exact.
  */

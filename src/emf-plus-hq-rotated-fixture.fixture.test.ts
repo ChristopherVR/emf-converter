@@ -15,7 +15,7 @@
  * - A start one unit later (or a row stepper that starts at the quad's first pixel instead of the padded image's) closes all
  *   five pixels, but loses 37 exact captures of `hq-rotated` (the ties of the 60 degree draws sit 0.0035 unit above a whole
  *   `v`, and native stays below those), so it is not shipped: see "Round 10: HighQuality image residuals" in
- *   outstanding-work.md. The stepper itself is right (an unrounded or truncated step puts 767 to 1,566 pixels off).
+ *   parity-log.md. The stepper itself is right (an unrounded or truncated step puts 767 to 1,566 pixels off).
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';

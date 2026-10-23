@@ -244,7 +244,7 @@ describe('curved and triangular path-gradient focus against native GDI+', () => 
 	});
 
 	// Zero-tolerance ceilings of the independent focus scales (one level at most; the pixels left are copy-edge ties of the
-	// strip solver, see docs/outstanding-work.md). Before containment decided the pixels within 0.005 of a step of a copy
+	// strip solver, see docs/parity-log.md). Before containment decided the pixels within 0.005 of a step of a copy
 	// edge: ellipse 0-50 35, 100-25 16, 25-100 12, 25-75 8, 50-0 27, 75-25 18; triangle 0-50 13,
 	// 100-25 9, 25-100 2, 25-75 11, 50-0 10, 75-25 15.
 	it.each([

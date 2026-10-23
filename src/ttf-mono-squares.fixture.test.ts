@@ -11,7 +11,7 @@
  * `environment-mono-stubs.json`, `environment-mono-multiple.json`.
  *
  * This change is not a pure gain: KNOWN_REGRESSIONS lists the captures that were exact before and are not now. They
- * are all at a pixel centre that a contour passes within about 0.004 pixel (`docs/outstanding-work.md`, round 9 W3).
+ * are all at a pixel centre that a contour passes within about 0.004 pixel (`docs/parity-log.md`, round 9 W3).
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';

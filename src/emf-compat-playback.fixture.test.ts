@@ -16,7 +16,7 @@
  * Arc, Chord and Pie are exact in every sheet (259 differing pixels over the sheets before, 24 now): Windows measures their
  * radials in logical space, which `emf-compat-playback-paths.fixture.test.ts` pins on 3,600 native playback paths. What is
  * left (24 pixels, every one in a RoundRect cell) is the RoundRect under a map whose ratio is not a multiple of 1/16: see
- * docs/outstanding-work.md.
+ * docs/parity-log.md.
  */
 import { describe, expect, it } from 'vitest';
 

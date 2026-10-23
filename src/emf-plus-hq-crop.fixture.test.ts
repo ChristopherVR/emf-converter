@@ -193,7 +193,7 @@ describe('mirrored unit-scale DrawImagePoints against 65,536 white draws', () =>
 
 describe('rotated high-quality draws at whole device lengths (native capture, open)', () => {
 	it('keeps the 528 draws whose pre-scale size no float32 length formula predicts', () => {
-		// The capture is the data the Half 45-degree 0.5x item needs (see "Round 5" in docs/outstanding-work.md): the
+		// The capture is the data the Half 45-degree 0.5x item needs (see "Round 5" in docs/parity-log.md): the
 		// pre-scale size that best reproduces a draw differs from the rounded-up float32 length in 142 of the draws, and
 		// no length formula tried predicts it for more than 222 of the 313 draws one size fits to within five pixels.
 		const capture = load<{ srcBgra: string; draws: { pom: number; kernel: number; deg: number; su: number; sv: number; p: number[]; w: number; h: number }[] }>('hq-half-length');

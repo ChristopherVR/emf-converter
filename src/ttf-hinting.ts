@@ -1046,7 +1046,7 @@ export class HintedSize {
 	 * rounding, the cut-in, the minimum distance and the link recording (`ctFlag`). GDI+ text of installed fonts uses the
 	 * DirectWrite rule (`dwrite`, below); GDI+ text of private fonts keeps the earlier test, "the vector points mostly along
 	 * x". Round 11 measured the flag rule for GDI+ (installed, private, both) on the combined tree against every pinned
-	 * capture and fixture: not one pixel differs from the DirectWrite rule / the earlier test (docs/outstanding-work.md, R11-C).
+	 * capture and fixture: not one pixel differs from the DirectWrite rule / the earlier test (docs/parity-log.md, R11-C).
 	 */
 	private ctDirection(): boolean {
 		const gs = this.gs;
@@ -1254,7 +1254,7 @@ export class HintedSize {
 	/**
 	 * GDI+ grayscale text (`shpixX`): which SHPIX shifts along x native honours. Measured with prefix copies of Arial Bold
 	 * `y` (40 ppem), Arial `W` (12), Times New Roman Italic `T` (22) and Courier New `R` (22) and the 31,584 real glyphs
-	 * (see docs/outstanding-work.md): a shift made by a function call (not a generic per-size helper, `inSizeTweak`)
+	 * (see docs/parity-log.md): a shift made by a function call (not a generic per-size helper, `inSizeTweak`)
 	 * applies; one made inline in the glyph program applies to a point touched in exactly one direction, or in both once
 	 * both IUPs have run, or in neither once both have run when it moves at least 32/64 px (Arial Bold `2`); smaller
 	 * shifts of untouched points (Courier New `R` 22) and points touched in both before the IUPs (Times New Roman Italic
