@@ -16,6 +16,7 @@
 
 import { halftoneBranch } from './emf-gdi-halftone-branch';
 import { ditherQuantize, ditherThreshold, type HalftoneDither } from './emf-gdi-halftone-dither';
+import { checkBudget } from './abort-budget';
 
 /** GDI stretch modes (EMR_SETSTRETCHBLTMODE). */
 export const BLACKONWHITE = 1;
@@ -108,6 +109,7 @@ export function stretchGdi(
 		return (s[i] << 16) | (s[i + 1] << 8) | s[i + 2];
 	};
 	for (let y = 0; y < H; y++) {
+		checkBudget();
 		const ys = rows[y] ?? [];
 		for (let x = 0; x < W; x++) {
 			const xs = cols[x] ?? [];
@@ -474,6 +476,7 @@ export function halftoneSharpen(px: Int32Array, w: number, h: number): void {
 	const at = (x: number, y: number, c: number): number =>
 		src[(Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
 	for (let y = 0; y < h; y++) {
+		checkBudget();
 		for (let x = 0; x < w; x++) {
 			for (let c = 0; c < 3; c++) {
 				const v = at(x, y, c);
@@ -540,6 +543,7 @@ function halftoneReduceBoth(rect: Int32Array, sw: number, sh: number, dw: number
 	const rows = halftoneReduceTaps(sh, dh, flipY);
 	const wide = new Int32Array(dw * sh * 3);
 	for (let y = 0; y < sh; y++) {
+		checkBudget();
 		for (let x = 0; x < dw; x++) {
 			let total = 0;
 			for (const [, w] of cols[x]) total += w;
@@ -669,6 +673,7 @@ function halftoneFilterOneAxis(rgb: Int32Array, w: number, h: number, W: number,
 			? below[Math.max(0, Math.min(w - 1, x)) * 3 + c]
 			: rgb[(Math.max(0, Math.min(h - 1, y)) * w + Math.max(0, Math.min(w - 1, x))) * 3 + c];
 	for (let y = 0; y < h; y++) {
+		checkBudget();
 		for (let x = 0; x < w; x++) {
 			for (let c = 0; c < 3; c++) {
 				const v = at(x, y, c);

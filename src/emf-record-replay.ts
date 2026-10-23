@@ -26,7 +26,8 @@ import { handleEmfGdiStateRecord } from './emf-gdi-state-handlers';
 import { parseEmfHeader } from './emf-header-parser';
 import { emfLog } from './emf-logging';
 import { registerNestedMetafileReplayer } from './emf-plus-draw-image';
-import { replayEmfPlusRecords } from './emf-plus-replay';
+import { replayEmfPlusRecordsSteps } from './emf-plus-replay';
+import { checkBudget, runToEnd, yieldDue } from './abort-budget';
 import type {
 	CanvasContext,
 	EmfBounds,
@@ -88,6 +89,23 @@ export function replayEmfRecords(
 	dpiScale: number = 1,
 	replayOptions: ReplayOptions = {},
 ): DeferredImageDraw[] {
+	return runToEnd(replayEmfRecordsSteps(view, ctx, bounds, canvasW, canvasH, dpiScale, replayOptions));
+}
+
+/**
+ * {@link replayEmfRecords} as a generator that yields between records once
+ * the conversion's time slice is used up (see `abort-budget.ts`); the
+ * converter drives it with `runSliced` so an abort signal can fire mid-replay.
+ */
+export function* replayEmfRecordsSteps(
+	view: DataView,
+	ctx: CanvasContext,
+	bounds: EmfBounds,
+	canvasW: number,
+	canvasH: number,
+	dpiScale: number = 1,
+	replayOptions: ReplayOptions = {},
+): Generator<void, DeferredImageDraw[]> {
 	emfLog(
 		`replayEmfRecords: bounds=(${bounds.left},${bounds.top})→(${bounds.right},${bounds.bottom}), canvas=${canvasW}×${canvasH}`,
 	);
@@ -161,6 +179,10 @@ export function replayEmfRecords(
 	const gdiRecordTypes = new Map<number, number>();
 
 	while (offset + 8 <= maxOffset && recordCount < maxRecords) {
+		checkBudget();
+		if (yieldDue()) {
+			yield;
+		}
 		const recType = view.getUint32(offset, true);
 		const recSize = view.getUint32(offset + 4, true);
 		if (recSize < 8 || offset + recSize > maxOffset) {
@@ -182,7 +204,7 @@ export function replayEmfRecords(
 					emfLog(
 						`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} at offset 0x${offset.toString(16)}, dataSize=${commentDataSize}`,
 					);
-					const deferred = replayEmfPlusRecords(
+					const deferred = yield* replayEmfPlusRecordsSteps(
 						view,
 						dataOff + 8,
 						commentDataSize - 4,

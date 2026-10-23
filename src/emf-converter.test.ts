@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { canvasGetImageData, createCanvas } from './emf-canvas-helpers';
 import { convertMetafileToDataUrl } from './emf-converter';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
-import { replayEmfRecords } from './emf-record-replay';
-import { replayWmfRecords } from './wmf-replay';
+import { replayEmfRecordsSteps } from './emf-record-replay';
+import { replayWmfRecordsSteps } from './wmf-replay';
 
 // ---------------------------------------------------------------------------
 // We cannot rely on a real canvas environment, so we mock the dependencies
@@ -13,25 +13,25 @@ import { replayWmfRecords } from './wmf-replay';
 // ---------------------------------------------------------------------------
 
 vi.mock<typeof import('./emf-header-parser')>(import('./emf-header-parser'), () => ({
-	parseEmfHeader: vi.fn<() => void>(),
-	getRenderableEmfBounds: vi.fn<() => void>(),
-	parseWmfHeader: vi.fn<() => void>(),
+	parseEmfHeader: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
+	getRenderableEmfBounds: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
+	parseWmfHeader: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
 }));
 
 vi.mock<typeof import('./emf-canvas-helpers')>(import('./emf-canvas-helpers'), () => ({
-	createCanvas: vi.fn<() => void>(),
-	canvasGetImageData: vi.fn<() => void>(),
+	createCanvas: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
+	canvasGetImageData: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
 	ensureNodeCanvasModule: vi.fn<() => Promise<null>>().mockResolvedValue(null),
 	decodeDeferredImageBytes: vi.fn<() => Promise<null>>().mockResolvedValue(null),
 	DEFAULT_DPI_SCALE: 2,
 }));
 
 vi.mock<typeof import('./emf-record-replay')>(import('./emf-record-replay'), () => ({
-	replayEmfRecords: vi.fn<() => void>(),
+	replayEmfRecordsSteps: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
 }));
 
 vi.mock<typeof import('./wmf-replay')>(import('./wmf-replay'), () => ({
-	replayWmfRecords: vi.fn<() => void>(),
+	replayWmfRecordsSteps: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -40,10 +40,10 @@ vi.mock<typeof import('./wmf-replay')>(import('./wmf-replay'), () => ({
 
 function makeCtxStub() {
 	return {
-		save: vi.fn<() => void>(),
-		restore: vi.fn<() => void>(),
-		setTransform: vi.fn<() => void>(),
-		drawImage: vi.fn<() => void>(),
+		save: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
+		restore: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
+		setTransform: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
+		drawImage: vi.fn<(...args: unknown[]) => Generator<void, unknown>>(),
 	};
 }
 
@@ -80,7 +80,9 @@ function setupEmfMocks(options?: {
 	const canvas = opts.canvasNull ? null : { width: 200, height: 200 };
 	(createCanvas as ReturnType<typeof vi.fn>).mockReturnValue(canvas ? { canvas, ctx } : null);
 
-	(replayEmfRecords as ReturnType<typeof vi.fn>).mockReturnValue([]);
+	(replayEmfRecordsSteps as ReturnType<typeof vi.fn>).mockImplementation(function* () {
+		return [];
+	});
 
 	mockReadback(opts.readbackFails);
 
@@ -115,7 +117,9 @@ function setupWmfMocks(options?: {
 	const canvas = opts.canvasNull ? null : { width: 200, height: 200 };
 	(createCanvas as ReturnType<typeof vi.fn>).mockReturnValue(canvas ? { canvas, ctx } : null);
 
-	(replayWmfRecords as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+	(replayWmfRecordsSteps as ReturnType<typeof vi.fn>).mockImplementation(function* () {
+		return undefined;
+	});
 
 	mockReadback(opts.readbackFails);
 
@@ -187,13 +191,13 @@ describe('convertMetafileToDataUrl (EMF path)', () => {
 		expect(createCanvas).toHaveBeenCalledWith(100, 100, undefined, undefined, 2, 2048);
 	});
 
-	it('threads maxRecords and fontFamilyMap into replayEmfRecords', async () => {
+	it('threads maxRecords and fontFamilyMap into replayEmfRecordsSteps', async () => {
 		setupEmfMocks();
 		await convertMetafileToDataUrl(new ArrayBuffer(100), {
 			maxRecords: 1234,
 			fontFamilyMap: { calibri: 'Carlito' },
 		});
-		expect(replayEmfRecords).toHaveBeenCalledWith(
+		expect(replayEmfRecordsSteps).toHaveBeenCalledWith(
 			expect.anything(),
 			expect.anything(),
 			expect.anything(),
@@ -280,10 +284,10 @@ describe('convertMetafileToDataUrl (WMF path)', () => {
 		expect(createCanvas).toHaveBeenCalledWith(200, 200, 600, 500, 3, undefined);
 	});
 
-	it('calls replayWmfRecords with correct parameters', async () => {
+	it('calls replayWmfRecordsSteps with correct parameters', async () => {
 		setupWmfMocks();
 		await convertMetafileToDataUrl(new ArrayBuffer(100));
-		expect(replayWmfRecords).toHaveBeenCalledOnce();
+		expect(replayWmfRecordsSteps).toHaveBeenCalledOnce();
 	});
 
 	it('returns null on thrown exception', async () => {
@@ -318,16 +322,16 @@ describe('convertMetafileToDataUrl (format auto-detection)', () => {
 		setupEmfMocks();
 		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toMatch(PNG_DATA_URL);
-		expect(replayEmfRecords).toHaveBeenCalled();
-		expect(replayWmfRecords).not.toHaveBeenCalled();
+		expect(replayEmfRecordsSteps).toHaveBeenCalled();
+		expect(replayWmfRecordsSteps).not.toHaveBeenCalled();
 	});
 
 	it('routes WMF-shaped input (parseEmfHeader fails, parseWmfHeader succeeds) to the WMF replay path', async () => {
 		setupWmfMocks();
 		const result = await convertMetafileToDataUrl(new ArrayBuffer(100));
 		expect(result).toMatch(PNG_DATA_URL);
-		expect(replayWmfRecords).toHaveBeenCalled();
-		expect(replayEmfRecords).not.toHaveBeenCalled();
+		expect(replayWmfRecordsSteps).toHaveBeenCalled();
+		expect(replayEmfRecordsSteps).not.toHaveBeenCalled();
 	});
 
 	it('returns null for garbage bytes that match neither header format', async () => {

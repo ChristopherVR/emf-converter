@@ -13,6 +13,8 @@
  * @module png-encoder
  */
 
+import { checkBudget } from './abort-budget';
+
 let crcTable: Uint32Array | null = null;
 
 function crc32(bytes: Uint8Array, start: number, end: number): number {
@@ -117,6 +119,9 @@ function filterScanlines(input: ArrayLike<number>, width: number, height: number
 	const up = new Uint8Array(stride);
 	const pae = new Uint8Array(stride);
 	for (let y = 0; y < height; y++) {
+		if ((y & 63) === 0) {
+			checkBudget();
+		}
 		const row = y * stride;
 		const prev = row - stride;
 		const o = y * (stride + 1);

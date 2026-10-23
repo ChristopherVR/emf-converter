@@ -162,6 +162,7 @@ import {
 } from './wmf-region';
 import { wmfArcFamily, wmfEllipse, wmfRectangle, wmfRoundRect } from './wmf-shapes';
 import { wmfExtTextOut, wmfTextOut } from './wmf-text';
+import { checkBudget, runToEnd, yieldDue } from './abort-budget';
 
 // ---------------------------------------------------------------------------
 // Player setup
@@ -664,6 +665,18 @@ export function replayWmfRecords(
 	canvasH: number,
 	replayOptions: ReplayOptions = {},
 ): void {
+	runToEnd(replayWmfRecordsSteps(view, ctx, header, canvasW, canvasH, replayOptions));
+}
+
+/** {@link replayWmfRecords} as a generator that yields between records when the time slice is spent. */
+export function* replayWmfRecordsSteps(
+	view: DataView,
+	ctx: CanvasContext,
+	header: WmfHeader,
+	canvasW: number,
+	canvasH: number,
+	replayOptions: ReplayOptions = {},
+): Generator<void, void> {
 	const p = createWmfPlayer(view, ctx, header, canvasW, canvasH, replayOptions);
 	let offset = header.headerSize;
 	const maxOffset = view.byteLength;
@@ -677,6 +690,10 @@ export function replayWmfRecords(
 			break;
 		}
 		recordCount++;
+		checkBudget();
+		if (yieldDue()) {
+			yield;
+		}
 		playWmfRecord(p, recType, offset, recSize);
 		offset += recSize;
 	}

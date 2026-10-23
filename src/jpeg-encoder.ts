@@ -12,6 +12,8 @@
  * @module jpeg-encoder
  */
 
+import { checkBudget } from './abort-budget';
+
 /** Options for {@link encodeJpeg}. */
 export interface JpegEncodeOptions {
 	/** Quality from 0 to 1, as for `canvas.toDataURL('image/jpeg', quality)` (default 0.92). */
@@ -294,6 +296,7 @@ export function encodeJpeg(data: ArrayLike<number>, width: number, height: numbe
 	};
 
 	for (let my = 0; my < height; my += mcu) {
+		checkBudget();
 		for (let mx = 0; mx < width; mx += mcu) {
 			for (let by = 0; by < factor; by++) {
 				for (let bx = 0; bx < factor; bx++) {
