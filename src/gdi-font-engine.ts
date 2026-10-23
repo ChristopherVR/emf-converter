@@ -916,13 +916,14 @@ export class GdiFontCollection {
 	/**
 	 * Whether the fonts are installed system fonts. GDI+ draws those through DirectWrite's in-process rasteriser
 	 * (`HintEnvironment.dwriteArithmetic`); a font from a private collection or a per-user install goes through another
-	 * process with other arithmetic, which the diagnostic fixtures built on private fonts pin.
+	 * process with other arithmetic, which the diagnostic fixtures built on private fonts pin. Opt-in (default false) on
+	 * this branch; `r11-gdiplus-text-candidate` makes it the default (it loses a few previously exact captures).
 	 */
 	readonly installedFonts: boolean;
 
 	constructor(sources: readonly FontSource[], defaultSmoothing: DefaultTextSmoothing = 'cleartype', options: { installedFonts?: boolean } = {}) {
 		this.defaultSmoothing = defaultSmoothing;
-		this.installedFonts = options.installedFonts !== false;
+		this.installedFonts = options.installedFonts === true;
 		for (const src of sources) {
 			for (const face of parseRasterFontFile(src)) {
 				const k = face.family.toLowerCase().trim();
