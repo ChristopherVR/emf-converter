@@ -59,11 +59,11 @@ describe('native TextureBrush sampling, stepped the way GDI+ steps a row', () =>
 	// the start position or the inverse would).
 	for (const control of controls) {
 		it(control.name, () => {
-			const inv = invertTextureMatrix(control.matrix)!;
+			const inv = invertTextureMatrix(control.matrix, !!control.half)!;
 			const source = new Uint8ClampedArray(Buffer.from(control.source, 'base64'));
 			const expected = Buffer.from(control.premultiplied, 'base64');
 			const actual = new Uint8ClampedArray(control.width * control.height * 4);
-			writeTextureRect(inv, control.sourceWidth, control.sourceHeight, source, wraps[control.wrap], control.half,
+			writeTextureRect(inv, control.sourceWidth, control.sourceHeight, source, wraps[control.wrap],
 				0, 0, control.width, control.height, actual);
 			for (let p = 0; p < actual.length; p += 4) {
 				for (let c = 0; c < 3; c++) {
@@ -76,18 +76,18 @@ describe('native TextureBrush sampling, stepped the way GDI+ steps a row', () =>
 });
 
 describe('recorded texture fills retain tighter native bounds', () => {
-	// Zero-tolerance RGB counts over every output pixel; each residual is at
-	// most one level. This pins the improvement at the public replay boundary,
-	// including the original rotated and reduced texture draws.
+	// Zero-tolerance RGB counts over every output pixel: every recorded texture fill is exact (one or two pixels one level
+	// off each before the span model of round 11). This pins it at the public replay boundary, including the original
+	// rotated and reduced texture draws.
 	const bounds: Record<string, number> = {
 		clamp: 0,
-		flipx: 1,
+		flipx: 0,
 		flipxy: 0,
-		flipy: 1,
+		flipy: 0,
 		'hqbicubic-flipxy': 0,
-		'nearest-tile': 1,
-		'pom-half-tile': 2,
-		tile: 1,
+		'nearest-tile': 0,
+		'pom-half-tile': 0,
+		tile: 0,
 	};
 	for (const [suffix, bound] of Object.entries(bounds)) {
 		it(suffix, async () => {
