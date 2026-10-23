@@ -4,6 +4,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { convertMetafileToPdf, svgTreeToPdf } from './index';
 import { encodeJpeg } from './jpeg-encoder';
 import { encodePng } from './png-encoder';
+import { encodeWebp } from './webp-encoder';
 import { bytesToBase64, svgTreeToDataUrl, type SvgNode } from './svg-tree';
 import { svgPathToPdf } from './pdf-svg';
 import { buildTestFont } from './__fixtures__/test-font';
@@ -170,6 +171,15 @@ describe('svgTreeToPdf structure', () => {
 		// The JPEG bytes appear unchanged inside the file.
 		expect(text).toContain(latin1(jpeg.subarray(0, 64)));
 		expect([...objects.values()].some((o) => o.includes('/ColorSpace /DeviceGray'))).toBe(true);
+	});
+
+	it('decodes WebP with the bundled decoder and embeds it as RGB with an SMask', async () => {
+		const rgba = new Uint8Array(3 * 2 * 4).map((_, i) => (i % 4 === 3 ? (i < 12 ? 255 : 128) : i * 9));
+		const webpUrl = `data:image/webp;base64,${bytesToBase64(encodeWebp(rgba, 3, 2))}`;
+		const tree = svg([{ tag: 'image', attrs: { x: 0, y: 0, width: 3, height: 2, href: webpUrl } }]);
+		const { text } = validatePdf((await svgTreeToPdf(tree, { compress: false }))!);
+		expect(text).toContain('/Subtype /Image');
+		expect(text).toContain('/SMask ');
 	});
 
 	it('turns an embedded SVG data URL into a form XObject', async () => {

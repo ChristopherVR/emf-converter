@@ -60,8 +60,8 @@ export interface PdfOptions {
 	title?: string;
 	/**
 	 * Decodes an embedded image that is neither JPEG nor handled by the
-	 * bundled decoders (PNG, BMP, GIF, TIFF), returning straight RGBA, or
-	 * `null` to skip the image. The default has no WebP decoder.
+	 * bundled decoders (PNG, BMP, GIF, TIFF, WebP), returning straight RGBA,
+	 * or `null` to skip the image.
 	 */
 	decodeImage?: (bytes: Uint8Array, mime: string) => Promise<PdfDecodedImage | null> | PdfDecodedImage | null;
 }
