@@ -49,6 +49,7 @@ import { parseRasterFontFile, type RasterFace } from './fnt-font';
 import { pickRasterFace } from './raster-mapper';
 import { parseFontFile, type TtfFont } from './ttf-font';
 import { DEFAULT_DROPOUT_PPEM, HintedSize, type HintedGlyph } from './ttf-hinting';
+import { msGrayBitmap, msMonoBitmap, msScanFlags } from './ttf-msscan';
 import { dropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
 
 /** Raw bytes of a `.ttf` or `.ttc` file. */
@@ -793,14 +794,25 @@ export class RealizedFont implements GdiRealizedFont {
 			}
 			o = { xs, ys, onCurve: base.onCurve, endPts: base.endPts };
 		}
+		if (m && !this.gdiPlus && this.mode !== 'cleartype' && nearDiagonal(m)) {
+			// A glyph turned by an odd multiple of 45 degrees is scan-converted one 26.6 unit to the right of the outline
+			// `GetGlyphOutline(GGO_NATIVE)` returns (all 221 glyphs at each of 45, 135, 225 and 315 degrees of
+			// `rotated-glyph-bitmaps-small.json.gz`, and no other angle): the edges that pass exactly through pixel centres,
+			// which a diagonal at 45 degrees does all along, then fall on the side native puts them.
+			const xs = new Float64Array(o.xs.length);
+			for (let i = 0; i < xs.length; i++) xs[i] = o.xs[i] + 1;
+			o = { ...o, xs };
+		}
 		let bitmap: GlyphBitmap | null;
 		if (this.mode === 'mono') {
 			// 26.6 smart-crossing selection is verified against GDI's monochrome bitmaps for upright, stretched and
 			// sheared glyphs once their outlines follow GDI's hinting arithmetic (mono-condensed.json.gz: 970 to
 			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
-			const dropout = dropoutMode(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType);
-			bitmap = rasterizeMono(o, dropout, undefined, true, smartGrid, !this.gdiPlus && (!m || !!skew), !!skew && !this.gdiPlus, !this.gdiPlus, false, true);
+			const controlOn = src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM;
+			bitmap = this.gdiPlus
+				? rasterizeMono(o, dropoutMode(controlOn, src.scanType), undefined, true, smartGrid, false, false, false, false, true)
+				: msMonoBitmap(o, msScanFlags(controlOn, src.scanType));
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
 			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
@@ -808,13 +820,19 @@ export class RealizedFont implements GdiRealizedFont {
 			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
 			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout, !this.gdiPlus && clearTypeSmoothsVertically(this.ttf, this.ppem));
 		} else {
-			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
+			// GDI's own scan converter (a font that never runs SCANCTRL gets simple dropouts up to 32 ppem, as in monochrome);
+			// GDI+ AntiAlias keeps its previous behaviour.
+			const dropout = this.gdiPlus
+				? src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2
+				: msScanFlags(src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM, src.scanType);
 			// GDI+ AntiAlias widens regular/italic Courier New by one grayscale
 			// sample to the right; the grid-fit hint and bold faces do not.
 			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&
 				this.ttf.weightClass < 600 && this.ttf.family.toLowerCase() === 'courier new'
 				? rasterizeCourierGray(o, dropout)
-				: rasterizeGray(o, dropout, !this.gdiPlus && !m, false, true);
+				: this.gdiPlus
+					? rasterizeGray(o, dropout, false, false, true)
+					: msGrayBitmap(o, dropout);
 		}
 		if (bitmap && this.syntheticBold) {
 			bitmap = embolden(bitmap, this.mode === 'mono' ? 1 : 16);
@@ -823,6 +841,12 @@ export class RealizedFont implements GdiRealizedFont {
 		this.glyphs.set(key, g);
 		return g;
 	}
+}
+
+/** True when a matrix row has two components of (nearly) equal magnitude: native `mth_Max45Trick`, 33/65536 apart at most. */
+function nearDiagonal(m: readonly [number, number, number, number]): boolean {
+	const tolerance = 33 / 65536;
+	return Math.abs(Math.abs(m[0]) - Math.abs(m[1])) <= tolerance || Math.abs(Math.abs(m[2]) - Math.abs(m[3])) <= tolerance;
 }
 
 /**

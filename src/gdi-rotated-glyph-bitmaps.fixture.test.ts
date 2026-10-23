@@ -10,7 +10,7 @@ import { HintedSize } from './ttf-hinting';
  * GetGlyphOutline GGO_BITMAP (1-bit) and GGO_NATIVE of "TgEscap0123456789" in Arial, Times New Roman, Tahoma and Courier New
  * at lfHeight -13, -16 and -20 and at 25, 30, 45, 120, 135, 160, 225, 300 and 315 degrees, drawn with an escapement and (Arial
  * -16 only) with a world rotation. A rotated glyph is hinted unrotated at the rounded major ppem and then rotated (see
- * `rotationMatrix`); its edges that pass exactly through pixel centres are decided by the contour's direction (down = in).
+ * `rotationMatrix`); its bitmap is the native scan conversion of that outline, one 26.6 unit to the right at odd multiples of 45 degrees (see the last test).
  */
 interface Row { face: string; lfHeight: number; degrees: number; mode: string; glyph: string; bw: number; bh: number; ox: number; oy: number; rows: string; words: number[] }
 const rows: Row[] = JSON.parse(gunzipSync(readFileSync(fixturePath('rotated-glyph-bitmaps-small.json.gz'))).toString());
@@ -127,16 +127,17 @@ describe.skipIf(!windowsFonts())('against the native glyphs', () => {
 			entry.differing += differing;
 			if (differing === 0) entry.exact++;
 		}
-		// The diagonals put edges through pixel centres (the contour's direction decides them for Arial, Times New Roman and
-		// Courier New; Tahoma's curve and dropout differences remain).
+		// The native scan converter (`ttf-msscan.ts`) reproduces the rotated glyphs bar three: a diagonal at 45 degrees puts edges
+		// through pixel centres, which native resolves as if the outline were one 26.6 unit to the right (see `glyph` in
+		// gdi-font-engine.ts). Before round 11: 482 of 816 diagonal escapement glyphs and 49 of 68 world ones were exact.
 		expect(stats['diagonal esc'].glyphs).toBe(816);
-		expect(stats['diagonal esc'].exact).toBeGreaterThanOrEqual(482);
-		expect(stats['diagonal esc'].differing).toBeLessThanOrEqual(703);
-		expect(stats['diagonal world'].exact).toBeGreaterThanOrEqual(49);
-		expect(stats['diagonal world'].differing).toBeLessThanOrEqual(21);
-		expect(stats['other esc'].exact).toBeGreaterThanOrEqual(950);
-		expect(stats['other esc'].differing).toBeLessThanOrEqual(90);
-		expect(stats['other world'].exact).toBeGreaterThanOrEqual(79);
-		expect(stats['other world'].differing).toBeLessThanOrEqual(9);
+		expect(stats['diagonal esc'].exact).toBeGreaterThanOrEqual(816);
+		expect(stats['diagonal esc'].differing).toBeLessThanOrEqual(0);
+		expect(stats['diagonal world'].exact).toBeGreaterThanOrEqual(68);
+		expect(stats['diagonal world'].differing).toBeLessThanOrEqual(0);
+		expect(stats['other esc'].exact).toBeGreaterThanOrEqual(1017);
+		expect(stats['other esc'].differing).toBeLessThanOrEqual(6);
+		expect(stats['other world'].exact).toBeGreaterThanOrEqual(85);
+		expect(stats['other world'].differing).toBeLessThanOrEqual(0);
 	});
 });

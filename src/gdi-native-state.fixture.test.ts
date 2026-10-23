@@ -86,8 +86,9 @@ describe.skipIf(!windowsFonts())('native glyph output differs between runs on on
 		// Courier New's native AntiAlias widening adds 5/50/103 exact matches
 		// for combined A/B and per-product B. The monochrome contour rule
 		// adds one further Tahoma per-product B match; the round 9 stub squares and closed ties add one more for each of combined B and per-product B; other faces are unchanged.
+		// Round 11: SCANCTRL is the last value alone (GDI evaluates it once per glyph), one more of each B match.
 		// The references and the divergent projection-call evidence stay fixed.
-		expect(matches).toEqual({ 'combined A-0621Z': 65, 'combined B-0735Z': 852, 'perProduct B-0735Z': 1692 });
+		expect(matches).toEqual({ 'combined A-0621Z': 65, 'combined B-0735Z': 853, 'perProduct B-0735Z': 1693 });
 	});
 
 	it('text-coverage: 606 of 3,328 committed captures differ from a fresh capture; per-product matches 350 of the fresh images, combined 128, and the committed ones 192 and 94', () => {

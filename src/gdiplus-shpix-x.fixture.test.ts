@@ -77,6 +77,6 @@ describe.skipIf(!windowsFonts())('SHPIX along x in GDI+ grayscale text', () => {
 		const glyphs: Capture[] = load('text-real-glyphs.json.gz');
 		const [before, after, lost] = tally(glyphs, () => [6, 28], 40, (c) => new Uint8Array(Buffer.from(c.gray!, 'base64')));
 		expect(lost).toEqual([]);
-		expect([before, after]).toEqual([17014, 17409]);
+		expect([before, after]).toEqual([17015, 17410]); // 17,014 and 17,409 before round 11 (SCANCTRL: the last value alone)
 	}, 240000);
 });

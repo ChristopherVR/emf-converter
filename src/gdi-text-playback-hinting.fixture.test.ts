@@ -70,9 +70,11 @@ describe.skipIf(!windowsFonts())('the converter draws the native playback shapes
 		// (`playbackStretchReacts`: patching the two scales equal makes native playback equal the direct drawing), which
 		// takes the cell sheet to 93 pixels from the playback (45 of them the direct drawing's own residual) and leaves it
 		// 4,113 from the direct drawing. The round 9 specification stub squares and finer arcs then take the cell sheet
-		// to 44 from the playback (4,070 from the direct drawing) and the em sheet to 8/8.
-		'textpb-segoeui-cell-q3': [4070, 44],
-		'textpb-segoeui-em-q3': [8, 8],
+		// to 44 from the playback (4,070 from the direct drawing) and the em sheet to 8/8. Round 11: the native scan converter
+		// (`ttf-msscan.ts`) takes both sheets to the playback exactly (0 and 0), 4,050 (the unpatched recording's own difference,
+		// below) and 0 from the direct drawing.
+		'textpb-segoeui-cell-q3': [4050, 0],
+		'textpb-segoeui-em-q3': [0, 0],
 	};
 	it('matches the native playback on the nine flagged heights, not the direct drawing', async () => {
 		for (const [name, [direct, played]] of Object.entries(expected)) {
