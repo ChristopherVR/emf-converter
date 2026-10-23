@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { describe, expect, it } from 'vitest';
 
-import { convertMetafileToDataUrl, convertMetafileToWebpDataUrl } from './emf-converter';
+import { convertMetafile, convertMetafileToDataUrl,convertMetafileToWebpDataUrl } from './emf-converter';
 import { encodePng } from './png-encoder';
 import { encodeWebp } from './webp-encoder';
 
@@ -127,6 +127,15 @@ describe('WebP versus PNG on a real rendering', () => {
 		const out = await decode(webp);
 		expect([out.width, out.height]).toEqual([pngImg.width, pngImg.height]);
 		expect([...out.data]).toEqual([...px]);
+	});
+
+	it("convertMetafile({ format: 'webp' }) returns WebP bytes, lossless by default", async () => {
+		const image = await convertMetafile(new Uint8Array(fixture('sample-gradient-clip.emf')), { format: 'webp' });
+		expect(image?.format).toBe('webp');
+		expect(image?.mimeType).toBe('image/webp');
+		expect(String.fromCharCode(...image!.data.subarray(8, 16))).toBe('WEBPVP8L');
+		const out = await decode(image!.data);
+		expect([out.width, out.height]).toEqual([image!.width, image!.height]);
 	});
 
 	it('convertMetafileToWebpDataUrl can write lossy output', async () => {

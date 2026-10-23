@@ -36,7 +36,6 @@ import {
 	decodeImageBytesBuiltIn,
 	ensureNodeCanvasModule,
 	usingSoftwareCanvas,
-	exportCanvasToPngDataUrl,
 	DEFAULT_DPI_SCALE,
 	type Drawable,
 } from './emf-canvas-helpers';
@@ -55,6 +54,7 @@ import { SvgContext } from './svg-context';
 import type { ImagePayload } from './svg-context';
 import { bytesToBase64, svgMarkupToDataUrl, svgTreeToDataUrl, svgTreeToString } from './svg-tree';
 import type { SvgNode } from './svg-tree';
+import { readMetafileInput, type MetafileInput } from './metafile-input';
 import { extractEmbeddedEmf } from './wmf-embedded-emf';
 import { wmfPlayback } from './wmf-mapping';
 import { replayWmfRecords } from './wmf-replay';
@@ -507,19 +507,14 @@ async function processDeferredImages(
 					emfWarn(`  Deferred image [${idx}]: skipping embedded metafile, recursion depth ${recursionDepth}`);
 					continue;
 				}
-				const metafileDataUrl = await convertMetafileToDataUrl(plainBuffer, undefined, recursionDepth + 1);
-				if (!metafileDataUrl) {
+				const nested = await convertMetafile(plainBuffer, { format: 'png' }, recursionDepth + 1);
+				if (!nested) {
 					emfWarn(`  Deferred image [${idx}]: metafile conversion returned null`);
 					complete = false;
 					continue;
 				}
-				const byteString = atob(metafileDataUrl.split(',')[1]);
-				mime = metafileDataUrl.match(/data:([^;]+)/)?.[1] ?? 'image/png';
-				bytes = new ArrayBuffer(byteString.length);
-				const ia = new Uint8Array(bytes);
-				for (let i = 0; i < byteString.length; i++) {
-					ia[i] = byteString.charCodeAt(i);
-				}
+				mime = nested.mimeType;
+				bytes = toPlainBuffer(nested.data.buffer);
 			}
 			if (img.effect && !img.isMetafile) {
 				const pixels = await decodeToRgba(bytes);
@@ -559,9 +554,138 @@ async function processDeferredImages(
 	return complete;
 }
 
+/** Output formats of {@link convertMetafile}. */
+export type MetafileOutputFormat = 'png' | 'jpeg' | 'webp' | 'svg';
+
+/** Options for {@link convertMetafile}: the target `format` plus that format's options. */
+export type ConvertOptions =
+	| (EmfConvertOptions & { format?: 'png' })
+	| (JpegConvertOptions & { format: 'jpeg' })
+	| (WebpConvertOptions & { format: 'webp' })
+	| (SvgConvertOptions & { format: 'svg' });
+
+/** An encoded image produced by {@link convertMetafile}. */
+export interface ConvertedImage {
+	format: MetafileOutputFormat;
+	/** `image/png`, `image/jpeg`, `image/webp` or `image/svg+xml`. */
+	mimeType: string;
+	/** The file bytes (UTF-8 markup for SVG). */
+	data: Uint8Array;
+	/** Pixel size of the raster, or the SVG's `width`/`height`. */
+	width: number;
+	height: number;
+}
+
+/** Straight (non-premultiplied) RGBA pixels, row-major and top-down, like `ImageData`. */
+export interface RgbaImage {
+	data: Uint8ClampedArray;
+	width: number;
+	height: number;
+}
+
+const MIME_TYPES: Record<MetafileOutputFormat, string> = {
+	png: 'image/png',
+	jpeg: 'image/jpeg',
+	webp: 'image/webp',
+	svg: 'image/svg+xml',
+};
+
 /**
- * Converts an EMF (Enhanced Metafile) or WMF (Windows Metafile) binary buffer
- * to a PNG data-URL string, auto-detecting which of the two formats it is.
+ * Converts an EMF or WMF file (format auto-detected) to PNG, JPEG, WebP or SVG
+ * bytes. This is the binary form of the `*DataUrl` functions: write
+ * `data` to a file, wrap it in a `Blob`, or send it over the network
+ * without the base64 round trip.
+ *
+ * PNG, JPEG and WebP are encoded by the bundled encoders, so the bytes are the
+ * same in browsers and Node.js. The `null` cases are those of
+ * {@link convertMetafileToDataUrl} (raster) and {@link convertMetafileToSvg}
+ * (SVG).
+ *
+ * @param input   - The file: an `ArrayBuffer`, typed array / Node `Buffer`,
+ *   or `Blob`. Gzip-compressed `.emz` / `.wmz` files are inflated first.
+ * @param options - `format` (default `'png'`) and that format's options.
+ * @param recursionDepth - Internal: tracks nested embedded-metafile depth.
+ */
+export async function convertMetafile(
+	input: MetafileInput,
+	options?: ConvertOptions,
+	recursionDepth: number = 0,
+): Promise<ConvertedImage | null> {
+	const format = options?.format ?? 'png';
+	if (format === 'svg') {
+		const svg = await replayToSvgContext(input, options as SvgConvertOptions, recursionDepth);
+		if (!svg) {
+			return null;
+		}
+		const markup = svgTreeToString(await svg.toTree({ includeSize: (options as SvgConvertOptions).includeSize }));
+		return { format, mimeType: MIME_TYPES.svg, data: new TextEncoder().encode(markup), width: svg.canvas.width, height: svg.canvas.height };
+	}
+	const image = await convertMetafileToImageData(input, options, recursionDepth);
+	if (!image) {
+		return null;
+	}
+	try {
+		const { data: pixels, width, height } = image;
+		let data: Uint8Array;
+		if (format === 'jpeg') {
+			const jpegOptions = options as JpegConvertOptions;
+			data = encodeJpeg(pixels, width, height, {
+				quality: jpegOptions.quality,
+				background: parseBackground(jpegOptions.background),
+				chromaSubsampling: jpegOptions.chromaSubsampling,
+			});
+		} else if (format === 'webp') {
+			const webpOptions = options as WebpConvertOptions;
+			data = encodeWebp(pixels, width, height, {
+				lossy: webpOptions.lossless === false,
+				quality: webpOptions.quality,
+			});
+		} else {
+			data = await encodePng(pixels, width, height);
+		}
+		return { format, mimeType: MIME_TYPES[format], data, width, height };
+	} catch (err) {
+		emfWarn('convertMetafile: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
+		return null;
+	}
+}
+
+/**
+ * Renders an EMF or WMF file (format auto-detected) to raw RGBA pixels, the
+ * same rendering the PNG output encodes. Hand the result to `putImageData`,
+ * `sharp(data, { raw: { width, height, channels: 4 } })` or any other encoder.
+ *
+ * @param input - As for {@link convertMetafile}.
+ * @returns Straight (non-premultiplied) RGBA, or `null` in the cases listed
+ *   on {@link convertMetafileToDataUrl}.
+ */
+export async function convertMetafileToImageData(
+	input: MetafileInput,
+	options?: EmfConvertOptions,
+	recursionDepth: number = 0,
+): Promise<RgbaImage | null> {
+	const buffer = await readMetafileInput(input);
+	const raster = buffer ? await renderRaster(buffer, options, recursionDepth, 'convertMetafileToImageData') : null;
+	if (!raster) {
+		return null;
+	}
+	try {
+		const { canvas, ctx } = raster;
+		const data = (canvas as unknown) instanceof SoftwareRasterCanvas
+			? new Uint8ClampedArray((canvas as unknown as SoftwareRasterCanvas).pixels)
+			: canvasGetImageData(ctx, 0, 0, canvas.width, canvas.height).data;
+		return { data, width: canvas.width, height: canvas.height };
+	} catch (err) {
+		emfWarn('convertMetafileToImageData: EXCEPTION:', err instanceof Error ? err.message : err);
+		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
+		return null;
+	}
+}
+
+/**
+ * Converts an EMF (Enhanced Metafile) or WMF (Windows Metafile) file to a
+ * PNG data-URL string, auto-detecting which of the two formats it is.
  *
  * Detection tries the EMF path first: {@link parseEmfHeader} is a cheap,
  * side-effect-free probe that returns `null` immediately unless the buffer
@@ -580,36 +704,17 @@ async function processDeferredImages(
  *   than return an image silently missing its text it returns `null`. SVG
  *   output ({@link convertMetafileToSvg}) needs no canvas at all.
  *
- * @param buffer  - The raw EMF or WMF file bytes.
+ * @param input   - The raw EMF or WMF file, as for {@link convertMetafile}.
  * @param options - Optional {@link EmfConvertOptions} controlling output size,
  *   DPI scale, record limits, and font mapping.
- * @param recursionDepth - Internal: tracks nested embedded-metafile depth.
  * @returns A `data:image/png;base64,...` string, or `null` on failure.
  */
-export async function convertMetafileToDataUrl(
-	buffer: ArrayBuffer,
-	options?: EmfConvertOptions,
-	recursionDepth: number = 0,
-): Promise<string | null> {
-	const raster = await renderRaster(buffer, options, recursionDepth, 'convertMetafileToDataUrl');
-	if (!raster) {
-		return null;
-	}
-	try {
-		const url = await exportCanvasToPngDataUrl(raster.canvas);
-		if (!url) {
-			emfWarn('convertMetafileToDataUrl: exportCanvasToPngDataUrl returned null');
-		}
-		return url;
-	} catch (err) {
-		emfWarn('convertMetafileToDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
-		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
-		return null;
-	}
+export async function convertMetafileToDataUrl(input: MetafileInput, options?: EmfConvertOptions): Promise<string | null> {
+	return toDataUrl(await convertMetafile(input, { ...options, format: 'png' }));
 }
 
 /**
- * Converts an EMF or WMF buffer (format auto-detected) to a JPEG data URL.
+ * Converts an EMF or WMF file (format auto-detected) to a JPEG data URL.
  *
  * The drawing is rendered exactly as for {@link convertMetafileToDataUrl}
  * (same options, same backends, same `null` cases) and encoded by the
@@ -618,34 +723,19 @@ export async function convertMetafileToDataUrl(
  * and any translucent pixels are composited over
  * {@link JpegConvertOptions.background} (white by default).
  *
- * @param buffer  - The raw EMF or WMF file bytes.
+ * @param input   - The raw EMF or WMF file, as for {@link convertMetafile}.
  * @param options - Optional {@link JpegConvertOptions}.
  * @returns A `data:image/jpeg;base64,...` string, or `null` on failure.
  */
 export async function convertMetafileToJpegDataUrl(
-	buffer: ArrayBuffer,
+	input: MetafileInput,
 	options?: JpegConvertOptions,
 ): Promise<string | null> {
-	const raster = await renderRaster(buffer, options, 0, 'convertMetafileToJpegDataUrl');
-	if (!raster) {
-		return null;
-	}
-	try {
-		const { canvas, ctx } = raster;
-		const pixels = (canvas as unknown) instanceof SoftwareRasterCanvas
-			? (canvas as unknown as SoftwareRasterCanvas).pixels
-			: canvasGetImageData(ctx, 0, 0, canvas.width, canvas.height).data;
-		const jpeg = encodeJpeg(pixels, canvas.width, canvas.height, {
-			quality: options?.quality,
-			background: parseBackground(options?.background),
-			chromaSubsampling: options?.chromaSubsampling,
-		});
-		return `data:image/jpeg;base64,${bytesToBase64(jpeg)}`;
-	} catch (err) {
-		emfWarn('convertMetafileToJpegDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
-		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
-		return null;
-	}
+	return toDataUrl(await convertMetafile(input, { ...options, format: 'jpeg' }));
+}
+
+function toDataUrl(image: ConvertedImage | null): string | null {
+	return image ? `data:${image.mimeType};base64,${bytesToBase64(image.data)}` : null;
 }
 
 /**
@@ -658,33 +748,15 @@ export async function convertMetafileToJpegDataUrl(
  * background exactly; set {@link WebpConvertOptions.lossless} to `false`
  * for smaller, lossy output (transparency is still kept).
  *
- * @param buffer  - The raw EMF or WMF file bytes.
+ * @param input   - The raw EMF or WMF file, as for {@link convertMetafile}.
  * @param options - Optional {@link WebpConvertOptions}.
  * @returns A `data:image/webp;base64,...` string, or `null` on failure.
  */
 export async function convertMetafileToWebpDataUrl(
-	buffer: ArrayBuffer,
+	input: MetafileInput,
 	options?: WebpConvertOptions,
 ): Promise<string | null> {
-	const raster = await renderRaster(buffer, options, 0, 'convertMetafileToWebpDataUrl');
-	if (!raster) {
-		return null;
-	}
-	try {
-		const { canvas, ctx } = raster;
-		const pixels = (canvas as unknown) instanceof SoftwareRasterCanvas
-			? (canvas as unknown as SoftwareRasterCanvas).pixels
-			: canvasGetImageData(ctx, 0, 0, canvas.width, canvas.height).data;
-		const webp = encodeWebp(pixels, canvas.width, canvas.height, {
-			lossy: options?.lossless === false,
-			quality: options?.quality,
-		});
-		return `data:image/webp;base64,${bytesToBase64(webp)}`;
-	} catch (err) {
-		emfWarn('convertMetafileToWebpDataUrl: EXCEPTION:', err instanceof Error ? err.message : err);
-		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
-		return null;
-	}
+	return toDataUrl(await convertMetafile(input, { ...options, format: 'webp' }));
 }
 
 /** Parses a `#rgb` / `#rrggbb` background colour; anything else is white. */
@@ -911,7 +983,7 @@ async function processDeferredImagesSvg(
 }
 
 /**
- * Converts an EMF or WMF buffer (format auto-detected) into an SVG document
+ * Converts an EMF or WMF file (format auto-detected) into an SVG document
  * tree, the common source for every SVG output form: serialise it with
  * {@link svgTreeToString} / {@link svgTreeToDataUrl}, render it in React
  * with {@link svgTreeToReact}, or generate component source with
@@ -927,7 +999,7 @@ async function processDeferredImagesSvg(
  * @returns The root `<svg>` node, or `null` for an invalid/empty metafile.
  */
 export async function convertMetafileToSvgTree(
-	buffer: ArrayBuffer,
+	buffer: MetafileInput,
 	options?: SvgConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<SvgNode | null> {
@@ -941,12 +1013,16 @@ export async function convertMetafileToSvgTree(
  * mirror. Internal: {@link convertMetafileToSvgTree} is the public entry.
  */
 export async function replayToSvgContext(
-	buffer: ArrayBuffer,
+	input: MetafileInput,
 	options?: SvgConvertOptions,
 	recursionDepth: number = 0,
 ): Promise<SvgContext | null> {
 	await ensureNodeCanvasModule();
 	if (recursionDepth > MAX_METAFILE_RECURSION) {
+		return null;
+	}
+	const buffer = await readMetafileInput(input);
+	if (!buffer) {
 		return null;
 	}
 	const opts = options ?? {};
@@ -971,24 +1047,24 @@ export async function replayToSvgContext(
 }
 
 /**
- * Converts an EMF or WMF buffer into standalone SVG markup
+ * Converts an EMF or WMF file into standalone SVG markup
  * (`<svg xmlns="http://www.w3.org/2000/svg" ...>...</svg>`).
  *
  * @returns The SVG markup, or `null` for an invalid/empty metafile.
  */
-export async function convertMetafileToSvg(buffer: ArrayBuffer, options?: SvgConvertOptions): Promise<string | null> {
+export async function convertMetafileToSvg(buffer: MetafileInput, options?: SvgConvertOptions): Promise<string | null> {
 	const tree = await convertMetafileToSvgTree(buffer, options);
 	return tree ? svgTreeToString(tree) : null;
 }
 
 /**
- * Converts an EMF or WMF buffer into a base64 SVG data URL
+ * Converts an EMF or WMF file into a base64 SVG data URL
  * (`data:image/svg+xml;base64,...`), usable directly as an `<img src>`.
  *
  * @returns The data URL, or `null` for an invalid/empty metafile.
  */
 export async function convertMetafileToSvgDataUrl(
-	buffer: ArrayBuffer,
+	buffer: MetafileInput,
 	options?: SvgConvertOptions,
 ): Promise<string | null> {
 	const markup = await convertMetafileToSvg(buffer, options);
