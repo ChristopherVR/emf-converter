@@ -67,6 +67,7 @@
 		"@types/utif": "^3.0.6",
 		"gifuct-js": "2.1.2",
 		"jpeg-js": "0.4.4",
+		"pdfjs-dist": "^6.4.299",
 		"react": "^19.3.0",
 		"react-dom": "^19.3.0",
 		"tsup": "^8.5.1",
