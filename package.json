@@ -35,6 +35,9 @@
 	"module": "dist/index.mjs",
 	"browser": "dist/browser.mjs",
 	"types": "dist/index.d.ts",
+	"bin": {
+		"emf-converter": "dist/cli.mjs"
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
@@ -47,7 +50,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tsup && tsup --config tsup.browser.config.ts",
+		"build": "tsup && tsup --config tsup.browser.config.ts && tsup --config tsup.cli.config.ts",
 		"dev": "tsup --watch",
 		"typecheck": "tsc --noEmit --pretty",
 		"test": "vitest run",
