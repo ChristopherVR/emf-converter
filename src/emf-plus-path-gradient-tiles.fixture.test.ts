@@ -29,8 +29,8 @@ const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(new URL('./__fixt
 const wraps: EmfPlusGradientWrapMode[] = ['tile', 'tile-flip-x', 'tile-flip-y', 'tile-flip-xy'];
 const K = 0.5522847498307935;
 
-/** The flattened outline GDI+ gives `AddEllipse` for a rectangle. */
-function ellipseOutline(x0: number, y0: number, w: number, h: number): { x: number; y: number }[] {
+/** The path GDI+ records for `AddEllipse` of a rectangle: four cubics. */
+function ellipseSource(x0: number, y0: number, w: number, h: number): { points: { x: number; y: number }[]; types: Uint8Array } {
 	const cx = x0 + w / 2;
 	const cy = y0 + h / 2;
 	const rx = w / 2;
@@ -40,6 +40,15 @@ function ellipseOutline(x0: number, y0: number, w: number, h: number): { x: numb
 		[cx - K * rx, cy + ry], [cx - rx, cy + K * ry], [cx - rx, cy],
 		[cx - rx, cy - K * ry], [cx - K * rx, cy - ry], [cx, cy - ry],
 		[cx + K * rx, cy - ry], [cx + rx, cy - K * ry], [cx + rx, cy]];
+	const types = new Uint8Array(13).fill(3);
+	types[0] = 0;
+	types[12] = 3 | 0x80;
+	return { points: pts.map(([x, y]) => ({ x, y })), types };
+}
+
+/** The flattened outline GDI+ gives `AddEllipse` for a rectangle. */
+function ellipseOutline(x0: number, y0: number, w: number, h: number): { x: number; y: number }[] {
+	const pts = ellipseSource(x0, y0, w, h).points.map((p) => [p.x, p.y]);
 	const boundary = [{ x: pts[0][0], y: pts[0][1] }];
 	for (let k = 0; k < 4; k++) {
 		const curve = pts.slice(3 * k, 3 * k + 4).flatMap(([x, y]) => [gdiplusFix(x), gdiplusFix(y)]);
@@ -61,6 +70,7 @@ function measure(c: Capture, totals: Totals): void {
 		: ellipseOutline(x0, y0, w, h);
 	const sampler = pathGradientSampler({
 		boundary,
+		source: c.name.startsWith('rect') ? undefined : ellipseSource(x0, y0, w, h),
 		center: { x: c.center[0], y: c.center[1] },
 		centerArgb: 0xffffffff,
 		boundaryArgb: boundary.map(() => 0xff000000),
@@ -77,7 +87,10 @@ function measure(c: Capture, totals: Totals): void {
 		if (native[p * 2 + 1] === 0) continue;
 		totals.native++;
 		if (rgba[p * 4 + 3] === 0) { totals.unpainted++; continue; }
-		const d = Math.abs(rgba[p * 4] - native[p * 2]);
+		// The sampler returns straight alpha; the surface premultiplies it (rounded) and the capture reads it back straight (floor).
+		const alpha = rgba[p * 4 + 3];
+		const shown = alpha === 255 ? rgba[p * 4] : Math.min(255, Math.floor((Math.floor((rgba[p * 4] * alpha) / 255 + 0.5) * 255) / alpha));
+		const d = Math.abs(shown - native[p * 2]);
 		if (d === 0) totals.exact++;
 		if (d <= 1) totals.withinOne++;
 		totals.max = Math.max(totals.max, d);
@@ -98,8 +111,8 @@ const EXPECTED: Record<string, [number, number, number, number, number, number]>
 	'rect/tile-flip-x': [20, 384000, 383975, 384000, 0, 1],
 	'rect/tile-flip-y': [20, 384000, 383915, 384000, 0, 1],
 	'rect/tile-flip-xy': [20, 384000, 383955, 384000, 0, 1],
-	// The ellipse: 36,555 exact and 4,064 unpainted before; the pixels of its edge (the flattened outline scaled into the tile) are not all reproduced.
-	ellipse: [5, 78494, 58985, 74115, 140, 0],
+	// The ellipse: 58,985 exact before the tile outline was flattened under the tile matrix and the filtered edge texels were converted as native converts them; the 92 left are one level (alpha off by one at the edge) or an edge pixel.
+	ellipse: [5, 78494, 78402, 78487, 0, 15],
 };
 
 describe('tiles cut from fractional bounds', () => {
@@ -113,8 +126,8 @@ describe('tiles cut from fractional bounds', () => {
 			if (native) expect(t.native).toBe(native);
 			expect(t.exact).toBeGreaterThanOrEqual(exact);
 			expect(t.withinOne).toBeGreaterThanOrEqual(withinOne);
-			expect(t.unpainted).toBeLessThanOrEqual(unpainted || t.unpainted);
-			expect(t.max).toBeLessThanOrEqual(max || t.max);
+			expect(t.unpainted).toBeLessThanOrEqual(unpainted);
+			expect(t.max).toBeLessThanOrEqual(max);
 		});
 	}
 });

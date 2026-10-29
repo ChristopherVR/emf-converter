@@ -14,9 +14,9 @@ import type { EmfPlusGradientWrapMode, EmfPlusPathGradientShape, TransformMatrix
  * the cut. The probe fills a per-vertex fan, a ramp with a focus and the same two tiled, with a small rectangle, a rectangle half off
  * the surface, an ellipse and a ten-point star (aliased, over transparent).
  *
- * The sampler is given the fill's bounding box as its window, which is the window native uses for a rectangle: all 12 images of
- * rectangles and ellipses are exact, and the star's fan has 2 pixels the window of the box gets wrong that the window of each row's
- * own span gets right (the sampler does not know the rows' spans: open).
+ * The sampler is given the fill's coverage, so its window is the run of covered pixels of each row: all 16 images are exact. With
+ * the fill's bounding box as the window (no coverage) the star's fan has 2 pixels wrong, which the window of each row's own span
+ * gets right.
  */
 interface Capture {
 	name: string;
@@ -68,7 +68,10 @@ function measure(c: Capture): { painted: number; box: number; rows: number } {
 	const y1 = Math.min(c.h, Math.ceil(by1));
 	const w = x1 - x0;
 	const rgba = new Uint8ClampedArray(w * (y1 - y0) * 4);
-	pathGradientSampler(shapeOf(c), WRAPS[c.wrap], IDENTITY)!(x0, y0, w, y1 - y0, rgba);
+	// The fill's coverage (aliased: 0 or 255) tells the sampler the spans of the shape.
+	const mask = new Uint8ClampedArray(w * (y1 - y0));
+	for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) mask[(y - y0) * w + (x - x0)] = native[(y * c.w + x) * 4 + 3] ? 255 : 0;
+	pathGradientSampler(shapeOf(c), WRAPS[c.wrap], IDENTITY)!(x0, y0, w, y1 - y0, rgba, mask);
 	const fan = prepareVertexGradient(shapeOf(c), IDENTITY);
 	const ramp = fan ? null : prepareOneD(shapeOf(c), IDENTITY);
 	let painted = 0;
@@ -109,7 +112,7 @@ describe('span windows of the path-gradient converters (native)', () => {
 		it(`${c.name}: ${c.shape}`, () => {
 			const m = measure(c);
 			expect(m.painted).toBeGreaterThan(100);
-			expect(m.box).toBe(c.name === 'fan-3-poly' ? 2 : 0);
+			expect(m.box).toBe(0);
 			if (c.wrap === 4) expect(m.rows).toBe(0);
 		});
 	}

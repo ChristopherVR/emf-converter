@@ -31,7 +31,8 @@
  */
 
 import { canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
-import { mulMatrix, pathGradientColorAt, pathGradientQuantum } from './emf-plus-brush-gradient';
+import { flattenBezierGdiplus, gdiplusFix } from './emf-plus-bezier';
+import { mulMatrix,pathGradientColorAt, pathGradientQuantum } from './emf-plus-brush-gradient';
 import { hatchSampler } from './emf-plus-brush-hatch';
 import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
 import { prepareOneD } from './emf-plus-path-gradient-oned';
@@ -204,6 +205,34 @@ function tileIndex(i: number, n: number, mirror: boolean): number {
 }
 
 /**
+ * The boundary path flattened the way GDI+ flattens it for the tile bitmap: under the matrix that carries it into the bitmap (the
+ * brush-to-device matrix `full`, then `toTile`), so the vertices of a curve are quantised to 28.4 after the transform.
+ */
+function flattenUnderMatrix(
+	source: NonNullable<EmfPlusPathGradientShape['source']>,
+	toTile: (point: { x: number; y: number }) => { x: number; y: number },
+	full: TransformMatrix,
+): Array<{ x: number; y: number }> {
+	const points = source.points.map((p) => toTile({ x: full[0] * p.x + full[2] * p.y + full[4], y: full[1] * p.x + full[3] * p.y + full[5] }));
+	const out: Array<{ x: number; y: number }> = [];
+	for (let k = 0; k < points.length; k++) {
+		if ((source.types[k] & 7) === 3 && k > 0 && k + 2 < points.length) {
+			const curve = points.slice(k - 1, k + 3).flatMap((p) => [gdiplusFix(p.x), gdiplusFix(p.y)]);
+			out[out.length - 1] = { x: curve[0] / 16, y: curve[1] / 16 };
+			const flat: number[] = [];
+			flattenBezierGdiplus(curve, flat);
+			for (let q = 0; q < flat.length; q += 2) out.push({ x: flat[q] / 16, y: flat[q + 1] / 16 });
+			k += 2;
+		} else {
+			out.push(points[k]);
+		}
+	}
+	const n = out.length;
+	if (n > 1 && out[0].x === out[n - 1].x && out[0].y === out[n - 1].y) out.pop();
+	return out;
+}
+
+/**
  * A tiled path gradient whose bounding box is not on whole pixels. Native does not step such a tile from its
  * own fractional bounds: it renders the gradient into a bitmap of `round(right) - round(left)` by
  * `round(bottom) - round(top)` pixels, the shape scaled into it, and then draws that bitmap as a texture whose
@@ -224,7 +253,8 @@ function fractionalTileSampler(
 	let y0 = Infinity;
 	let x1 = -Infinity;
 	let y1 = -Infinity;
-	for (const point of shape.boundary) {
+	// A curved boundary has the bounds of the path as recorded, not of its 28.4 flattened vertices.
+	for (const point of shape.source ? shape.source.points : shape.boundary) {
 		const x = full[0] * point.x + full[4];
 		const y = full[3] * point.y + full[5];
 		x0 = Math.min(x0, x);
@@ -244,7 +274,8 @@ function fractionalTileSampler(
 	});
 	const inner = pathGradientSampler({
 		...shape,
-		boundary: shape.boundary.map(toTile),
+		boundary: shape.source ? flattenUnderMatrix(shape.source, toTile, full) : shape.boundary.map(toTile),
+		source: undefined,
 		center: toTile(shape.center),
 		transform: null,
 	}, 'clamp', IDENTITY, false, true);
@@ -260,9 +291,10 @@ function fractionalTileSampler(
 		texels = new Float64Array(width * height * 4);
 		for (let i = 0; i < width * height; i++) {
 			const a = rgba[i * 4 + 3];
-			texels[i * 4] = (rgba[i * 4] * a) / 255;
-			texels[i * 4 + 1] = (rgba[i * 4 + 1] * a) / 255;
-			texels[i * 4 + 2] = (rgba[i * 4 + 2] * a) / 255;
+			// The straight-alpha texels are premultiplied to bytes (rounded to nearest) before they are filtered.
+			texels[i * 4] = Math.floor((rgba[i * 4] * a) / 255 + 0.5);
+			texels[i * 4 + 1] = Math.floor((rgba[i * 4 + 1] * a) / 255 + 0.5);
+			texels[i * 4 + 2] = Math.floor((rgba[i * 4 + 2] * a) / 255 + 0.5);
 			texels[i * 4 + 3] = a;
 		}
 		return texels;
@@ -291,11 +323,11 @@ function fractionalTileSampler(
 					out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0;
 					continue;
 				}
-				// An opaque neighbourhood keeps its channels as they are; otherwise the premultiplied value is un-premultiplied.
-				const scale = coverage >= 255 ? 1 : 255 / coverage;
-				out[o] = Math.min(255, Math.floor(sample(0) * scale + 0.5));
-				out[o + 1] = Math.min(255, Math.floor(sample(1) * scale + 0.5));
-				out[o + 2] = Math.min(255, Math.floor(sample(2) * scale + 0.5));
+				// The filtered premultiplied channels round to bytes, and unless the neighbourhood is opaque they are divided by the rounded alpha.
+				for (let k = 0; k < 3; k++) {
+					const premultiplied = Math.floor(sample(k) + 0.5);
+					out[o + k] = Math.min(255, coverage >= 255 ? premultiplied : Math.floor((premultiplied * 255) / alpha + 0.5));
+				}
 				out[o + 3] = alpha;
 			}
 		}
@@ -349,15 +381,28 @@ export function pathGradientSampler(
 	// The window the scan converters are asked for spans in: the fill's own region, or for a tiled brush whose tile does not contain
 	// the region the device bounds of the tile bitmap native renders it into (`floor(v + 1/2)` of the bounds' corners).
 	const tile = wrap === 'clamp' ? null : tileDeviceRect(box, full);
-	return (x0, y0, w, h, out) => {
+	return (x0, y0, w, h, out, coverage) => {
 		const inside = tile !== null && x0 >= tile[0] && x0 + w <= tile[2] && y0 >= tile[1] && y0 + h <= tile[3];
-		const windowLeft = tile && !inside ? tile[0] : x0;
-		const windowRight = tile && !inside ? tile[2] : x0 + w;
+		let windowLeft = tile && !inside ? tile[0] : x0;
+		let windowRight = tile && !inside ? tile[2] : x0 + w;
 		// A tile outside its own bounds is rendered into a straight-alpha ARGB bitmap, whose conversion from the premultiplied spans truncates.
 		const bitmap = straightBitmap || (tile !== null && !inside);
+		// With the fill's coverage the converters are asked for the spans of the shape, one scanline run at a time, not for its bounding box.
+		const spans = coverage !== undefined && !(tile && !inside);
 		for (let j = 0; j < h; j++) {
 			const dy = y0 + j;
+			let runEnd = -1;
 			for (let i = 0; i < w; i++) {
+				if (spans && coverage[j * w + i]) {
+					if (i >= runEnd) {
+						let start = i;
+						while (start > 0 && coverage[j * w + start - 1]) start--;
+						runEnd = i;
+						while (runEnd < w && coverage[j * w + runEnd]) runEnd++;
+						windowLeft = x0 + start;
+						windowRight = x0 + runEnd;
+					}
+				}
 				const dx = x0 + i + bias;
 				let bx = inv[0] * dx + inv[2] * dy + inv[4];
 				let by = inv[1] * dx + inv[3] * dy + inv[5];
