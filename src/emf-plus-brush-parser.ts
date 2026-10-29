@@ -427,6 +427,7 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 	// Boundary: either an embedded path object or an explicit point list.
 	let boundaryPts: Array<{ x: number; y: number }> = [];
 	let boundaryArgb: number[] = [];
+	let source: EmfPlusPathGradientShape['source'];
 	const surroundAt = (k: number): number =>
 		surround.length > 0 ? surround[Math.min(k, surround.length - 1)] : centerArgb;
 	if (flags & BRUSH_DATA_PATH) {
@@ -439,6 +440,20 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 					const flat = flattenFirstFigure(path.points, path.types, surroundAt);
 					boundaryPts = flat.points;
 					boundaryArgb = flat.argb;
+					let figure = path.points.length;
+					for (let k = 0; k < path.points.length; k++) {
+						if (k > 0 && (path.types[k] & 7) === 0) {
+							figure = k;
+							break;
+						}
+						if (path.types[k] & 0x80) {
+							figure = k + 1;
+							break;
+						}
+					}
+					if (path.types.slice(0, figure).some((t) => (t & 7) === 3)) {
+						source = { points: path.points.slice(0, figure), types: path.types.slice(0, figure) };
+					}
 				}
 				o += pathSize;
 			}
@@ -541,6 +556,7 @@ function parsePathGradient(view: DataView, b: number, end: number): EmfPlusBrush
 				center,
 				centerArgb,
 				boundary: boundaryPts,
+				source,
 				boundaryArgb,
 				blend,
 				preset,
