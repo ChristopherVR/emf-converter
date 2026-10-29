@@ -40,11 +40,18 @@ function boundaryOf(c: Capture): { x: number; y: number }[] {
 	return boundary;
 }
 
+/** The recorded path of a curved boundary, which a tiled brush flattens again under its tile matrix. */
+function sourceOf(c: Capture): { points: { x: number; y: number }[]; types: Uint8Array } | undefined {
+	const types = new Uint8Array(Buffer.from(c.types, 'base64'));
+	if (!types.some((t) => (t & 7) === 3)) return undefined;
+	return { points: c.points.map(([x, y]) => ({ x, y })), types };
+}
+
 function compare(c: Capture): [number, number, number, number] {
 	const boundary = boundaryOf(c);
 	const wraps: EmfPlusGradientWrapMode[] = ['tile', 'tile-flip-x', 'tile-flip-y', 'tile-flip-xy', 'clamp'];
 	const sampler = pathGradientSampler({
-		boundary, center: { x: c.center[0], y: c.center[1] }, centerArgb: c.a,
+		boundary, source: sourceOf(c), center: { x: c.center[0], y: c.center[1] }, centerArgb: c.a,
 		boundaryArgb: c.boundaryArgb ?? boundary.map(() => c.b!),
 		focus: c.focus ? { x: c.focus[0], y: c.focus[1] } : null,
 		blend: null, preset: null, transform: null,

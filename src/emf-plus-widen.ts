@@ -44,6 +44,8 @@
 import { arcBeziers } from './emf-plus-flatten';
 import { toPlusFix, type DeviceFigure } from './emf-plus-raster';
 import { flattenBezierGdiplus } from './emf-plus-bezier';
+import { dashF32, doubleRoundCapF32, gradientF32, offsetPointF32, type PointF } from './emf-plus-widen-f32';
+import { down32 } from './float32-down';
 
 /** Pen geometry in device pixels, as {@link widenFigures} applies it. */
 export interface DevicePen {
@@ -369,6 +371,54 @@ function dashFigure(pts: Pt[], closed: boolean, pen: DevicePen, splits?: Readonl
 	return out.filter((d) => d.pts.length > 1);
 }
 
+/**
+ * The dashes of the doubled pen of an Inset stroke with Round dash caps, cut as `getDashData` does in single precision: the pattern is
+ * adjusted for the caps (even entries a pen width shorter, odd ones longer, a dash at least 0.001 of a width) and starts `dashOffset` into
+ * the figure less one pen width (a closed figure).
+ */
+function dashPiecesSingle(raw: ReadonlyArray<number>, pen: DevicePen): Array<{ pts: Pt[]; first: boolean; last: boolean }> {
+	const width = down32(pen.dashCapWidth ?? 2 * pen.half);
+	const least = down32(Math.fround(0.001) * width);
+	const dash = (pen.dash as number[]).map((v, i) => {
+		const d = down32(v);
+		if (i % 2 === 1) {
+			return down32(d + width);
+		}
+		const shortened = down32(d - width);
+		return least > shortened ? least : shortened;
+	});
+	const pts: PointF[] = [];
+	for (let i = 0; i + 1 < raw.length; i += 2) {
+		pts.push({ x: Math.fround(raw[i]), y: Math.fround(raw[i + 1]) });
+	}
+	if (pts.length > 1 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) {
+		pts.pop();
+	}
+	return dashF32(pts, true, dash, down32(down32(pen.dashOffset) - width)).map((d) => ({ pts: d, first: false, last: false }));
+}
+
+/**
+ * The double round cap at the end (`start` false) or start of a dash with unit direction `g`, flattened as GDI+ fills it (each Bezier of the
+ * cap from its own first point, in the order GDI+ lists them), then listed from the `o2` side to the `o1` side like the other caps.
+ */
+function singleCap(p: Pt, g: { gx: number; gy: number }, o1: number, o2: number, start: boolean): Pt[] {
+	const c = doubleRoundCapF32({ x: Math.fround(p.x), y: Math.fround(p.y) }, g, o2, o1, start);
+	const out: Pt[] = [c[0]];
+	for (const [i0, i1, i2, i3] of [
+		[0, 1, 2, 3],
+		[3, 4, 5, 6],
+		[7, 8, 9, 10],
+		[10, 11, 12, 13],
+	]) {
+		const flat: number[] = [];
+		flattenBezierGdiplus([i0, i1, i2, i3].flatMap((i) => [toPlusFix(c[i].x), toPlusFix(c[i].y)]), flat);
+		for (let k = 0; k + 1 < flat.length; k += 2) {
+			out.push({ x: flat[k] / 16, y: flat[k + 1] / 16 });
+		}
+	}
+	return out.reverse();
+}
+
 /** GDI+ `LineCapArrowAnchor`. */
 const ARROW_ANCHOR = 0x14;
 
@@ -529,7 +579,13 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 		// width (measured: offset 0.5 of an 8-pixel inset pen shifts the
 		// pattern 8 pixels; the dash lengths stay in the pen's own width).
 		const dashPen = pen.inset && closed ? { ...pen, dashOffset: pen.dashOffset * 2 } : pen;
-		const pieces = pen.dash ? dashFigure(pts, closed, dashPen, fig.splits) : [{ pts, first: true, last: true }];
+		// The doubled pen of an Inset stroke with Round dash caps is cut and capped in GDI+'s single precision (`emf-plus-widen-f32.ts`).
+		const single = !!pen.dash && !!pen.doubleRoundCap && pen.dashCap === 2 && closed;
+		const pieces = single
+			? dashPiecesSingle(fig.pts, pen)
+			: pen.dash
+				? dashFigure(pts, closed, dashPen, fig.splits)
+				: [{ pts, first: true, last: true }];
 		const pieceClosed = !pen.dash && closed;
 		for (const piece of pieces) {
 			const pp = cleanPoints(
@@ -573,10 +629,15 @@ export function widenFigures(figures: ReadonlyArray<DeviceFigure>, pen: DevicePe
 				const f0 = frame(pp[1], pp[0]); // outward at the start (reversed direction)
 				const endCap = endCapOverride ?? (piece.last && !(pen.dash && closed) ? pen.endCap : pen.dashCap);
 				const startCap = startCapOverride ?? (piece.first && !(pen.dash && closed) ? pen.startCap : pen.dashCap);
-				const capEnd = capPoints(pp[pp.length - 1], fEnd, o1, o2, endCap, h, pen.doubleRoundCap);
+				const gEnd = single ? gradientF32(pp[pp.length - 2], pp[pp.length - 1]) : null;
+				const gStart = single ? gradientF32(pp[0], pp[1]) : null;
+				const capEnd = gEnd ? singleCap(pp[pp.length - 1], gEnd, o1, o2, false) : capPoints(pp[pp.length - 1], fEnd, o1, o2, endCap, h, pen.doubleRoundCap);
 				// At the start the outward frame is reversed, so its left normal is the
 				// line's right: the band runs from -o1 (the line's o1 side) to -o2.
-				const capStart = capPoints(pp[0], f0, -o2, -o1, startCap, h, pen.doubleRoundCap);
+				const capStart = gStart ? singleCap(pp[0], gStart, o1, o2, true) : capPoints(pp[0], f0, -o2, -o1, startCap, h, pen.doubleRoundCap);
+				if (gStart) {
+					left[0] = offsetPointF32(pp[0], gStart, o2);
+				}
 				if (endCap === 0 && capEnd.length === 2 && left.length > 2 && right.length > 2) {
 					// A flat end whose corner would lie behind the offset point before it (the last segment shorter than the reach of a smooth join,
 					// on the inner side of the turn) ends at that point instead: measured against GraphicsPath.Widen of dashed curves, where the
