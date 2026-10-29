@@ -449,7 +449,6 @@ function realizePlusEngineFont(
 		ignoreGasp: hint === 4,
 		gdiPlus: true,
 		unscaledText: m[0] === 1 && m[3] === 1,
-		scaledText: m[0] !== 1 || m[3] !== 1,
 	};
 	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
 	if (!realized) {

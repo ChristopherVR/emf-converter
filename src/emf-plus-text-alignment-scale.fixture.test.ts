@@ -102,6 +102,9 @@ for (const group of ['private', 'arial', 'heldout-private', 'heldout-arial', 'he
 				const actual = render(c, fonts), count = different(actual, c);
 				const label = `${c.size}px scale ${c.sx}, ${c.align}/${c.line}, ${c.text}`;
 				expect(limit.ceilings[i], label).toBeLessThanOrEqual(limit.before[i]);
+				// Round 12 accepted trade: installed-font AntiAlias text under a world scale uses the GDI scan converter, which makes
+				// 27 captures exact (25 arial, 2 heldout-arial) and loses none, but takes Arial 16 px x1.25 "AV" (0/0) from 129 to 130
+				// differing pixels; that one ceiling was raised by the project owner's decision.
 				expect(count, label).toBeLessThanOrEqual(limit.ceilings[i]);
 				if (!limit.before[i]) expect(count, label).toBe(0);
 				exact += Number(count === 0); improved += Number(count < limit.before[i]);
