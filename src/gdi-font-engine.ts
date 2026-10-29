@@ -100,8 +100,6 @@ export interface LogFontSpec {
 	playbackStretch?: number;
 	/** GDI+ text drawn at an identity world scale (the hinting rules of `HintEnvironment.shpixX` apply). */
 	unscaledText?: boolean;
-	/** GDI+ text drawn under a world scale other than the identity. */
-	scaledText?: boolean;
 }
 
 /**
@@ -479,7 +477,6 @@ export class RealizedFont implements GdiRealizedFont {
 		private readonly playbackStretched = false,
 		plusUnscaled = false,
 		private readonly installed = true,
-		private readonly plusScaled = false,
 	) {
 		this.ttf = ttf;
 		this.gridFit = gridFit;
@@ -846,7 +843,7 @@ export class RealizedFont implements GdiRealizedFont {
 			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&
 				this.ttf.weightClass < 600 && this.ttf.family.toLowerCase() === 'courier new'
 				? rasterizeCourierGray(o, dropout)
-				: this.gdiPlus && !(this.installed && !this.plusScaled)
+				: this.gdiPlus && !this.installed
 					? rasterizeGray(o, dropout, false, false, true)
 					: msGrayBitmap(o, dropout);
 		}
@@ -1166,7 +1163,6 @@ export class GdiFontCollection {
 					!!spec.playbackStretch && playbackStretchReacts(best, spec.height, spec.playbackStretch),
 					!!spec.unscaledText,
 					this.installedFonts,
-					!!spec.scaledText,
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				return tt;
