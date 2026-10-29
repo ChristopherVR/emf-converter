@@ -565,7 +565,13 @@ function compositeGlyphs(
 				const dx = p.x + x - x0;
 				if (dx < 0 || dx >= w) continue;
 				const i = dy * w + dx;
-				if (v > cov[i]) cov[i] = v;
+				if (gray && cov[i]) {
+					// Overlapping grayscale glyphs of one run combine as the bitwise OR of (level - 1), measured on
+					// native GDI: all 15 x 15 level pairs of levels 2 to 16 over four faces (e.g. (4, 10) -> 12).
+					cov[i] = (((cov[i] - 1) | (v - 1)) & 15) + 1;
+				} else if (v > cov[i]) {
+					cov[i] = v;
+				}
 			}
 		}
 	}
