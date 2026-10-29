@@ -8,7 +8,7 @@ The converter is tested by comparing its output pixel for pixel with what Window
 - **GDI grayscale and monochrome text.** Rotated text with an escapement can differ by up to 5 pixels on a page.
 - **EMF+ (GDI+) text.** Between 5 and 44 pixels per test page, depending on the text rendering hint. `DrawString` layout matches Windows for single-line, unrotated text under a uniform scale. Wrapping, trimming, complex-script shaping, and rotated or non-uniformly scaled alignment can place text differently.
 - **EMF+ images and effects.** A rotated blur, and high-quality `DrawImage` sampling, can differ by one colour level in a few pixels.
-- **EMF+ path gradients.** Tiled gradients on ellipses with fractional bounds can differ by up to two colour levels, and some star-shaped fills by two pixels.
+- **EMF+ path gradients.** A few edge pixels of tiled gradients on ellipses with fractional bounds can differ by up to two colour levels.
 - **CMYK JPEG.** Very rarely one colour level off (43 of 30,000,000 random colours).
 
 ## Differences by design

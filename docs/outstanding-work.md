@@ -19,7 +19,7 @@ State on 23 October 2026: 885 of 910 report comparisons are pixel-exact (`bun sc
 - **High-quality `DrawImage`.** `gpx-image-highqualitybilinear` (1 pixel) and `gpx-image-rotated-highqualitybicubic` (5). The native `DpOutputBicubicImageSpan` and `DpOutputSpanStretch` have not been read yet.
 - **`DrawImage` points form.** 19 of 124 float32 flips of the JPEG geometry and 36 horizontal sweep flips are still 1 to 3 float32 units off. The rect form and draws with wrap attributes still use the fitted model.
 - **Rotated blur.** 6 pixels each on `plus-effect-blur-r3-rotate30` and `plus-only-effect-blur-r3-rotate30`. These are on the rotated draw path, not in the effect.
-- **Path gradients.** 24 of the 120 tiled colour controls (ellipses on fractional bounds, up to 2 levels) differ in the texture stage. A star fill is 2 pixels off because the sampler is given the bounding box, not each row's span.
+- **Path gradients.** 113 edge pixels of 24 of the 120 tiled colour controls (ellipses on fractional bounds, up to 2 levels) still differ: the alpha of the texture filter is one off at the edge of the shape. To settle: a probe of edge texels with chosen alphas through a texture brush.
 
 ## Images and colour
 
