@@ -144,7 +144,7 @@ describe('Inset pens against GDI+ (inset-cases.json.gz)', () => {
 
 	it('dashed Inset pens with round dash caps: the doubled pen with double round caps, clipped to the figure', () => {
 		const round = cases.filter((c) => c.kind === 'dash' && c.dashCap === 2);
-		expect(score(round)).toEqual({ aliased: [47, 18], aa: [47, 106] });
+		expect(score(round)).toEqual({ aliased: [59, 1], aa: [59, 8] });
 	});
 
 	it('paths of overlapping closed figures: the even-odd interior is the clip', () => {
