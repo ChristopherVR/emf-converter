@@ -199,3 +199,42 @@ export function spanPositions(inv: Mat6, x0: number, y: number, n: number, us: F
 		v = addDown(v, sv);
 	}
 }
+
+/**
+ * The 16.16 source position of every pixel of a run of `n` covered pixels from `x0` on device row `y` for the plain Bicubic
+ * span (`DpOutputBicubicImageSpan::OutputSpan` and `OutputSpanIncremental`): the two end pixels go through the float32
+ * inverse as {@link spanPositions} does, but the start is `floor(u0 * 65536 + 0.5)` and the step
+ * `floor((u1 - u0) * 65536 / n + 0.5)`, each a float32 value rounded down, and the position is then stepped in 32-bit
+ * integers, one add per pixel. The kernel phase is bits 10..15 of a position and the first tap is `position >> 16` less one.
+ */
+export function bicubicSpanPositions(inv: Mat6, x0: number, y: number, n: number, us: Int32Array, vs: Int32Array): void {
+	const [a, b, c, d, e, f] = inv;
+	const complexity = matrixComplexity(inv);
+	const at = (x: number): [number, number] => {
+		if (complexity === 0) return [x, y];
+		if ((complexity & ~1) === 0) return [addDown(x, e), addDown(y, f)];
+		if ((complexity & ~3) === 0) return [addDown(mul(x, a), e), addDown(mul(y, d), f)];
+		return [addDown(addDown(mul(a, x), mul(c, y)), e), addDown(addDown(mul(b, x), mul(d, y)), f)];
+	};
+	const [u0, v0] = at(x0);
+	const [u1, v1] = at(x0 + n);
+	const fix = (p: number): number => {
+		const r = Math.floor(addDown(mul(p, 65536), 0.5));
+		return r >= -2147483648 && r <= 2147483647 ? r : -2147483648;
+	};
+	const stepOf = (p0: number, p1: number): number => fix2(div(mul(sub(p1, p0), 65536), n));
+	const fix2 = (q: number): number => {
+		const r = Math.floor(addDown(q, 0.5));
+		return r >= -2147483648 && r <= 2147483647 ? r : -2147483648;
+	};
+	let u = fix(u0);
+	let v = fix(v0);
+	const su = stepOf(u0, u1);
+	const sv = stepOf(v0, v1);
+	for (let i = 0; i < n; i++) {
+		us[i] = u;
+		vs[i] = v;
+		u = (u + su) | 0;
+		v = (v + sv) | 0;
+	}
+}

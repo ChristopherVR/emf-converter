@@ -581,10 +581,10 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 	exact('gpx-image-pom-highquality-highqualitybicubic'),
 	exact('gpx-image-pom-highspeed-highqualitybicubic'),
 	// A rotated HighQualityBicubic draw: a pre-scale to the device length, then
-	// a plain integer Bicubic pass (`resampleRotatedTwoStage`). Every channel is
-	// within one level; 10 pixels (0.064%) are one level off at zero tolerance
-	// (before: 2,911 pixels, 18.5%, up to 10 levels off).
-	levelExact('gpx-image-rotated-highqualitybicubic'),
+	// a plain integer Bicubic pass (`resampleRotatedTwoStage`). Exact since round
+	// 12, when the second pass took GDI+'s float32 matrix chain and 16.16 span
+	// (5 pixels one level off before; round 3: 2,911 pixels, up to 10 levels).
+	exact('gpx-image-rotated-highqualitybicubic'),
 ];
 
 /**
@@ -1043,8 +1043,7 @@ const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
 	exact('plus-effect-blur-r2p5'), // 0.561% before (0.395% beyond 8 levels), exact now
 	exact('plus-effect-blur-r3'), // 0.682% before (0.446% beyond 8 levels), exact now
 	exact('plus-effect-blur-r3-expand'), // 8.323% before (4.619% beyond 8 levels), exact now
-	// Residual along one edge of the rotated draw, where the effect draw shows through the recorded bitmap's faded edge.
-	{ name: 'plus-effect-blur-r3-rotate30', ext: 'emf', tolerance: 8, maxMismatch: 0.00012 }, // 2.555% before, 0.218% (0.010% since the blur's halo column is sampled)
+	exact('plus-effect-blur-r3-rotate30'), // 2.555% before, 0.218% (0.010% since the blur's halo column is sampled), exact since round 12 (the float32 matrix chain of the points draw)
 	exact('plus-effect-blur-r3-scale2'), // 5.696% before (0.045% beyond 8 levels), exact now
 	exact('plus-effect-blur-r4-subrect'),
 	exact('plus-effect-blur-r4-subrect-expand'), // 4.884% before (2.448% beyond 8 levels), exact now

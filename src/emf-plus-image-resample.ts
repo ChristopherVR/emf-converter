@@ -72,8 +72,9 @@
  */
 
 import { invertTextureMatrix } from './emf-plus-brush-texture';
-import { drawImagePointsDeviceMatrix, invertDown, spanPositions, type Mat6 } from './gdiplus-image-points';
+import { addDown, bicubicSpanPositions, drawImagePointsDeviceMatrix, invertDown, spanPositions, transformPoints, type Mat6 } from './gdiplus-image-points';
 import { down32 } from './float32-down';
+import { mul as downMul, sqrt as sqrtDown } from './gdiplus-float';
 import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
 import type { DeferredImageResample, ImageResampleKernel, TransformMatrix } from './emf-types';
@@ -213,6 +214,12 @@ export interface ResampleOptions {
 	premultSource?: boolean;
 	/** Return premultiplied bytes (where the draw takes the phased high-quality path). */
 	premultOut?: boolean;
+	/** Flat 28.4 corners of the destination quad whose aliased fill gives the covered pixels (the plain pass of a rotated high-quality draw). */
+	rasterQuad?: number[];
+	/** The quad is filled under PixelOffsetMode Half (with `rasterQuad`). */
+	rasterHalf?: boolean;
+	/** Transparent border (in texels) the caller put around the bitmap the float32 chain's positions refer to. */
+	chainPad?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +554,7 @@ export function resampleImage(
 	surface: { w: number; h: number },
 	options: ResampleOptions | boolean = {},
 ): ResampledBlock | null {
-	const { plainRotated: plainRotatedPass = false, keepOrigin = false, premultSource = false, premultOut = false }: ResampleOptions =
+	const { plainRotated: plainRotatedPass = false, keepOrigin = false, premultSource = false, premultOut = false, rasterQuad, rasterHalf = false, chainPad = 0 }: ResampleOptions =
 		typeof options === 'boolean' ? { plainRotated: options } : options;
 	if (spec.rightHalo && spec.rightHalo.length === height * 4) {
 		// Append the halo column to the bitmap, then sample it as an ordinary one.
@@ -658,7 +665,9 @@ export function resampleImage(
 	if (!(w > 0 && h > 0) || w * h > MAX_RESAMPLE_PIXELS) {
 		return null;
 	}
-	const rasterCoverage = rasterCovered
+	const rasterCoverage = rasterQuad
+		? rasterizePlusFill([rasterQuad], false, false, rasterHalf, { x: bx0, y: by0, w, h })
+		: rasterCovered
 		? rasterizePlusFill([[
 			[spec.srcX, spec.srcY],
 			[spec.srcX + spec.srcW, spec.srcY],
@@ -709,12 +718,19 @@ export function resampleImage(
 	// A plain Bilinear DrawImagePoints draw runs the float32 matrix chain of `gdiplus-image-points.ts` (the points go
 	// through the inferred matrix twice, and the inverse and the span positions are exact round-down arithmetic).
 	let exactInv: Mat6 | null = null;
-	if (steppedInv && spec.pointsForm && spec.worldPoints && spec.worldMatrix && kernel === 'bilinear' && axisAligned && !spec.halfPixelOffset && !spec.wrap) {
-		const device = drawImagePointsDeviceMatrix(spec.worldPoints, [spec.srcX, spec.srcY, spec.srcW, spec.srcH], spec.worldMatrix);
+	if ((steppedInv || plainRotatedPass) && spec.pointsForm && spec.worldPoints && spec.worldMatrix && (kernel === 'bilinear' || kernel === 'bicubic') && !spec.halfPixelOffset && !spec.chainHalf && !spec.wrap) {
+		const device = drawImagePointsDeviceMatrix(spec.worldPoints, spec.chainSrc ?? [spec.srcX, spec.srcY, spec.srcW, spec.srcH], spec.worldMatrix);
+		exactInv = device && invertDown(device);
+	} else if (plainRotatedPass && spec.chainHalf && spec.pointsForm && spec.worldPoints && spec.worldMatrix && spec.chainSrc && (kernel === 'bilinear' || kernel === 'bicubic')) {
+		// PixelOffsetMode Half: the pixel centre is half a pixel into the device matrix.
+		const w = spec.worldMatrix;
+		const device = drawImagePointsDeviceMatrix(spec.worldPoints, spec.chainSrc, [w[0], w[1], w[2], w[3], down32(w[4] - 0.5), down32(w[5] - 0.5)]);
 		exactInv = device && invertDown(device);
 	}
 	const runU = new Float64Array(w);
 	const runV = new Float64Array(w);
+	const fixU = new Int32Array(w);
+	const fixV = new Int32Array(w);
 	let runBase = 0;
 	const covers = (px: number, py: number): boolean => {
 		const cx = px + COVERAGE_NUDGE_X;
@@ -762,10 +778,19 @@ export function resampleImage(
 					while (end < w && (rasterCoverage ? rasterCoverage[j * w + end] !== 0 : covers(bx0 + end + o, py))) {
 						end++;
 					}
-					spanPositions(exactInv, bx0 + i, by0 + j, end - i, runU, runV);
+					if (integerBicubic) {
+						bicubicSpanPositions(exactInv, bx0 + i, by0 + j, end - i, fixU, fixV);
+					} else {
+						spanPositions(exactInv, bx0 + i, by0 + j, end - i, runU, runV);
+					}
 				}
-				u = runU[i - runBase];
-				v = runV[i - runBase];
+				if (integerBicubic) {
+					u = (fixU[i - runBase] + chainPad * FIX16) / FIX16;
+					v = (fixV[i - runBase] + chainPad * FIX16) / FIX16;
+				} else {
+					u = runU[i - runBase] + chainPad;
+					v = runV[i - runBase] + chainPad;
+				}
 			} else if (steppedInv) {
 				if (start < 0) {
 					start = i;
@@ -792,7 +817,11 @@ export function resampleImage(
 				}
 			}
 			if (integerBicubic) {
-				if (steppedInv) {
+				if (exactInv) {
+					// The position is the 16.16 one of the span; the kernel phase is its bits 10 to 15.
+					u = Math.floor(u * 64) / 64;
+					v = Math.floor(v * 64) / 64;
+				} else if (steppedInv) {
 					// A rotated or sheared Bicubic draw steps its position in float32 (above) and truncates the
 					// kernel phase to 1/64.
 					u = Math.floor(u * 64) / 64;
@@ -1324,6 +1353,16 @@ function resampleHqAxisAligned(
 	return { x: cx0, y: cy0, w, h, rgba: out, premultiplied: premultOut };
 }
 
+/** The whole device lengths (rounded up) of the first two edges of a points draw, as `GpGraphics::DrvDrawImage` sizes the intermediate. */
+function deviceEdgeLengths(points: readonly number[], world: readonly number[]): [number, number] {
+	const p = transformPoints(world, points);
+	const length = (dx: number, dy: number): number => Math.ceil(sqrtDown(addDown(downMul(dy, dy), downMul(dx, dx))));
+	return [
+		length(addDown(p[2], -p[0]), addDown(p[3], -p[1])),
+		length(addDown(p[4], -p[0]), addDown(p[5], -p[1])),
+	];
+}
+
 function resampleRotatedTwoStage(
 	rgba: Uint8ClampedArray,
 	width: number,
@@ -1332,8 +1371,15 @@ function resampleRotatedTwoStage(
 	surface: { w: number; h: number },
 	m: TransformMatrix,
 	kernel: ImageResampleKernel,
-	near: boolean,
+	nearHint: boolean,
 ): ResampledBlock | null {
+	// A points draw measures its edges the way `GpGraphics::DrvDrawImage` does: the points go to device space in
+	// float32 and each edge's length is a float32 square root rounded down, then rounded up to a whole number.
+	const chain = !!(spec.pointsForm && spec.worldPoints && spec.worldMatrix && !spec.wrap);
+	const edges = chain ? deviceEdgeLengths(spec.worldPoints!, spec.worldMatrix!) : null;
+	const near = edges
+		? Math.abs(edges[0] - spec.srcW) <= 1.0000001 || Math.abs(edges[1] - spec.srcH) <= 1.0000001
+		: nearHint;
 	// The pass the second kernel draws: the intermediate (or, when an edge is
 	// within a pixel of the source length, the source itself) in a transparent
 	// border wide enough for the plain kernels' taps, so the pixels the
@@ -1352,6 +1398,8 @@ function resampleRotatedTwoStage(
 	let ex: number;
 	let ey: number;
 	const half = spec.halfPixelOffset;
+	let interW = 0;
+	let interH = 0;
 	if (near) {
 		// Plain kernel straight from the source: texel (i, j) is source coordinate (i, j).
 		pw = width + 2 * pad;
@@ -1372,8 +1420,10 @@ function resampleRotatedTwoStage(
 		ex = m[4] - (half ? 0.5 : 0);
 		ey = m[5] - (half ? 0.5 : 0);
 	} else {
-		const W = ceilExtent(Math.hypot(m[0], m[1]) * spec.srcW);
-		const H = ceilExtent(Math.hypot(m[2], m[3]) * spec.srcH);
+		const W = edges ? edges[0] : ceilExtent(Math.hypot(m[0], m[1]) * spec.srcW);
+		const H = edges ? edges[1] : ceilExtent(Math.hypot(m[2], m[3]) * spec.srcH);
+		interW = W;
+		interH = H;
 		const kx = W / spec.srcW;
 		const ky = H / spec.srcH;
 		// Stage 1: the source rectangle scaled to W x H with the axis-aligned
@@ -1423,14 +1473,6 @@ function resampleRotatedTwoStage(
 		ex = half ? ox - 0.5 + 0.5 * (a + c) : ox;
 		ey = half ? oy - 0.5 + 0.5 * (b + d) : oy;
 	}
-	const block = resampleImage(img, pw, ph, {
-		srcX: 0, srcY: 0, srcW: pw, srcH: ph,
-		toDevice: [a, b, c, d, ex - a * pad - c * pad, ey - b * pad - d * pad],
-		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false, wrap: spec.wrap, clampArgb: spec.clampArgb,
-	}, surface, { plainRotated: true, keepOrigin: true, premultSource: true });
-	if (!block) {
-		return block;
-	}
 	// Coverage is the destination parallelogram scan-converted from its 28.4
 	// corners by the aliased fill rule, as for NearestNeighbor.
 	const corners = [
@@ -1439,6 +1481,21 @@ function resampleRotatedTwoStage(
 		[spec.srcX + spec.srcW, spec.srcY + spec.srcH],
 		[spec.srcX, spec.srcY + spec.srcH],
 	].flatMap(([u, v]) => [toPlusFix(m[0] * u + m[2] * v + m[4]), toPlusFix(m[1] * u + m[3] * v + m[5])]);
+	// A points draw runs the float32 matrix chain of the second draw: the record's points against the intermediate
+	// (or the source rectangle) as the source rectangle.
+	const block = resampleImage(img, pw, ph, {
+		srcX: 0, srcY: 0, srcW: pw, srcH: ph,
+		toDevice: [a, b, c, d, ex - a * pad - c * pad, ey - b * pad - d * pad],
+		kernel: kernel === 'hq-bicubic' ? 'bicubic' : 'bilinear', halfPixelOffset: false, wrap: spec.wrap, clampArgb: spec.clampArgb,
+		...(chain ? {
+			pointsForm: true, worldPoints: spec.worldPoints, worldMatrix: spec.worldMatrix,
+			chainSrc: near ? [spec.srcX, spec.srcY, spec.srcW, spec.srcH] : [half ? -0.5 : 0, half ? -0.5 : 0, interW, interH],
+			...(half ? { chainHalf: true } : {}),
+		} : {}),
+	}, surface, { plainRotated: true, keepOrigin: true, premultSource: true, ...(chain ? { rasterQuad: corners, rasterHalf: half, chainPad: pad } : {}) });
+	if (!block) {
+		return block;
+	}
 	const coverage = rasterizePlusFill([corners], false, false, half, { x: block.x, y: block.y, w: block.w, h: block.h });
 	for (let i = 0; i < block.w * block.h; i++) {
 		if (!coverage[i]) {

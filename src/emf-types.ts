@@ -881,6 +881,10 @@ export interface DeferredImageResample {
 	worldPoints?: number[];
 	/** The world-to-device matrix the points draw runs under (with `worldPoints`). */
 	worldMatrix?: TransformMatrix;
+	/** The source rectangle the float32 matrix chain infers from, when it is not the sampled bitmap's (the second draw of a rotated high-quality draw). */
+	chainSrc?: [number, number, number, number];
+	/** With `chainSrc`: PixelOffsetMode Half, which moves the device matrix half a pixel. */
+	chainHalf?: boolean;
 	/**
 	 * The axis-aligned scale of a draw as GDI+ rounds it to float32 (nearest) before it inverts the matrix, which
 	 * is what the 16.16 step of a high-quality draw comes from. `toDevice` holds the same scale rounded toward
