@@ -95,6 +95,131 @@ export function dropoutMode(scanControl: boolean, scanType: number): number {
 	}
 }
 
+/**
+ * `CompDiv` of fontdrvhost.exe: n / d rounded half away from zero, with half of d truncated toward zero.
+ */
+function compDiv(n: number, d: number): number {
+	if (d === 0) return n < 0 ? -0x80000000 : 0x7fffffff;
+	const h = Math.trunc(d / 2);
+	return Math.trunc(((n < 0) === (d < 0) ? n + h : n - h) / d);
+}
+
+/**
+ * GDI's scan converter cuts every quadratic arc into pieces before it walks them (read from fontdrvhost.exe!
+ * EvaluateSpline): first at its extremum in y and then in x, the point found with `CompDiv` on the 26.6 grid and the
+ * control points on either side level with it, then, while a piece spans more than 3200 units (50 pixels) in x or y, at
+ * its middle with floored halves. Each piece is monotonic in both axes. `out` receives [control x, control y, end x, end y]
+ * of the pieces in order (the first one starts at x0, y0).
+ */
+function nativeConicPieces(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, out: number[][]): void {
+	for (;;) {
+		const dx01 = x1 - x0;
+		const dx12 = x2 - x1;
+		const dy01 = y1 - y0;
+		const dy12 = y2 - y1;
+		if ((dy01 > 0 && dy12 < 0) || (dy01 < 0 && dy12 > 0)) {
+			const den = dy01 - dy12;
+			const xa = x0 + compDiv(dx01 * dy01, den);
+			const xb = x1 + compDiv(dx12 * dy01, den);
+			const xs = xa + compDiv((xb - xa) * dy01, den);
+			const ys = y0 + compDiv(dy01 * dy01, den);
+			nativeConicPieces(x0, y0, xa, ys, xs, ys, out);
+			x0 = xs;
+			y0 = ys;
+			x1 = xb;
+			y1 = ys;
+			continue;
+		}
+		if ((dx01 > 0 && dx12 < 0) || (dx01 < 0 && dx12 > 0)) {
+			const den = dx01 - dx12;
+			const ya = y0 + compDiv(dy01 * dx01, den);
+			const yb = y1 + compDiv(dy12 * dx01, den);
+			const ys = ya + compDiv((yb - ya) * dx01, den);
+			const xs = x0 + compDiv(dx01 * dx01, den);
+			nativeConicPieces(x0, y0, xs, ya, xs, ys, out);
+			x0 = xs;
+			y0 = ys;
+			x1 = xs;
+			y1 = yb;
+			continue;
+		}
+		if (Math.abs(x2 - x0) > 0xc80 || Math.abs(y2 - y0) > 0xc80) {
+			const ax = (x0 + x1) >> 1;
+			const ay = (y0 + y1) >> 1;
+			const bx = (x1 + x2) >> 1;
+			const by = (y1 + y2) >> 1;
+			const mx = (ax + bx) >> 1;
+			const my = (ay + by) >> 1;
+			nativeConicPieces(x0, y0, ax, ay, mx, my, out);
+			x0 = mx;
+			y0 = my;
+			x1 = bx;
+			y1 = by;
+			continue;
+		}
+		out.push([x1, y1, x2, y2]);
+		return;
+	}
+}
+
+/** `tbl[a + b]` of fontdrvhost.exe (rva 0xa61c0): how many bits `fsc_CalcSpline` drops from an arc's differences. */
+const ARC_SHIFT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3];
+
+function bitLength(v: number): number {
+	v = Math.abs(v);
+	let n = 0;
+	while (v > 0) {
+		n++;
+		v = Math.floor(v / 2);
+	}
+	return n;
+}
+
+/**
+ * What `fsc_CalcSpline` (fontdrvhost.exe) actually walks. An arc monotonic in both axes, from (x0, y0) through (x1, y1) to
+ * (x2, y2), is walked exactly, but on rounded differences: with a = bits(2 * (dy * ax - dx * ay)) and b = bits(max(dx, dy)),
+ * where dx, dy run from the start to the end and ax, ay to the control point (all positive in the direction of travel),
+ * the walk first drops s = ARC_SHIFT[a + b] bits (0 below about 900 units of span) from dx, dy, ax, ay and from the distance
+ * to the first pixel centre beyond the start on each axis, rounding half up. Each crossing of a pixel-centre line is then
+ * where the rounded arc meets it (measured against the routine run under an emulator on 2,000 random arcs in all four
+ * directions: every row and column crossing, 0 differences).
+ */
+interface NativeArc {
+	/** Signs of travel and start of x and y (true axes). */
+	sx: number; sy: number; x0: number; y0: number;
+	/** Rounded differences and first-centre distances per axis: end, control, first centre. */
+	dx: number; ax: number; fx: number; dy: number; ay: number; fy: number;
+	/** The unrounded first-centre distances. */
+	fx0: number; fy0: number;
+}
+
+function nativeArc(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number): NativeArc {
+	const sx = x2 > x0 ? 1 : -1;
+	const sy = y2 > y0 ? 1 : -1;
+	let dx = sx * (x2 - x0);
+	let dy = sy * (y2 - y0);
+	let ax = sx * (x1 - x0);
+	let ay = sy * (y1 - y0);
+	const first = (p0: number, sg: number): number => (sg > 0 ? Math.floor((p0 + 32) / 64) * 64 + 32 - p0 : p0 - (Math.floor((p0 - 33) / 64) * 64 + 32));
+	const fx0 = first(x0, sx);
+	const fy0 = first(y0, sy);
+	let fx = fx0;
+	let fy = fy0;
+	const shift = ARC_SHIFT[bitLength(2 * (dy * ax - dx * ay)) + bitLength(Math.max(dx, dy))] ?? 0;
+	if (shift > 0) {
+		const h = 2 ** (shift - 1);
+		const q = 2 ** shift;
+		const r = (v: number): number => Math.floor((v + h) / q) * q;
+		dx = r(dx);
+		dy = r(dy);
+		ax = r(ax);
+		ay = r(ay);
+		fx = r(fx);
+		fy = r(fy);
+	}
+	return { sx, sy, x0, y0, dx, ax, fx, dy, ay, fy, fx0, fy0 };
+}
+
 class Raster {
 	private readonly precBits: number;
 	private readonly prec: number;
@@ -438,7 +563,9 @@ class Raster {
 					}
 					this.newProfileState(stateBez, o);
 				}
-				if (stateBez === ASCENDING) {
+				if (this.arcRecord) {
+					this.nativeBezier(stateBez !== ASCENDING, this.minY, this.maxY);
+				} else if (stateBez === ASCENDING) {
 					this.bezierUp(this.minY, this.maxY);
 				} else {
 					this.bezierDown(this.minY, this.maxY);
@@ -455,6 +582,9 @@ class Raster {
 	 * curved edges with that rounding; FreeType's black rasterizer keeps the half and truncates at its own precision).
 	 */
 	roundImpliedPoints = false;
+	/** Walks arcs the way GDI's scan converter does (see {@link nativeConicPieces}, {@link nativeArc}); needs `roundImpliedPoints`. */
+	nativeArcs = false;
+	private arcRecord: NativeArc | null = null;
 	/**
 	 * Decides a pixel centre that lies exactly on an edge the way GDI's rotated glyphs do (native GetGlyphOutline bitmaps
 	 * of diagonal edges through pixel centres): the pixel is in when the contour runs downward there and out when it runs
@@ -462,6 +592,115 @@ class Raster {
 	 */
 	directedTies = false;
 	private flipped = false;
+
+	/**
+	 * Adds the arc from (tsx, tsy) through (tcx, tcy) to (tex, tey), all in the outline's own axes and raw units, as GDI
+	 * walks it: cut into monotonic pieces (see {@link nativeConicPieces}), each walked on its rounded differences
+	 * (see {@link nativeArc}); a piece whose three points are on a line is a line.
+	 */
+	private nativeConic(flipped: boolean, tsx: number, tsy: number, tcx: number, tcy: number, tex: number, tey: number): void {
+		const pieces: number[][] = [];
+		nativeConicPieces(tsx, tsy, tcx, tcy, tex, tey, pieces);
+		let px = tsx;
+		let py = tsy;
+		for (const [cx, cy, ex, ey] of pieces) {
+			const sx = this.scaled(flipped ? ey : ex);
+			const sy = this.scaled(flipped ? ex : ey);
+			if ((cy - py) * (ex - cx) === (ey - cy) * (cx - px)) {
+				this.lineTo(sx, sy);
+			} else {
+				this.arcRecord = nativeArc(px, py, cx, cy, ex, ey);
+				this.arcFlipped = flipped;
+				this.conicTo(this.scaled(flipped ? cy : cx), this.scaled(flipped ? cx : cy), sx, sy);
+				this.arcRecord = null;
+			}
+			px = ex;
+			py = ey;
+		}
+	}
+	private arcFlipped = false;
+
+	/**
+	 * Where the native walk of the current arc meets the scan line at `lineY` (a multiple of the precision in the
+	 * sweep's own axes), in the sweep's x.
+	 */
+	private nativeCrossing(lineY: number): number {
+		const a = this.arcRecord!;
+		const flipped = this.arcFlipped;
+		const raw = (lineY * 64) / this.prec + 32;
+		const start = flipped ? a.x0 : a.y0;
+		const sA = flipped ? a.sx : a.sy;
+		const dA = flipped ? a.dx : a.dy;
+		const aA = flipped ? a.ax : a.ay;
+		const fA0 = flipped ? a.fx0 : a.fy0;
+		const fA = flipped ? a.fx : a.fy;
+		const dB = flipped ? a.dy : a.dx;
+		const aB = flipped ? a.ay : a.ax;
+		const sB = flipped ? a.sy : a.sx;
+		const startB = flipped ? a.y0 : a.x0;
+		const fB = flipped ? a.fy : a.fx;
+		const fB0 = flipped ? a.fy0 : a.fx0;
+		const line = sA * (raw - start);
+		const index = Math.round((line - fA0) / 64);
+		const dist = fA + 64 * index;
+		let t = 1;
+		if (dist < dA) {
+			const b = 2 * aA;
+			const c = dA - 2 * aA;
+			t = (2 * dist) / (b + Math.sqrt(b * b + 4 * c * dist));
+		}
+		const along = 2 * t * aB + t * t * (dB - 2 * aB);
+		// Native counts the pixel centres from the rounded first-centre distance; ours are the true ones, so the crossing is
+		// moved by the difference to give the same pixel.
+		return Math.round(((startB + sB * (along + fB0 - fB)) * this.prec) / 64 - this.precHalf);
+	}
+
+	/** {@link bezierUp} for an arc walked natively: one pass over its scan lines, the crossings from {@link nativeCrossing}. */
+	private nativeBezier(down: boolean, miny: number, maxy: number): void {
+		const X = this.arcX;
+		const Y = this.arcY;
+		const sg = down ? -1 : 1;
+		const mn = down ? -maxy : miny;
+		const mx = down ? -miny : maxy;
+		const y1 = sg * Y[2];
+		const y2 = sg * Y[0];
+		const xs = this.cProfile.xs;
+		const fresh = this.fresh;
+		this.arc -= 2;
+		if (y2 < mn || y1 > mx) return;
+		let e2 = this.floorP(y2);
+		if (e2 > mx) e2 = mx;
+		let e0 = mn;
+		let e: number;
+		if (y1 < mn) {
+			e = mn;
+		} else {
+			e = this.ceilP(y1);
+			e0 = e;
+			if (this.frac(y1) === 0) {
+				if (this.joint) {
+					xs.pop();
+					this.joint = false;
+				}
+				xs.push(X[2]);
+				e += this.prec;
+			}
+		}
+		if (this.fresh) {
+			this.cProfile.start = this.trunc(e0);
+			this.fresh = false;
+		}
+		for (; e <= e2; e += this.prec) {
+			this.joint = false;
+			if (y2 > e) {
+				xs.push(this.nativeCrossing(sg * e));
+			} else {
+				this.joint = true;
+				xs.push(X[0]);
+			}
+		}
+		if (down && fresh && !this.fresh) this.cProfile.start = -this.cProfile.start;
+	}
 
 	private decomposeContour(o: Outline, first: number, last: number, flipped: boolean): void {
 		const px = (i: number): number => this.scaled(flipped ? o.ys[i] : o.xs[i]);
@@ -475,12 +714,31 @@ class Raster {
 		const lastY = py(last);
 		let limit = last;
 		let point = first;
+		// The current point in the outline's own axes and raw units, for the native arcs.
+		const native = this.nativeArcs && this.roundImpliedPoints;
+		let curTx = o.xs[first];
+		let curTy = o.ys[first];
+		let startTx = curTx;
+		let startTy = curTy;
+		const arc = (tcx: number, tcy: number, tex: number, tey: number, cx: number, cy: number, x: number, y: number): void => {
+			if (native) {
+				this.nativeConic(flipped, curTx, curTy, tcx, tcy, tex, tey);
+				curTx = tex;
+				curTy = tey;
+			} else {
+				this.conicTo(cx, cy, x, y);
+			}
+		};
 		if (!o.onCurve[first]) {
 			if (o.onCurve[last]) {
 				startX = lastX;
 				startY = lastY;
+				startTx = curTx = o.xs[last];
+				startTy = curTy = o.ys[last];
 				limit--;
 			} else {
+				startTx = curTx = Math.floor((o.xs[first] + o.xs[last] + 1) / 2);
+				startTy = curTy = Math.floor((o.ys[first] + o.ys[last] + 1) / 2);
 				if (this.roundImpliedPoints) {
 					startX = mid(rx(first), rx(last));
 					startY = mid(ry(first), ry(last));
@@ -497,12 +755,16 @@ class Raster {
 			point++;
 			if (o.onCurve[point]) {
 				this.lineTo(px(point), py(point));
+				curTx = o.xs[point];
+				curTy = o.ys[point];
 				continue;
 			}
 			let cx = px(point);
 			let cy = py(point);
 			let cxRaw = rx(point);
 			let cyRaw = ry(point);
+			let ctx = o.xs[point];
+			let cty = o.ys[point];
 			let closed = false;
 			while (true) {
 				if (point < limit) {
@@ -510,11 +772,11 @@ class Raster {
 					const x = px(point);
 					const y = py(point);
 					if (o.onCurve[point]) {
-						this.conicTo(cx, cy, x, y);
+						arc(ctx, cty, o.xs[point], o.ys[point], cx, cy, x, y);
 						break;
 					}
 					if (this.roundImpliedPoints) {
-						this.conicTo(cx, cy, mid(cxRaw, rx(point)), mid(cyRaw, ry(point)));
+						arc(ctx, cty, Math.floor((ctx + o.xs[point] + 1) / 2), Math.floor((cty + o.ys[point] + 1) / 2), cx, cy, mid(cxRaw, rx(point)), mid(cyRaw, ry(point)));
 					} else {
 						this.conicTo(cx, cy, Math.trunc((cx + x) / 2), Math.trunc((cy + y) / 2));
 					}
@@ -522,9 +784,11 @@ class Raster {
 					cy = y;
 					cxRaw = rx(point);
 					cyRaw = ry(point);
+					ctx = o.xs[point];
+					cty = o.ys[point];
 					continue;
 				}
-				this.conicTo(cx, cy, startX, startY);
+				arc(ctx, cty, startTx, startTy, cx, cy, startX, startY);
 				closed = true;
 				break;
 			}
@@ -1220,6 +1484,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 	// ---- vertical sweep: scanlines are rows ----
 	const r = new Raster(dropout, fineArcs);
 	r.roundImpliedPoints = roundImpliedPoints;
+	r.nativeArcs = nativeDropouts;
 	r.directedTies = directedTies;
 	const P = r.precision;
 	const monoContour = !squareStubs && stubOvershoot && (dropout === 1 || dropout === 4 || dropout === 5) ?
@@ -1311,6 +1576,8 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 	if (dropout !== 2) {
 		const h = new Raster(dropout, fineArcs);
 		h.directedTies = directedTies;
+		h.roundImpliedPoints = roundImpliedPoints && nativeDropouts;
+		h.nativeArcs = nativeDropouts;
 		if (h.convert(local, true, 0, (width - 1) * P)) {
 			h.sweep(
 				(col, x1, x2) => {

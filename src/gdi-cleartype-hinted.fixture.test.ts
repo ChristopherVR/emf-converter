@@ -55,17 +55,17 @@ describe('GDI ClearType scan conversion of hinted outlines (gdi-cleartype-hinted
 		return bad;
 	}
 
-	// [glyphs, exact glyphs, differing pixels] per font. What is left is single-sample differences on curves of the larger
-	// sizes: the scan converter rounds the control points of an arc spanning more than about 900 units (14 samples)
-	// before it walks it, and ours does not.
+	// [glyphs, exact glyphs, differing pixels] per font. What is left: Tahoma 12 e, 13 @, 15 $ and 15 s (smart dropout
+	// pixel of a curve) and Segoe UI 12 A (straight edges). Before the native arc walk (cut into monotonic pieces, each
+	// walked on differences rounded to 2^s once it spans about 900 units) 1,221 were exact.
 	const EXPECTED: Record<string, [number, number, number]> = {
-		'S0 smooth': [150, 141, 12],
-		'S1 plain': [600, 593, 15],
-		'S1 smooth': [90, 77, 20],
+		'S0 smooth': [150, 150, 0],
+		'S1 plain': [600, 599, 4],
+		'S1 smooth': [90, 90, 0],
 		'S5 plain': [270, 266, 9],
-		'S5 smooth': [150, 144, 8],
+		'S5 smooth': [150, 150, 0],
 	};
-	it('reproduces 1,221 of the 1,260 hinted glyphs exactly and the rest to a few samples', () => {
+	it('reproduces 1,255 of the 1,260 hinted glyphs exactly and the rest to a few samples', () => {
 		const stats: Record<string, [number, number, number]> = {};
 		for (const c of file.captures) {
 			const bad = mismatches(c);
