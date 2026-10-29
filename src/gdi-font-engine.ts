@@ -818,9 +818,12 @@ export class RealizedFont implements GdiRealizedFont {
 				: msMonoBitmap(o, msScanFlags(controlOn, src.scanType));
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
-			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. A font that
-			// never runs SCANCTRL gets none (the private diagonal, opcode and vector fonts pin that).
-			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : 2;
+			// excluded for types 1 and 5): thin curve ends that fall between sample rows turn a sample on. GDI's own
+			// ClearType gives a font that never runs SCANCTRL the simple mode 0 (256 random polygons: 340 differing
+			// pixels without, 16 with); GDI+ (DirectWrite) gives it none (the private diagonal, opcode and vector fonts
+			// pin that). The dropouts are decided from the recorded crossing pairs the way fontdrvhost.exe does it
+			// (`nativeDropoutPass`).
+			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : !this.gdiPlus ? 0 : 2;
 			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout, !this.gdiPlus && clearTypeSmoothsVertically(this.ttf, this.ppem));
 		} else {
 			// GDI's own scan converter (a font that never runs SCANCTRL gets simple dropouts up to 32 ppem, as in monochrome);
@@ -1360,7 +1363,7 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 	const KY = vertical ? CLEARTYPE_ROWS : 1;
 	const WT = vertical ? CLEARTYPE_ROW_WEIGHTS : [1];
 	const WSUM = WT.reduce((a, c) => a + c, 0);
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, !truncate, !truncate, true, !truncate);
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, !truncate, !truncate, true, !truncate, !truncate);
 	if (!r) {
 		return null;
 	}

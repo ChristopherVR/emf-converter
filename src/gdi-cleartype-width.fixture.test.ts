@@ -71,14 +71,14 @@ function exactCount(info: SetInfo, quality: number): { exact: number; total: num
  */
 const EXPECTED: Record<string, [number, number]> = {
 	phantom: [278, 308],
-	types: [513, 513],
+	types: [552, 552],
 	sweep: [1632, 1632],
-	kinds: [281, 290],
-	corners: [284, 284],
+	kinds: [315, 315],
+	corners: [288, 288],
 	rects: [36, 36],
 	centre: [196, 196],
 	h: [27, 27],
-	follow: [98, 97],
+	follow: [98, 98],
 	pp2: [544, 544],
 	flags: [51, 70],
 };
@@ -151,8 +151,8 @@ describe.skipIf(!windowsFonts())('GDI ClearType compatible widths on the Windows
 
 	const PINS: Record<string, { natural: [number, number]; default: [number, number] }> = {
 		Arial: { natural: [411, 12], default: [403, 42] },
-		'Segoe UI': { natural: [396, 42], default: [400, 36] },
-		Tahoma: { natural: [406, 27], default: [401, 42] },
+		'Segoe UI': { natural: [400, 35], default: [403, 30] },
+		Tahoma: { natural: [409, 19], default: [406, 25] },
 	};
 	for (const [face, pin] of Object.entries(PINS)) {
 		it(`${face}: natural quality exact for ${pin.natural[0]} of 420 glyphs, default quality for ${pin.default[0]}`, () => {

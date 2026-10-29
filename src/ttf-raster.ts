@@ -928,6 +928,97 @@ function flattenForStubs(o: Outline): Outline {
 }
 
 /**
+ * The crossing pairs of every scan line of one sweep, as GDI's scan converter keeps them: a pair is the first pixel it
+ * inks (`start`, the first pixel centre at or after the left crossing) and the pixel after the last one (`stop`), so a
+ * pair whose crossings lie between two neighbouring centres has `start === stop` and is a dropout candidate.
+ */
+class ScanLists {
+	readonly pairs: { start: number; stop: number; x1: number; x2: number }[][];
+	constructor(count: number, private readonly P: number) {
+		this.pairs = Array.from({ length: count }, () => []);
+	}
+	add(line: number, x1: number, x2: number): void {
+		if (line < 0 || line >= this.pairs.length) return;
+		this.pairs[line].push({ start: Math.ceil(x1 / this.P), stop: Math.floor(x2 / this.P) + 1, x1, x2 });
+	}
+	/** Entries of `line` whose start or stop is `value` (native `HorizCrossings` / `VertCrossings`; 0 outside the box). */
+	count(line: number, value: number): number {
+		if (line < 0 || line >= this.pairs.length) return 0;
+		let n = 0;
+		for (const p of this.pairs[line]) n += (p.start === value ? 1 : 0) + (p.stop === value ? 1 : 0);
+		return n;
+	}
+}
+
+class NativeScanLists {
+	readonly rows: ScanLists;
+	readonly cols: ScanLists;
+	constructor(readonly width: number, readonly height: number, P: number) {
+		this.rows = new ScanLists(height, P);
+		this.cols = new ScanLists(width, P);
+	}
+}
+
+/**
+ * GDI's dropout control (read from fontdrvhost.exe!LookForDropouts, DoHorizDropout and DoVertDropout) run on the
+ * recorded crossing pairs after the spans are filled. Rows are visited from the top down, then columns from the left,
+ * and in each line every pair with `start === stop` is a dropout between the pixel centres `start - 1` and `start`:
+ * with stubs excluded (modes 1 and 5) it needs a count of at least 2 of the crossing-pair ends on the three sides of
+ * the unit square on each side of the dropout segment (the neighbouring line's pairs ending at `start`, and the pairs of
+ * the two lines across the dropout that end at the neighbouring line), it is dropped when pixel `start - 1` or `start`
+ * is already inked, and otherwise inks pixel `start - 1` (the lower or left one) or, in smart modes (4 and 5), the pixel
+ * that holds the middle of the two crossings.
+ */
+function nativeDropoutPass(
+	lists: NativeScanLists,
+	mode: number,
+	data: Uint8Array,
+	width: number,
+	height: number,
+	smartPixel: (raster: Raster, x1: number, x2: number) => number,
+	raster: Raster,
+): void {
+	const stubs = mode === 1 || mode === 5;
+	const smart = mode === 4 || mode === 5;
+	const P = raster.precision;
+	const at = (col: number, row: number): number => (height - 1 - row) * width + col;
+	// The smart modes take the pixel that holds the middle of the two crossings, each crossing floored to the 26.6 grid
+	// (native `(a + b - 1) >> 7` on positions measured from the pixel edge, a half pixel left of our centres).
+	const step = P / 64;
+	const pick = (x1: number, x2: number, start: number): number => (smart ? Math.floor((Math.floor(x1 / step) + Math.floor(x2 / step) + 63) / 128) : start - 1);
+	for (let y = height - 1; y >= 0; y--) {
+		for (const p of lists.rows.pairs[y]) {
+			if (p.start !== p.stop) continue;
+			const x = p.start;
+			if (stubs) {
+				if (lists.rows.count(y + 1, x) + lists.cols.count(x - 1, y + 1) + lists.cols.count(x, y + 1) < 2) continue;
+				if (lists.rows.count(y - 1, x) + lists.cols.count(x - 1, y) + lists.cols.count(x, y) < 2) continue;
+			}
+			if (x > 0 && x - 1 < width && data[at(x - 1, y)]) continue;
+			if (x < width && x >= 0 && data[at(x, y)]) continue;
+			const c = Math.max(0, pick(p.x1, p.x2, x));
+			if (c < width) data[at(c, y)] = 1;
+		}
+	}
+	for (let c = 0; c < width; c++) {
+		for (let k = lists.cols.pairs[c].length - 1; k >= 0; k--) {
+			const p = lists.cols.pairs[c][k];
+			if (p.start !== p.stop) continue;
+			const r = p.start;
+			if (r < 0 || r > height) continue;
+			if (stubs) {
+				if (lists.cols.count(c - 1, r) + lists.rows.count(r, c) + lists.rows.count(r - 1, c) < 2) continue;
+				if (lists.cols.count(c + 1, r) + lists.rows.count(r, c + 1) + lists.rows.count(r - 1, c + 1) < 2) continue;
+			}
+			if (r > 0 && r - 1 < height && data[at(c, r - 1)]) continue;
+			if (r < height && data[at(c, r)]) continue;
+			const row = Math.max(0, pick(p.x1, p.x2, r));
+			if (row < height) data[at(c, row)] = 1;
+		}
+	}
+}
+
+/**
  * Stub test of TrueType dropout control, read as the specification words it (rule 4 of SCANTYPE 1 and rule 6 of
  * SCANTYPE 5, https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions#scantype): a dropout between
  * two pixel centres is kept only if the contours continue to intersect the neighbouring scan lines in both directions,
@@ -1104,7 +1195,7 @@ interface PixelBox {
  * generated ovals, 921 exact at FreeType's 1/16 pixel steps, 933 at 1/128). `closedTies` inks a scan line that lies
  * exactly on a horizontal edge where the closed region is ({@link fillTieRows}).
  */
-export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false, roundImpliedPoints = false, directedTies = false, fineArcs = false, closedTies = false, squareStubs = false): GlyphBitmap | null {
+export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, stubOvershoot = true, smartCrossings26Dot6 = false, roundImpliedPoints = false, directedTies = false, fineArcs = false, closedTies = false, squareStubs = false, nativeDropouts = false): GlyphBitmap | null {
 	const box = fixedBox ?? monoBox(o);
 	if (!box) {
 		return null;
@@ -1146,9 +1237,12 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 		}
 		return raster.floorPub(Math.floor((x1 + x2 + Math.floor((P * 63) / 64)) / 2));
 	};
+	// Native dropout pass (see `nativeDropoutPass`): every crossing pair of every scan line is recorded.
+	const native = nativeDropouts && dropout !== 2 ? new NativeScanLists(width, height, P) : null;
 	if (r.convert(local, false, 0, (height - 1) * P)) {
 		r.sweep(
 			(y, x1, x2) => {
+				native?.rows.add(y, x1, x2);
 				let e1 = r.ceilPub(x1);
 				let e2 = r.floorPub(x2);
 				if (dropout !== 2 && x2 - x1 - P <= r.jitter && e1 !== x1 && e2 !== x2) {
@@ -1163,6 +1257,10 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 				}
 			},
 			(y, x1, x2, left, right) => {
+				if (native) {
+					native.rows.add(y, x1, x2);
+					return;
+				}
 				let e1 = r.ceilPub(x1);
 				let e2 = r.floorPub(x2);
 				let pxl = e1;
@@ -1216,6 +1314,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 		if (h.convert(local, true, 0, (width - 1) * P)) {
 			h.sweep(
 				(col, x1, x2) => {
+					native?.cols.add(col, x1, x2);
 					if (x2 - x1 < P) {
 						const e1 = h.ceilPub(x1);
 						const e2 = h.floorPub(x2);
@@ -1228,6 +1327,10 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 					}
 				},
 				(col, x1, x2, left, right) => {
+					if (native) {
+						native.cols.add(col, x1, x2);
+						return;
+					}
 					let e1 = h.ceilPub(x1);
 					const e2 = h.floorPub(x2);
 					let pxl = e1;
@@ -1273,6 +1376,7 @@ export function rasterizeMono(o: Outline, dropout: number, fixedBox?: PixelBox, 
 			);
 		}
 	}
+	if (native) nativeDropoutPass(native, dropout, data, width, height, smartPixel, r);
 	if (closedTies) fillTieRows(local, curved, data, width, height, at);
 	return { width, height, left: box.xMin, top: box.yMax, data };
 }
@@ -1290,7 +1394,7 @@ const GRAY_OVERSAMPLE = 4;
  * implied between two off-curve points to the 26.6 grid of the oversampled outline, halves up, as GDI does (see
  * {@link Raster.roundImpliedPoints}; ClearType's scan converter works on the 6x outline).
  */
-export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true, fineArcs = false, closedTies = false, squareStubs = false, roundImpliedPoints = false): { box: PixelBox; hi: GlyphBitmap } | null {
+export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true, fineArcs = false, closedTies = false, squareStubs = false, roundImpliedPoints = false, nativeDropouts = false): { box: PixelBox; hi: GlyphBitmap } | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -1319,7 +1423,7 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, d
 		onCurve: o.onCurve,
 		endPts: o.endPts,
 	};
-	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot, false, roundImpliedPoints, false, fineArcs, closedTies, squareStubs);
+	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot, false, roundImpliedPoints, false, fineArcs, closedTies, squareStubs, nativeDropouts);
 	return hi ? { box, hi } : null;
 }
 
