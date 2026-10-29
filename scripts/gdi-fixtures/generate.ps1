@@ -76,15 +76,7 @@ function Complete-Fixtures {
         $_.LastWriteTimeUtc -ge $generationStarted -and $_.Name -notlike 'environment-*.json'
     } | ForEach-Object { $_.FullName })
     # Private diagnostic fonts are capture inputs even when they were not regenerated.
-    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } elseif ($Which -like 'text-opcode*') { 'opcode-*.ttf' } elseif ($Which -like 'text-vector-stage*') { 'vector-stage-*.ttf' } elseif ($Which -eq 'text-shpix') { 'shpix-*.ttf' } elseif ($Which -eq 'text-iup') { 'iup-*.ttf' } elseif ($Which -eq 'text-shpix-order') { 'shpix-order-*.ttf' } elseif ($Which -eq 'text-alignrp') { 'alignrp-*.ttf' } elseif ($Which -eq 'text-msirp') { 'msirp-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-width') { 'ctw-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-arm') { 'cta-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-contour') {
-    # Fonts and sets: python scripts/gdi-fixtures/build-cleartype-contour-fonts.py (writes ctk-contour.ttf, ctk-sets.json and ctk-cases.json here).
-    Add-Type -Path (Join-Path $here 'GdiClearTypeWidthProbe.cs')
-    $sets = Get-Content -Raw -LiteralPath (Join-Path $outDir 'ctk-sets.json') | ConvertFrom-Json
-    [GdiClearTypeWidthProbe]::Run($outDir, 'ctk-contour.json.gz', [string[]]@($sets | ForEach-Object { $_.set }), [string[]]@($sets | ForEach-Object { $_.file }), [string[]]@($sets | ForEach-Object { $_.family }), [int[]]@($sets | ForEach-Object { $_.count }), [int[]]@(16), [int[]]@(5, 6))
-    Complete-Fixtures
-    return
-}
-if ($Which -eq 'text-gdi-cleartype-chain') { 'ctc-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-contour') { 'ctk-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-hinted') { 'cleartype-hinted-*.ttf' } else { $null }
+    $fontFilter = if ($Which -like 'text-signed-diagonal*') { 'signed-diagonal-*.ttf' } elseif ($Which -like 'text-diagonal*') { 'diagonal-*.ttf' } elseif ($Which -like 'text-opcode*') { 'opcode-*.ttf' } elseif ($Which -like 'text-vector-stage*') { 'vector-stage-*.ttf' } elseif ($Which -eq 'text-shpix') { 'shpix-*.ttf' } elseif ($Which -eq 'text-iup') { 'iup-*.ttf' } elseif ($Which -eq 'text-shpix-order') { 'shpix-order-*.ttf' } elseif ($Which -eq 'text-alignrp') { 'alignrp-*.ttf' } elseif ($Which -eq 'text-msirp') { 'msirp-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-width') { 'ctw-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-arm') { 'cta-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-chain') { 'ctc-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-contour') { 'ctk-*.ttf' } elseif ($Which -eq 'text-gdi-cleartype-hinted') { 'cleartype-hinted-*.ttf' } else { $null }
     if ($fontFilter) {
         $files += @(Get-ChildItem -LiteralPath $Directory -File -Filter $fontFilter | ForEach-Object { $_.FullName })
         $files = @($files | Sort-Object -Unique)
@@ -282,6 +274,14 @@ if ($Which -eq 'text-gdi-cleartype-arm') {
     Add-Type -Path (Join-Path $here 'GdiClearTypeWidthProbe.cs')
     $sets = Get-Content -Raw -LiteralPath (Join-Path $outDir 'cta-sets.json') | ConvertFrom-Json
     [GdiClearTypeWidthProbe]::Run($outDir, 'gdi-cleartype-arm.json.gz', [string[]]@($sets | ForEach-Object { $_.set }), [string[]]@($sets | ForEach-Object { $_.file }), [string[]]@($sets | ForEach-Object { $_.family }), [int[]]@($sets | ForEach-Object { $_.count }), [int[]]@(16), [int[]]@(5, 6))
+    Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-gdi-cleartype-contour') {
+    # Fonts and sets: python scripts/gdi-fixtures/build-cleartype-contour-fonts.py (writes ctk-contour.ttf, ctk-sets.json and ctk-cases.json here).
+    Add-Type -Path (Join-Path $here 'GdiClearTypeWidthProbe.cs')
+    $sets = Get-Content -Raw -LiteralPath (Join-Path $outDir 'ctk-sets.json') | ConvertFrom-Json
+    [GdiClearTypeWidthProbe]::Run($outDir, 'ctk-contour.json.gz', [string[]]@($sets | ForEach-Object { $_.set }), [string[]]@($sets | ForEach-Object { $_.file }), [string[]]@($sets | ForEach-Object { $_.family }), [int[]]@($sets | ForEach-Object { $_.count }), [int[]]@(16), [int[]]@(5, 6))
     Complete-Fixtures
     return
 }
