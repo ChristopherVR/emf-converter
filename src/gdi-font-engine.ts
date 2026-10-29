@@ -891,35 +891,49 @@ export function roundedRotationMatrix(m: readonly [number, number, number, numbe
  * the rotation over its major component: 1 on the major diagonal and, on the minor ones, `A / B` with
  * `A = round(min(|cos|, |sin|) * ppem * 32)` and `B = round(max(|cos|, |sin|) * ppem * 32)` (not the exact tangent: the
  * ratio of two components rounded to a coarse grid, which moves a far point by up to a pixel). A font without the flag
- * is hinted at its own ppem and rotated exactly. Returns null when `m` is not a pure rotation.
+ * is hinted at its own ppem and rotated exactly. Returns null when `m` is not a rotation (or a rotation of a text space
+ * stretched along x, `rotation * diag(k, 1)`, which native playback of a GM_COMPATIBLE record draws: each of the two axis
+ * vectors is then divided by its own major component; `text-escapement-playback`).
+ *
+ * Open: when `ppem * major` lies within 1/64 of a half pixel the native whole-pixel size is not a function of that value
+ * (14 px at 55.2 degrees, 11.499, and 18 px at 113.6 degrees, 16.499, both round up here; natively the first goes down
+ * and the second up); the rounding here is the one that fits the world-rotation probes best.
  */
 export function rotationMatrix(
 	m: readonly [number, number, number, number],
 	ppem: number,
 	integerPpem: boolean,
 ): { ppem: number; matrix: [number, number, number, number] } | null {
-	const isRotation = Math.abs(m[0] - m[3]) < 1e-6 && Math.abs(m[1] + m[2]) < 1e-6;
+	// A rotation, or a rotation of a text space stretched along x (`rotation * diag(k, 1)`: two orthogonal axis vectors,
+	// the x one k times as long), which is what native playback of a GM_COMPATIBLE record draws.
+	const xLength = Math.hypot(m[0], m[1]);
+	const yLength = Math.hypot(m[2], m[3]);
+	const stretch = yLength > 0 ? xLength / yLength : 0;
+	const isRotation = stretch > 0.9 && stretch < 1.1 && Math.abs(m[0] * m[2] + m[1] * m[3]) < 1e-6 * xLength * yLength;
 	if (!isRotation || ppem <= 0) {
 		return null;
 	}
 	if (!integerPpem) {
 		return { ppem: 0, matrix: [m[0], m[1], m[2], m[3]] };
 	}
-	const major = Math.max(Math.abs(m[0]), Math.abs(m[1]));
-	const minor = Math.min(Math.abs(m[0]), Math.abs(m[1]));
-	const majorFixed = Math.round(major * ppem * 32);
-	const target = Math.floor((majorFixed + 16) / 32);
+	// Each axis vector is divided by its own major component, both rounded to the 16.16 scale of the em (32 per pixel of a
+	// 2048-unit em); the hinting ppem is that of the x vector.
+	const normalise = (vx: number, vy: number): { x: number; y: number; majorFixed: number } => {
+		const ax = Math.abs(vx);
+		const ay = Math.abs(vy);
+		const majorFixed = Math.round(Math.max(ax, ay) * ppem * 32);
+		const q = Math.round((Math.round(Math.min(ax, ay) * ppem * 32) / majorFixed) * 65536) / 65536;
+		const sx = vx < 0 ? -1 : 1;
+		const sy = vy < 0 ? -1 : 1;
+		return ax >= ay ? { x: sx, y: sy * q, majorFixed } : { x: sx * q, y: sy, majorFixed };
+	};
+	const xv = normalise(m[0], -m[1]);
+	const yv = normalise(-m[2], m[3]);
+	const target = Math.floor((xv.majorFixed + 16) / 32);
 	if (target < 1) {
 		return null;
 	}
-	// The ratio is a 16.16 number (the integers k / 65536 read off the far points of the private fonts).
-	const q = Math.round((Math.round(minor * ppem * 32) / majorFixed) * 65536) / 65536;
-	const xMajor = Math.abs(m[0]) >= Math.abs(m[1]);
-	const sg = (v: number): number => (v < 0 ? -1 : 1);
-	return {
-		ppem: target,
-		matrix: xMajor ? [sg(m[0]), sg(m[1]) * q, sg(m[2]) * q, sg(m[3])] : [sg(m[0]) * q, sg(m[1]), sg(m[2]), sg(m[3]) * q],
-	};
+	return { ppem: target, matrix: [xv.x, -xv.y, -yv.x, yv.y] };
 }
 
 /** GDI's bitmap emboldening: each row OR-ed (max-ed) with itself shifted one pixel right. */

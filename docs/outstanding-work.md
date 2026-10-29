@@ -8,7 +8,7 @@ State on 23 October 2026: 885 of 910 report comparisons are pixel-exact (`bun sc
 
 - **GDI ClearType, default quality (Arial `u` and `W` at 12 px).** Two pixels each remain. To settle: truncate the glyph programs (appended glyphs, no `hdmx`) and find the first instruction at which native and the converter differ, as was done for Arial `o`.
 - **GDI ClearType, natural quality.** Segoe UI `@`, `3`, `0`, Tahoma `$`, `s`, `@` and about ten other curved glyphs. These are the remaining 145 to 261 pixels on the `textx-*-cleartype` sheets.
-- **Rotated GDI text.** Three rotated curved glyphs (5 pixels on `textx-escapement-*`) have a rotation matrix one 16.16 unit off. To settle: capture the point-size and resolution fields GDI puts in the font context.
+- **Rotated GDI text.** At a few sizes and angles (a line of 9 to 14 px text, say) GDI hints a rotated glyph at a neighbouring whole-pixel size, and the choice is not a function of the exact size alone when that is within a fiftieth of a half pixel. To settle: capture the size and matrix GDI hands to the scaler for those angles.
 - **GDI+ text.** About 14 pixels per glyph on Arial Bold 40 `W`, 7 on `4` and 3 on `k`, plus single pixels on Arial 16 `y` and `w`. The AntiAlias fractional underline bars have not been examined. Three DrawString cell-baseline captures lost exactness in the accepted DirectWrite trade.
 - **GDI+ AntiAlias rasteriser.** It still uses the old scan converter. The native one gains private-font controls but loses two diagonal-coverage controls.
 - **Raster font mapper.** 61 of 980 large heights pick a different face size, and no cost formula fits them. To settle: the same sweep at 100% and 125% display scaling.
