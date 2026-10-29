@@ -1801,10 +1801,14 @@ export class HintedSize {
 						// shifts, but not the generic per-size helper functions
 						// (`isSizeTweak`): measured against native captures of Arial,
 						// Tahoma and Times New Roman, only those are ignored.
+						// Round 12: at default quality (compatible widths) a y SHPIX made after IUP[y] by anything but a
+						// generic per-size helper also moves points that carry no y touch (Arial 12/13 px `a`, `e`, `o`, `s`:
+						// the four corner-squaring calls at the end of the program; native prefix fonts first differ at
+						// exactly those calls). At natural quality native leaves them, and the generic helpers stay ignored.
 						const keep =
 							!this.ctCompat() ||
 							this.inComposite ||
-							(gs.fvx === 0 && this.shpixAlongY(p)) ||
+							(gs.fvx === 0 && (this.shpixAlongY(p) || (this.iupy && this.linkMode() && !this.inSizeTweak()))) ||
 							(gs.fvx !== 0 && !this.inSizeTweak() && (!this.env.grayscale || this.plusShpixX(p, amt)));
 						if (keep) {
 							this.moveZp2(p, dx, dy, true);
