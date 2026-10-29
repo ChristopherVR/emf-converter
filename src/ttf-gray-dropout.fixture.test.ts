@@ -207,14 +207,14 @@ describe('GDI+ DrawDriverString images of the private polygon fonts', () => {
 	// private diagonal-hinting coverage tests (30 captures whose residual is the unresolved diagonal hinting), so
 	// neither ships; docs/parity-log.md has the figures.
 	it('AntiAlias, a font without SCANCTRL', () => {
-		expect(plusExact('polygons', 4, true)).toEqual([517, 4096]);
-		expect(plusExact('polygons', 4, false)).toEqual([1019, 1024]);
+		expect(plusExact('polygons', 4, true)).toEqual([520, 4096]);
+		expect(plusExact('polygons', 4, false)).toEqual([1024, 1024]);
 	});
 	it('AntiAliasGridFit, a font without gasp', () => {
-		expect(plusExact('polygons', 3, true)).toEqual([227, 4096]);
-		expect(plusExact('polygons', 3, false)).toEqual([1019, 1024]);
+		expect(plusExact('polygons', 3, true)).toEqual([230, 4096]);
+		expect(plusExact('polygons', 3, false)).toEqual([1024, 1024]);
 	});
-	it.each([['st0', 3709, 940], ['st4', 3712, 937], ['st1', 4028, 1009], ['st5', 4046, 1009]] as const)('AntiAlias, SCANTYPE %s', (set, small, large) => {
+	it.each([['st0', 3945, 995], ['st4', 4059, 1016], ['st1', 4096, 1024], ['st5', 4096, 1024]] as const)('AntiAlias, SCANTYPE %s', (set, small, large) => {
 		expect(plusExact(set, 4, true)).toEqual([small, 4096]);
 		expect(plusExact(set, 4, false)).toEqual([large, 1024]);
 	});
@@ -240,6 +240,6 @@ describe.skipIf(!existsSync(join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts', '
 			if (Buffer.from(image).equals(Buffer.from(c.gray, 'base64'))) exact[c.hint]++;
 		}
 		expect(total).toBe(1128);
-		expect(exact).toEqual({ 3: 1118, 4: 901 });
+		expect(exact).toEqual({ 3: 1124, 4: 911 });
 	});
 });

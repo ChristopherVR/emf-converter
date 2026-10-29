@@ -531,6 +531,11 @@ export interface EmfPlusPathGradientShape {
 	centerArgb: number;
 	/** Flattened closed boundary polygon (brush space). */
 	boundary: Array<{ x: number; y: number }>;
+	/**
+	 * The first figure of the boundary path as recorded (brush space), present when it has curves: a tiled brush re-flattens it
+	 * under the matrix of its tile bitmap and takes its bounds from the unquantised points.
+	 */
+	source?: { points: Array<{ x: number; y: number }>; types: Uint8Array };
 	/** Surround colour at each boundary vertex, packed ARGB. */
 	boundaryArgb: number[];
 	/** Blend factors: positions run boundary (0) to centre (1); factor = share of centre colour. */

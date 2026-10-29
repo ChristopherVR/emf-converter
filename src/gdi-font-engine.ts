@@ -100,6 +100,8 @@ export interface LogFontSpec {
 	playbackStretch?: number;
 	/** GDI+ text drawn at an identity world scale (the hinting rules of `HintEnvironment.shpixX` apply). */
 	unscaledText?: boolean;
+	/** GDI+ text drawn under a world scale other than the identity. */
+	scaledText?: boolean;
 }
 
 /**
@@ -115,6 +117,13 @@ export interface GdiGlyph {
 	/** Integer advance width in device pixels. */
 	advance: number;
 }
+
+/**
+ * The dropout mode GDI+ SingleBitPerPixel (no grid fit) scan-converts with: simple dropout control, stubs excluded (mode 1).
+ * Measured against `textx-plus-singlebit` (30 differing pixels with the font's default, 22 with none, 0 with mode 1; modes
+ * 0, 1, 4, 5 and none were compared).
+ */
+const UNHINTED_MONO_DROPOUT = 1;
 
 /** Glyph index of the notdef glyph. */
 const NOTDEF = 0;
@@ -470,6 +479,7 @@ export class RealizedFont implements GdiRealizedFont {
 		private readonly playbackStretched = false,
 		plusUnscaled = false,
 		private readonly installed = true,
+		private readonly plusScaled = false,
 	) {
 		this.ttf = ttf;
 		this.gridFit = gridFit;
@@ -814,7 +824,7 @@ export class RealizedFont implements GdiRealizedFont {
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
 			const controlOn = src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM;
 			bitmap = this.gdiPlus
-				? rasterizeMono(o, dropoutMode(controlOn, src.scanType), undefined, true, smartGrid, false, false, false, false, true)
+				? rasterizeMono(o, this.gdiPlus && !this.gridFit ? UNHINTED_MONO_DROPOUT : dropoutMode(controlOn, src.scanType), undefined, true, smartGrid, false, false, false, false, true)
 				: msMonoBitmap(o, msScanFlags(controlOn, src.scanType));
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
@@ -836,7 +846,7 @@ export class RealizedFont implements GdiRealizedFont {
 			bitmap = this.gdiPlus && !this.gridFit && !m && !this.syntheticBold && !this.syntheticItalic &&
 				this.ttf.weightClass < 600 && this.ttf.family.toLowerCase() === 'courier new'
 				? rasterizeCourierGray(o, dropout)
-				: this.gdiPlus
+				: this.gdiPlus && !(this.installed && !this.plusScaled)
 					? rasterizeGray(o, dropout, false, false, true)
 					: msGrayBitmap(o, dropout);
 		}
@@ -1142,6 +1152,7 @@ export class GdiFontCollection {
 					!!spec.playbackStretch && playbackStretchReacts(best, spec.height, spec.playbackStretch),
 					!!spec.unscaledText,
 					this.installedFonts,
+					!!spec.scaledText,
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				return tt;

@@ -458,7 +458,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('text-timesnewroman-hm20', 'wmf', 0), // measured 0.000%
 	fontCase('text-timesnewroman-hp18', 'wmf', 0), // measured 0.000%
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
-	fontCase('textx-arial-aa', 'emf', 0.00001), // round 11: 1 px (ceiling was 0.00009); measured 0.0080% (round 9; was 0.1600% ceiling) measured 0.122%
+	fontCase('textx-arial-aa', 'emf', 0), // round 12: 0 px (overlapping glyphs OR their levels; was 1 px) (ceiling was 0.00009); measured 0.0080% (round 9; was 0.1600% ceiling) measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0005); measured 0.019%
 	fontCase('textx-arial-cleartype', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
 	fontCase('textx-arial-ctnatural', 'emf', 0.00097), // measured 0.0913% (round 9; was 0.1000% ceiling) measured 0.095% against native playback, 0.610% before the symmetric-smoothing GETINFO bit (round 8), 14.847% before the exact blend
@@ -477,7 +477,7 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-couriernew-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00004); measured 0.0029% (round 9; was 0.0500% ceiling) measured 0.012%
 	fontCase('textx-escapement-aa', 'emf', 0.00003), // round 11: 5 px (ceiling was 0.00009); measured 0.0085% (15 px; 14 before round 8: one glyph pixel of the 45-degree line moved while the other 16 improved) against the native playback (0.212% against the direct drawing)
 	fontCase('textx-escapement-mono', 'emf', 0.00003), // round 11: 5 px (ceiling was 0.00009); measured 0.0085% (15 px) against the native playback (0.212% against the direct drawing)
-	fontCase('textx-eto-aa', 'emf', 0.00002), // measured 0.0011% (round 9; was 0.0800% ceiling) measured 0.076% over 8 levels (0.087% exact; 0.50% before the native opaque-text blend, round 7) against the native playback (0.499% against the direct drawing)
+	fontCase('textx-eto-aa', 'emf', 0), // round 12: 0 px (was 1 px; 0.0011% before) (round 9; was 0.0800% ceiling) measured 0.076% over 8 levels (0.087% exact; 0.50% before the native opaque-text blend, round 7) against the native playback (0.499% against the direct drawing)
 	fontCase('textx-eto-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00013); measured 0.012% against the native playback (0.435% against the direct drawing)
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
 	fontCase('textx-fon-courier-cell', 'wmf', 0), // measured 0.000%
@@ -507,13 +507,13 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-plus-antialias', 'emf', 0.0021), // measured 0.202%: GDI+ design-unit advances, fractional AntiAlias underline; remaining glyph hinting (diagonal stems); 1.360% before the advances, 2.734% before the bars
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.00065), // measured 0.064% (2.527% before the round 8 AntiAliasGridFit advances); GDI+ hinting and shades
 	fontCase('textx-plus-cleartype', 'emf', 0.0013), // measured 0.133% (GDI+ ClearType blend arithmetic, 8-bit tables and exact sixths of coverage; 9.236% before the round 8 interpreter rules), 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
-	fontCase('textx-plus-singlebit', 'emf', 0.0015), // measured 0.148% (GDI+ design-unit advances; 1.941% before); the rest are Times New Roman glyph shapes and the bar end
+	fontCase('textx-plus-singlebit', 'emf', 0), // measured 0 (round 12: unhinted GDI+ monochrome glyphs use simple dropout control without stubs; 0.148% before)
 	fontCase('textx-plus-singlebitgridfit', 'emf', 0), // measured 0 (round 9: GDI+ advances and the stub squares; 0.020% before)
 	fontCase('textx-plus-systemdefault', 'emf', 0), // measured 0 (round 9: GDI+ advances and the stub squares; 0.020% before)
 	fontCase('textx-rotalign-esc', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0048% (15 px; 34 before round 8) against the native playback (0.511% before)
 	fontCase('textx-rotalign-esc-small', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0042% (13 px; 207 before round 8: quarter-turn text has its own tmAscent / tmDescent) against the native playback (0.367% before)
 	fontCase('textx-rotalign-world', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0048% (15 px; 34 before round 8) against the native playback (0.537% before)
-	fontCase('textx-segoeui-aa', 'emf', 0.00004), // round 11: 10 px (ceiling was 0.00013); measured 0.0118% (a scan line exactly on a horizontal edge is inked, round 9; 0.031% before)
+	fontCase('textx-segoeui-aa', 'emf', 0), // round 12: 0 px (overlapping glyphs OR their levels; was 10 px) (ceiling was 0.00013); measured 0.0118% (a scan line exactly on a horizontal edge is inked, round 9; 0.031% before)
 	fontCase('textx-segoeui-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00003); measured 0.0025% (8 px) against the native playback (round 9 stub squares; 0.015% before, 0.086% against the direct drawing)
 	fontCase('textx-segoeui-cleartype', 'emf', 0.0126), // measured 1.258%, 2.992% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 3.694% before the ClearType dropout control
 	fontCase('textx-segoeui-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.015%
@@ -522,12 +522,12 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-tahoma-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0009% (round 9; was 0.0500% ceiling) measured 0.019%
 	fontCase('textx-tahoma-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0007% (round 9; was 0.0500% ceiling) measured 0.020%
 	fontCase('textx-tahoma-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0006); measured 0.028%
-	fontCase('textx-timesnewroman-aa', 'emf', 0.00001), // round 11: 2 px (ceiling was 0.00009); measured 0.0076% (round 9; was 0.1300% ceiling) measured 0.092%
+	fontCase('textx-timesnewroman-aa', 'emf', 0), // round 12: 0 px (overlapping glyphs OR their levels; was 2 px) (ceiling was 0.00009); measured 0.0076% (round 9; was 0.1300% ceiling) measured 0.092%
 	fontCase('textx-timesnewroman-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00002); measured 0.0014% (round 9; was 0.0500% ceiling) measured 0.019%
 	fontCase('textx-timesnewroman-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0005); measured 0.013%
 	fontCase('textx-timesnewroman-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0005); measured 0.012%
 	fontCase('textx-wmf-align-mono', 'wmf', 0), // measured 0.000%
-	fontCase('textx-wmf-arial-aa', 'wmf', 0.00001), // round 11: 1 px (ceiling was 0.00009); measured 0.0080% (round 9; was 0.1600% ceiling) measured 0.122%
+	fontCase('textx-wmf-arial-aa', 'wmf', 0), // round 12: 0 px (was 1 px) (ceiling was 0.00009); measured 0.0080% (round 9; was 0.1600% ceiling) measured 0.122%
 	fontCase('textx-wmf-arial-mono', 'wmf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.017%
 	fontCase('textx-wmf-arial-styles-mono', 'wmf', 0), // round 11: 0 px (ceiling was 0.0006); measured 0.027%
 	fontCase('textx-wmf-couriernew-mono', 'wmf', 0), // round 11: 0 px (ceiling was 0.00002); measured 0.0010% (round 9; was 0.0400% ceiling) measured 0.010%

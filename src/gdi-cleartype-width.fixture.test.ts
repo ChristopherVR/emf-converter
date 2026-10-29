@@ -150,9 +150,9 @@ describe.skipIf(!windowsFonts())('GDI ClearType compatible widths on the Windows
 	}
 
 	const PINS: Record<string, { natural: [number, number]; default: [number, number] }> = {
-		Arial: { natural: [420, 0], default: [413, 28] },
+		Arial: { natural: [420, 0], default: [418, 4] },
 		'Segoe UI': { natural: [419, 4], default: [416, 7] },
-		Tahoma: { natural: [415, 11], default: [414, 14] },
+		Tahoma: { natural: [415, 11], default: [415, 12] },
 	};
 	for (const [face, pin] of Object.entries(PINS)) {
 		it(`${face}: natural quality exact for ${pin.natural[0]} of 420 glyphs, default quality for ${pin.default[0]}`, () => {
