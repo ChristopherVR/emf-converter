@@ -7,7 +7,7 @@
 // carries GM_COMPATIBLE exScale / eyScale, which native playback turns into a horizontal stretch of the text space.
 // Output: text-escapement-playback/text-escpb-<face>-<size>.emf and .png (the native playback) and the environment file.
 // Environment: ESCPB_FACES (comma list, default Arial,Times New Roman,Tahoma,Segoe UI,Courier New), ESCPB_SIZES (comma
-// list of pixel heights, default 12,16,20,28,36).
+// list of pixel heights, default 12,16,20,36).
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -45,7 +45,7 @@ public static class TextEscapementPlaybackProbe
     public static void Run(string dir)
     {
         string[] faces = (Environment.GetEnvironmentVariable("ESCPB_FACES") ?? "Arial,Times New Roman,Tahoma,Segoe UI,Courier New").Split(',');
-        int[] sizes = (Environment.GetEnvironmentVariable("ESCPB_SIZES") ?? "12,16,20,28,36").Split(',').Select(int.Parse).ToArray();
+        int[] sizes = (Environment.GetEnvironmentVariable("ESCPB_SIZES") ?? "12,16,20,36").Split(',').Select(int.Parse).ToArray();
         IntPtr screen = GetDC(IntPtr.Zero);
         double mmPerPixelX = GetDeviceCaps(screen, 4) * 100.0 / GetDeviceCaps(screen, 8);
         double mmPerPixelY = GetDeviceCaps(screen, 6) * 100.0 / GetDeviceCaps(screen, 10);

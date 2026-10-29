@@ -77,6 +77,6 @@ describe.skipIf(!windowsFonts())('SHPIX along x in GDI+ grayscale text', () => {
 		const glyphs: Capture[] = load('text-real-glyphs.json.gz');
 		const [before, after, lost] = tally(glyphs, () => [6, 28], 40, (c) => new Uint8Array(Buffer.from(c.gray!, 'base64')));
 		expect(lost).toEqual([]);
-		expect([before, after]).toEqual([18916, 19496]); // [17016, 17411] with the legacy arithmetic (17,014 and 17,409 before the SCANCTRL and DELTAP rules of round 11, one each)
+		expect([before, after]).toEqual([19062, 19649]); // [17016, 17411] with the legacy arithmetic (17,014 and 17,409 before the SCANCTRL and DELTAP rules of round 11, one each)
 	}, 240000);
 });

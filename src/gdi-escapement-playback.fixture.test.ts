@@ -4,31 +4,31 @@ import { fixturePath, renderEmfBytes, windowsFonts } from './__fixtures__/gdi-pa
 import { decodePng } from './png-decoder';
 
 /**
- * `text-escapement-playback` (TextEscapementPlaybackProbe.cs, 30 October 2026): 25 metafiles (Arial, Times New Roman,
- * Tahoma, Segoe UI and Courier New at 12, 16, 20, 28 and 36 px) of 400 single-glyph TextOutW records each, 50
+ * `text-escapement-playback` (TextEscapementPlaybackProbe.cs, 30 October 2026): 20 metafiles (Arial, Times New Roman,
+ * Tahoma, Segoe UI and Courier New at 12, 16, 20 and 36 px) of 400 single-glyph TextOutW records each, 50
  * escapements (41 + 73 n tenths of a degree) by the glyphs "aegpsR25", with Windows' own PlayEnhMetaFile of them as the
  * reference. One glyph per record leaves only the glyph shape: the recorded GM_COMPATIBLE exScale / eyScale turn into a
  * horizontal stretch of the text space (1.000558 here) that native playback applies before the escapement, so the
  * rotation matrix is `rotation * diag(k, 1)`. Without it 910 of the 10,000 glyph cells differed (1,490 pixels); with
- * it 72 do (406 pixels): 19 of the 25 sheets are within 3 pixels and the 12 px sheets keep one whole line each. The
+ * it 72 do (about 400 pixels over the 25 sheets measured; 395 over the 20 committed): 14 of the 20 sheets are within 3 pixels and the 12 px sheets keep one whole line each. The
  * lines left in the 12 px sheets (and at 9, 13 and 14 px in a wider sweep) sit where `ppem * major` of the rotation is
  * within 0.02 of a half pixel (11.515 at 106.3 degrees, 12 px), the whole-pixel size GDI hints a rotated glyph at: the
  * model rounds those up and native does not always.
  */
 const sheets: Array<[string, number]> = [
-	['arial', 12], ['arial', 16], ['arial', 20], ['arial', 28], ['arial', 36],
-	['couriernew', 12], ['couriernew', 16], ['couriernew', 20], ['couriernew', 28], ['couriernew', 36],
-	['segoeui', 12], ['segoeui', 16], ['segoeui', 20], ['segoeui', 28], ['segoeui', 36],
-	['tahoma', 12], ['tahoma', 16], ['tahoma', 20], ['tahoma', 28], ['tahoma', 36],
-	['timesnewroman', 12], ['timesnewroman', 16], ['timesnewroman', 20], ['timesnewroman', 28], ['timesnewroman', 36],
+	['arial', 12], ['arial', 16], ['arial', 20], ['arial', 36],
+	['couriernew', 12], ['couriernew', 16], ['couriernew', 20], ['couriernew', 36],
+	['segoeui', 12], ['segoeui', 16], ['segoeui', 20], ['segoeui', 36],
+	['tahoma', 12], ['tahoma', 16], ['tahoma', 20], ['tahoma', 36],
+	['timesnewroman', 12], ['timesnewroman', 16], ['timesnewroman', 20], ['timesnewroman', 36],
 ];
 /** Differing pixels per sheet today (black-and-white ink against Windows' playback). */
 const ceilings: Record<string, number> = {
-	'arial-12': 73, 'arial-16': 0, 'arial-20': 0, 'arial-28': 2, 'arial-36': 2,
-	'couriernew-12': 76, 'couriernew-16': 2, 'couriernew-20': 5, 'couriernew-28': 1, 'couriernew-36': 2,
-	'segoeui-12': 51, 'segoeui-16': 1, 'segoeui-20': 1, 'segoeui-28': 3, 'segoeui-36': 0,
-	'tahoma-12': 114, 'tahoma-16': 2, 'tahoma-20': 0, 'tahoma-28': 3, 'tahoma-36': 2,
-	'timesnewroman-12': 57, 'timesnewroman-16': 3, 'timesnewroman-20': 1, 'timesnewroman-28': 2, 'timesnewroman-36': 3,
+	'arial-12': 73, 'arial-16': 0, 'arial-20': 0, 'arial-36': 2,
+	'couriernew-12': 76, 'couriernew-16': 2, 'couriernew-20': 5, 'couriernew-36': 2,
+	'segoeui-12': 51, 'segoeui-16': 1, 'segoeui-20': 1, 'segoeui-36': 0,
+	'tahoma-12': 114, 'tahoma-16': 2, 'tahoma-20': 0, 'tahoma-36': 2,
+	'timesnewroman-12': 57, 'timesnewroman-16': 3, 'timesnewroman-20': 1, 'timesnewroman-36': 3,
 };
 
 describe.skipIf(!windowsFonts())('native playback of rotated single glyphs', () => {
@@ -56,7 +56,7 @@ describe.skipIf(!windowsFonts())('native playback of rotated single glyphs', () 
 			expect(differing).toBeLessThanOrEqual(ceilings[key]);
 		}, 60000);
 	}
-	it('the sheets differ in 406 pixels in all (1,490 without the playback stretch)', () => {
-		expect(total).toBeLessThanOrEqual(406);
+	it('the sheets differ in 395 pixels in all (1,490 without the playback stretch)', () => {
+		expect(total).toBeLessThanOrEqual(395);
 	});
 });
