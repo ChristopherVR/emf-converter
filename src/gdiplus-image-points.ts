@@ -238,3 +238,42 @@ export function bicubicSpanPositions(inv: Mat6, x0: number, y: number, n: number
 		v = (v + sv) | 0;
 	}
 }
+
+/**
+ * The points `GpGraphics::DrawImage(image, destRect, srcRect)` hands the driver: it builds the matrix taking the source
+ * rectangle onto the destination one (scale `(dx + dw - dx) / (sx + sw - sx)`, translation anchored at the right and
+ * bottom edges), sends the source rectangle's corners through it, and the driver infers its own matrix from those.
+ * Null when the source rectangle is empty.
+ */
+export function rectFormPoints(src: readonly number[], dest: readonly number[]): number[] | null {
+	const [sx, sy, sw, sh] = src.map(Math.fround);
+	const [dx, dy, dw, dh] = dest.map(Math.fround);
+	const sxr = addDown(sx, sw);
+	const syb = addDown(sy, sh);
+	const dxr = addDown(dx, dw);
+	const dyb = addDown(dy, dh);
+	if (sx === sxr || sy === syb) return null;
+	const m11 = div(sub(dxr, dx), sub(sxr, sx));
+	const m22 = div(sub(dyb, dy), sub(syb, sy));
+	const e = sub(dxr, mul(m11, sxr));
+	const f = sub(dyb, mul(m22, syb));
+	return transformPoints([m11, 0, 0, m22, e, f], [sx, sy, sxr, sy, sx, syb]);
+}
+
+/**
+ * The destination rectangle `DpDriver::DrawImage` gives the stretch span: the source rectangle's top-left and bottom-right
+ * corners through the device matrix, the second as a difference of the first.
+ */
+export function deviceDestRect(device: readonly number[], src: readonly number[]): [number, number, number, number] {
+	const [sx, sy, sw, sh] = src.map(Math.fround);
+	const p = transformPoints(device, [sx, sy, addDown(sx, sw), addDown(sy, sh)]);
+	return [p[0], p[1], sub(p[2], p[0]), sub(p[3], p[1])];
+}
+
+/** The device matrix of a rectangle-form draw: the driver's matrix inferred from {@link rectFormPoints}, times the world-to-device matrix. */
+export function rectFormDeviceMatrix(src: readonly number[], dest: readonly number[], world: readonly number[]): Mat6 | null {
+	const pts = rectFormPoints(src, dest);
+	if (!pts) return null;
+	const n = inferPointsMatrix(pts, src);
+	return n ? multiplyDown(n, world) : null;
+}

@@ -72,8 +72,9 @@
  */
 
 import { invertTextureMatrix } from './emf-plus-brush-texture';
-import { addDown, bicubicSpanPositions, drawImagePointsDeviceMatrix, invertDown, spanPositions, transformPoints, type Mat6 } from './gdiplus-image-points';
+import { addDown, bicubicSpanPositions, deviceDestRect, drawImagePointsDeviceMatrix, inferPointsMatrix, invertDown, multiplyDown, rectFormDeviceMatrix, spanPositions, transformPoints, type Mat6 } from './gdiplus-image-points';
 import { down32 } from './float32-down';
+import { createStretch, stretchRun } from './gdiplus-span-stretch';
 import { mul as downMul, sqrt as sqrtDown } from './gdiplus-float';
 import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
@@ -1137,6 +1138,10 @@ function resampleHqAxisAligned(
 	if (w * h > MAX_RESAMPLE_PIXELS) {
 		return null;
 	}
+	const stretched = resampleHqStretch(rgba, width, height, spec, cx0, cy0, w, h, premultOut);
+	if (stretched) {
+		return stretched;
+	}
 	const cubic = kernel === 'hq-bicubic';
 	const bin = cubic ? 0.5 : 1;
 	let stepU = hqStep(scaleU);
@@ -1351,6 +1356,83 @@ function resampleHqAxisAligned(
 		}
 	}
 	return { x: cx0, y: cy0, w, h, rgba: out, premultiplied: premultOut };
+}
+
+/**
+ * An axis-aligned high-quality draw by GDI+'s own span (`gdiplus-span-stretch.ts`), for a draw whose float32 matrix chain
+ * is known (a rectangle or points draw under a world transform). `undefined` when the draw is not of that kind.
+ */
+function resampleHqStretch(
+	rgba: Uint8ClampedArray,
+	width: number,
+	height: number,
+	spec: DeferredImageResample,
+	x0: number,
+	y0: number,
+	w: number,
+	h: number,
+	premultOut: boolean,
+): ResampledBlock | undefined {
+	const world = spec.worldMatrix;
+	// A whole-bitmap source without attributes under the default pixel offset; cropped sources (the source rectangle plus a
+	// margin is what GDI+ stretches), wraps and Half offsets keep the fitted path below.
+	if (spec.halfPixelOffset || !world || spec.wrap || spec.srcX !== 0 || spec.srcY !== 0 || spec.srcW !== width || spec.srcH !== height) {
+		return undefined;
+	}
+	const src = [spec.srcX, spec.srcY, spec.srcW, spec.srcH];
+	// The recorded points are the points GDI+ handed its driver (the recorder logs them after `GpGraphics::DrawImage` has
+	// sent the source rectangle through its matrix), so the driver's own matrix is inferred from them directly; a rectangle
+	// record goes through the same matrix from its rectangle.
+	const inferred = spec.worldRect ? null : spec.worldPoints ? inferPointsMatrix(spec.worldPoints, src) : null;
+	const device = spec.worldRect
+		? rectFormDeviceMatrix(src, spec.worldRect, world)
+		: inferred
+			? multiplyDown(inferred, world)
+			: null;
+	if (!device || !(device[0] > 0 && device[3] > 0)) {
+		return undefined;
+	}
+	const dest = deviceDestRect(device, src);
+	const premultiplied = new Uint8Array(width * height * 4);
+	for (let i = 0; i < width * height * 4; i += 4) {
+		const a = rgba[i + 3];
+		premultiplied[i] = Math.round((rgba[i] * a) / 255);
+		premultiplied[i + 1] = Math.round((rgba[i + 1] * a) / 255);
+		premultiplied[i + 2] = Math.round((rgba[i + 2] * a) / 255);
+		premultiplied[i + 3] = a;
+	}
+	const state = createStretch({
+		kernel: spec.kernel === 'hq-bicubic' ? 'cubic' : 'tent',
+		pixels: premultiplied,
+		width,
+		height,
+		src: src as [number, number, number, number],
+		dest,
+	});
+	if (!state) {
+		return undefined;
+	}
+	const out = new Uint8ClampedArray(w * h * 4);
+	for (let j = 0; j < h; j++) {
+		const run = stretchRun(state, y0 + j, x0, x0 + w);
+		if (!run) {
+			continue;
+		}
+		for (let i = 0; i < run.pixels.length / 4; i++) {
+			const o = run.pixels.subarray(i * 4, i * 4 + 4);
+			const alpha = o[3];
+			if (alpha === 0) {
+				continue;
+			}
+			const d = (j * w + run.x - x0 + i) * 4;
+			const k = premultOut ? 1 : 255 / alpha;
+			out[d] = o[0] * k;
+			out[d + 1] = o[1] * k;
+			out[d + 2] = o[2] * k;
+			out[d + 3] = alpha;
+		}
+	}
+	return { x: x0, y: y0, w, h, rgba: out, premultiplied: premultOut };
 }
 
 /** The whole device lengths (rounded up) of the first two edges of a points draw, as `GpGraphics::DrvDrawImage` sizes the intermediate. */

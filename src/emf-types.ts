@@ -879,7 +879,9 @@ export interface DeferredImageResample {
 	pointsForm?: boolean;
 	/** The record's three destination points (world coordinates, flat x, y), for the float32 matrix chain of a points draw. */
 	worldPoints?: number[];
-	/** The world-to-device matrix the points draw runs under (with `worldPoints`). */
+	/** The record's destination rectangle `[x, y, w, h]` (world coordinates) of a rectangle-form draw, for the float32 matrix chain. */
+	worldRect?: [number, number, number, number];
+	/** The world-to-device matrix the points draw runs under (with `worldPoints` or `worldRect`). */
 	worldMatrix?: TransformMatrix;
 	/** The source rectangle the float32 matrix chain infers from, when it is not the sampled bitmap's (the second draw of a rotated high-quality draw). */
 	chainSrc?: [number, number, number, number];

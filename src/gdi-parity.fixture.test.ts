@@ -574,7 +574,9 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 	// every channel within one level and none beyond it (before the cubic table and the unsnapped phase offsets:
 	// 41 pixels beyond one level on HighQualityBilinear, 10 on HighQualityBicubic and High, 5 under Half, 6 under
 	// HighSpeed; at zero tolerance 1,145 and 1,084 pixels off on the HighQualityBilinear and HighQualityBicubic fixtures, 34 and 121 before round 8, then 7 and 12, and since round 10 (the start-position shift of an edge beyond 64 pixels) 1 and 0, the High and HighQualityBicubic fixtures exact; Half and HighSpeed 0).
-	levelExact('gpx-image-highqualitybilinear'),
+	// Exact since round 12: a whole-bitmap draw without attributes runs GDI+'s own stretch span (`gdiplus-span-stretch.ts`), the
+	// one pixel left was the 25.6 x 21.6 and 58 x 20 reductions' start position.
+	exact('gpx-image-highqualitybilinear'),
 	exact('gpx-image-highqualitybicubic'),
 	exact('gpx-image-high'),
 	exact('gpx-image-pom-half-highqualitybicubic'),

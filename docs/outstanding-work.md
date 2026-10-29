@@ -18,9 +18,7 @@ State on 23 October 2026: 885 of 910 report comparisons are pixel-exact (`bun sc
 ## EMF+ drawing
 
 - **Inset round-dash pens.** 32 antialiased and 5 aliased pixels on `gpx-pen-inset-dashround-*`. These come from the widener running in double precision where native uses single. To settle: a bit-exact float32 version of the join and line widening, checked against the 672 `dash-widen` outlines.
-- **High-quality `DrawImage`.** `gpx-image-highqualitybilinear` (1 pixel) and `gpx-image-rotated-highqualitybicubic` (5). The native `DpOutputBicubicImageSpan` and `DpOutputSpanStretch` have not been read yet.
-- **`DrawImage` points form.** 19 of 124 float32 flips of the JPEG geometry and 36 horizontal sweep flips are still 1 to 3 float32 units off. The rect form and draws with wrap attributes still use the fitted model.
-- **Rotated blur.** 6 pixels each on `plus-effect-blur-r3-rotate30` and `plus-only-effect-blur-r3-rotate30`. These are on the rotated draw path, not in the effect.
+- **`DrawImage` points form and the other high-quality cases.** 19 of 124 float32 flips of the JPEG geometry and 36 horizontal sweep flips are still 1 to 3 float32 units off (plain Bilinear). High-quality draws of a cropped source, with wrap attributes, with a half-pixel offset or mirrored still use the fitted model, and the stretch span has not been given the visible-clip crop. To settle: the same stretch port with the source margin of `DpDriver::DrawImage`, checked against the crop, wrap and mirror captures.
 - **Path gradients.** 24 of the 120 tiled colour controls (ellipses on fractional bounds, up to 2 levels) differ in the texture stage. A star fill is 2 pixels off because the sampler is given the bounding box, not each row's span.
 
 ## Images and colour
