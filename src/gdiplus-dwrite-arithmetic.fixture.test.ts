@@ -41,10 +41,10 @@ describe.skipIf(!windowsFonts())('DirectWrite arithmetic for installed fonts (GD
 		expect(new GdiFontCollection(windowsFonts()!).installedFonts).toBe(true);
 		expect(new GdiFontCollection(windowsFonts()!, 'cleartype', { installedFonts: false }).installedFonts).toBe(false);
 	});
-	it('text-real-glyphs: 17,411 exact without, 19,496 with (17,409 and 19,494 before the SCANCTRL and DELTAP rules of round 11)', () => {
+	it('text-real-glyphs: 17,411 exact without, 19,649 with (19,496 before the round 12 native grayscale scan converter; 17,409 and 19,494 before the SCANCTRL and DELTAP rules of round 11)', () => {
 		const g = (c: any) => new Uint8Array(Buffer.from(c.gray, 'base64'));
 		expect(exact(false, 'text-real-glyphs.json.gz', 40, () => [6, 28], g)).toBe(17411);
-		expect(exact(true, 'text-real-glyphs.json.gz', 40, () => [6, 28], g)).toBe(19496);
+		expect(exact(true, 'text-real-glyphs.json.gz', 40, () => [6, 28], g)).toBe(19649);
 	}, 240000);
 	it('text-origin-phases and vertical phases: every grayscale capture exact with the model', () => {
 		for (const f of ['text-origin-phases.json.gz', 'text-origin-vertical-phases.json.gz']) {

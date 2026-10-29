@@ -565,7 +565,13 @@ function compositeGlyphs(
 				const dx = p.x + x - x0;
 				if (dx < 0 || dx >= w) continue;
 				const i = dy * w + dx;
-				if (v > cov[i]) cov[i] = v;
+				if (gray && cov[i]) {
+					// Overlapping grayscale glyphs of one run combine as the bitwise OR of (level - 1), measured on
+					// native GDI: all 15 x 15 level pairs of levels 2 to 16 over four faces (e.g. (4, 10) -> 12).
+					cov[i] = (((cov[i] - 1) | (v - 1)) & 15) + 1;
+				} else if (v > cov[i]) {
+					cov[i] = v;
+				}
 			}
 		}
 	}
@@ -707,6 +713,13 @@ export function drawGdiTextCall(
 		const t = (esc / 10) * (Math.PI / 180);
 		glyphFrame = compose(table.sin, table.cos);
 		frame = compose(Math.sin(t), Math.cos(t));
+	}
+	if (glyphFrame && call.playbackStretch && call.playbackStretch !== 1) {
+		// Native playback of a GM_COMPATIBLE record stretches the text space along x by eyScale / exScale before the rotation
+		// (`rotation * diag(k, 1)`; `text-escapement-playback`: of 3,200 glyph cells of Arial and Times New Roman at 12 to 28 px
+		// 231 differ without the stretch, 206 with `diag(k, 1) * rotation` and 25 with this order).
+		const k = call.playbackStretch;
+		glyphFrame = [glyphFrame[0] * k, glyphFrame[1] * k, glyphFrame[2], glyphFrame[3]];
 	}
 	const updateCp = (state.textAlign & 0x01) !== 0;
 	const lx = updateCp ? state.curX : call.x;
