@@ -16,7 +16,7 @@
 #   miter-limit-probe, gradient-blend-probe, chord-sweep-probe,
 #   scaled-cap-sweep-probe, scaled-line-caps-probe, scaled-pen-widths-probe,
 #   emf-roundrect-wide-probe, emf-roundrect-mode-probe, compat-playback-probe, dash-lengthened-probe, arc-small-probe, arc-huge-probe, chord-closing-probe,
-#   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-rotated-placement, playback-references, text-coverage,
+#   dash-neighbourhood-probe, text-recorded-advance, text-stretch-hinting, text-rotated-matrix, text-rotated-placement, text-escapement-playback, playback-references, text-coverage,
 #   text-cleartype-coverage, text-cleartype-sizes, text-cleartype-courier, text-gdi-cleartype-blend, text-gdi-cleartype-raster, text-gdi-cleartype-compat, text-gdi-cleartype-width, text-gdi-cleartype-arm, text-gdi-cleartype-chain, text-gdi-getinfo, text-shpix, text-iup, text-shpix-order, text-alignrp, text-msirp,
 #   text-raster-polygons, text-raster-bars, text-raster-mono, text-real-glyphs,
 #   text-origin-phases, text-origin-vertical-phases,
@@ -345,6 +345,14 @@ if ($Which -eq 'text-rotated-placement') {
     [TextRotatedPlacementProbe]::RunAligned($outDir, $true)
     [TextRotatedPlacementProbe]::RunGlyphs($outDir)
     Complete-Fixtures
+    return
+}
+if ($Which -eq 'text-escapement-playback') {
+    Add-Type -Path (Join-Path $here 'TextEscapementPlaybackProbe.cs') -ReferencedAssemblies System.Drawing
+    # Kept in a subdirectory so the GDI parity report (which walks the top level) does not take the sheets as fixtures.
+    $destination = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Force (Join-Path $outDir 'text-escapement-playback'))).Path
+    [TextEscapementPlaybackProbe]::Run($destination)
+    Complete-Fixtures -Directory $destination
     return
 }
 if ($Which -eq 'playback-extents') {

@@ -475,8 +475,8 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-couriernew-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0005% (round 9; was 0.0500% ceiling) measured 0.011%
 	fontCase('textx-couriernew-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00002); measured 0.0010% (round 9; was 0.0400% ceiling) measured 0.010%
 	fontCase('textx-couriernew-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00004); measured 0.0029% (round 9; was 0.0500% ceiling) measured 0.012%
-	fontCase('textx-escapement-aa', 'emf', 0.00003), // round 11: 5 px (ceiling was 0.00009); measured 0.0085% (15 px; 14 before round 8: one glyph pixel of the 45-degree line moved while the other 16 improved) against the native playback (0.212% against the direct drawing)
-	fontCase('textx-escapement-mono', 'emf', 0.00003), // round 11: 5 px (ceiling was 0.00009); measured 0.0085% (15 px) against the native playback (0.212% against the direct drawing)
+	fontCase('textx-escapement-aa', 'emf', 0), // round 12: exact (5 px, ceiling 0.00003, in round 11) once the playback's x stretch enters the rotated glyph matrix; 14 px before round 9
+	fontCase('textx-escapement-mono', 'emf', 0), // round 12: exact (5 px in round 11)
 	fontCase('textx-eto-aa', 'emf', 0.00002), // measured 0.0011% (round 9; was 0.0800% ceiling) measured 0.076% over 8 levels (0.087% exact; 0.50% before the native opaque-text blend, round 7) against the native playback (0.499% against the direct drawing)
 	fontCase('textx-eto-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00013); measured 0.012% against the native playback (0.435% against the direct drawing)
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%

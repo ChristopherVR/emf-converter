@@ -63,6 +63,21 @@ describe('rotationMatrix', () => {
 		expect(r.matrix[3]).toBeLessThan(0);
 		expect(r.matrix[0]).toBe(r.matrix[3]);
 	});
+	it('divides each axis vector of a rotation with a stretched x axis by its own major component', () => {
+		// Native playback of a GM_COMPATIBLE record: rotation * diag(k, 1), k = eyScale / exScale = 1.000558. The x vector is
+		// k * (cos, sin): A = round(k sin25 * 20 * 32) = 271 over B = round(k cos25 * 20 * 32) = 580; the y vector (-sin, cos)
+		// keeps 270 / 580 (the two differ, so the matrix is not a rotation any more).
+		const k = 1.000558374555067;
+		const m = rot(25);
+		const r = rotationMatrix([m[0] * k, m[1] * k, m[2], m[3]], 20, true)!;
+		expect(r.ppem).toBe(18);
+		expect(Math.abs(r.matrix[1])).toBeCloseTo(271 / 580, 5);
+		expect(Math.abs(r.matrix[2])).toBeCloseTo(270 / 580, 5);
+		expect(r.matrix[0]).toBe(1);
+		expect(r.matrix[3]).toBe(1);
+		// stretching the other way round (diag(k, 1) * rotation) is not recognised
+		expect(rotationMatrix([m[0] * k, m[1], m[2] * k, m[3]], 20, true)).toBeNull();
+	});
 	it('is not for a matrix that is not a rotation', () => {
 		expect(rotationMatrix([1, 0.3, 0.3, 1], 20, true)).toBeNull();
 	});
