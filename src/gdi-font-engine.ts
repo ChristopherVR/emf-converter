@@ -116,6 +116,13 @@ export interface GdiGlyph {
 	advance: number;
 }
 
+/**
+ * The dropout mode GDI+ SingleBitPerPixel (no grid fit) scan-converts with: simple dropout control, stubs excluded (mode 1).
+ * Measured against `textx-plus-singlebit` (30 differing pixels with the font's default, 22 with none, 0 with mode 1; modes
+ * 0, 1, 4, 5 and none were compared).
+ */
+const UNHINTED_MONO_DROPOUT = 1;
+
 /** Glyph index of the notdef glyph. */
 const NOTDEF = 0;
 
@@ -814,7 +821,7 @@ export class RealizedFont implements GdiRealizedFont {
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
 			const controlOn = src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM;
 			bitmap = this.gdiPlus
-				? rasterizeMono(o, dropoutMode(controlOn, src.scanType), undefined, true, smartGrid, false, false, false, false, true)
+				? rasterizeMono(o, this.gdiPlus && !this.gridFit ? UNHINTED_MONO_DROPOUT : dropoutMode(controlOn, src.scanType), undefined, true, smartGrid, false, false, false, false, true)
 				: msMonoBitmap(o, msScanFlags(controlOn, src.scanType));
 		} else if (this.mode === 'cleartype') {
 			// ClearType scan-converts its 6 x 1 samples with the font's own dropout control (SCANCTRL/SCANTYPE, stubs
