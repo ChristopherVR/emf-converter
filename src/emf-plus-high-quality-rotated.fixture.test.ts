@@ -71,7 +71,8 @@ function add(t: Tally, block: ReturnType<typeof resampleImage>, nativeBase64: st
 }
 
 /**
- * Draws `size` x `size` source pixels to the capture's three points (p0, p1, p2). GDI+ records a
+ * Draws `size` x `size` source pixels to the capture's three points (p0, p1, p2) as a points draw, so the converter runs
+ * GDI+'s float32 matrix chain for the sizes of the intermediate and the second draw's positions. GDI+ records a
  * Half-mode draw with its source rectangle shifted by -0.5, which the converter replays.
  */
 function draw(c: { p: number[]; kernel: number; pom: number }, rgba: Uint8ClampedArray, size: number): ReturnType<typeof resampleImage> {
@@ -87,7 +88,7 @@ function draw(c: { p: number[]; kernel: number; pom: number }, rgba: Uint8Clampe
 		rgba,
 		size,
 		size,
-		{ srcX: shift, srcY: shift, srcW: size, srcH: size, toDevice, kernel: c.kernel === 7 ? 'hq-bicubic' : 'hq-bilinear', halfPixelOffset: half },
+		{ srcX: shift, srcY: shift, srcW: size, srcH: size, toDevice, kernel: c.kernel === 7 ? 'hq-bicubic' : 'hq-bilinear', halfPixelOffset: half, pointsForm: true, worldPoints: c.p, worldMatrix: [1, 0, 0, 1, 0, 0] },
 		{ w: 96, h: 96 },
 	);
 }
@@ -116,29 +117,29 @@ describe('rotated high-quality DrawImage (native captures)', () => {
 		// Before the two-pass model nearly every pixel of every upscaled group differed (12,773 to 12,860 in 20 noise draws), up to 255 levels.
 		expect(stats).toEqual({
 			'k6 pom3 1.1x alpha noise': { n: 4, px: 1, max: 1, over8: 0, exact: 3 },
-			'k6 pom3 1.1x impulse': { n: 12, px: 9, max: 1, over8: 0, exact: 5 },
-			'k6 pom3 1.1x noise': { n: 4, px: 3, max: 1, over8: 0, exact: 2 },
-			'k6 pom3 1.25x-3x alpha noise': { n: 20, px: 30, max: 1, over8: 0, exact: 2 },
-			'k6 pom3 1.25x-3x impulse': { n: 60, px: 18, max: 1, over8: 0, exact: 43 },
-			'k6 pom3 1.25x-3x noise': { n: 20, px: 33, max: 1, over8: 0, exact: 3 },
+			'k6 pom3 1.1x impulse': { n: 12, px: 1, max: 1, over8: 0, exact: 11 },
+			'k6 pom3 1.1x noise': { n: 4, px: 2, max: 1, over8: 0, exact: 3 },
+			'k6 pom3 1.25x-3x alpha noise': { n: 20, px: 23, max: 1, over8: 0, exact: 6 },
+			'k6 pom3 1.25x-3x impulse': { n: 60, px: 6, max: 1, over8: 0, exact: 54 },
+			'k6 pom3 1.25x-3x noise': { n: 20, px: 19, max: 1, over8: 0, exact: 8 },
 			'k6 pom4 1.1x alpha noise': { n: 4, px: 1, max: 1, over8: 0, exact: 3 },
 			'k6 pom4 1.1x impulse': { n: 12, px: 0, max: 0, over8: 0, exact: 12 },
-			'k6 pom4 1.1x noise': { n: 4, px: 4, max: 1, over8: 0, exact: 2 },
-			'k6 pom4 1.25x-3x alpha noise': { n: 20, px: 38, max: 1, over8: 0, exact: 4 },
-			'k6 pom4 1.25x-3x impulse': { n: 60, px: 42, max: 1, over8: 0, exact: 34 },
-			'k6 pom4 1.25x-3x noise': { n: 20, px: 67, max: 1, over8: 0, exact: 1 },
-			'k7 pom3 1.1x alpha noise': { n: 4, px: 16, max: 3, over8: 0, exact: 3 },
+			'k6 pom4 1.1x noise': { n: 4, px: 3, max: 1, over8: 0, exact: 3 },
+			'k6 pom4 1.25x-3x alpha noise': { n: 20, px: 13, max: 1, over8: 0, exact: 12 },
+			'k6 pom4 1.25x-3x impulse': { n: 60, px: 12, max: 1, over8: 0, exact: 48 },
+			'k6 pom4 1.25x-3x noise': { n: 20, px: 22, max: 1, over8: 0, exact: 7 },
+			'k7 pom3 1.1x alpha noise': { n: 4, px: 10, max: 2, over8: 0, exact: 3 },
 			'k7 pom3 1.1x impulse': { n: 12, px: 0, max: 0, over8: 0, exact: 12 },
-			'k7 pom3 1.1x noise': { n: 4, px: 16, max: 2, over8: 0, exact: 3 },
-			'k7 pom3 1.25x-3x alpha noise': { n: 20, px: 3, max: 1, over8: 0, exact: 18 },
+			'k7 pom3 1.1x noise': { n: 4, px: 10, max: 2, over8: 0, exact: 3 },
+			'k7 pom3 1.25x-3x alpha noise': { n: 20, px: 1, max: 1, over8: 0, exact: 19 },
 			'k7 pom3 1.25x-3x impulse': { n: 60, px: 1, max: 1, over8: 0, exact: 59 },
-			'k7 pom3 1.25x-3x noise': { n: 20, px: 5, max: 1, over8: 0, exact: 17 },
-			'k7 pom4 1.1x alpha noise': { n: 4, px: 16, max: 3, over8: 0, exact: 3 },
-			'k7 pom4 1.1x impulse': { n: 12, px: 45, max: 3, over8: 0, exact: 9 },
-			'k7 pom4 1.1x noise': { n: 4, px: 19, max: 3, over8: 0, exact: 3 },
-			'k7 pom4 1.25x-3x alpha noise': { n: 20, px: 11, max: 4, over8: 0, exact: 16 },
-			'k7 pom4 1.25x-3x impulse': { n: 60, px: 6, max: 5, over8: 0, exact: 54 },
-			'k7 pom4 1.25x-3x noise': { n: 20, px: 8, max: 5, over8: 0, exact: 17 },
+			'k7 pom3 1.25x-3x noise': { n: 20, px: 1, max: 1, over8: 0, exact: 19 },
+			'k7 pom4 1.1x alpha noise': { n: 4, px: 3, max: 2, over8: 0, exact: 3 },
+			'k7 pom4 1.1x impulse': { n: 12, px: 12, max: 3, over8: 0, exact: 9 },
+			'k7 pom4 1.1x noise': { n: 4, px: 5, max: 3, over8: 0, exact: 3 },
+			'k7 pom4 1.25x-3x alpha noise': { n: 20, px: 4, max: 1, over8: 0, exact: 17 },
+			'k7 pom4 1.25x-3x impulse': { n: 60, px: 0, max: 0, over8: 0, exact: 60 },
+			'k7 pom4 1.25x-3x noise': { n: 20, px: 4, max: 1, over8: 0, exact: 17 },
 		});
 	});
 });
@@ -194,18 +195,18 @@ describe('rotated high-quality DrawImage scale sweep (native captures)', () => {
 		}
 		// Reductions pre-scale with the native destination-space rule; the Half variant still differs by up to 30 levels at 0.5x (open).
 		expect(stats).toEqual({
-			'pom3 k6 reduction': { n: 4, px: 2, max: 1, over8: 0, exact: 2 },
-			'pom3 k6 near': { n: 18, px: 18, max: 1, over8: 0, exact: 9 },
-			'pom3 k6 upscale': { n: 20, px: 24, max: 1, over8: 0, exact: 6 },
-			'pom4 k6 reduction': { n: 4, px: 61, max: 23, over8: 23, exact: 2 },
-			'pom4 k6 near': { n: 18, px: 15, max: 1, over8: 0, exact: 10 },
-			'pom4 k6 upscale': { n: 20, px: 27, max: 1, over8: 0, exact: 5 },
+			'pom3 k6 reduction': { n: 4, px: 0, max: 0, over8: 0, exact: 4 },
+			'pom3 k6 near': { n: 18, px: 2, max: 1, over8: 0, exact: 16 },
+			'pom3 k6 upscale': { n: 20, px: 2, max: 1, over8: 0, exact: 18 },
+			'pom4 k6 reduction': { n: 4, px: 60, max: 23, over8: 23, exact: 3 },
+			'pom4 k6 near': { n: 18, px: 4, max: 1, over8: 0, exact: 15 },
+			'pom4 k6 upscale': { n: 20, px: 10, max: 1, over8: 0, exact: 11 },
 			'pom3 k7 reduction': { n: 4, px: 0, max: 0, over8: 0, exact: 4 },
-			'pom3 k7 near': { n: 18, px: 21, max: 4, over8: 0, exact: 12 },
-			'pom3 k7 upscale': { n: 20, px: 12, max: 1, over8: 0, exact: 15 },
+			'pom3 k7 near': { n: 18, px: 1, max: 2, over8: 0, exact: 17 },
+			'pom3 k7 upscale': { n: 20, px: 1, max: 1, over8: 0, exact: 19 },
 			'pom4 k7 reduction': { n: 4, px: 60, max: 30, over8: 38, exact: 3 },
-			'pom4 k7 near': { n: 18, px: 18, max: 5, over8: 0, exact: 12 },
-			'pom4 k7 upscale': { n: 20, px: 21, max: 1, over8: 0, exact: 12 },
+			'pom4 k7 near': { n: 18, px: 1, max: 2, over8: 0, exact: 17 },
+			'pom4 k7 upscale': { n: 20, px: 9, max: 1, over8: 0, exact: 17 },
 		});
 	});
 });

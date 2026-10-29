@@ -7,7 +7,7 @@ The converter is tested by comparing its output pixel for pixel with what Window
 - **GDI ClearType text.** A few small curved glyphs, and two small Arial glyphs at default quality, are drawn differently: about 30 to 140 pixels on a full test page of text.
 - **GDI grayscale and monochrome text.** Rotated text can differ at a few small sizes and angles, by up to about 30 pixels a glyph at 9 to 14 px.
 - **EMF+ (GDI+) text.** Between 5 and 44 pixels per test page, depending on the text rendering hint. `DrawString` layout matches Windows for single-line, unrotated text under a uniform scale. Wrapping, trimming, complex-script shaping, and rotated or non-uniformly scaled alignment can place text differently.
-- **EMF+ images and effects.** A rotated blur, and high-quality `DrawImage` sampling, can differ by one colour level in a few pixels.
+- **EMF+ images and effects.** High-quality `DrawImage` of a cropped, wrapped, mirrored or half-pixel-offset source, and plain Bilinear points draws, can differ by one colour level in a few pixels.
 - **EMF+ path gradients.** A few edge pixels of tiled gradients on ellipses with fractional bounds can differ by up to two colour levels.
 - **CMYK JPEG.** Very rarely one colour level off (43 of 30,000,000 random colours).
 
