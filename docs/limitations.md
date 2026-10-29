@@ -10,7 +10,6 @@ The converter is tested by comparing its output pixel for pixel with what Window
 - **EMF+ pens with Inset alignment and round dash caps.** Up to 32 pixels on a test page.
 - **EMF+ images and effects.** A rotated blur, and high-quality `DrawImage` sampling, can differ by one colour level in a few pixels.
 - **EMF+ path gradients.** Tiled gradients on ellipses with fractional bounds can differ by up to two colour levels, and some star-shaped fills by two pixels.
-- **CMYK JPEG.** Very rarely one colour level off (43 of 30,000,000 random colours).
 
 ## Differences by design
 

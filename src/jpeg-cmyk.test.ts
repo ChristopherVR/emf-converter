@@ -32,6 +32,20 @@ it('converts held-out random CMYK exactly', () => {
 	expect(mismatches(data, 30000, 7)).toBe(0);
 });
 
+// Inks that the 16-bit node table plus one got one level wrong: icm-cmyk-fit8.bin.gz (920 inks, the first set the 8-bit node
+// corrections were solved against) and icm-cmyk-heldout8.bin.gz (450 inks from 128 million other random inks). Records are C, M,
+// Y, K and the native R, G, B (TranslateBitmapBits). The corrections are exact for every one of the 2^32 inks (an exhaustive
+// sweep, scripts/gdi-fixtures/cmyk-8bit-nodes.ts), so these must all be right.
+it('converts the inks the uncorrected node table missed', () => {
+	const read = (name: string): Uint8Array => new Uint8Array(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}`, import.meta.url))));
+	const fit = read('icm-cmyk-fit8.bin.gz');
+	const held = read('icm-cmyk-heldout8.bin.gz');
+	expect(fit.length / 7).toBe(920);
+	expect(held.length / 7).toBe(450);
+	expect(mismatches(fit, 920, 7)).toBe(0);
+	expect(mismatches(held, 450, 7)).toBe(0);
+});
+
 // The ink position: a 16-bit word w lands at x = w - (w >> 8) - 2 (not below 0) on a table of the profile curve cut into 16
 // steps per entry, with the weight r / 15 between steps (r = x & 15): 15 k + r in 1/4096 cell for k = x >> 4 (the
 // grid is 15 cells of 4096). The 8-bit ink v is the word 257 v.

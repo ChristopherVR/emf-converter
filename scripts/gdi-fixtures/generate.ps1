@@ -40,7 +40,7 @@
 #   image-codecs-cmyk-lut, image-codecs-arithmetic, image-effects,
 #   image-effect-sharpen, image-effect-large-blur, image-effect-expanded-blur,
 #   image-effect-narrow-blur, image-effect-hue, image-effect-tint,
-#   image-effect-tables, effect-alpha, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-translate16,
+#   image-effect-tables, effect-alpha, icm-cmyk-probe, icm-cmyk-srgb16, icm-cmyk-srgb8, icm-cmyk-translate16,
 #   dash-cut-tie-probe, scaled-dash-cap-probe, curve-end-reversal-probe,
 #   tiny-final-segment-probe, text-raster-variants, text-raster-mapper, text-raster-synthetic, text-raster-styles,
 #   text-playback-hinting, text-signed-diagonal-hinting,
@@ -1139,6 +1139,17 @@ if ($Which -eq 'icm-cmyk-srgb16') {
     $dir = (Resolve-Path -LiteralPath $TablesDir).Path
     foreach ($ink in Get-ChildItem -LiteralPath $dir -Filter *.ink) {
         [IcmProbe]::RunSrgb16($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb16')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm', 0, 3)
+        [IcmProbe]::RunSrgb8($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb8')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm')
+    }
+    return
+}
+if ($Which -eq 'icm-cmyk-srgb8') {
+    # Only the 8-bit best-mode translation of every <name>.ink file (C, M, Y, K bytes) into <name>.srgb8 (B, G, R, X bytes);
+    # `cmyk-8bit-nodes.ts sweep` feeds it chunks of the whole 2^32 ink cube.
+    if (!$TablesDir) { throw 'Pass the directory holding <name>.ink files' }
+    Add-Type -Path (Join-Path $here 'IcmProbe.cs')
+    $dir = (Resolve-Path -LiteralPath $TablesDir).Path
+    foreach ($ink in Get-ChildItem -LiteralPath $dir -Filter *.ink) {
         [IcmProbe]::RunSrgb8($ink.FullName, (Join-Path $dir ($ink.BaseName + '.srgb8')), 'C:\Windows\System32\spool\drivers\color\RSWOP.icm')
     }
     return
