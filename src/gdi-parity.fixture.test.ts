@@ -475,8 +475,8 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-couriernew-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0005% (round 9; was 0.0500% ceiling) measured 0.011%
 	fontCase('textx-couriernew-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00002); measured 0.0010% (round 9; was 0.0400% ceiling) measured 0.010%
 	fontCase('textx-couriernew-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00004); measured 0.0029% (round 9; was 0.0500% ceiling) measured 0.012%
-	fontCase('textx-escapement-aa', 'emf', 0.00003), // round 11: 5 px (ceiling was 0.00009); measured 0.0085% (15 px; 14 before round 8: one glyph pixel of the 45-degree line moved while the other 16 improved) against the native playback (0.212% against the direct drawing)
-	fontCase('textx-escapement-mono', 'emf', 0.00003), // round 11: 5 px (ceiling was 0.00009); measured 0.0085% (15 px) against the native playback (0.212% against the direct drawing)
+	fontCase('textx-escapement-aa', 'emf', 0), // round 12: exact (5 px, ceiling 0.00003, in round 11) once the playback's x stretch enters the rotated glyph matrix; 14 px before round 9
+	fontCase('textx-escapement-mono', 'emf', 0), // round 12: exact (5 px in round 11)
 	fontCase('textx-eto-aa', 'emf', 0), // round 12: 0 px (was 1 px; 0.0011% before) (round 9; was 0.0800% ceiling) measured 0.076% over 8 levels (0.087% exact; 0.50% before the native opaque-text blend, round 7) against the native playback (0.499% against the direct drawing)
 	fontCase('textx-eto-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00013); measured 0.012% against the native playback (0.435% against the direct drawing)
 	fontCase('textx-fon-courier', 'emf', 0), // measured 0.000%
@@ -574,17 +574,19 @@ const IMAGE_MODE_CASES: ParityCase[] = [
 	// every channel within one level and none beyond it (before the cubic table and the unsnapped phase offsets:
 	// 41 pixels beyond one level on HighQualityBilinear, 10 on HighQualityBicubic and High, 5 under Half, 6 under
 	// HighSpeed; at zero tolerance 1,145 and 1,084 pixels off on the HighQualityBilinear and HighQualityBicubic fixtures, 34 and 121 before round 8, then 7 and 12, and since round 10 (the start-position shift of an edge beyond 64 pixels) 1 and 0, the High and HighQualityBicubic fixtures exact; Half and HighSpeed 0).
-	levelExact('gpx-image-highqualitybilinear'),
+	// Exact since round 12: a whole-bitmap draw without attributes runs GDI+'s own stretch span (`gdiplus-span-stretch.ts`), the
+	// one pixel left was the 25.6 x 21.6 and 58 x 20 reductions' start position.
+	exact('gpx-image-highqualitybilinear'),
 	exact('gpx-image-highqualitybicubic'),
 	exact('gpx-image-high'),
 	exact('gpx-image-pom-half-highqualitybicubic'),
 	exact('gpx-image-pom-highquality-highqualitybicubic'),
 	exact('gpx-image-pom-highspeed-highqualitybicubic'),
 	// A rotated HighQualityBicubic draw: a pre-scale to the device length, then
-	// a plain integer Bicubic pass (`resampleRotatedTwoStage`). Every channel is
-	// within one level; 10 pixels (0.064%) are one level off at zero tolerance
-	// (before: 2,911 pixels, 18.5%, up to 10 levels off).
-	levelExact('gpx-image-rotated-highqualitybicubic'),
+	// a plain integer Bicubic pass (`resampleRotatedTwoStage`). Exact since round
+	// 12, when the second pass took GDI+'s float32 matrix chain and 16.16 span
+	// (5 pixels one level off before; round 3: 2,911 pixels, up to 10 levels).
+	exact('gpx-image-rotated-highqualitybicubic'),
 ];
 
 /**
@@ -1043,8 +1045,7 @@ const EMF_PLUS_EFFECT_CASES: ParityCase[] = [
 	exact('plus-effect-blur-r2p5'), // 0.561% before (0.395% beyond 8 levels), exact now
 	exact('plus-effect-blur-r3'), // 0.682% before (0.446% beyond 8 levels), exact now
 	exact('plus-effect-blur-r3-expand'), // 8.323% before (4.619% beyond 8 levels), exact now
-	// Residual along one edge of the rotated draw, where the effect draw shows through the recorded bitmap's faded edge.
-	{ name: 'plus-effect-blur-r3-rotate30', ext: 'emf', tolerance: 8, maxMismatch: 0.00012 }, // 2.555% before, 0.218% (0.010% since the blur's halo column is sampled)
+	exact('plus-effect-blur-r3-rotate30'), // 2.555% before, 0.218% (0.010% since the blur's halo column is sampled), exact since round 12 (the float32 matrix chain of the points draw)
 	exact('plus-effect-blur-r3-scale2'), // 5.696% before (0.045% beyond 8 levels), exact now
 	exact('plus-effect-blur-r4-subrect'),
 	exact('plus-effect-blur-r4-subrect-expand'), // 4.884% before (2.448% beyond 8 levels), exact now

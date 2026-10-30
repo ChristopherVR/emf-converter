@@ -110,6 +110,7 @@ function imageResampleSpec(
 	points: boolean,
 	nominalScale?: (sw: number, sh: number) => [number, number] | undefined,
 	worldPoints?: number[],
+	worldRect?: [number, number, number, number],
 ): DeferredImageResample | undefined {
 	const { view } = rCtx;
 	const kernel = resampleKernelFor(rCtx.interpolationMode ?? 0);
@@ -133,6 +134,7 @@ function imageResampleSpec(
 		halfPixelOffset: isHalfPixelOffset(rCtx.pixelOffsetMode ?? 0),
 		...(points ? { pointsForm: true } : {}),
 		...(points && worldPoints ? { worldPoints, worldMatrix: plusWorldMatrix(rCtx) } : {}),
+		...(!points && worldRect ? { worldRect, worldMatrix: plusWorldMatrix(rCtx) } : {}),
 		...(nominalScale ? { nominalScale: nominalScale(srcW, srcH) } : {}),
 		...imageAttributesWrap(rCtx, view.getUint32(dataOff, true)),
 	};
@@ -160,6 +162,7 @@ function drawOrDeferImage(
 	points = false,
 	nominalScale?: (sw: number, sh: number) => [number, number] | undefined,
 	worldPoints?: number[],
+	worldRect?: [number, number, number, number],
 ): void {
 	if (!imgObj.data) {
 		return;
@@ -173,7 +176,7 @@ function drawOrDeferImage(
 		dh,
 		transform: plusWorldMatrix(rCtx),
 		isMetafile,
-		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld, points, nominalScale, worldPoints),
+		resample: imageResampleSpec(rCtx, dataOff, isMetafile, toWorld, points, nominalScale, worldPoints, worldRect),
 	};
 	const { view } = rCtx;
 	const source = {
@@ -446,7 +449,6 @@ function realizePlusEngineFont(
 		ignoreGasp: hint === 4,
 		gdiPlus: true,
 		unscaledText: m[0] === 1 && m[3] === 1,
-		scaledText: m[0] !== 1 || m[3] !== 1,
 	};
 	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
 	if (!realized) {
@@ -853,7 +855,7 @@ export function handleEmfPlusTextImageRecord(
 						down32(dh / sh),
 						dx - (sx * dw) / sw,
 						dy - (sy * dh) / sh,
-					], null, false, (sw, sh) => [Math.fround(dw / sw), Math.fround(dh / sh)]);
+					], null, false, (sw, sh) => [Math.fround(dw / sw), Math.fround(dh / sh)], undefined, [dx, dy, dw, dh]);
 				} else {
 					emfWarn(`DrawImage: SKIPPED, no valid image data for id=${imgId}`);
 				}
