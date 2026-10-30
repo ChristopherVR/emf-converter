@@ -18,6 +18,7 @@
  *                                                            <dir>/train.bin (the concatenated wrong*.bin and tight*.bin)
  *                                                            holds; writes <dir>/nodes.u16
  *   bun cmyk-8bit-nodes.ts patch  <dir>                      prints NODE_DELTA_8BIT for src/jpeg-cmyk.ts
+ *   bun cmyk-8bit-nodes.ts regenerate <dir>                  init, then sweep and solve until a sweep finds nothing, then patch
  *
  * Loop: sweep, append the wrong inks to train.bin, solve, sweep again, until a sweep finds none. Needs Windows (64-bit
  * PowerShell, RSWOP.icm) and about 300 MB of free disk for one chunk batch.
@@ -30,10 +31,15 @@ import { cmykInputPositions, cmykNodeTable } from '../../src/jpeg-cmyk';
 const N = 16;
 const ST = [N ** 3, N ** 2, N, 1];
 const [cmd, dir] = [process.argv[2], process.argv[3]];
-const MARGIN = 4096 * 3;
+const MARGIN = 8192;
 const CHUNK = 1 << 24;
-/** Set TIGHT=1 to also keep the inks within three node steps of a boundary (about 0.5% of all inks, 7 bytes each). */
-const TIGHT = !!process.env.TIGHT;
+/** Also keep a sixteenth of the inks within two node steps of a boundary (about 12 million, 7 bytes each); `regenerate` sets it for its first sweep, or set TIGHT=1. */
+let TIGHT = !!process.env.TIGHT;
+
+/** A fixed pseudo-random sixteenth of the inks. */
+function sampled(ink: Uint8Array, j: number): boolean {
+	return (Math.imul(ink[j * 4] + 1, 73856093) ^ Math.imul(ink[j * 4 + 1] + 1, 19349663) ^ Math.imul(ink[j * 4 + 2] + 1, 83492791) ^ Math.imul(ink[j * 4 + 3] + 1, 2654435761)) >>> 28 === 0;
+}
 
 const fr = new Int32Array(4);
 const ord = new Int32Array(4);
@@ -73,7 +79,7 @@ const loadNodes = (): Uint16Array => {
 	return new Uint16Array(b.buffer, b.byteOffset, b.byteLength / 2);
 };
 
-function sweep(first: number, last: number): void {
+function sweep(first: number, last: number): number {
 	const nodes = loadNodes();
 	const work = `${dir}/work${first}`;
 	mkdirSync(work, { recursive: true });
@@ -95,12 +101,16 @@ function sweep(first: number, last: number): void {
 			}
 			writeFileSync(`${work}/c${c}.ink`, b);
 		}
-		const run = spawnSync(
-			'powershell.exe',
-			['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./generate.ps1', import.meta.url)), 'icm-cmyk-srgb8', '-TablesDir', work],
-			{ stdio: 'inherit' },
-		);
-		if (run.status !== 0) throw new Error('generate.ps1 icm-cmyk-srgb8 failed');
+		// PowerShell now and then fails to start a module command under load (seen once in 100 runs): try again.
+		for (let attempt = 0; ; attempt++) {
+			const run = spawnSync(
+				'powershell.exe',
+				['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./generate.ps1', import.meta.url)), 'icm-cmyk-srgb8', '-TablesDir', work],
+				{ stdio: 'inherit' },
+			);
+			if (run.status === 0) break;
+			if (attempt >= 4) throw new Error('generate.ps1 icm-cmyk-srgb8 failed');
+		}
 		for (const c of chunks) {
 			const ink = readFileSync(`${work}/c${c}.ink`);
 			const nat = readFileSync(`${work}/c${c}.srgb8`);
@@ -114,7 +124,7 @@ function sweep(first: number, last: number): void {
 					const s = w[0] * nodes[at[0] * 3 + ch] + w[1] * nodes[at[1] * 3 + ch] + w[2] * nodes[at[2] * 3 + ch] + w[3] * nodes[at[3] * 3 + ch] + w[4] * nodes[at[4] * 3 + ch];
 					const t = nat[j * 4 + 2 - ch];
 					if (s >> 20 !== t) isWrong = true;
-					if (TIGHT && (s - (t << 20) < MARGIN || ((t + 1) << 20) - s <= MARGIN)) isTight = true;
+					if (TIGHT && sampled(ink, j) && (s - (t << 20) < MARGIN || ((t + 1) << 20) - s <= MARGIN)) isTight = true;
 				}
 				if (isWrong || isTight) {
 					const rec = [ink[j * 4], ink[j * 4 + 1], ink[j * 4 + 2], ink[j * 4 + 3], nat[j * 4 + 2], nat[j * 4 + 1], nat[j * 4]];
@@ -132,6 +142,7 @@ function sweep(first: number, last: number): void {
 			console.log(`chunk ${c}: ${wrong} wrong of ${total} so far`);
 		}
 	}
+	return wrong;
 }
 
 function solve(maxStep: number): void {
@@ -275,10 +286,33 @@ function patch(): void {
 	}
 }
 
+/**
+ * The whole procedure from nothing: seed (init), one sweep that also keeps every ink near a boundary, then solve and sweep
+ * again until a sweep finds no wrong ink. Sweeps run one at a time (about 20 minutes each); about four are needed.
+ */
+function regenerate(): void {
+	mkdirSync(dir, { recursive: true });
+	rmSync(`${dir}/train.bin`, { force: true });
+	writeFileSync(nodesFile(), Buffer.from(Uint16Array.from(cmykNodeTable(), v => Math.min(65535, Math.max(0, v + 1))).buffer));
+	TIGHT = true;
+	for (let round = 0; ; round++) {
+		rmSync(`${dir}/wrong0.bin`, { force: true });
+		rmSync(`${dir}/tight0.bin`, { force: true });
+		const wrong = sweep(0, 255);
+		console.log(`round ${round}: ${wrong} wrong inks`);
+		if (!wrong) break;
+		for (const f of ['wrong0.bin', 'tight0.bin']) if (existsSync(`${dir}/${f}`)) appendFileSync(`${dir}/train.bin`, readFileSync(`${dir}/${f}`));
+		TIGHT = false;
+		solve(3);
+	}
+	patch();
+}
+
 if (cmd === 'init') {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(nodesFile(), Buffer.from(Uint16Array.from(cmykNodeTable(), v => Math.min(65535, Math.max(0, v + 1))).buffer));
 } else if (cmd === 'sweep') sweep(+(process.argv[4] ?? 0), +(process.argv[5] ?? 255));
 else if (cmd === 'solve') solve(+(process.argv[4] ?? 3));
 else if (cmd === 'patch') patch();
+else if (cmd === 'regenerate') regenerate();
 else console.log('usage: see the header of this file');
