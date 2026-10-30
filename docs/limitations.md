@@ -1,12 +1,12 @@
 # Limitations
 
-The converter is tested by comparing its output pixel for pixel with what Windows itself paints for 910 test pictures. 885 of them match exactly (October 2026). The other 25 differ by a few pixels, listed below. The measurements behind each item are in [Parity notes](./parity-notes.md), and what is still being worked on is in [Outstanding work](./outstanding-work.md).
+The converter is tested by comparing its output pixel for pixel with what Windows itself paints for 910 test pictures. 899 of them match exactly (October 2026). The other 11 differ by a few pixels, listed below. The measurements behind each item are in [Parity notes](./parity-notes.md), and what is still being worked on is in [Outstanding work](./outstanding-work.md).
 
 ## Where output can still differ from Windows
 
 - **GDI ClearType text.** A few small curved glyphs, and two small Arial glyphs at default quality, are drawn differently: about 30 to 140 pixels on a full test page of text.
 - **GDI grayscale and monochrome text.** Rotated text can differ at a few small sizes and angles, by up to about 30 pixels a glyph at 9 to 14 px.
-- **EMF+ (GDI+) text.** Between 5 and 44 pixels per test page, depending on the text rendering hint. `DrawString` layout matches Windows for single-line, unrotated text under a uniform scale. Wrapping, trimming, complex-script shaping, and rotated or non-uniformly scaled alignment can place text differently.
+- **EMF+ (GDI+) text.** Between 4 and 44 pixels per test page, depending on the text rendering hint. `DrawString` layout matches Windows for single-line, unrotated text under a uniform scale. Wrapping, trimming, complex-script shaping, and rotated or non-uniformly scaled alignment can place text differently.
 - **EMF+ images and effects.** High-quality `DrawImage` of a cropped, wrapped, mirrored or half-pixel-offset source, and plain Bilinear points draws, can differ by one colour level in a few pixels.
 - **EMF+ path gradients.** A few edge pixels of tiled gradients on ellipses with fractional bounds can differ by up to two colour levels.
 
