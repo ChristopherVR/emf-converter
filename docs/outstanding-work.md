@@ -21,7 +21,6 @@ State on 23 October 2026: 885 of 910 report comparisons are pixel-exact (`bun sc
 
 ## Images and colour
 
-- **CMYK JPEG.** 43 of 30,000,000 random inks are one level off, mostly at colour-table nodes outside the gamut.
 - **Red-eye.** A direct call made after earlier calls in the same process differs. A stateless converter reproduces a fresh process, so this is not planned.
 
 ## Tooling

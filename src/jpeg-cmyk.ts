@@ -17,8 +17,9 @@
  *     weighted by the steps between them (integers summing to 4096), `S = sum(weight * node)`. A node value is a signed
  *     16-bit integer, and nodes beyond the sRGB gamut are not clipped, so a colour crossing the gamut edge inside a cell
  *     clips only after interpolation.
- *   - Eight-bit result. GDI+ keeps `(S + 4096) >> 20` (clamped to 0..255): the interpolated node value plus one, divided by
- *     256. That is why the top byte of the 16-bit result is not always the 8-bit result.
+ *   - Eight-bit result. The module's 8-bit routine reads unsigned 16-bit nodes and keeps `S >> 20`; against the nodes below that is
+ *     `(S + 4096) >> 20`, the interpolated node value plus one, divided by 256 (see `nodeTable8`). That is why the top byte of the
+ *     16-bit result is not always the 8-bit result.
  *   - Sixteen-bit result (`cmykColour16`, for the probes only). The module scales the interpolated value `n = S / 4096`
  *     onto a table of 1,025 entries, `p = (n 65472 / 65535 + 511/1024) / 64`, and linearly interpolates the entries
  *     `K[m] = (65599 m + 511) >> 10`, rounded to nearest.
@@ -112,6 +113,40 @@ function nodeTable(): Int32Array {
 	}
 	return (table = values);
 }
+/** The decoded 16-bit-path node table, for `scripts/gdi-fixtures/cmyk-8bit-nodes.ts`. */
+export const cmykNodeTable = (): Int32Array => nodeTable();
+
+/**
+ * The 8-bit transform of the module (`LHCalc4to3_Di8_Do8_Lut16_G16` of icm32.dll) reads the nodes as UNSIGNED 16-bit words and keeps
+ * `S >> 20`, so its table is the table above plus one (the `+ 4096` of the sum), clamped to 0..65535, with 89 of the 196,608
+ * values moved by one to 5 units. Those corrections are the integers for which the result is right for every one of the 2^32 ink
+ * combinations (an exhaustive sweep against `TranslateBitmapBits`, `scripts/gdi-fixtures/cmyk-8bit-nodes.ts`, which prints this
+ * list with `patch`): pairs of (gap to the previous node value index, change). The 16-bit probes read these nodes through the
+ * module's other, generic interpolator and see them differently, so `cmykColour16` keeps the table above.
+ */
+const NODE_DELTA_8BIT = [
+	192, 1, 91, 2, 53, 1, 1440, 2, 144, 1, 960, 1, 5706, -2, 1776, 2, 768, 1, 1348, -1, 48, -1, 5, -1, 237, 1, 3930, 1,
+	819, -1, 2586, -1, 3, 1, 768, 2, 48, -1, 192, -1, 6838, -1, 765, -1, 3, 1, 1850, 1, 1872, -1, 1773, -1, 3, 1,
+	720, 3, 51, -1, 3744, -1, 337, -1, 719, -1, 48, -1, 48, -1, 2973, -1, 4035, 1, 336, -1, 3792, 1, 337, -1, 7971, 1,
+	48, -1, 569, 1, 3, -1, 48, -1, 199, 1, 10649, -1, 9822, 1, 3, -1, 2463, 1, 816, -1, 15121, -5, 12128, 1, 48, -1,
+	64, -1, 196, -1, 3499, -1, 768, 1, 7825, -1, 45, 1, 3, -1, 24062, 1, 12192, -1, 3, -1, 93, -1, 342, 1, 3, -1,
+	768, 1, 1467, 1, 5614, -1, 922, -3, 48, 1, 4618, -1, 45, -1, 393, -1, 516, 1, 138, 1, 114, 1, 225, 2, 429, 2,
+	5608, 1, 5069, -1, 48, 1, 381, -1, 3, 1, 45, -1, 852, -1, 48, -1, 3, -1, 231, -1,
+];
+
+let table8: Int32Array | null = null;
+
+/** The node table of the 8-bit conversion: `nodeTable()` plus one, clamped to 16 bits, plus `NODE_DELTA_8BIT`. */
+function nodeTable8(): Int32Array {
+	if (table8) return table8;
+	const nodes = nodeTable();
+	table8 = nodes.map(v => Math.min(65535, Math.max(0, v + 1)));
+	for (let i = 0, at = 0; i < NODE_DELTA_8BIT.length; i += 2) {
+		at += NODE_DELTA_8BIT[i];
+		table8[at] += NODE_DELTA_8BIT[i + 1];
+	}
+	return table8;
+}
 
 const fraction = new Int32Array(4);
 const order = new Int32Array(4);
@@ -163,7 +198,7 @@ const clamp8 = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v);
  * fixed-point conversion applies), otherwise they hold the stored (inverted) C, M and Y; the fourth plane is K.
  */
 export function cmykPlanesToRgba(planes: Uint8Array[], width: number, height: number, ycck: boolean): Uint8Array {
-	const nodes = nodeTable();
+	const nodes = nodeTable8();
 	const out = new Uint8Array(width * height * 4);
 	const fix = (x: number): number => Math.floor(x * 65536 + 0.5);
 	const half = 1 << 15;
@@ -193,9 +228,9 @@ export function cmykPlanesToRgba(planes: Uint8Array[], width: number, height: nu
 		positionsIn[2] = cmykInputPositions[y];
 		positionsIn[3] = cmykInputPositions[255 - planes[3][p]];
 		interpolate(nodes, sums);
-		out[p * 4] = clamp8((sums[0] + 4096) >> 20);
-		out[p * 4 + 1] = clamp8((sums[1] + 4096) >> 20);
-		out[p * 4 + 2] = clamp8((sums[2] + 4096) >> 20);
+		out[p * 4] = sums[0] >> 20;
+		out[p * 4 + 1] = sums[1] >> 20;
+		out[p * 4 + 2] = sums[2] >> 20;
 		out[p * 4 + 3] = 255;
 	}
 	return out;
