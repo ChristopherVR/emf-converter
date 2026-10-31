@@ -1,7 +1,7 @@
 version: 2
 updates:
-  # npm dependencies (package.json): tsup / typescript / vitest, etc.
-  - package-ecosystem: "npm"
+  # Dependencies (package.json + bun.lock): tsup / typescript / vitest, etc.
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "weekly"
