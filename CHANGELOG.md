@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.25.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.1) - 2026-10-31
+
+### Other
+
+- Merge dependency updates (#25 minus @napi-rs/canvas, #27 tsup 9) ([165c4ec](https://github.com/ChristopherVR/emf-converter/commit/165c4ec3ca5397e1aca9e067d96bc9cd3510d854))
+
+### Build & CI
+
+- **deps-dev:** Bump the npm-dependencies group across 1 directory with 6 updates ([ab24a33](https://github.com/ChristopherVR/emf-converter/commit/ab24a3363ea08599a8fc751e7dfeeb634df2d3a9))
+- **deps-dev:** Bump tsup from 8.5.1 to 9.0.0 ([376ecb0](https://github.com/ChristopherVR/emf-converter/commit/376ecb0803be5f6259e656b3377d2b5cfc25de00))
+- **deps:** Pin @napi-rs/canvas 1.0.10; Dependabot ignores canvas and TypeScript 7 ([ef40123](https://github.com/ChristopherVR/emf-converter/commit/ef4012349a10a1fde8273501008f06833d125403))
+
 ## [4.25.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.0) - 2026-10-31
 
 ### Features
