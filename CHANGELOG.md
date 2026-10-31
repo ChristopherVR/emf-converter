@@ -4,6 +4,35 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.25.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.0) - 2026-10-31
+
+### Features
+
+- **scripts:** Cmyk-8bit-nodes regenerate reproduces NODE_DELTA_8BIT from an empty directory ([c853954](https://github.com/ChristopherVR/emf-converter/commit/c8539543b0eca653f310135dd271b2d5d21c290d))
+- **image:** Port GDI+'s HighQuality stretch span for axis-aligned draws ([771ff0b](https://github.com/ChristopherVR/emf-converter/commit/771ff0b305c4170b7d035d57c69b2d6e23739079))
+
+### Bug Fixes
+
+- **text:** Overlapping GDI grayscale glyphs combine as the OR of (level - 1) ([a616664](https://github.com/ChristopherVR/emf-converter/commit/a6166648533dec530abfd144f3be974460ae6acd))
+- **image:** Exact CMYK JPEG 8-bit result for all 2^32 inks, from the module's unsigned 8-bit nodes ([6185bbe](https://github.com/ChristopherVR/emf-converter/commit/6185bbe83ffc3a8581c38bd7fa36cfa66d69cfb1))
+- **emf-plus:** Inset pens with round dash caps cut and capped in single precision ([6174762](https://github.com/ChristopherVR/emf-converter/commit/6174762a7a28d2c1620c0bc84ff147e7f575140a))
+- **path-gradient:** Tiled ellipses flattened under the tile matrix, byte-filtered edge texels, span windows from coverage ([6b38126](https://github.com/ChristopherVR/emf-converter/commit/6b3812644cf22425cc36aac5a25bf425f09aae45))
+- **text:** GDI+ SingleBitPerPixel glyphs use simple dropout control without stubs ([38cf660](https://github.com/ChristopherVR/emf-converter/commit/38cf6602ce7b9ef0fe46d25838fc7ae6e993446a))
+- **text:** GDI+ grayscale of installed fonts uses the GDI scan converter at an identity scale ([1c1c225](https://github.com/ChristopherVR/emf-converter/commit/1c1c225bcb8ccc95387ccab6a7c319ef27c08b7d))
+- **text:** Y SHPIX after IUP[y] moves untouched points at ClearType default quality ([43cea0c](https://github.com/ChristopherVR/emf-converter/commit/43cea0c3d8271f5c3903a414cb0201661fe27748))
+- **image:** Rotated DrawImagePoints draws run GDI+'s float32 matrix chain and 16.16 bicubic span ([bf8d231](https://github.com/ChristopherVR/emf-converter/commit/bf8d231afa70a251f176eb03232cc25cbcb3a9f0))
+- **text:** Rotated glyphs of a compatible-mode playback carry the x stretch before the escapement ([a0c86da](https://github.com/ChristopherVR/emf-converter/commit/a0c86daa606761a2c2f3769a85793fdc900906ba))
+- **scripts:** Move the text-gdi-cleartype-contour mode out of the font filter in generate.ps1 ([9e8241c](https://github.com/ChristopherVR/emf-converter/commit/9e8241cd6e5ad1e4cefab6dc3e8ff1ccb0cb5ace))
+- **text:** GDI ClearType dropout control decided from the crossing pairs, as fontdrvhost does ([0048036](https://github.com/ChristopherVR/emf-converter/commit/004803648fd334325f681c9b9554652f9b82fa20))
+- **text:** GDI ClearType arcs walked as fontdrvhost walks them ([089e4fc](https://github.com/ChristopherVR/emf-converter/commit/089e4fcda329bfdff1e0a078e10e0203a004f988))
+- **text:** GDI scan converter for installed-font GDI+ grayscale text under a world scale ([a34f598](https://github.com/ChristopherVR/emf-converter/commit/a34f598972b6f132a4dcc84cbec61bf1acf7d8f8))
+- **ci:** Gpx-text-pathgrad tolerance for the ubuntu-26.04 runner image; Dependabot on the bun ecosystem ([afb307c](https://github.com/ChristopherVR/emf-converter/commit/afb307c232d703edb776ce471ff98e6d55fd5218))
+
+### Documentation
+
+- **parity:** Round 12, ClearType default-quality Arial 12/13 px (negative result) ([0b438cb](https://github.com/ChristopherVR/emf-converter/commit/0b438cbc605c9f114df9274e2f5a47d707eddc11))
+- Round 12 counts (899 of 910 exact) and remaining open items ([e55f00e](https://github.com/ChristopherVR/emf-converter/commit/e55f00e482c08dc22a8bfbd36bc4915f1c5234ae))
+
 ## [4.24.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.24.0) - 2026-10-23
 
 ### Features
