@@ -1302,6 +1302,12 @@ export interface EmfGdiReplayCtx {
 	/** Saved page-to-device attributes, parallel to stateStack. */
 	mappingStack?: GdiMappingState[];
 	/**
+	 * DC saves made by the skipped EMF fallback of a dual-mode EMF+ file:
+	 * its SaveDC / RestoreDC bracket only the DC (drawing state and mapping),
+	 * never the canvas, which the EMF+ stream owns.
+	 */
+	skippedDcStack?: Array<{ state: DrawState; mapping: GdiMappingState }>;
+	/**
 	 * When true, the window/viewport mapping yields device units (as in an
 	 * EMF), which are then placed on the canvas by the same bounds mapping
 	 * the no-mapping-mode path uses: `(device - bounds.left/top) * sx/sy`.

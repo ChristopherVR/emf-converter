@@ -105,6 +105,12 @@ export function parseWmfHeader(view: DataView): WmfHeader | null {
 		boundsBottom = view.getInt16(12, true);
 		unitsPerInch = view.getUint16(14, true) || 96;
 		headerOffset = 22;
+		// Some writers (WMFs embedded in EMF+ image objects) pad the 22-byte
+		// placeable header with two zero bytes; GDI+ plays such files.
+		const isType = (at: number) => [1, 2].includes(view.getUint16(at, true)) && view.getUint16(at + 2, true) === 9;
+		if (view.byteLength >= 24 + 18 && !isType(22) && view.getUint16(22, true) === 0 && isType(24)) {
+			headerOffset = 24;
+		}
 	}
 
 	if (headerOffset + 18 > view.byteLength) {

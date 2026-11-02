@@ -38,7 +38,7 @@ import type {
 	ReplayOptions,
 	TransformMatrix,
 } from './emf-types';
-import { defaultState, createEmfPlusState } from './emf-types';
+import { cloneState, defaultState, createEmfPlusState } from './emf-types';
 
 // ---------------------------------------------------------------------------
 // GDI record name lookup (for debug logging)
@@ -276,10 +276,18 @@ export function* replayEmfRecordsSteps(
 		// play only the EMF+ stream; the fallback's EMF records reach the
 		// canvas only after an EmfPlusGetDC (drawing done through an HDC).
 		// State-only records still update the DC so a later GetDC run sees
-		// the objects and mapping it expects; SaveDC/RestoreDC are skipped
-		// because they bracket canvas state the EMF+ stream owns.
+		// the objects and mapping it expects. SaveDC/RestoreDC bracket the
+		// DC alone (not the canvas state the EMF+ stream owns), so that the
+		// mapping a fallback block sets inside its own SaveDC/RestoreDC does
+		// not reach the GetDC run after it.
 		if (emfPlusState.dualMode && !emfPlusState.gdiPassthrough) {
-			if (recType !== EMR_SAVEDC && recType !== EMR_RESTOREDC) {
+			if (recType === EMR_SAVEDC) {
+				saveSkippedDc(rCtx);
+			} else if (recType === EMR_RESTOREDC) {
+				if (recSize >= 12) {
+					restoreSkippedDc(rCtx, view.getInt32(dataOff, true));
+				}
+			} else {
 				handleEmfGdiStateRecord(rCtx, recType, offset, dataOff, recSize);
 			}
 			offset += recSize;
@@ -318,6 +326,39 @@ export function* replayEmfRecordsSteps(
 	}
 
 	return allDeferredImages;
+}
+
+/** EMR_SAVEDC in the skipped fallback of a dual-mode file: snapshots the DC only. */
+function saveSkippedDc(rCtx: EmfGdiReplayCtx): void {
+	rCtx.skippedDcStack ??= [];
+	rCtx.skippedDcStack.push({
+		state: cloneState(rCtx.state),
+		mapping: {
+			mapMode: rCtx.mapMode,
+			windowOrg: { ...rCtx.windowOrg },
+			windowExt: { ...rCtx.windowExt },
+			viewportOrg: { ...rCtx.viewportOrg },
+			viewportExt: { ...rCtx.viewportExt },
+			useMappingMode: rCtx.useMappingMode,
+		},
+	});
+}
+
+/**
+ * EMR_RESTOREDC in the skipped fallback of a dual-mode file: restores the DC
+ * saved by {@link saveSkippedDc} at that level (negative = relative to the
+ * newest); a level with no such save is ignored, as GDI fails it.
+ */
+function restoreSkippedDc(rCtx: EmfGdiReplayCtx, level: number): void {
+	const stack = rCtx.skippedDcStack ?? [];
+	const at = level < 0 ? stack.length + level : level - 1;
+	if (at < 0 || at >= stack.length) {
+		return;
+	}
+	const saved = stack[at];
+	stack.length = at;
+	Object.assign(rCtx.state, saved.state);
+	Object.assign(rCtx, saved.mapping);
 }
 
 /**

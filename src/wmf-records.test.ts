@@ -255,6 +255,19 @@ describe('wmf-replay', () => {
 		expect(px(data, 20, 7, 7)).toBe(-1);
 	});
 
+	it('plays a placeable picture with two zero bytes between its Aldus and standard headers', async () => {
+		const plain = new Uint8Array(buildWmf([nullPen, select(0), brush(0xff0000), select(1), rect(0, 0, 20, 20)], [0, 0, 20, 20]));
+		const padded = new Uint8Array(plain.length + 2);
+		padded.set(plain.subarray(0, 22));
+		padded.set(plain.subarray(22), 24);
+		const view = new DataView(padded.buffer);
+		const header = parseWmfHeader(view)!;
+		const canvas = new SoftwareRasterCanvas(20, 20);
+		replayWmfRecords(view, canvas.ctx as never, header, 20, 20, { gdiAntialias: false });
+		expect(px(canvas.ctx.getImageData(0, 0, 20, 20).data, 20, 10, 10)).toBe(0xff0000);
+		expect(await convertMetafileToSvg(padded.buffer)).not.toBeNull();
+	});
+
 	it('maps through the placeable bounds and a window origin record', () => {
 		const data = play([[0x020b, [-5, -5]], brush(0xff00ff), nullPen, select(0), select(1), rect(0, 0, 5, 5)], 20, 20);
 		expect(px(data, 20, 5, 5)).toBe(0xff00ff);
