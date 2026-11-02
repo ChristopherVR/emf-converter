@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.25.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.2) - 2026-11-02
+
+### Bug Fixes
+
+- Keep a dual-mode file's skipped fallback mapping inside its SaveDC, and play placeable WMFs padded to 24 bytes (#28) ([67ecf34](https://github.com/ChristopherVR/emf-converter/commit/67ecf3499a40b21b1727ffee8fc7a32bc84c1419))
+
 ## [4.25.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.1) - 2026-10-31
 
 ### Other
