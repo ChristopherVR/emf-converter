@@ -201,6 +201,41 @@ describe('EMF+ dual-mode metafiles', () => {
 		);
 		expect(measure(img, isRed, img.w / 2).area).toBeGreaterThan(0.95);
 	});
+
+	it('undoes the skipped fallback\'s mapping at its own RestoreDC, before a later GetDC run', () => {
+		// The fallback copy of a figure brackets its own mapping in SaveDC /
+		// RestoreDC; text drawn later through GetDC must not inherit it.
+		const fallback = [
+			record(33, []), // EMR_SAVEDC
+			record(17, [8]), // EMR_SETMAPMODE MM_ANISOTROPIC
+			record(9, [600, 600]), // EMR_SETWINDOWEXTEX
+			record(11, [200, 200]), // EMR_SETVIEWPORTEXTEX
+			record(34, [-1]), // EMR_RESTOREDC
+		];
+		const img = render(
+			buildEmf(
+				[0, 0, 199, 199],
+				[plusHeader(true), ...fallback, plusComment(0x4004, 0), ...redRect(100, 0, 200, 200), plusComment(0x4002, 0)],
+			),
+		);
+		expect(measure(img, isRed, img.w / 2).area).toBeGreaterThan(0.95);
+	});
+
+	it('ignores a RestoreDC of the skipped fallback with no SaveDC of its own', () => {
+		const img = render(
+			buildEmf(
+				[0, 0, 199, 199],
+				[
+					plusHeader(true),
+					record(34, [-1]), // EMR_RESTOREDC
+					plusComment(0x4004, 0),
+					...redRect(100, 0, 200, 200),
+					plusComment(0x4002, 0),
+				],
+			),
+		);
+		expect(measure(img, isRed, img.w / 2).area).toBeGreaterThan(0.95);
+	});
 });
 
 // ---------------------------------------------------------------------------

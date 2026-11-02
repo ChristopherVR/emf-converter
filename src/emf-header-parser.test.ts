@@ -298,6 +298,26 @@ describe('emf-header-parser', () => {
 			expect(result!.unitsPerInch).toBe(96);
 		});
 
+		it('finds the standard header after two zero bytes that follow the Aldus header', () => {
+			// Some Office-embedded WMFs (EMF+ image objects) pad the 22-byte
+			// placeable header to 24 bytes; GDI+ plays them.
+			const view = buildBuffer(42, (v) => {
+				v.setUint32(0, 0x9ac6cdd7, true);
+				v.setInt16(10, 650, true);
+				v.setInt16(12, 155, true);
+				v.setUint16(14, 1440, true);
+				v.setUint16(24, 1, true); // type
+				v.setUint16(26, 9, true); // headerSize in 16-bit words
+				v.setUint16(28, 0x0300, true); // version
+				v.setUint32(36, 10, true); // maxRecordSize in words
+			});
+			const result = parseWmfHeader(view);
+			expect(result).not.toBeNull();
+			expect(result!.headerSize).toBe(42); // 24 + 9 * 2
+			expect(result!.boundsRight).toBe(650);
+			expect(result!.unitsPerInch).toBe(1440);
+		});
+
 		it('handles WMF without Aldus header (standard header at offset 0)', () => {
 			const view = buildBuffer(22, (v) => {
 				v.setUint16(0, 1, true); // type
