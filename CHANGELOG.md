@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.25.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.4) - 2026-11-05
+
+### Build & CI
+
+- **deps-dev:** Bump the npm-dependencies group with 3 updates (#29) ([bf2b16b](https://github.com/ChristopherVR/emf-converter/commit/bf2b16b3f04a053ef9b0b716e32eb467604cdf6a))
+
 ## [4.25.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.3) - 2026-11-05
 
 ### Bug Fixes
