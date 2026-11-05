@@ -169,6 +169,13 @@ export function computeSurfaceSize(
 	return { w: clampedW, h: clampedH, scaleX, scaleY };
 }
 
+/**
+ * Browser canvases here are read back (raster operations, patterns, the final image), so they are
+ * created CPU-backed: Chrome otherwise reads every frame back from the GPU and logs a
+ * "Multiple readback operations using getImageData" warning per canvas.
+ */
+const READBACK: CanvasRenderingContext2DSettings = { willReadFrequently: true };
+
 export function createCanvas(
 	width: number,
 	height: number,
@@ -199,7 +206,7 @@ export function createCanvas(
 				`createCanvas: using OffscreenCanvas ${w}×${h}, scale=(${scaleX.toFixed(3)},${scaleY.toFixed(3)})`,
 			);
 			const canvas = new OffscreenCanvas(w, h);
-			const ctx = canvas.getContext('2d');
+			const ctx = canvas.getContext('2d', READBACK);
 			if (!ctx) {
 				emfWarn('createCanvas: OffscreenCanvas.getContext("2d") returned null');
 				return null;
@@ -214,7 +221,7 @@ export function createCanvas(
 			const canvas = document.createElement('canvas');
 			canvas.width = w;
 			canvas.height = h;
-			const ctx = canvas.getContext('2d');
+			const ctx = canvas.getContext('2d', READBACK);
 			if (!ctx) {
 				emfWarn('createCanvas: HTMLCanvasElement.getContext("2d") returned null');
 				return null;
@@ -263,7 +270,7 @@ export function createTempCanvas(
 	}
 	if (typeof OffscreenCanvas !== 'undefined') {
 		const canvas = new OffscreenCanvas(width, height);
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d', READBACK);
 		if (!ctx) {
 			return null;
 		}
@@ -273,7 +280,7 @@ export function createTempCanvas(
 		const canvas = document.createElement('canvas');
 		canvas.width = width;
 		canvas.height = height;
-		const ctx = canvas.getContext('2d');
+		const ctx = canvas.getContext('2d', READBACK);
 		if (!ctx) {
 			return null;
 		}
