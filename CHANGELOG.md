@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.25.3](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.3) - 2026-11-05
+
+### Bug Fixes
+
+- Create browser canvases with willReadFrequently ([c955c90](https://github.com/ChristopherVR/emf-converter/commit/c955c908bf643fd3545a9c1c1b343fce4f0eaef4))
+
+### Testing
+
+- Serve a bundled face as Arial for the DrawDriverString test ([3b7f3cd](https://github.com/ChristopherVR/emf-converter/commit/3b7f3cd7f72383593a800e3806fac43a9590be7b))
+
 ## [4.25.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.2) - 2026-11-02
 
 ### Bug Fixes
