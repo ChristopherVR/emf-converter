@@ -8,6 +8,9 @@
  *   canvas by the bounds mapping (bounds origin to canvas origin, scaled by
  *   dpiScale) exactly as unmapped records are.
  */
+import { readFileSync } from 'node:fs';
+
+import { GlobalFonts } from '@napi-rs/canvas';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import jpegJs from 'jpeg-js';
@@ -347,6 +350,17 @@ describe('EMF+ SetClipRegion', () => {
 // ---------------------------------------------------------------------------
 
 describe('EMF+ DrawDriverString', () => {
+	// The run asks for Arial, which Linux CI runners do not have; from ubuntu-26.04 image 20261101 there
+	// is no fallback face either, so nothing was drawn. Serve a bundled CC0 Latin face as Arial so the
+	// glyphs render on every machine (registration is scoped to this test file's worker).
+	beforeAll(async () => {
+		await ensureNodeCanvasModule();
+		GlobalFonts.register(
+			readFileSync(new URL('./__fixtures__/gdi/courier-geometry.ttf', import.meta.url)),
+			'Arial',
+		);
+	});
+
 	/** EmfPlusObject: a 36 px Arial font (SizeUnit Pixel) in slot `id`. */
 	const font = (id: number) => {
 		const name = 'Arial';
