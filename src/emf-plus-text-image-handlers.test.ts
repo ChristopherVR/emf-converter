@@ -8,7 +8,7 @@ import {
 	EMFPLUS_DRAWIMAGE,
 	EMFPLUS_DRAWIMAGEPOINTS,
 } from './emf-constants';
-import { handleEmfPlusTextImageRecord, worldUnitFont } from './emf-plus-text-image-handlers';
+import { handleEmfPlusTextImageRecord, resolvePlusTextHint, worldUnitFont } from './emf-plus-text-image-handlers';
 import type { EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -461,5 +461,19 @@ describe('worldUnitFont()', () => {
 	it('passes other objects through', () => {
 		const rCtx = makeRCtx();
 		expect(worldUnitFont(rCtx, undefined)).toBeUndefined();
+	});
+});
+
+describe('resolvePlusTextHint()', () => {
+	it('resolves SystemDefault from the machine font smoothing', () => {
+		expect(resolvePlusTextHint(0, 'cleartype')).toBe(5);
+		expect(resolvePlusTextHint(0, 'gray')).toBe(3);
+		expect(resolvePlusTextHint(0, 'mono')).toBe(1);
+		expect(resolvePlusTextHint(0, undefined)).toBe(5);
+	});
+
+	it('keeps an explicit hint', () => {
+		expect(resolvePlusTextHint(4, 'mono')).toBe(4);
+		expect(resolvePlusTextHint(1, 'cleartype')).toBe(1);
 	});
 });

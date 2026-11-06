@@ -508,8 +508,9 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-plus-antialiasgridfit', 'emf', 0.00065), // measured 0.064% (2.527% before the round 8 AntiAliasGridFit advances); GDI+ hinting and shades
 	fontCase('textx-plus-cleartype', 'emf', 0.0013), // measured 0.133% (GDI+ ClearType blend arithmetic, 8-bit tables and exact sixths of coverage; 9.236% before the round 8 interpreter rules), 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
 	fontCase('textx-plus-singlebit', 'emf', 0), // measured 0 (round 12: unhinted GDI+ monochrome glyphs use simple dropout control without stubs; 0.148% before)
-	fontCase('textx-plus-singlebitgridfit', 'emf', 0), // measured 0 (round 9: GDI+ advances and the stub squares; 0.020% before)
-	fontCase('textx-plus-systemdefault', 'emf', 0), // measured 0 (round 9: GDI+ advances and the stub squares; 0.020% before)
+	fontCase('textx-plus-singlebitgridfit', 'emf', 0.00005), // measured 1 px, Arial 16 `w` (0 with the previous single-bit arithmetic, which got 1,442 of 1,680 native probe glyphs against 1,658; trade accepted)
+	// SystemDefault follows fontSmoothing; the capture session resolved it to single-bit (see resolvePlusTextHint).
+	{ ...fontCase('textx-plus-systemdefault', 'emf', 0.00005), options: { fontSmoothing: 'mono' } }, // measured 1 px, as textx-plus-singlebitgridfit
 	fontCase('textx-rotalign-esc', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0048% (15 px; 34 before round 8) against the native playback (0.511% before)
 	fontCase('textx-rotalign-esc-small', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0042% (13 px; 207 before round 8: quarter-turn text has its own tmAscent / tmDescent) against the native playback (0.367% before)
 	fontCase('textx-rotalign-world', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0048% (15 px; 34 before round 8) against the native playback (0.537% before)

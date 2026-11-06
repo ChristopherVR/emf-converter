@@ -43,7 +43,10 @@ async function main(): Promise<void> {
 		// The `.regen` raster-face captures were drawn on a 120 dpi session whose font set holds the 8514 System and Fixedsys faces.
 		const fontDir = process.env.GDI_FIXTURE_FONTS ?? join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts');
 		const extra = name.endsWith('.regen') ? ['8514sys.fon', '8514fix.fon'].map((x) => join(fontDir, x)) : [];
-		const renderOptions = fonts && extra.length > 0 && extra.every((p) => existsSync(p)) ? { fonts: [...fonts, ...extra.map((p) => readFileSync(p))] } : options;
+		const baseOptions = fonts && extra.length > 0 && extra.every((p) => existsSync(p)) ? { fonts: [...fonts, ...extra.map((p) => readFileSync(p))] } : options;
+		// GDI+ SystemDefault follows the machine's font smoothing; the session that captured this reference resolved
+		// it to single-bit (GDI's DEFAULT_QUALITY in the same run is ClearType, so the two are pinned separately).
+		const renderOptions = name === 'textx-plus-systemdefault' ? { ...baseOptions, fontSmoothing: 'mono' as const } : baseOptions;
 		const rendered = await renderFixture(f, renderOptions);
 		if (!rendered) {
 			failed++;

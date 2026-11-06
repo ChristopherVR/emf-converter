@@ -159,7 +159,10 @@ export interface EmfConvertOptions {
 	 * Windows' system-wide font smoothing, which GDI applies to fonts that
 	 * ask for `DEFAULT_QUALITY`, `DRAFT_QUALITY` or `PROOF_QUALITY` (most
 	 * metafiles): `'cleartype'` (Windows' default), `'gray'` (standard
-	 * antialiasing) or `'mono'` (smoothing off). Only used with `fonts`.
+	 * antialiasing) or `'mono'` (smoothing off). GDI+ text with the
+	 * SystemDefault rendering hint (EMF+ files without a TextRenderingHint)
+	 * follows it too: ClearTypeGridFit, AntiAliasGridFit or single-bit
+	 * grid-fitted. Only used with `fonts`.
 	 */
 	fontSmoothing?: 'cleartype' | 'gray' | 'mono';
 	/**

@@ -19,9 +19,10 @@ State on 30 October 2026: 899 of 910 report comparisons are pixel-exact (`bun sc
 - **`DrawImage` points form and the other high-quality cases.** 19 of 124 float32 flips of the JPEG geometry and 36 horizontal sweep flips are still 1 to 3 float32 units off (plain Bilinear). High-quality draws of a cropped source, with wrap attributes, with a half-pixel offset or mirrored still use the fitted model, and the stretch span has not been given the visible-clip crop. To settle: the same stretch port with the source margin of `DpDriver::DrawImage`, checked against the crop, wrap and mirror captures.
 - **Path gradients.** 113 edge pixels of 24 of the 120 tiled colour controls (ellipses on fractional bounds, up to 2 levels) still differ: the alpha of the texture filter is one off at the edge of the shape. To settle: a probe of edge texels with chosen alphas through a texture brush.
 
-- **GDI+ DrawString glyph advances.** Single-bit text placed from a point now has the native baseline and start for five faces at em 8 to 80, but the glyphs after the first can sit a pixel off ("HxH": 42 of 73 Arial sizes and 10 of 73 Courier New sizes pixel-exact; Segoe UI 73 of 73). To settle: compare the advances glyph by glyph against native.
+- **GDI+ single-bit glyphs.** Hinted with GDI's arithmetic, 1,658 of 1,680 native probe glyphs are exact. GDI+'s own arithmetic sits between GDI's and the previous one: 15 glyphs (Arial 16 `w`, the 1 px of `textx-plus-singlebitgridfit`) are exact only the previous way, and no subset of GDI's projection, movement and ISECT rules gets both. Italic faces keep the previous arithmetic. To settle: read GDI+'s interpreter arithmetic.
+- **Courier New DrawString advances.** Single-bit "HxH" is exact at 10 of 73 Courier New sizes: the second and third glyphs sit a pixel off. The other four faces are exact at 71 to 73 of 73.
+- **DrawString wrapping.** The font-engine path draws one line: it ignores the layout width, newlines and the clip to the layout rectangle. Measured so far: line n's baseline is `round(y + (winAscent + n * hhea line spacing) * em / upem)`; break positions and clipping are not yet measured.
 - **Large grayscale DrawString.** At em 76 and 80, AntiAlias and AntiAliasGridFit text lands 1 to 2 px lower than native, with slightly different glyphs.
-- **SystemDefault text.** In GDI+ metafile playback on this machine, SystemDefault draws exactly as ClearTypeGridFit, but the converter draws it single-bit (an earlier measurement). Which setting decides it has not been probed.
 
 ## Images and colour
 

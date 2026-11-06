@@ -543,6 +543,25 @@ export class RealizedFont implements GdiRealizedFont {
 	 * way, at a half turn it rounded (all 530 ascents and descents of five faces at lfHeight -8..-60 for 90, 180 and
 	 * 270 degrees, escapement and world rotation alike). Undefined for an upright baseline.
 	 */
+	/**
+	 * GDI+ SingleBitPerPixelGridFit glyphs are close to GDI's monochrome glyphs: hinted with GDI's arithmetic and
+	 * scan-converted with GDI's converter, 1,658 of 1,680 native upright regular glyphs are exact (`xwvyAkMWKVXZ4&%`,
+	 * Arial, Tahoma, Times New Roman and Segoe UI at 9 to 36 px), against 1,442 with the previous arithmetic. GDI+'s
+	 * own arithmetic is neither: 15 glyphs (Arial 16 `w` among them) are exact only the old way, and no subset of
+	 * GDI's projection, movement and ISECT rules gets both. Italic faces keep the previous path (Times New Roman
+	 * Italic 22 in `textx-plus-singlebitgridfit`: 8 pixels the GDI way).
+	 */
+	private plusMonoAsGdi(gdiPlus: boolean, mode: GdiTextMode, gridFit: boolean): boolean {
+		return gdiPlus && mode === 'mono' && gridFit && this.singleBitRequested;
+	}
+
+	/**
+	 * The font was asked for at NONANTIALIASED_QUALITY (GDI+ SingleBitPerPixelGridFit), not turned monochrome by
+	 * the `gasp` table under AntiAliasGridFit: those glyphs keep the previous path (the native grayscale corpora,
+	 * `gdiplus-courier-gray` and `gdiplus-shpix-x`, lose exact glyphs the GDI way).
+	 */
+	singleBitRequested = false;
+
 	rotatedMetrics(ux: number, uy: number): { ascent: number; descent: number } | undefined {
 		if (Math.abs(ux) > 1e-9 && Math.abs(uy) > 1e-9) {
 			return { ascent: this.rotatedAscent, descent: this.rotatedDescent };
@@ -580,6 +599,24 @@ export class RealizedFont implements GdiRealizedFont {
 			}
 		}
 		return this.reverseCmap.get(index) ?? 0xfffd;
+	}
+
+	private gdiMonoSize: HintedSize | null = null;
+	private readonly gdiMonoOutlines = new Map<number, HintedGlyph>();
+
+	/**
+	 * The outline of an upright GDI+ SingleBitPerPixelGridFit glyph, hinted
+	 * with GDI's arithmetic (see {@link plusMonoAsGdi}). Advances keep coming
+	 * from {@link outline}, whose placement the DrawString fixtures pin.
+	 */
+	private gdiMonoOutline(index: number): HintedGlyph {
+		let g = this.gdiMonoOutlines.get(index);
+		if (!g) {
+			this.gdiMonoSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 35, grayscale: false, gdiArithmetic: true, reportStretched: this.playbackStretched }, true);
+			g = this.gdiMonoSize.hintGlyph(index < this.ttf.numGlyphs ? index : NOTDEF);
+			this.gdiMonoOutlines.set(index, g);
+		}
+		return g;
 	}
 
 	private outline(index: number): HintedGlyph {
@@ -760,7 +797,9 @@ export class RealizedFont implements GdiRealizedFont {
 		// enable dropout control), as GDI does; 90/180/270 degrees keep the
 		// upright hinting (measured exact against the escapement fixtures).
 		const rotation = skew && m && !this.gdiPlus && this.ppemX === this.ppem ? rotationMatrix(m, this.ppem, (this.ttf.headFlags & 8) !== 0) : null;
-		const src = skew ? this.rotatedOutline(index, rotation ? rotation.ppem : 0) : this.outline(index);
+		const asGdiMono = !m && !subX && !subY && this.ppemX === this.ppem && !this.syntheticItalic && !(this.ttf.fsSelection & 1) &&
+			this.plusMonoAsGdi(this.gdiPlus, this.mode, this.gridFit);
+		const src = skew ? this.rotatedOutline(index, rotation ? rotation.ppem : 0) : asGdiMono ? this.gdiMonoOutline(index) : this.outline(index);
 		if (skew && m && rotation) {
 			m = rotation.matrix;
 		} else if (skew && m) {
@@ -820,7 +859,7 @@ export class RealizedFont implements GdiRealizedFont {
 			// 1,144 of 1,200 exact). GDI+ and transformed glyphs keep the previous arithmetic.
 			const smartGrid = !m && !subX && !subY && (!this.gdiPlus || (this.ppemX === this.ppem && !this.syntheticItalic));
 			const controlOn = src.scanSet ? src.scanControl : this.ppem <= DEFAULT_DROPOUT_PPEM;
-			bitmap = this.gdiPlus
+			bitmap = this.gdiPlus && !asGdiMono
 				? rasterizeMono(o, this.gdiPlus && !this.gridFit ? UNHINTED_MONO_DROPOUT : dropoutMode(controlOn, src.scanType), undefined, true, smartGrid, false, false, false, false, true)
 				: msMonoBitmap(o, msScanFlags(controlOn, src.scanType));
 		} else if (this.mode === 'cleartype') {
@@ -1165,6 +1204,7 @@ export class GdiFontCollection {
 					this.installedFonts,
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
+				tt.singleBitRequested = spec.quality === NONANTIALIASED_QUALITY;
 				return tt;
 			};
 			let tt = make(resolvePpem(best, spec.height), spec.height > 0 ? Math.round(spec.height) : 0);

@@ -344,7 +344,7 @@ page. The defaults are `1252` and `437`; explicit text charsets are unchanged.
 | `maxRecords`         | `number`                              | `200000`/`500000` | Records processed per stream before replay stops (EMF+ uses the higher default unless overridden) |
 | `gdiAntialias`       | `boolean`                             | `false` (PNG)     | `true` smooths every shape edge with Canvas antialiasing instead of reproducing Windows' own GDI/GDI+ rasterisation |
 | `fonts`              | `Array<ArrayBuffer \| ArrayBufferView>` | None            | TrueType (`.ttf`/`.ttc`) and raster (`.fon`/`.fnt`) font files for exact GDI text |
-| `fontSmoothing`      | `'cleartype' \| 'gray' \| 'mono'`     | `'cleartype'`     | What `DEFAULT_QUALITY` / `DRAFT_QUALITY` / `PROOF_QUALITY` fonts render as (Windows' system setting) |
+| `fontSmoothing`      | `'cleartype' \| 'gray' \| 'mono'`     | `'cleartype'`     | What `DEFAULT_QUALITY` / `DRAFT_QUALITY` / `PROOF_QUALITY` fonts and GDI+ SystemDefault text render as (Windows' system setting) |
 | `fontFamilyMap`      | `Record<string, string>`              | None              | Without `fonts`: maps Windows face names (case-insensitive) to locally available fonts, e.g. `{ calibri: 'Carlito' }` |
 | `signal`             | `AbortSignal`                         | None              | Cancels the conversion: the promise rejects with `signal.reason` when it aborts (see [Cancellation](#cancellation)) |
 | `timeoutMs`          | `number`                              | None              | Rejects with a `DOMException` named `TimeoutError` after this many milliseconds |

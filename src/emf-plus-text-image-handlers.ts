@@ -46,6 +46,7 @@ import {
 	ANTIALIASED_QUALITY,
 	CLEARTYPE_NATURAL_QUALITY,
 	NONANTIALIASED_QUALITY,
+	type DefaultTextSmoothing,
 	type GdiRealizedFont,
 	type LogFontSpec,
 } from './gdi-font-engine';
@@ -361,8 +362,8 @@ function fillPlusText(
 
 /**
  * LOGFONT quality equivalent of each GDI+ `TextRenderingHint`:
- * SystemDefault (measured: GDI+ draws it single-bit grid-fitted into a
- * bitmap), SingleBitPerPixelGridFit, SingleBitPerPixel, AntiAliasGridFit,
+ * SystemDefault (resolved first, see {@link resolvePlusTextHint}),
+ * SingleBitPerPixelGridFit, SingleBitPerPixel, AntiAliasGridFit,
  * AntiAlias, ClearTypeGridFit (natural ClearType widths, which match GDI+
  * more closely than GDI's compatible ones).
  */
@@ -434,6 +435,21 @@ export function worldUnitFont<T extends EmfPlusObject | undefined>(rCtx: EmfPlus
  * and TextRenderingHint, when fonts were supplied, the transform is
  * unrotated and the font's unit is World or Pixel; null otherwise.
  */
+/**
+ * The TextRenderingHint GDI+ draws with: SystemDefault (0) follows the
+ * playback machine's font smoothing, the `fontSmoothing` option. Measured:
+ * with ClearType on, SystemDefault draws exactly as ClearTypeGridFit, both
+ * directly and in metafile playback; `textx-plus-systemdefault` was captured
+ * on a machine with smoothing off and is single-bit grid-fitted. Standard
+ * (grayscale) smoothing maps to AntiAliasGridFit, as GDI+ documents it.
+ */
+export function resolvePlusTextHint(hint: number, smoothing: DefaultTextSmoothing | undefined): number {
+	if (hint !== 0) {
+		return hint;
+	}
+	return smoothing === 'mono' ? 1 : smoothing === 'gray' ? 3 : 5;
+}
+
 function realizePlusEngineFont(
 	rCtx: EmfPlusReplayCtx,
 	font: EmfPlusFont,
@@ -444,7 +460,7 @@ function realizePlusEngineFont(
 	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
 	// A texture/gradient brush takes its glyph coverage from the engine and
 	// its colour from the brush sampler (raster output only).
-	const hint = rCtx.textRenderingHint ?? 0;
+	const hint = resolvePlusTextHint(rCtx.textRenderingHint ?? 0, fonts?.defaultSmoothing);
 	const graySmooth = hint === 3 || hint === 4 || hint === 5;
 	// Antialiased and ClearType text is blended the GDI+ way, with its text
 	// contrast (see applyTextContrast), so a solid colour goes through the

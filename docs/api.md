@@ -53,7 +53,7 @@ Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is n
 | `maxRecords`         | `number`                                | `200000` / `500000` | Records processed per stream before replay stops. EMF+ uses the higher default. |
 | `gdiAntialias`       | `boolean`                               | `false`             | Smooth shape edges with canvas antialiasing instead of reproducing GDI/GDI+ rasterisation. |
 | `fonts`              | `Array<ArrayBuffer \| ArrayBufferView>` |                     | TrueType (`.ttf`, `.ttc`) and raster (`.fon`, `.fnt`) font files used for GDI text rendering. |
-| `fontSmoothing`      | `'cleartype' \| 'gray' \| 'mono'`       | `'cleartype'`       | Rendering used for fonts with `DEFAULT_QUALITY`, `DRAFT_QUALITY` or `PROOF_QUALITY`. |
+| `fontSmoothing`      | `'cleartype' \| 'gray' \| 'mono'`       | `'cleartype'`       | Rendering used for fonts with `DEFAULT_QUALITY`, `DRAFT_QUALITY` or `PROOF_QUALITY`, and for GDI+ text with the SystemDefault hint. |
 | `fontFamilyMap`      | `Record<string, string>`                |                     | Used without `fonts`. Maps Windows face names (case-insensitive) to local font families, for example `{ calibri: 'Carlito' }`. |
 | `signal`             | `AbortSignal`                           |                     | Cancels the conversion. On abort the promise rejects with `signal.reason` (an `AbortError` if there is none). `null` still means "not a valid metafile". |
 | `timeoutMs`          | `number`                                |                     | Rejects with a `DOMException` named `TimeoutError` after this many milliseconds. |
