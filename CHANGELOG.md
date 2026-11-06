@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.25.5](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.5) - 2026-11-06
+
+### Bug Fixes
+
+- Convert EMF+ page, pen and font units at the header LogicalDpi ([311bfa6](https://github.com/ChristopherVR/emf-converter/commit/311bfa6378978933816472969cad458e4eb4b5c1))
+
 ## [4.25.4](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.4) - 2026-11-05
 
 ### Build & CI
