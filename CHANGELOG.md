@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.27.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.27.0) - 2026-11-06
+
+### Features
+
+- Wrap, break, kern and clip GDI+ DrawString paragraphs ([8c9ca05](https://github.com/ChristopherVR/emf-converter/commit/8c9ca0579233ec38a0b45fdee9025ae5a63fcfb6))
+
 ## [4.26.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.26.0) - 2026-11-06
 
 ### Features
