@@ -105,6 +105,11 @@ export interface TtfFont {
 	hheaAscender: number;
 	hheaDescender: number;
 	hheaLineGap: number;
+	/**
+	 * Horizontal pair kerning in font units from the `kern` table's format 0 subtables (0 for an unlisted pair or
+	 * without the table). GDI+ applies it to DrawString text that wraps into several lines.
+	 */
+	kerning(left: number, right: number): number;
 	/** `OS/2` fields (0 when the table is absent). */
 	weightClass: number;
 	widthClass: number;
@@ -603,8 +608,37 @@ export function parseTrueTypeFace(view: DataView, base = 0): TtfFont | null {
 	const locaAt = (g: number): number =>
 		longLoca ? view.getUint32(loca.offset + g * 4) : view.getUint16(loca.offset + g * 2) * 2;
 	const glyphCache = new Map<number, TtfGlyph | null>();
+	const kernT = tables.get('kern');
+	let kernPairs: Map<number, number> | null = null;
+	const kerning = (left: number, right: number): number => {
+		if (!kernT) return 0;
+		if (!kernPairs) {
+			kernPairs = new Map();
+			const end = kernT.offset + kernT.length;
+			if (kernT.offset + 4 <= end && view.getUint16(kernT.offset) === 0) {
+				const n = view.getUint16(kernT.offset + 2);
+				let o = kernT.offset + 4;
+				for (let t = 0; t < n && o + 6 <= end; t++) {
+					const length = view.getUint16(o + 2);
+					const coverage = view.getUint16(o + 4);
+					// Format 0, horizontal, kerning values (not minimum, not cross-stream).
+					if (coverage >> 8 === 0 && (coverage & 0x07) === 0x01 && o + 14 <= end) {
+						const pairs = view.getUint16(o + 6);
+						for (let i = 0; i < pairs && o + 14 + i * 6 + 6 <= end; i++) {
+							const p = o + 14 + i * 6;
+							kernPairs.set(view.getUint16(p) * 65536 + view.getUint16(p + 2), view.getInt16(p + 4));
+						}
+					}
+					if (length < 6) break;
+					o += length;
+				}
+			}
+		}
+		return kernPairs.get(left * 65536 + right) ?? 0;
+	};
 
 	return {
+		kerning,
 		family: names.get(1) ?? '',
 		subfamily: names.get(2) ?? '',
 		fullName: names.get(4) ?? '',

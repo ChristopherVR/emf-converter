@@ -50,7 +50,7 @@ import {
 	type GdiRealizedFont,
 	type LogFontSpec,
 } from './gdi-font-engine';
-import { gdiTextCoverage, paintGdiTextRun } from './gdi-text-render';
+import { ETO_CLIPPED, gdiTextCoverage, paintGdiTextRun } from './gdi-text-render';
 import type {
 	DeferredImageDraw,
 	DeferredImageResample,
@@ -520,20 +520,36 @@ function paintPlusEngineRun(
 	rCtx: EmfPlusReplayCtx,
 	ef: PlusEngineFont,
 	run: { codes: number[]; glyphIndices: boolean; x: number; y: number; dx: number[] | null; dy: number[] | null },
+	/** Device rectangle the run is clipped to (the DrawString layout rectangle), if any. */
+	clip?: { left: number; top: number; right: number; bottom: number },
 ): boolean {
 	const base = {
 		...run,
 		textAlign: 0x18,
 		bkColor: '#ffffff',
 		bkMode: 1,
-		options: 0,
-		rect: null,
+		options: clip ? ETO_CLIPPED : 0,
+		rect: clip ?? null,
 		matrix: null,
 	};
 	if ((!ef.color || ef.solidViaCoverage) && ef.sampler) {
 		const cov = gdiTextCoverage(ef.realized, { ...base, textColor: '#000000', underline: ef.underline, strikeOut: ef.strikeOut, plusBars: ef.plusBars }, { decorations: true, grayLevels: 15 });
 		if (!cov) {
 			return true;
+		}
+		if (clip) {
+			// The coverage path composites itself, so the clip zeroes the coverage outside the rectangle.
+			for (let yy = 0; yy < cov.height; yy++) {
+				const py = cov.y + yy;
+				for (let xx = 0; xx < cov.width; xx++) {
+					const px = cov.x + xx;
+					if (px < clip.left || px >= clip.right || py < clip.top || py >= clip.bottom) {
+						const i = yy * cov.width + xx;
+						cov.data.fill(0, i * cov.channels, (i + 1) * cov.channels);
+						if (cov.bars) cov.bars[i] = 0;
+					}
+				}
+			}
 		}
 		const gamma = textGamma(rCtx.ext?.textContrast);
 		if (cov.channels === 1) {
@@ -637,9 +653,159 @@ function drawPlusStringWithEngine(
 	// end-of-run compensation is not modelled.
 	const ctGrid = !unhinted && realized.mode === 'cleartype' && !!realized.ctGridAdvance && !realized.syntheticItalic && tracking > 1;
 	const designUnits = !!realized.designAdvance && m[0] === 1 && m[3] === 1;
-	const dx = unhinted ? codes.map((c) => designUnits ? realized.designAdvance!(realized.glyphIndex(c), tracking) : realized.advance(realized.glyphIndex(c)) * tracking)
-		: ctGrid ? codes.map((c) => realized.ctGridAdvance!(realized.glyphIndex(c))) : null;
-	return paintPlusEngineRun(rCtx, ef, { codes, glyphIndices: false, x, y, dx, dy: null });
+	const advanceOf = (c: number): number => {
+		const gi = realized.glyphIndex(c);
+		return unhinted ? designUnits ? realized.designAdvance!(gi, tracking) : realized.advance(gi) * tracking
+			: ctGrid ? realized.ctGridAdvance!(gi) : realized.advance(gi);
+	};
+	const dx = unhinted || ctGrid ? codes.map(advanceOf) : null;
+	const flags = format?.flags ?? 0;
+	const left = m[0] * layoutX + m[4];
+	const top = m[3] * layoutY + m[5];
+	const width = m[0] * layoutW;
+	const height = m[3] * layoutH;
+	// A paragraph (text that wraps or breaks into several lines, or overflows) is clipped to a non-empty layout
+	// rectangle unless NoClip (measured: its last line is cut at the rectangle's bottom edge). A single line that
+	// fits is not: the ink of a glyph overhanging a tight rectangle stays (`emf-plus-text-alignment` controls).
+	const rect = width > 0 && height > 0 && !(flags & STRING_FORMAT_NO_CLIP)
+		? { left: Math.round(left), top: Math.round(top), right: Math.round(left + width), bottom: Math.round(top + height) }
+		: undefined;
+	let clip: typeof rect = undefined;
+	const available = width > 0 && !(flags & STRING_FORMAT_NO_WRAP)
+		? width - emPx * ((format?.leadingMargin ?? PLUS_LEADING_EM) + (format?.trailingMargin ?? PLUS_LEADING_EM))
+		: Infinity;
+	// GDI+ measures a line by the tracked design advances whatever the hint (single-bit Arial 16: a 14-letter word
+	// breaks after 2, 4, 6 and 7 letters at widths 40 to 100; the painted hinted advances fit one more).
+	// Kerning counts too, unrounded (single-bit Arial 16 at width 120: "HELD MY WAX" fits only with its W-A pair).
+	const fit = (realized.designAdvance ? codes.map((c) => realized.designAdvance!(realized.glyphIndex(c), tracking)) : codes.map(advanceOf))
+		.map((w, i) => i + 1 < codes.length && ttf.kerning ? w + (ttf.kerning(realized.glyphIndex(codes[i]), realized.glyphIndex(codes[i + 1])) * emPx) / ttf.unitsPerEm : w);
+	let lines = layoutPlusLines(codes, fit, available);
+	const paragraph = lines.length > 1;
+	if (paragraph) clip = rect;
+	const descentUnits = ttf.winDescent ?? 0;
+	const lineUnits = ttf.hheaAscender !== undefined && ttf.hheaDescender !== undefined
+		? ttf.hheaAscender - ttf.hheaDescender + (ttf.hheaLineGap ?? 0) : ttf.winAscent + descentUnits;
+	const lineSpacing = (lineUnits * emPx) / ttf.unitsPerEm;
+	if (rect) {
+		// A line is laid out when a quarter of it lies inside the layout rectangle: (n + 1/4) line spacings at most
+		// the height (single-bit Arial at em 16, heights 20 to 70, and em 24, heights 100 to 150: every line count).
+		// LineLimit keeps whole lines only.
+		const visible = (flags & STRING_FORMAT_LINE_LIMIT)
+			? Math.floor((height - ((ttf.winAscent + descentUnits) * emPx) / ttf.unitsPerEm) / lineSpacing) + 1
+			: Math.floor(height / lineSpacing - 0.25) + 1;
+		if (lines.length > visible) {
+			clip = rect;
+			const kept = lines.slice(0, Math.max(0, visible));
+			// Character trimming (the default) fills the last visible line with the rest of the text, broken between
+			// characters (measured: "FOX HE" where the untrimmed line holds "FOX").
+			if (kept.length > 0 && (format?.trimming ?? 1) === 1) {
+				const last = kept[kept.length - 1];
+				let end = last.start;
+				while (end < codes.length && codes[end] !== 10 && codes[end] !== 13) {
+					let w = 0;
+					for (let i = last.start; i <= end; i++) w += fit[i];
+					if (w > available && end > last.start) break;
+					end++;
+				}
+				while (end > last.start && codes[end - 1] === 32) end--;
+				kept[kept.length - 1] = { start: last.start, end };
+			}
+			lines = kept;
+		}
+	}
+	if (lines.length === 0) {
+		return true;
+	}
+	if (!paragraph) {
+		return paintPlusEngineRun(rCtx, ef, { codes: codes.slice(0, lines[0].end === trimmedLength(codes) ? codes.length : lines[0].end), glyphIndices: false, x, y,
+			dx: dx ? dx.slice(0, lines[0].end === trimmedLength(codes) ? codes.length : lines[0].end) : null, dy: null }, clip);
+	}
+	// A paragraph of several lines puts line n's baseline at the layout top plus the design ascent and n hhea line
+	// spacings, rounded (single-bit Arial and Times New Roman, 30 lines at em 13 to 48; the first line uses the
+	// design ascent, not the realized cell ascent a single line reserves). Smoothed hints are not measured.
+	for (const [n, line] of lines.entries()) {
+		const exact = top + ((ttf.winAscent + n * lineUnits) * emPx) / ttf.unitsPerEm;
+		const lineCodes = codes.slice(line.start, line.end);
+		if (lineCodes.length === 0) {
+			continue;
+		}
+		// Wrapped text is kerned (the `kern` table, each pair rounded to whole pixels for grid-fitted text: single-bit
+		// Arial "HWAWAH HWAWAH" at 16 px and "HAVAVH HAVAVH" at 24 px), a single line is not.
+		const kern = (i: number): number => {
+			const k = i + 1 < line.end && ttf.kerning ? (ttf.kerning(realized.glyphIndex(codes[i]), realized.glyphIndex(codes[i + 1])) * emPx) / ttf.unitsPerEm : 0;
+			return unhinted ? k : Math.round(k);
+		};
+		const lineDx = Array.from({ length: line.end - line.start }, (_, k) => advanceOf(codes[line.start + k]) + kern(line.start + k));
+		paintPlusEngineRun(rCtx, ef, {
+			codes: lineCodes,
+			glyphIndices: false,
+			x,
+			y: unhinted ? top + Math.round(exactAscent) + n * lineSpacing : Math.round(exact),
+			dx: lineDx.some((v, k) => v !== advanceOf(codes[line.start + k])) || dx ? lineDx : null,
+			dy: null,
+		}, clip);
+	}
+	return true;
+}
+
+/** The code count without trailing spaces. */
+function trimmedLength(codes: readonly number[]): number {
+	let n = codes.length;
+	while (n > 0 && codes[n - 1] === 32) n--;
+	return n;
+}
+
+/** StringFormatFlagsNoWrap: no wrapping at the layout width. */
+const STRING_FORMAT_NO_WRAP = 0x1000;
+/** StringFormatFlagsLineLimit: only whole lines inside the layout rectangle are drawn. */
+const STRING_FORMAT_LINE_LIMIT = 0x2000;
+/** StringFormatFlagsNoClip: the text is not clipped to the layout rectangle. */
+const STRING_FORMAT_NO_CLIP = 0x4000;
+
+/**
+ * Breaks DrawString text into lines, as `[start, end)` code ranges without the trailing spaces: at CR, LF and CRLF,
+ * and, where `available` (device pixels) is finite, greedily after spaces, a word longer than a line breaking
+ * between characters. The spaces at a wrap are dropped. Measured with single-bit Arial at em 16: the line contents
+ * of a 34-character sentence at widths 60 to 180 and of a 14-letter word at widths 40 to 100.
+ */
+export function layoutPlusLines(codes: readonly number[], advances: readonly number[], available: number): Array<{ start: number; end: number }> {
+	const lines: Array<{ start: number; end: number }> = [];
+	const trimEnd = (start: number, end: number): number => {
+		while (end > start && codes[end - 1] === 32) end--;
+		return end;
+	};
+	const width = (start: number, end: number): number => {
+		let w = 0;
+		for (let i = start; i < end; i++) w += advances[i];
+		return w;
+	};
+	let p = 0;
+	while (p <= codes.length) {
+		let e = p;
+		while (e < codes.length && codes[e] !== 10 && codes[e] !== 13) e++;
+		let pos = p;
+		do {
+			let end = trimEnd(pos, e);
+			if (Number.isFinite(available) && width(pos, end) > available) {
+				// The furthest break after a space that fits, else as many characters as fit (at least one).
+				let best = -1;
+				for (let i = pos + 1; i < e; i++) {
+					if (codes[i - 1] === 32 && codes[i] !== 32 && width(pos, trimEnd(pos, i)) <= available) best = i;
+				}
+				if (best > pos) {
+					end = best;
+				} else {
+					end = pos + 1;
+					while (end < e && codes[end] !== 32 && width(pos, end + 1) <= available) end++;
+				}
+			}
+			lines.push({ start: pos, end: trimEnd(pos, end) });
+			pos = end;
+			while (pos < e && codes[pos] === 32 && pos > p) pos++;
+		} while (pos < e);
+		p = e + (codes[e] === 13 && codes[e + 1] === 10 ? 2 : 1);
+	}
+	return lines;
 }
 
 /** DriverStringOptionsCmapLookup: the glyph array holds character codes, not glyph indices. */

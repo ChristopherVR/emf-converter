@@ -109,6 +109,7 @@ export function handleEmfPlusObjectRecord(
 					leadingMargin: hasSpacing ? view.getFloat32(dataOff + 36, true) : undefined,
 					trailingMargin: hasSpacing ? view.getFloat32(dataOff + 40, true) : undefined,
 					tracking: hasSpacing ? view.getFloat32(dataOff + 44, true) : undefined,
+					trimming: recDataSize >= 52 ? view.getUint32(dataOff + 48, true) : undefined,
 				});
 			}
 			break;

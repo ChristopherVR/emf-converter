@@ -208,6 +208,12 @@ export interface GdiFaceInfo {
 	/** Unrounded cell descent in font units, when the face supplies it. */
 	winDescent?: number;
 	unitsPerEm: number;
+	/** `hhea` metrics in font units (TrueType faces): GDI+ spaces DrawString lines by ascender - descender + lineGap. */
+	hheaAscender?: number;
+	hheaDescender?: number;
+	hheaLineGap?: number;
+	/** `kern` table pair kerning in font units (TrueType faces). */
+	kerning?(left: number, right: number): number;
 }
 
 /** A font realised at one device size: what text layout and painting use. */

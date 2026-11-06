@@ -758,6 +758,8 @@ export interface EmfPlusStringFormat {
 	trailingMargin?: number;
 	/** Advance-width multiplier (GenericDefault: 1.03, GenericTypographic: 1), when recorded. */
 	tracking?: number;
+	/** `StringTrimming` (0 None, 1 Character, 2 Word, 3-5 ellipses); absent = Character, the default format's. */
+	trimming?: number;
 }
 
 /** An EMF+ (GDI+) image-attributes object (colour remapping, gamma, etc.). Currently a stub. */
