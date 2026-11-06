@@ -2,8 +2,10 @@
  * Native SingleBitPerPixelGridFit DrawString baselines: Arial "HHH" drawn
  * from a point (0 x 0 layout rectangle) at em 8..40 and 44..80 by 4, each in
  * its own EMF+ metafile played back by GDI+ (`System.Drawing`
- * `Graphics.DrawImage` of the `Metafile` onto a 200 x 160 white bitmap, one
- * device pixel per pixel: the header's reference device is exactly 96 DPI). Writes
+ * `Graphics.DrawImage` of the `Metafile` onto a 200 x 160 white bitmap). The
+ * destination is the metafile's own `Bounds` (201 x 161 here, one pixel past
+ * the picture), which plays it one device pixel per pixel; a 200 x 160
+ * destination would shrink it by 200/201 and move hinted text. Writes
  * the metafiles and the native ink masks (red below 128 green) to
  * `src/__fixtures__/gdi/text-drawstring-singlebit-baseline.json.gz`.
  *
@@ -97,10 +99,11 @@ try {
 	const ps = `Add-Type -AssemblyName System.Drawing
 Get-ChildItem '${dir}\\*.emf' | ForEach-Object {
 	$mf = New-Object System.Drawing.Imaging.Metafile($_.FullName)
+	$b = $mf.GetMetafileHeader().Bounds
 	$bmp = New-Object System.Drawing.Bitmap(${W}, ${H})
 	$g = [System.Drawing.Graphics]::FromImage($bmp)
 	$g.Clear([System.Drawing.Color]::White)
-	$g.DrawImage($mf, (New-Object System.Drawing.Rectangle(0, 0, ${W}, ${H})))
+	$g.DrawImage($mf, $b.X, $b.Y, $b.Width, $b.Height)
 	$g.Dispose()
 	$bmp.Save(($_.FullName -replace '\\.emf$', '.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 	$bmp.Dispose(); $mf.Dispose()

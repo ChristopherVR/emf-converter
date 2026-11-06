@@ -3,10 +3,8 @@
  * `scripts/gdi-fixtures/generate-drawstring-singlebit-baseline.ts`: Arial
  * "HHH" from a point at em 8..40 and 44..80 by 4, played back by GDI+ one
  * device pixel per pixel. The baseline is the layout position plus
- * max(round(em winAscent / upem), the realized cell ascent with VDMX), and
- * the start rounds half down (em 9, 15, 21, ... have a half-pixel margin);
- * the earlier ceil and round-half-up rules put 20 of the 43 lines a pixel
- * off.
+ * max(round(em winAscent / upem), the realized cell ascent with VDMX); the
+ * earlier ceil of the design ascent put 18 of the 43 lines a pixel off.
  */
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -25,16 +23,8 @@ beforeAll(async () => {
 	await ensureNodeCanvasModule();
 });
 
-/**
- * Sizes whose native baseline is the realized ascent although the rounded
- * design ascent is larger (one pixel high, whole line): open, pinned to the
- * measured pixel counts. Across five faces at em 8..80 the rule places 337
- * of 365 baselines (144 with ceil).
- */
-const OPEN: Record<number, number> = { 68: 234, 76: 258 };
-
 describe.skipIf(!fontBytes)('native SingleBitPerPixelGridFit DrawString baseline', () => {
-	it.each(fixture.captures.map((c) => [c.em, c]))('places Arial %i px from a point', async (em, c) => {
+	it.each(fixture.captures.map((c) => [c.em, c]))('places Arial %i px from a point exactly', async (_em, c) => {
 		const { width: w, height: h } = fixture;
 		const emf = Buffer.from(c.emf, 'base64');
 		const url = await convertMetafileToDataUrl(emf.buffer.slice(emf.byteOffset, emf.byteOffset + emf.byteLength), { fonts: fontBytes! });
@@ -52,10 +42,6 @@ describe.skipIf(!fontBytes)('native SingleBitPerPixelGridFit DrawString baseline
 			const ours = d[i * 4] > 128 && d[i * 4 + 1] < 128;
 			if (ours !== ((native[i >> 3] >> (i & 7)) & 1) > 0) differing++;
 		}
-		if (em in OPEN) {
-			expect(differing).toBeLessThanOrEqual(OPEN[em]);
-		} else {
-			expect(differing).toBe(0);
-		}
+		expect(differing).toBe(0);
 	});
 });
