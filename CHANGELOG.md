@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.26.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.26.0) - 2026-11-06
+
+### Features
+
+- GDI arithmetic for GDI+ single-bit glyphs, SystemDefault follows fontSmoothing ([1c33216](https://github.com/ChristopherVR/emf-converter/commit/1c332163281c99af8ebf9041c649254581f17fc4))
+
 ## [4.25.7](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.7) - 2026-11-06
 
 ### Bug Fixes
