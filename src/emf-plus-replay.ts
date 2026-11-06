@@ -24,7 +24,7 @@ import { handleEmfPlusCurveRecord } from './emf-plus-curve-handlers';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
 import { parseSerializableObject } from './emf-plus-image-effects';
 import { handleEmfPlusObjectRecord } from './emf-plus-object-parser';
-import { handleEmfPlusStateRecord } from './emf-plus-state-handlers';
+import { handleEmfPlusStateRecord, UNIT_DISPLAY } from './emf-plus-state-handlers';
 import { handleEmfPlusTextImageRecord } from './emf-plus-text-image-handlers';
 import type {
 	CanvasContext,
@@ -127,6 +127,15 @@ function handleMultiFormatStart(rCtx: EmfPlusReplayCtx, dataOff: number, dataSiz
 	emfLog('MultiFormatStart: GDI+ plays no further EMF+ record');
 }
 
+/**
+ * A header LogicalDpi, or undefined (96 DPI) for 0 or a value no device has:
+ * GDI+ itself would divide by zero, so a broken header falls back to the
+ * playback default instead of collapsing or exploding the picture.
+ */
+function validDpi(dpi: number): number | undefined {
+	return dpi > 0 && dpi <= 100000 ? dpi : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -178,8 +187,12 @@ export function* replayEmfPlusRecordsSteps(
 		totalDrawImageCalls: 0,
 		clipSaveDepth: s.clipSaveDepth,
 		clipRegion: s.clipRegion,
-		pageUnit: s.pageUnit ?? 2,
+		// GDI+ starts playback, as every Graphics, in the Display unit.
+		pageUnit: s.pageUnit ?? UNIT_DISPLAY,
 		pageScale: s.pageScale ?? 1,
+		dpiX: s.dpiX,
+		dpiY: s.dpiY,
+		videoDisplay: s.videoDisplay,
 		...(s.continuation ?? createContinuationAccumulator()),
 		dpiScale,
 		canvasW,
@@ -242,11 +255,19 @@ export function* replayEmfPlusRecordsSteps(
 				// for readers without EMF+ support (see replayEmfRecords).
 				s.dualMode = (recFlags & 0x0001) !== 0;
 				if (recDataSize >= 16) {
-					const dpiX = view.getFloat32(dataOff + 8, true);
-					const dpiY = view.getFloat32(dataOff + 12, true);
-					emfLog(`replayEmfPlusRecords: HEADER dpiX=${dpiX}, dpiY=${dpiY}`);
+					// Version, EmfPlusFlags, LogicalDpiX, LogicalDpiY (UInt32 each,
+					// MS-EMFPLUS 2.3.3.3). The DPI converts page units to the
+					// reference-device pixels the header bounds are in (measured:
+					// a Point page unit in a 72 DPI header is one pixel); flags
+					// bit 0 clear marks a printer reference device.
+					const plusFlags = view.getUint32(dataOff + 4, true);
+					const dpiX = view.getUint32(dataOff + 8, true);
+					const dpiY = view.getUint32(dataOff + 12, true);
+					rCtx.dpiX = s.dpiX = validDpi(dpiX);
+					rCtx.dpiY = s.dpiY = validDpi(dpiY);
+					rCtx.videoDisplay = s.videoDisplay = (plusFlags & 0x0001) !== 0;
+					emfLog(`replayEmfPlusRecords: HEADER dpiX=${dpiX}, dpiY=${dpiY}, flags=0x${plusFlags.toString(16)}`);
 				}
-				void recDataSize;
 				break;
 			}
 
@@ -367,6 +388,9 @@ export function* replayEmfPlusRecordsSteps(
 		state.textRenderingHint = rCtx.textRenderingHint;
 		state.pageUnit = rCtx.pageUnit;
 		state.pageScale = rCtx.pageScale;
+		state.dpiX = rCtx.dpiX;
+		state.dpiY = rCtx.dpiY;
+		state.videoDisplay = rCtx.videoDisplay;
 		state.antiAlias = rCtx.antiAlias;
 	}
 

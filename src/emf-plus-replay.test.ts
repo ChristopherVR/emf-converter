@@ -108,9 +108,9 @@ describe('emf-plus-replay', () => {
 			off += writeEmfPlusRecord(view, off, EMFPLUS_HEADER, 0, 16, (v, d) => {
 				// version, emfPlusFlags, dpiX, dpiY
 				v.setUint32(d, 0xdbc01002, true);
-				v.setUint32(d + 4, 0, true);
-				v.setFloat32(d + 8, 96, true);
-				v.setFloat32(d + 12, 96, true);
+				v.setUint32(d + 4, 1, true);
+				v.setUint32(d + 8, 96, true);
+				v.setUint32(d + 12, 96, true);
 			});
 			writeEmfPlusRecord(view, off, EMFPLUS_ENDOFFILE, 0, 0);
 

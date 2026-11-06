@@ -8,7 +8,7 @@ import {
 	EMFPLUS_DRAWIMAGE,
 	EMFPLUS_DRAWIMAGEPOINTS,
 } from './emf-constants';
-import { handleEmfPlusTextImageRecord } from './emf-plus-text-image-handlers';
+import { handleEmfPlusTextImageRecord, worldUnitFont } from './emf-plus-text-image-handlers';
 import type { EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
 // ---------------------------------------------------------------------------
@@ -424,5 +424,42 @@ describe('emf-plus-text-image-handlers', () => {
 				expect(handleEmfPlusTextImageRecord(rCtx, EMFPLUS_DRAWIMAGEPOINTS, 0, 8, 20)).toBeTruthy();
 			});
 		});
+	});
+});
+
+// Measured against GDI+ playback (docs/parity-log.md, EMF+ font and pen units).
+describe('worldUnitFont()', () => {
+	const font = (emSize: number, unit: number) => ({ kind: 'plus-font' as const, emSize, flags: 0, family: 'Arial', unit });
+
+	it('keeps World and Pixel em sizes, which the page transform scales', () => {
+		const rCtx = makeRCtx();
+		rCtx.pageUnit = 3;
+		rCtx.dpiY = 144;
+		expect(worldUnitFont(rCtx, font(20, 0))).toMatchObject({ emSize: 20, unit: 0 });
+		expect(worldUnitFont(rCtx, font(20, 2))).toMatchObject({ emSize: 20, unit: 0 });
+	});
+
+	it('treats Display and unknown units as World', () => {
+		const rCtx = makeRCtx();
+		expect(worldUnitFont(rCtx, font(20, 1))).toMatchObject({ emSize: 20, unit: 0 });
+		expect(worldUnitFont(rCtx, font(20, 7))).toMatchObject({ emSize: 20, unit: 0 });
+	});
+
+	it('converts physical units at the header DPI and divides out the page transform', () => {
+		const rCtx = makeRCtx();
+		rCtx.dpiY = 144;
+		rCtx.pageUnit = 2;
+		expect((worldUnitFont(rCtx, font(20, 3)) as { emSize: number }).emSize).toBeCloseTo(40);
+		expect((worldUnitFont(rCtx, font(0.5, 4)) as { emSize: number }).emSize).toBeCloseTo(72);
+		expect((worldUnitFont(rCtx, font(300, 5)) as { emSize: number }).emSize).toBeCloseTo(144);
+		expect((worldUnitFont(rCtx, font(25.4, 6)) as { emSize: number }).emSize).toBeCloseTo(144);
+		// A Point page unit at 144 DPI is 2 px per unit: the font keeps its device size.
+		rCtx.pageUnit = 3;
+		expect((worldUnitFont(rCtx, font(20, 3)) as { emSize: number }).emSize).toBeCloseTo(20);
+	});
+
+	it('passes other objects through', () => {
+		const rCtx = makeRCtx();
+		expect(worldUnitFont(rCtx, undefined)).toBeUndefined();
 	});
 });

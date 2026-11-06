@@ -29,6 +29,7 @@ import {
 	getPageUnitMultiplier,
 	applyPlusWorldTransform,
 	plusWorldMatrix,
+	plusPageToDeviceMatrix,
 } from './emf-plus-state-handlers';
 import type { EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
@@ -250,6 +251,41 @@ describe('emf-plus-state-handlers', () => {
 		it('multiplies by pageScale', () => {
 			expect(getPageUnitMultiplier(2, 2)).toBe(2);
 			expect(getPageUnitMultiplier(4, 0.5)).toBe(48);
+		});
+
+		it('converts physical units at the given header DPI', () => {
+			expect(getPageUnitMultiplier(3, 1, 72)).toBe(1);
+			expect(getPageUnitMultiplier(4, 1, 120)).toBe(120);
+			expect(getPageUnitMultiplier(5, 1, 150)).toBeCloseTo(0.5);
+			expect(getPageUnitMultiplier(6, 1, 254)).toBeCloseTo(10);
+			expect(getPageUnitMultiplier(2, 1, 72)).toBe(1);
+		});
+
+		it('makes Display a pixel on a video display and 1/100 inch on a printer', () => {
+			expect(getPageUnitMultiplier(1, 1, 72)).toBe(1);
+			expect(getPageUnitMultiplier(1, 1, 72, true)).toBe(1);
+			expect(getPageUnitMultiplier(1, 2, 72, false)).toBeCloseTo(1.44);
+		});
+	});
+
+	describe('plusPageToDeviceMatrix() header DPI', () => {
+		it('converts each axis at its own LogicalDpi', () => {
+			const rCtx = makeRCtx();
+			rCtx.pageUnit = 3; // Point
+			rCtx.dpiX = 72;
+			rCtx.dpiY = 144;
+			rCtx.worldTransform = [1, 0, 0, 1, 10, 10];
+			const m = plusPageToDeviceMatrix(rCtx);
+			expect(m[0]).toBeCloseTo(1);
+			expect(m[3]).toBeCloseTo(2);
+			expect(m[4]).toBeCloseTo(10);
+			expect(m[5]).toBeCloseTo(20);
+		});
+
+		it('keeps 96 DPI when no header DPI is known', () => {
+			const rCtx = makeRCtx();
+			rCtx.pageUnit = 4; // Inch
+			expect(plusPageToDeviceMatrix(rCtx)[0]).toBe(96);
 		});
 	});
 
@@ -536,6 +572,23 @@ describe('emf-plus-state-handlers', () => {
 				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETPAGETRANSFORM, flags, 8, 0);
 				expect(rCtx.pageUnit).toBe(6);
 				expect(rCtx.pageScale).toBe(1);
+			});
+
+			// Measured against GDI+: these records leave the page transform as it was.
+			it.each([
+				['the World unit', 0, 2],
+				['an unknown unit', 7, 2],
+				['a zero scale', 6, 0],
+				['a negative scale', 6, -1],
+				['a NaN scale', 6, Number.NaN],
+			])('ignores %s', (_name, unit, scale) => {
+				const rCtx = makeRCtx();
+				rCtx.pageUnit = 3;
+				rCtx.pageScale = 1.5;
+				rCtx.view.setFloat32(8, scale, true);
+				handleEmfPlusStateRecord(rCtx, EMFPLUS_SETPAGETRANSFORM, unit, 8, 4);
+				expect(rCtx.pageUnit).toBe(3);
+				expect(rCtx.pageScale).toBe(1.5);
 			});
 		});
 

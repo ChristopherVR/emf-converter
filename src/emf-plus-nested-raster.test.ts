@@ -77,7 +77,7 @@ function stretchDibits(srcW: number, srcH: number): Buffer {
 
 function outer(inner: Buffer, dw: number, dh: number): ArrayBuffer {
 	const hd = Buffer.alloc(16);
-	hd.writeUInt32LE(0xdbc01002, 0); hd.writeUInt32LE(96, 8); hd.writeUInt32LE(96, 12);
+	hd.writeUInt32LE(0xdbc01002, 0); hd.writeUInt32LE(1, 4); hd.writeUInt32LE(96, 8); hd.writeUInt32LE(96, 12);
 	const head = Buffer.alloc(8);
 	head.writeUInt32LE(0xdbc01002, 0); head.writeUInt32LE(2, 4);
 	const m = Buffer.alloc(8);

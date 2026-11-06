@@ -130,6 +130,21 @@ describe('containerRectTransform', () => {
 		expect(mm[0]).toBeCloseTo(20 / ((10 * 96) / 25.4));
 		expect(containerRectTransform({ x: 0, y: 0, w: 1, h: 1 }, { x: 0, y: 0, w: 0, h: 1 }, 2)).toBeNull();
 	});
+
+	// Measured against GDI+ (a 60 x 40 source onto a 120 x 80 destination).
+	it('converts the source rectangle at the header DPI of each axis', () => {
+		expect(containerRectTransform({ x: 0, y: 0, w: 120, h: 80 }, { x: 0, y: 0, w: 60, h: 40 }, 3, 72, 144)).toStrictEqual([2, 0, 0, 1, 0, 0]);
+		const inch = containerRectTransform({ x: 0, y: 0, w: 120, h: 80 }, { x: 0, y: 0, w: 1, h: 1 }, 4, 72, 72)!;
+		expect(inch[0]).toBeCloseTo(120 / 72);
+	});
+
+	it('takes Display as a pixel on a video display and World as 1/100 inch', () => {
+		const dst = { x: 0, y: 0, w: 120, h: 80 };
+		const src = { x: 0, y: 0, w: 60, h: 40 };
+		expect(containerRectTransform(dst, src, 1, 72, 72, true)![0]).toBeCloseTo(2);
+		expect(containerRectTransform(dst, src, 1, 72, 72, false)![0]).toBeCloseTo(200 / 72);
+		expect(containerRectTransform(dst, src, 0, 72, 72, true)![0]).toBeCloseTo(200 / 72);
+	});
 });
 
 describe('decodeTsClipRects', () => {

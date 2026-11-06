@@ -44,7 +44,7 @@ Converts an EMF or WMF file to a PNG data URL. Returns `null` if the buffer is n
 | -------------------- | --------------------------------------- | ------------------- | ----------- |
 | `maxWidth`           | `number`                                |                     | Maximum output width in pixels. The aspect ratio is preserved. |
 | `maxHeight`          | `number`                                |                     | Maximum output height in pixels. |
-| `dpiScale`           | `number`                                | `1`                 | Resolution multiplier, clamped to `4`. |
+| `dpiScale`           | `number`                                | `1`                 | Resolution multiplier, clamped to `4`. At `1` the output is the metafile's reference-device size (its header bounds), which is often small; pass the host's scale (for example `devicePixelRatio`) for sharp previews. |
 | `wmfReferenceDpi`     | `number \| { x: number; y: number }`      | `96`                | Playback-device resolution for WMF physical map modes. Supply the original device DPI when known; values must be finite and positive. |
 | `ansiCodePage`        | `number`                                | `1252`              | Playback-device ANSI code page (`GetACP()`) for ANSI/DEFAULT text in EMF and WMF ANSI text records, and WMF font face names. Explicit text charsets keep their own decoding. |
 | `oemCodePage`         | `number`                                | `437`               | Playback-device OEM code page (`GetOEMCP()`) for OEM_CHARSET text in EMF and WMF ANSI text records. |

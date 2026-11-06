@@ -643,8 +643,14 @@ export interface EmfPlusPen {
 	kind: 'plus-pen';
 	/** CSS rgba() colour string. */
 	color: string;
-	/** Pen width in world units. */
+	/** Pen width, in world units unless {@link unit} is Pixel. */
 	width: number;
+	/**
+	 * `PenUnit` of the width (MS-EMFPLUS 2.2.2.37; absent = World). Pixel
+	 * is device pixels; GDI+ rejects Point, Inch, Document and Millimeter
+	 * (see `penForUnit` in `emf-plus-stroke.ts`).
+	 */
+	unit?: number;
 	/** Dash style enum: 0=Solid, 1=Dash, 2=Dot, 3=DashDot, 4=DashDotDot, 5=Custom. */
 	dashStyle: number;
 	/** GDI+ `LineCap` at the start / end (0 Flat, 1 Square, 2 Round, 3 Triangle, 0x1x anchors). */
@@ -1035,6 +1041,12 @@ export interface EmfPlusState {
 	pageUnit?: number;
 	/** Active page scale (`EmfPlusSetPageTransform`), persisted across comment batches. */
 	pageScale?: number;
+	/** `EmfPlusHeader` LogicalDpiX (see {@link EmfPlusReplayCtx.dpiX}), persisted across comment batches. */
+	dpiX?: number;
+	/** `EmfPlusHeader` LogicalDpiY (see {@link EmfPlusReplayCtx.dpiY}), persisted across comment batches. */
+	dpiY?: number;
+	/** `EmfPlusHeader` video-display flag (see {@link EmfPlusReplayCtx.videoDisplay}), persisted across comment batches. */
+	videoDisplay?: boolean;
 	/**
 	 * Device-space mapping applied after world x page units x DPI scale:
 	 * the metafile's device origin (its header bounds' top-left) moved to
@@ -1148,10 +1160,23 @@ export interface EmfPlusReplayCtx {
 	totalDrawImageCalls: number;
 	/** Number of ctx.save() calls made specifically for clip management. */
 	clipSaveDepth: number;
-	/** Current page unit (0=World, 2=Pixel, 3=Point, 4=Inch, 5=Document, 6=Millimeter). */
+	/** Current page unit (1=Display, 2=Pixel, 3=Point, 4=Inch, 5=Document, 6=Millimeter). */
 	pageUnit: number;
 	/** Current page scale factor. */
 	pageScale: number;
+	/**
+	 * Horizontal device pixels per inch of the recording, the `EmfPlusHeader`
+	 * LogicalDpiX; page units other than Pixel convert with it. Absent = 96.
+	 */
+	dpiX?: number;
+	/** Vertical device pixels per inch of the recording (LogicalDpiY); absent = 96. */
+	dpiY?: number;
+	/**
+	 * False when the `EmfPlusHeader` EmfPlusFlags mark the reference device
+	 * as a printer (bit 0 clear): the Display unit is then 1/100 inch
+	 * instead of one pixel. Absent = video display.
+	 */
+	videoDisplay?: boolean;
 	/** Buffer for accumulating continuation object data. */
 	continuationBuffer: Uint8Array | null;
 	/** The object ID of the current continuation sequence. */

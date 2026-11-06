@@ -54,7 +54,7 @@ import {
 	type DeviceFigure,
 	type FixFigure,
 } from './emf-plus-raster';
-import { applyPlusWorldTransform, brushPaint, plusWorldMatrix } from './emf-plus-state-handlers';
+import { applyPlusWorldTransform, brushPaint, plusPageToDeviceMatrix, plusWorldMatrix } from './emf-plus-state-handlers';
 import { customCapGeometry } from './emf-plus-custom-cap';
 import { nominalLineCoverage, recordNominalFigures, type NominalFigure } from './emf-plus-nominal-line';
 import { widenFigures, type DevicePen } from './emf-plus-widen';
@@ -156,6 +156,13 @@ export function strokePlusGeometry(
 	/** The path's fill mode is Alternate: the clip of an Inset pen is the even-odd interior of the figures (a GraphicsPath default). */
 	evenOddClip: boolean = false,
 ): void {
+	if (pen) {
+		const unitPen = penForUnit(rCtx, pen);
+		if (!unitPen) {
+			return;
+		}
+		pen = unitPen;
+	}
 	const { ctx } = rCtx;
 	const resolved = resolvePenTransform(pen);
 	pen = resolved.pen;
@@ -270,6 +277,35 @@ export function strokePlusGeometry(
  * `nib`, the linear part mapping the pen-space nib into world space; a
  * singular or non-finite one is ignored.
  */
+/** GDI+ `UnitPixel` (MS-EMFPLUS 2.1.1.33). */
+const PEN_UNIT_PIXEL = 2;
+
+/**
+ * The pen a stroke draws with, given its `PenUnit`, or null when GDI+ draws
+ * nothing. Measured against GDI+ playback (header DPI 72 and 144, page units
+ * Pixel and Point, world scales 1 and 2, rotated and anisotropic worlds):
+ * World, Display and unknown units are world units. A Pixel pen is that many
+ * device pixels whatever the world and page transforms, with a round nib in
+ * device space, so its nib transform undoes the world-to-device matrix.
+ * GDI+ rejects a Point, Inch, Document or Millimeter pen and the draw paints
+ * nothing (the rejected pen still replaces the pen in its object slot).
+ */
+function penForUnit(rCtx: EmfPlusReplayCtx, pen: EmfPlusPen): EmfPlusPen | null {
+	const unit = pen.unit ?? 0;
+	if (unit >= 3 && unit <= 6) {
+		return null;
+	}
+	if (unit !== PEN_UNIT_PIXEL) {
+		return pen;
+	}
+	const m = plusPageToDeviceMatrix(rCtx);
+	const inv = invertAffine([m[0], m[1], m[2], m[3], 0, 0]);
+	if (!inv) {
+		return pen;
+	}
+	return { ...pen, transform: mulMatrix(inv, pen.transform ?? [1, 0, 0, 1, 0, 0]) };
+}
+
 function resolvePenTransform(pen: EmfPlusPen | null): { pen: EmfPlusPen | null; nib: TransformMatrix | null } {
 	if (!pen?.transform) {
 		return { pen, nib: null };

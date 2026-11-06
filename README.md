@@ -339,7 +339,7 @@ page. The defaults are `1252` and `437`; explicit text charsets are unchanged.
 | `ansiCodePage`       | `number`                              | `1252`            | Playback-device ANSI code page (`GetACP()`) for ANSI/DEFAULT text |
 | `oemCodePage`        | `number`                              | `437`             | Playback-device OEM code page (`GetOEMCP()`) for OEM text |
 | `maxHeight`          | `number`                              | None              | Maximum output height in pixels |
-| `dpiScale`           | `number`                              | `1`               | Resolution multiplier; clamped to `4` |
+| `dpiScale`           | `number`                              | `1`               | Resolution multiplier; clamped to `4`. `1` is the header bounds' pixel size, so raise it for sharp scaled-up previews |
 | `maxCanvasDimension` | `number`                              | `8192`            | Hard cap on output width/height in pixels |
 | `maxRecords`         | `number`                              | `200000`/`500000` | Records processed per stream before replay stops (EMF+ uses the higher default unless overridden) |
 | `gdiAntialias`       | `boolean`                             | `false` (PNG)     | `true` smooths every shape edge with Canvas antialiasing instead of reproducing Windows' own GDI/GDI+ rasterisation |

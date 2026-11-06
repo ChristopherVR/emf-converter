@@ -189,31 +189,62 @@ export function brushPaint(rCtx: EmfPlusReplayCtx, obj: EmfPlusBrush): string | 
 	return obj.color;
 }
 
+/** GDI+ `UnitWorld` (MS-EMFPLUS 2.1.1.33). */
+export const UNIT_WORLD = 0;
+/** GDI+ `UnitDisplay`: a pixel on a video display, 1/100 inch on a printer. */
+export const UNIT_DISPLAY = 1;
+/** GDI+ `UnitMillimeter`, the last valid unit. */
+const UNIT_MILLIMETER = 6;
+
+/** The playback DPI when the metafile has no (usable) `EmfPlusHeader`. */
+export const DEFAULT_PLUS_DPI = 96;
+
 /**
- * Compute the multiplier that converts from the current page unit to pixels
- * (assuming a 96 DPI canvas), scaled by the page scale factor.
+ * Compute the multiplier that converts from a page unit to reference-device
+ * pixels at `dpi` (the `EmfPlusHeader` LogicalDpi of the axis, 96 when
+ * absent), scaled by the page scale factor. Measured against GDI+: Point,
+ * Inch, Document and Millimeter scale with the header DPI, and Display is a
+ * pixel unless the header marks the reference device as a printer
+ * (`videoDisplay` false), where it is 1/100 inch. World and Pixel are one
+ * pixel.
  */
-export function getPageUnitMultiplier(pageUnit: number, pageScale: number): number {
-	const DPI = 96;
+export function getPageUnitMultiplier(
+	pageUnit: number,
+	pageScale: number,
+	dpi: number = DEFAULT_PLUS_DPI,
+	videoDisplay: boolean = true,
+): number {
 	let unitToPixel: number;
 	switch (pageUnit) {
+		case UNIT_DISPLAY:
+			unitToPixel = videoDisplay ? 1 : dpi / 100;
+			break;
 		case 3:
-			unitToPixel = DPI / 72;
+			unitToPixel = dpi / 72;
 			break; // Point
 		case 4:
-			unitToPixel = DPI;
+			unitToPixel = dpi;
 			break; // Inch
 		case 5:
-			unitToPixel = DPI / 300;
+			unitToPixel = dpi / 300;
 			break; // Document
 		case 6:
-			unitToPixel = DPI / 25.4;
+			unitToPixel = dpi / 25.4;
 			break; // Millimeter
 		default:
 			unitToPixel = 1;
-			break; // World, Display, Pixel
+			break; // World, Pixel
 	}
 	return unitToPixel * pageScale;
+}
+
+/** The horizontal and vertical page multipliers of a replay: its page transform at the header's DPI. */
+function pageMultipliers(rCtx: EmfPlusReplayCtx): [number, number] {
+	const video = rCtx.videoDisplay ?? true;
+	return [
+		getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale, rCtx.dpiX ?? DEFAULT_PLUS_DPI, video),
+		getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale, rCtx.dpiY ?? DEFAULT_PLUS_DPI, video),
+	];
 }
 
 /**
@@ -259,8 +290,9 @@ export function plusPageToDeviceMatrix(rCtx: EmfPlusReplayCtx): TransformMatrix 
 		return ext.tsDevice;
 	}
 	const wt = rCtx.worldTransform;
-	const k = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale);
-	const m: TransformMatrix = [wt[0] * k, wt[1] * k, wt[2] * k, wt[3] * k, wt[4] * k, wt[5] * k];
+	// Per axis: the header's LogicalDpiX and LogicalDpiY may differ.
+	const [kx, ky] = pageMultipliers(rCtx);
+	const m: TransformMatrix = [wt[0] * kx, wt[1] * ky, wt[2] * kx, wt[3] * ky, wt[4] * kx, wt[5] * ky];
 	return ext?.containerTransform ? multiplyMatrix(m, ext.containerTransform) : m;
 }
 
@@ -377,7 +409,7 @@ function popState(rCtx: EmfPlusReplayCtx, stackId: number): void {
  * the map from the container's page space onto the enclosing world space,
  * or `EmfPlusBeginContainerNoParams` with `null`). Measured against GDI+
  * (`gpx-rec-container*`): the whole state is saved; inside, the world
- * transform is the identity, the page unit Pixel at scale 1, and the
+ * transform is the identity, the page unit Display at scale 1, and the
  * drawing lands where the enclosing world, page and container transforms
  * put it; the clip starts infinite, though the enclosing clip still
  * bounds every drawing; the rendering hints (SmoothingMode,
@@ -397,7 +429,9 @@ function beginContainer(rCtx: EmfPlusReplayCtx, stackId: number, rectTransform: 
 	ext.textContrast = undefined;
 	rCtx.clipRegion = null;
 	rCtx.worldTransform = [1, 0, 0, 1, 0, 0];
-	rCtx.pageUnit = 2;
+	// Display, as every new Graphics: a pixel unless the reference device
+	// is a printer (measured with `EmfPlusFlags` bit 0 clear).
+	rCtx.pageUnit = UNIT_DISPLAY;
 	rCtx.pageScale = 1;
 	rCtx.antiAlias = false;
 	rCtx.interpolationMode = undefined;
@@ -408,23 +442,30 @@ function beginContainer(rCtx: EmfPlusReplayCtx, stackId: number, rectTransform: 
 
 /**
  * The transform an `EmfPlusBeginContainer` record's rectangles define:
- * the source rectangle, in `unit` (converted to pixels at 96 DPI), maps
- * onto the destination rectangle in the enclosing world space. Pure.
+ * the source rectangle, in `unit` (converted to pixels at the header's
+ * `dpiX`/`dpiY`), maps onto the destination rectangle in the enclosing
+ * world space. Measured against GDI+: Display is a pixel on a video
+ * display and 1/100 inch on a printer, as for the page unit, but World,
+ * which the page transform cannot take, is 1/100 inch on both. Pure.
  */
 export function containerRectTransform(
 	dst: { x: number; y: number; w: number; h: number },
 	src: { x: number; y: number; w: number; h: number },
 	unit: number,
+	dpiX: number = DEFAULT_PLUS_DPI,
+	dpiY: number = DEFAULT_PLUS_DPI,
+	videoDisplay: boolean = true,
 ): TransformMatrix | null {
-	const u = getPageUnitMultiplier(unit, 1);
-	const sw = src.w * u;
-	const sh = src.h * u;
+	const ux = unit === UNIT_WORLD ? dpiX / 100 : getPageUnitMultiplier(unit, 1, dpiX, videoDisplay);
+	const uy = unit === UNIT_WORLD ? dpiY / 100 : getPageUnitMultiplier(unit, 1, dpiY, videoDisplay);
+	const sw = src.w * ux;
+	const sh = src.h * uy;
 	if (!(Math.abs(sw) > 0 && Math.abs(sh) > 0) || ![dst.x, dst.y, dst.w, dst.h, sw, sh].every(Number.isFinite)) {
 		return null;
 	}
 	const a = dst.w / sw;
 	const d = dst.h / sh;
-	return [a, 0, 0, d, dst.x - src.x * u * a, dst.y - src.y * u * d];
+	return [a, 0, 0, d, dst.x - src.x * ux * a, dst.y - src.y * uy * d];
 }
 
 /** The intersection of two tracked clips (`null`/absent = infinite). */
@@ -974,6 +1015,9 @@ export function handleEmfPlusStateRecord(
 					{ x: f(0), y: f(4), w: f(8), h: f(12) },
 					{ x: f(16), y: f(20), w: f(24), h: f(28) },
 					recFlags & 0xff,
+					rCtx.dpiX,
+					rCtx.dpiY,
+					rCtx.videoDisplay,
 				);
 				beginContainer(rCtx, view.getUint32(dataOff + 32, true), t ?? [1, 0, 0, 1, 0, 0]);
 			}
@@ -992,6 +1036,12 @@ export function handleEmfPlusStateRecord(
 			dropTsDevice(rCtx);
 			const pageUnit = recFlags & 0xff;
 			const pageScale = recDataSize >= 4 ? view.getFloat32(dataOff, true) : 1;
+			// GDI+ rejects World, an unknown unit and a scale that is not
+			// positive, keeping the page transform in force (measured).
+			if (pageUnit === UNIT_WORLD || pageUnit > UNIT_MILLIMETER || !(pageScale > 0) || !Number.isFinite(pageScale)) {
+				emfLog(`SetPageTransform: ignored unit=${pageUnit}, scale=${pageScale}`);
+				return true;
+			}
 			rCtx.pageUnit = pageUnit;
 			rCtx.pageScale = pageScale;
 			const UNIT_NAMES: Record<number, string> = {

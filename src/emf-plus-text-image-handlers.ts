@@ -38,6 +38,8 @@ import {
 	resolveBrushPaint,
 	applyPlusWorldTransform,
 	plusWorldMatrix,
+	getPageUnitMultiplier,
+	DEFAULT_PLUS_DPI,
 } from './emf-plus-state-handlers';
 import { isSvgContext } from './svg-context';
 import {
@@ -52,6 +54,7 @@ import type {
 	DeferredImageDraw,
 	DeferredImageResample,
 	EmfPlusFont,
+	EmfPlusObject,
 	EmfPlusImage,
 	EmfPlusPath,
 	EmfPlusPen,
@@ -404,6 +407,29 @@ interface PlusEngineFont {
 }
 
 /**
+ * `obj` as a font sized in world units, or `obj` itself when it is not a
+ * font. Measured against GDI+ playback (header DPI 72 and 144, page units
+ * Pixel and Point, world scales 1 and 2): a World or Pixel em size is in
+ * page units, so the world and page transforms both scale it, and so is a
+ * Display or unknown unit; a Point, Inch, Document or Millimeter em size
+ * converts to device pixels at the header's LogicalDpiY and only the world
+ * transform scales it, so its world size divides out the page transform.
+ */
+export function worldUnitFont<T extends EmfPlusObject | undefined>(rCtx: EmfPlusReplayCtx, obj: T): T | EmfPlusFont {
+	if (!obj || obj.kind !== 'plus-font') {
+		return obj;
+	}
+	const unit = obj.unit ?? 0;
+	if (unit < 3 || unit > 6) {
+		return unit === 0 ? obj : { ...obj, unit: 0 };
+	}
+	const dpi = rCtx.dpiY ?? DEFAULT_PLUS_DPI;
+	const page = getPageUnitMultiplier(rCtx.pageUnit, rCtx.pageScale, dpi, rCtx.videoDisplay ?? true);
+	const em = (obj.emSize * getPageUnitMultiplier(unit, 1, dpi)) / (page || 1);
+	return Number.isFinite(em) && em > 0 ? { ...obj, emSize: em, unit: 0 } : obj;
+}
+
+/**
  * Realizes `font` with the GDI font engine for the current world transform
  * and TextRenderingHint, when fonts were supplied, the transform is
  * unrotated and the font's unit is World or Pixel; null otherwise.
@@ -714,7 +740,7 @@ export function handleEmfPlusTextImageRecord(
 				const layoutH = view.getFloat32(dataOff + 24, true);
 
 				const fontId = recFlags & 0xff;
-				const font = objectTable.get(fontId);
+				const font = worldUnitFont(rCtx, objectTable.get(fontId));
 
 				if (strLen > 0 && dataOff + 28 + strLen * 2 <= dataOff + recDataSize) {
 					const text = readUtf16LE(view, dataOff + 28, strLen);
@@ -777,7 +803,7 @@ export function handleEmfPlusTextImageRecord(
 				const options = view.getUint32(dataOff + 4, true);
 				const matrixPresent = view.getUint32(dataOff + 8, true) !== 0;
 				const glyphCount = view.getUint32(dataOff + 12, true);
-				const font = objectTable.get(recFlags & 0xff);
+				const font = worldUnitFont(rCtx, objectTable.get(recFlags & 0xff));
 				const glyphsOff = dataOff + 16;
 				const posOff = glyphsOff + glyphCount * 2;
 				const matrixOff = posOff + glyphCount * 8;

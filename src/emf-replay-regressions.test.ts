@@ -96,6 +96,7 @@ function plusHeader(dual: boolean): Uint8Array {
 	const d = new Uint8Array(16);
 	const v = new DataView(d.buffer);
 	v.setUint32(0, 0xdbc01002, true);
+	v.setUint32(4, 1, true); // EmfPlusFlags: video display reference device
 	v.setUint32(8, 96, true);
 	v.setUint32(12, 96, true);
 	return plusComment(0x4001, dual ? 1 : 0, d);
@@ -520,5 +521,152 @@ describe('convertMetafileToJpegDataUrl', () => {
 
 	it('returns null for a buffer that is not a metafile', async () => {
 		expect(await convertMetafileToJpegDataUrl(new ArrayBuffer(16))).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// EMF+ header LogicalDpi (issue #30)
+// ---------------------------------------------------------------------------
+
+describe('EMF+ page units at the header LogicalDpi', () => {
+	/** EmfPlusHeader with UInt32 LogicalDpiX/Y; `video` sets EmfPlusFlags bit 0. */
+	const header = (dpiX: number, dpiY: number, video = true) => {
+		const d = new Uint8Array(16);
+		const v = new DataView(d.buffer);
+		v.setUint32(0, 0xdbc01002, true);
+		v.setUint32(4, video ? 1 : 0, true);
+		v.setUint32(8, dpiX, true);
+		v.setUint32(12, dpiY, true);
+		return plusComment(0x4001, 0, d);
+	};
+	const pageTransform = (unit: number, scale = 1) => {
+		const d = new Uint8Array(4);
+		new DataView(d.buffer).setFloat32(0, scale, true);
+		return plusComment(0x4030, unit, d);
+	};
+	const at = (img: { data: Uint8ClampedArray; w: number }, x: number, y: number) => {
+		const p = (y * img.w + x) * 4;
+		return [img.data[p], img.data[p + 1], img.data[p + 2], img.data[p + 3]] as const;
+	};
+	const red = (img: { data: Uint8ClampedArray; w: number }, x: number, y: number) => isRed(...at(img, x, y));
+	const blue = (img: { data: Uint8ClampedArray; w: number }, x: number, y: number) => isBlue(...at(img, x, y));
+
+	// The reported file: bounds 108 x 56 px recorded at 72 DPI, drawn in
+	// points, with the page transform set once and later drawing in a
+	// separate EMR_COMMENT. GDI+ fills the whole picture, one pixel per point.
+	it('draws a 72 DPI file in points at one pixel per point, across comments', () => {
+		const img = render(
+			buildEmf(
+				[0, 0, 108, 56],
+				[
+					header(72, 72),
+					pageTransform(3),
+					plusFillRect(0xffff0000, 0, 0, 108, 56),
+					plusFillRect(0xff0000ff, 54, 28, 54, 28),
+					plusComment(0x4002, 0),
+				],
+			),
+		);
+		expect(red(img, 53, 27)).toBe(true);
+		expect(blue(img, 54, 28)).toBe(true);
+		expect(blue(img, 107, 55)).toBe(true);
+	});
+
+	it('converts each axis at its own LogicalDpi', () => {
+		const img = render(buildEmf([0, 0, 99, 99], [header(72, 144), pageTransform(3), plusFillRect(0xffff0000, 0, 0, 10, 10), plusComment(0x4002, 0)]));
+		expect(red(img, 9, 19)).toBe(true);
+		expect(red(img, 10, 5)).toBe(false);
+		expect(red(img, 5, 20)).toBe(false);
+	});
+
+	it('makes the initial Display unit 1/100 inch on a printer reference device', () => {
+		const img = render(buildEmf([0, 0, 99, 99], [header(72, 72, false), plusFillRect(0xffff0000, 0, 0, 100, 100), plusComment(0x4002, 0)]));
+		expect(red(img, 71, 71)).toBe(true);
+		expect(red(img, 72, 10)).toBe(false);
+	});
+
+	it('ignores a World page unit, keeping the page transform in force', () => {
+		const img = render(
+			buildEmf([0, 0, 99, 99], [header(72, 72), pageTransform(3), pageTransform(0, 2), plusFillRect(0xffff0000, 0, 0, 10, 10), plusComment(0x4002, 0)]),
+		);
+		expect(red(img, 9, 9)).toBe(true);
+		expect(red(img, 10, 10)).toBe(false);
+	});
+
+	// EMF+ coordinates are reference-device pixels like the header bounds:
+	// the bounds' top-left lands on the canvas origin and a maxWidth fit
+	// scales EMF+ drawing with the GDI records.
+	it('places EMF+ drawing by the bounds origin and the maxWidth fit', async () => {
+		const emf = buildEmf([50, 20, 149, 119], [header(96, 96), plusFillRect(0xff0000ff, 50, 20, 50, 50), plusComment(0x4002, 0)]);
+		const decode = async (url: string | null) => (await decodePng(Uint8Array.from(atob(url!.slice(url!.indexOf(',') + 1)), (c) => c.charCodeAt(0))))!;
+		const full = await decode(await convertMetafileToDataUrl(emf));
+		const fullImg = { data: full.data as Uint8ClampedArray, w: full.width };
+		expect([full.width, full.height]).toEqual([100, 100]);
+		expect(blue(fullImg, 0, 0) && blue(fullImg, 49, 49)).toBe(true);
+		expect(blue(fullImg, 50, 10) || blue(fullImg, 10, 50)).toBe(false);
+		const half = await decode(await convertMetafileToDataUrl(emf, { maxWidth: 50 }));
+		const halfImg = { data: half.data as Uint8ClampedArray, w: half.width };
+		expect([half.width, half.height]).toEqual([50, 50]);
+		expect(blue(halfImg, 0, 0) && blue(halfImg, 24, 24)).toBe(true);
+		expect(blue(halfImg, 26, 10) || blue(halfImg, 10, 26)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// EMF+ pen units (measured against GDI+ playback)
+// ---------------------------------------------------------------------------
+
+describe('EMF+ pen units', () => {
+	/** EmfPlusObject Pen in slot `id`: solid red, `width` in PenUnit `unit`. */
+	const pen = (id: number, unit: number, width: number) => {
+		const d = new Uint8Array(32);
+		const v = new DataView(d.buffer);
+		v.setUint32(0, 0xdbc01002, true);
+		v.setUint32(12, unit, true);
+		v.setFloat32(16, width, true);
+		v.setUint32(20, 0xdbc01002, true);
+		v.setUint32(28, 0xffff0000, true);
+		return plusComment(0x4008, (2 << 8) | id, d);
+	};
+	/** DrawLines with float points: one horizontal segment. */
+	const hline = (id: number, x0: number, y: number, x1: number) => {
+		const d = new Uint8Array(20);
+		const v = new DataView(d.buffer);
+		v.setUint32(0, 2, true);
+		[x0, y, x1, y].forEach((n, i) => v.setFloat32(4 + i * 4, n, true));
+		return plusComment(0x400d, id, d);
+	};
+	const world = (m: number[]) => {
+		const d = new Uint8Array(24);
+		m.forEach((n, i) => new DataView(d.buffer).setFloat32(i * 4, n, true));
+		return plusComment(0x402a, 0, d);
+	};
+	/** Rows of column `x` holding red. */
+	const redRows = (img: { data: Uint8ClampedArray; w: number; h: number }, x: number) => {
+		const rows: number[] = [];
+		for (let y = 0; y < img.h; y++) {
+			const p = (y * img.w + x) * 4;
+			if (isRed(img.data[p], img.data[p + 1], img.data[p + 2], img.data[p + 3])) rows.push(y);
+		}
+		return rows;
+	};
+	const draw = (...records: Uint8Array[]) => render(buildEmf([0, 0, 199, 159], [...records, plusComment(0x4002, 0)]));
+
+	it('draws a World pen through the world transform', () => {
+		expect(redRows(draw(world([2, 0, 0, 2, 0, 0]), pen(0, 0, 4), hline(0, 10, 40, 90)), 100)).toHaveLength(8);
+	});
+
+	it('draws a Pixel pen in device pixels, whatever the world transform', () => {
+		expect(redRows(draw(world([2, 0, 0, 2, 0, 0]), pen(0, 2, 4), hline(0, 10, 40, 90)), 100)).toHaveLength(4);
+		expect(redRows(draw(world([1, 0, 0, 3, 0, 0]), pen(0, 2, 6), hline(0, 20, 80 / 3, 180)), 100)).toHaveLength(6);
+	});
+
+	it.each([3, 4, 5, 6])('draws nothing with a pen in unit %i, which GDI+ rejects', (unit) => {
+		expect(redRows(draw(pen(0, unit, 4), hline(0, 20, 80, 180)), 100)).toHaveLength(0);
+	});
+
+	it('lets a rejected pen replace the pen in its slot', () => {
+		const img = draw(pen(0, 0, 4), hline(0, 20, 40, 180), pen(0, 3, 8), hline(0, 20, 120, 180));
+		expect(redRows(img, 100)).toEqual([38, 39, 40, 41]);
 	});
 });

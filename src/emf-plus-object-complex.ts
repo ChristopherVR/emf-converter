@@ -78,6 +78,10 @@ export function parseEmfPlusPenObject(
 		return v;
 	};
 	const pen: EmfPlusPen = { kind: 'plus-pen', color: 'rgba(0,0,0,1)', width: penWidth, dashStyle: 0 };
+	// PenUnit sits between PenDataFlags and PenWidth in the real layout.
+	if (hasVersion) {
+		pen.unit = view.getUint32(dataOff + 12, true);
+	}
 	if (penFlags & PEN_TRANSFORM) {
 		if (o + 24 <= end) {
 			pen.transform = [0, 4, 8, 12, 16, 20].map((k) => view.getFloat32(o + k, true)) as TransformMatrix;
