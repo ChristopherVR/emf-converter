@@ -594,18 +594,24 @@ function drawPlusStringWithEngine(
 	// DrawString rounds the font ascent before adding the layout position;
 	// DriverString supplies its baseline directly and retains its own phase.
 	const exactAscent = (emPx * ttf.winAscent) / ttf.unitsPerEm;
-	// At integer device sizes, native ClearType also reserves the realized
-	// cell's ascent (including VDMX). A rounded design ascent is the lower
-	// bound: neither a smaller VDMX ascent nor ceil(design) alone matches it.
+	// At integer device sizes, native grid-fitted text (ClearType and
+	// single-bit alike) also reserves the realized cell's ascent (including
+	// VDMX). A rounded design ascent is the lower bound: neither a smaller
+	// VDMX ascent nor ceil(design) alone matches it (single-bit Arial at
+	// em 8..40 and 44..80 by 4: 43 of 43 baselines, 25 with ceil).
 	// Synthetic styles, scaled transforms and fractional device sizes or
 	// baseline phases retain the existing path pending native controls.
-	const clearTypeCell = realized.mode === 'cleartype' && !realized.syntheticBold &&
+	const clearTypeCell = !realized.syntheticBold &&
 		!realized.syntheticItalic && emPx === realized.ppem && m[0] === 1 && m[3] === 1 &&
 		Number.isInteger(layoutY + m[5]) && (format?.lineAlignment ?? 0) === 0;
 	const ascent = unhinted ? Math.round(exactAscent) : clearTypeCell
 		? Math.max(Math.round(exactAscent), realized.ascent) : Math.ceil(exactAscent);
 	let x = m[0] * layoutX + m[4] + emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
-	if (!unhinted) x = Math.round(x);
+	// Single-bit grid-fitted text rounds the start half down: a leading
+	// margin of exactly half a pixel (em 9, 15, 21, ...) lands on the lower
+	// pixel (Arial, Times New Roman, Tahoma and Segoe UI at em 8..80).
+	// ClearType rounds it up (`text-drawstring-baseline`, Arial 9 px).
+	if (!unhinted) x = realized.mode === 'mono' ? Math.ceil(x - 0.5) : Math.round(x);
 	const y = m[3] * layoutY + m[5] + ascent;
 	// Without grid fitting GDI+ spaces glyphs by their linear advances times
 	// the format's tracking (1.03 for the default format, 1 for

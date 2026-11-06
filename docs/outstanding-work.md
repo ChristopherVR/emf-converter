@@ -19,7 +19,9 @@ State on 30 October 2026: 899 of 910 report comparisons are pixel-exact (`bun sc
 - **`DrawImage` points form and the other high-quality cases.** 19 of 124 float32 flips of the JPEG geometry and 36 horizontal sweep flips are still 1 to 3 float32 units off (plain Bilinear). High-quality draws of a cropped source, with wrap attributes, with a half-pixel offset or mirrored still use the fitted model, and the stretch span has not been given the visible-clip crop. To settle: the same stretch port with the source margin of `DpDriver::DrawImage`, checked against the crop, wrap and mirror captures.
 - **Path gradients.** 113 edge pixels of 24 of the 120 tiled colour controls (ellipses on fractional bounds, up to 2 levels) still differ: the alpha of the texture filter is one off at the edge of the shape. To settle: a probe of edge texels with chosen alphas through a texture brush.
 
-- **DrawString with an empty layout rectangle.** Single-line `DrawString` text laid out from a point (a 0 x 0 layout rectangle) lands one pixel off native at some sizes: 138 to 612 differing pixels for "HHH" in Arial at 20 to 80 px, exact at others. It is the same for every font unit. To settle: sweep the em size at a fixed origin and compare the first glyph's origin.
+- **GDI+ grid-fitted DrawString baseline.** The baseline is `max(round(design ascent), realized ascent)`, which places 337 of 365 single-bit lines (five faces, em 8 to 80). In the other 28 the realized ascent is smaller and native uses it anyway (Arial 45, 67, 68, 75 and 76, for example); no font metric separates them. Courier New also differs in x. To settle: the same sweep through AntiAliasGridFit and other faces, or the baseline GDI+ computes in `gdiplus.dll`.
+- **Large grayscale DrawString.** At em 76 and 80, AntiAlias and AntiAliasGridFit text lands 1 to 2 px lower than native, with slightly different glyphs.
+- **SystemDefault text.** In GDI+ metafile playback on this machine, SystemDefault draws exactly as ClearTypeGridFit, but the converter draws it single-bit (an earlier measurement). Which setting decides it has not been probed.
 
 ## Images and colour
 
