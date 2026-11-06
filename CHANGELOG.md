@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.25.7](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.7) - 2026-11-06
+
+### Bug Fixes
+
+- Withdraw the half-down DrawString start, regenerate the baseline fixture 1:1 ([28e6bea](https://github.com/ChristopherVR/emf-converter/commit/28e6beadbd4b619c3c8b5c39cdb8ffc31b8e99ff))
+
 ## [4.25.6](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.25.6) - 2026-11-06
 
 ### Bug Fixes
