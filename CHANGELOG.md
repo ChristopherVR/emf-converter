@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.28.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.28.0) - 2026-11-07
+
+### Features
+
+- Add emf-converter/lite, a small PNG-only browser build ([62c43e1](https://github.com/ChristopherVR/emf-converter/commit/62c43e1e408eac77e420271244bd3f2f6c93f7d9))
+
 ## [4.27.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.27.0) - 2026-11-06
 
 ### Features
