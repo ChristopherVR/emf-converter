@@ -27,8 +27,8 @@ import {
 } from './emf-constants';
 import { emfLog, emfWarn } from './emf-logging';
 import { decodePng, isPng } from './png-decoder';
-import { decodeImageCodecFallback } from './image-codec-fallback';
-import { jpegFamily } from './jpeg-decoder';
+import { BUNDLED_IMAGE_CODECS, decodeImageCodecFallback } from './image-codec-fallback';
+import { jpegFamily } from './jpeg-family';
 import { loadNodeCanvasModule } from './node-canvas-loader';
 import { cosmeticStyle } from './gdi-raster';
 import { SoftwareRasterCanvas } from './software-raster';
@@ -703,8 +703,8 @@ export async function decodeDeferredImageBytes(
 		const pixels = await decodeImageBytesBuiltIn(new Uint8Array(bytes));
 		return pixels ? { drawable: pixels, width: pixels.width, height: pixels.height, close: () => {} } : null;
 	}
-	if (family === 'bundled') {
-		// Decoded by the bundled decoder below.
+	if (family === 'bundled' && BUNDLED_IMAGE_CODECS) {
+		// Decoded by the bundled decoder below (the lite build has none and asks the canvas backend).
 	} else if (nodeCanvasModule) {
 		try {
 			const image = await nodeCanvasModule.loadImage(new Uint8Array(bytes));

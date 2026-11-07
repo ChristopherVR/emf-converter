@@ -8,7 +8,7 @@
  */
 
 import { decodeDibToImageData } from './emf-dib-decoder';
-import { jpegFamily } from './jpeg-decoder';
+import { jpegFamily } from './jpeg-family';
 import type { ImagePayload } from './svg-context';
 
 /** Identifies image bytes browsers and SVG renderers display natively. */

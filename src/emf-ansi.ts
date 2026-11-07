@@ -1,4 +1,5 @@
-import { JOHAB_ROWS, OEM437_HIGH, OEM_HIGH } from './emf-ansi-tables';
+import { OEM437_HIGH, OEM_HIGH } from './emf-ansi-tables';
+import { JOHAB_ROWS } from './emf-ansi-johab';
 import type { TextCodePages } from './emf-types';
 
 /** Windows-1252 mapping used by the EMF/WMF ANSI text records. */

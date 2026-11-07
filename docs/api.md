@@ -252,6 +252,17 @@ Reads the header and records without rendering, and returns `null` for an invali
 | `description`        | `string \| null`                         | The EMF header's application and document names. |
 | `truncated`          | `boolean`                                | `true` when the record limit was hit or the stream ends in a damaged record. |
 
+## emf-converter/lite
+
+```ts
+import { convertMetafileToDataUrl, convertMetafileToImageData, DEFAULT_DPI_SCALE } from 'emf-converter/lite';
+type LiteConvertOptions = Omit<EmfConvertOptions, 'fonts' | 'fontSmoothing'>;
+function convertMetafileToDataUrl(buffer: MetafileInput, options?: LiteConvertOptions): Promise<string | null>;
+function convertMetafileToImageData(buffer: MetafileInput, options?: LiteConvertOptions): Promise<RgbaImage | null>;
+```
+
+A small, minified browser build of the PNG path. Both functions behave like the full build's, without the TrueType engine, the bundled image decoders and some measured colour tables, and return `null` when there is no browser canvas. See [Usage](./usage.md#lite-browser-build) for what it leaves out.
+
 ## Supported records
 
 ### EMF

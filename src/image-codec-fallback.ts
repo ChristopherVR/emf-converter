@@ -6,6 +6,9 @@ import { normalizeGroup3 } from './tiff-group3';
 import { decodeJpegTiff } from './tiff-jpeg';
 import { decodeWebp } from './webp-decoder';
 
+/** Whether this build bundles the decoders below (the lite build replaces this module with one that has none). */
+export const BUNDLED_IMAGE_CODECS = true;
+
 interface Pixels { data: Uint8ClampedArray; width: number; height: number }
 const validSize = (w: number, h: number): boolean => Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w <= 8192 && h <= 8192;
 

@@ -237,6 +237,25 @@ const quick = await convertMetafileToDataUrl(buffer, { timeoutMs: 5000 });
 
 When the signal aborts, the promise rejects with `signal.reason` (an `AbortError` when there is none). A `null` result still means the buffer is not a valid metafile. Conversion checks the signal at every record, so it stops within about one record's work. One very large record, such as a single giant blit, can overrun the limit. With a `signal`, conversion yields to the event loop about every 16 ms.
 
+### Lite browser build
+
+For a browser app that only needs a PNG preview and cares about bundle size, import from `emf-converter/lite`:
+
+```typescript
+import { convertMetafileToDataUrl } from 'emf-converter/lite';
+
+const png = await convertMetafileToDataUrl(buffer, { fontFamilyMap: { 'MS Mincho': 'Noto Serif JP' } });
+```
+
+It is about 425 KB minified (157 KB gzipped), against about 2.4 MB unminified (850 KB gzipped) for the full browser build. It exports `convertMetafileToDataUrl`, `convertMetafileToImageData` and `DEFAULT_DPI_SCALE`, takes the same options except `fonts` and `fontSmoothing`, and replays every record the full build does. It leaves out:
+
+- JPEG, WebP, SVG and PDF output.
+- The TrueType engine, so text is always drawn with the canvas's `fillText`. Use `fontFamilyMap` to choose installed or web fonts.
+- The bundled image decoders. The browser decodes embedded JPEG, GIF and WebP images (CMYK JPEG then shows the browser's colours), and TIFF images are not drawn.
+- Windows' measured colour tables for `SetColorAdjustment` illuminants and GDI+ colour-curve effects, and the Johab code page.
+
+It needs a browser canvas (`OffscreenCanvas` or `document`); without one, such as in plain Node.js, it returns `null`.
+
 ### Command line
 
 The package installs an `emf-converter` command, which `npx emf-converter` runs:

@@ -13,7 +13,7 @@ await cp(join(repo, 'dist'), join(pkg, 'dist'), { recursive: true });
 await cp(join(repo, 'package.json'), join(pkg, 'package.json'));
 await writeFile(join(root, 'package.json'), '{"type":"module"}');
 await writeFile(join(root, 'index.html'), '<script type="module" src="/main.js"></script>');
-await writeFile(join(root, 'main.js'), 'import { loadSystemFonts } from "emf-converter"; console.log(loadSystemFonts());');
+await writeFile(join(root, 'main.js'), 'import { loadSystemFonts } from "emf-converter"; import { convertMetafileToDataUrl } from "emf-converter/lite"; console.log(loadSystemFonts(), convertMetafileToDataUrl);');
 
 // The isolated consumer has no optional peer installed. Check both export formats
 // and a browser environment with a Node process polyfill (the guard alone is insufficient).
@@ -28,14 +28,22 @@ for (const mode of ['module', 'commonjs']) {
 		: 'const api = require("emf-converter"); api.loadSystemFonts({dirs: []}).then(x => console.log(JSON.stringify(x)));';
 	assert.equal(execFileSync(process.execPath, ['--input-type=' + mode, '-e', nodeCode], { cwd: root }).toString().trim(), '[]');
 }
-for (const name of ['browser.js', 'browser.mjs']) {
+// The lite entry resolves in both formats; with no canvas it returns null rather than throwing.
+for (const mode of ['module', 'commonjs']) {
+	const code = mode === 'module'
+		? 'import * as lite from "emf-converter/lite"; console.log(Object.keys(lite).sort().join(), await lite.convertMetafileToDataUrl(new Uint8Array(8)));'
+		: 'const lite = require("emf-converter/lite"); lite.convertMetafileToDataUrl(new Uint8Array(8)).then(x => console.log(Object.keys(lite).sort().join(), x));';
+	const output = execFileSync(process.execPath, ['--conditions=browser', '--input-type=' + mode, '-e', code], { cwd: root });
+	assert.equal(output.toString().trim(), 'DEFAULT_DPI_SCALE,convertMetafileToDataUrl,convertMetafileToImageData null');
+}
+for (const name of ['browser.js', 'browser.mjs', 'lite.js', 'lite.mjs']) {
 	const source = await readFile(join(pkg, 'dist', name), 'utf8');
 	assert.doesNotMatch(source, /import\s*\([^)]*['"](?:@napi-rs\/canvas|node:)/);
 }
 const { createServer, build } = await import(process.argv[2] ? pathToFileURL(resolve(process.argv[2])).href : 'vite');
 // Vite's HTML plugin uses cwd as well as root; keep both on the same Windows drive.
 process.chdir(root);
-const server = await createServer({ root, configFile: false, logLevel: 'error', server: { port: 0 }, optimizeDeps: { include: ['emf-converter'] } });
+const server = await createServer({ root, configFile: false, logLevel: 'error', server: { port: 0 }, optimizeDeps: { include: ['emf-converter', 'emf-converter/lite'] } });
 try {
 	await server.listen();
 	const address = server.httpServer.address();
@@ -48,7 +56,7 @@ try {
 	const bundled = await fetch(base + dep[1]);
 	assert.equal(bundled.status, 200, await bundled.text());
 	await build({ root, configFile: false, logLevel: 'error', build: { write: false } });
-	console.log('Browser ESM/CJS exports, Vite dev prebundle and production build passed (optional canvas absent).');
+	console.log('Browser and lite ESM/CJS exports, Vite dev prebundle and production build passed (optional canvas absent).');
 } finally {
 	await server.close();
 }
