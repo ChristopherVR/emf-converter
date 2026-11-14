@@ -34,7 +34,7 @@ for (const mode of ['module', 'commonjs']) {
 		? 'import * as lite from "emf-converter/lite"; console.log(Object.keys(lite).sort().join(), await lite.convertMetafileToDataUrl(new Uint8Array(8)));'
 		: 'const lite = require("emf-converter/lite"); lite.convertMetafileToDataUrl(new Uint8Array(8)).then(x => console.log(Object.keys(lite).sort().join(), x));';
 	const output = execFileSync(process.execPath, ['--conditions=browser', '--input-type=' + mode, '-e', code], { cwd: root });
-	assert.equal(output.toString().trim(), 'DEFAULT_DPI_SCALE,convertMetafileToDataUrl,convertMetafileToImageData null');
+	assert.equal(output.toString().trim(), 'DEFAULT_DPI_SCALE,convertMetafileToDataUrl,convertMetafileToImageData,getMetafileInfo null');
 }
 for (const name of ['browser.js', 'browser.mjs', 'lite.js', 'lite.mjs']) {
 	const source = await readFile(join(pkg, 'dist', name), 'utf8');
