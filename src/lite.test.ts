@@ -84,7 +84,17 @@ describe('lite build', () => {
 	});
 
 	it('exports only the PNG path', () => {
-		expect(Object.keys(lite).sort()).toEqual(['DEFAULT_DPI_SCALE', 'convertMetafileToDataUrl', 'convertMetafileToImageData']);
+		expect(Object.keys(lite).sort()).toEqual([
+			'DEFAULT_DPI_SCALE',
+			'convertMetafileToDataUrl',
+			'convertMetafileToImageData',
+			'getMetafileInfo',
+		]);
+	});
+
+	it('inspects a metafile as the full build does', async () => {
+		const bytes = readFileSync(new URL('sample-clip-gdi.emf', fixtureRoot));
+		expect(await lite.getMetafileInfo(bytes)).toEqual(await full.getMetafileInfo(bytes));
 	});
 
 	it('stays small', { timeout: 60_000 }, async () => {

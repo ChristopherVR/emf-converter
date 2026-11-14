@@ -247,7 +247,7 @@ import { convertMetafileToDataUrl } from 'emf-converter/lite';
 const png = await convertMetafileToDataUrl(buffer, { fontFamilyMap: { 'MS Mincho': 'Noto Serif JP' } });
 ```
 
-It is about 425 KB minified (157 KB gzipped), against about 2.4 MB unminified (850 KB gzipped) for the full browser build. It exports `convertMetafileToDataUrl`, `convertMetafileToImageData` and `DEFAULT_DPI_SCALE`, takes the same options except `fonts` and `fontSmoothing`, and replays every record the full build does. It leaves out:
+It is about 425 KB minified (157 KB gzipped), against about 2.4 MB unminified (850 KB gzipped) for the full browser build. It exports `convertMetafileToDataUrl`, `convertMetafileToImageData`, `getMetafileInfo` and `DEFAULT_DPI_SCALE`, takes the same options except `fonts` and `fontSmoothing`, and replays every record the full build does. It leaves out:
 
 - JPEG, WebP, SVG and PDF output.
 - The TrueType engine, so text is always drawn with the canvas's `fillText`. Use `fontFamilyMap` to choose installed or web fonts.

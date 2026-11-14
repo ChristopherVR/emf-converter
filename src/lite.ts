@@ -43,3 +43,5 @@ export function convertMetafileToDataUrl(input: MetafileInput, options?: LiteCon
 export function convertMetafileToImageData(input: MetafileInput, options?: LiteConvertOptions): Promise<RgbaImage | null> {
 	return convertToImageData(input, options);
 }
+
+export { getMetafileInfo, type MetafileFont, type MetafileInfo, type MetafileInfoOptions, type MetafileRect } from './metafile-info';
