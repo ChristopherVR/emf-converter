@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.29.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.29.0) - 2026-11-14
+
+### Features
+
+- **lite:** Export getMetafileInfo from emf-converter/lite ([e63f7e1](https://github.com/ChristopherVR/emf-converter/commit/e63f7e1f5e894831e921c678ae412e2235472e87))
+
+### Testing
+
+- Expect getMetafileInfo in lite export check ([d5de974](https://github.com/ChristopherVR/emf-converter/commit/d5de9746f4db498bd39a19d732f116638eb693c3))
+
 ## [4.28.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.28.1) - 2026-11-12
 
 ### Build & CI
