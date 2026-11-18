@@ -107,6 +107,22 @@ function score(line: Uint8Array, stride: number): number {
 	return s;
 }
 
+const BYTE_HIGH_BITS = 0x80808080;
+
+function subtractPixel(value: number, predictor: number): number {
+	// Set each lane's high bit to prevent borrows between bytes, then restore the high-bit differences.
+	const lowBits = (value | BYTE_HIGH_BITS) - (predictor & ~BYTE_HIGH_BITS);
+	return lowBits ^ ((value ^ predictor ^ BYTE_HIGH_BITS) & BYTE_HIGH_BITS);
+}
+
+/** Sums the magnitudes of the pixel's four signed filter bytes. */
+function scorePixel(value: number): number {
+	const signs = (value >>> 7) & 0x01010101;
+	const absolute = (value ^ (signs * 0xff)) + signs;
+	const pairs = (absolute & 0x00ff00ff) + ((absolute >>> 8) & 0x00ff00ff);
+	return (pairs & 0xffff) + (pairs >>> 16);
+}
+
 /** Filters RGBA scanlines, choosing a filter per row. */
 function filterScanlines(input: ArrayLike<number>, width: number, height: number): Uint8Array {
 	const data =
@@ -118,6 +134,8 @@ function filterScanlines(input: ArrayLike<number>, width: number, height: number
 	const out = new Uint8Array((stride + 1) * height);
 	const sub = new Uint8Array(stride);
 	const up = new Uint8Array(stride);
+	const subPixels = new Uint32Array(sub.buffer);
+	const upPixels = new Uint32Array(up.buffer);
 	const pae = new Uint8Array(stride);
 	for (let y = 0; y < height; y++) {
 		if ((y & 63) === 0) {
@@ -143,7 +161,13 @@ function filterScanlines(input: ArrayLike<number>, width: number, height: number
 			}
 		}
 		const none = data.subarray(row, row + stride);
-		const noneScore = score(none as Uint8Array, stride);
+		let noneScore = 0;
+		const start = row >> 2;
+		if (words) {
+			for (let x = 0; x < width; x++) noneScore += scorePixel(words[start + x]);
+		} else {
+			noneScore = score(none, stride);
+		}
 		if (noneScore === 0) {
 			// An all-zero row (a blank area): filter None is already optimal.
 			out.set(none, o + 1);
@@ -151,28 +175,47 @@ function filterScanlines(input: ArrayLike<number>, width: number, height: number
 		}
 		let subScore = 0;
 		let upScore = 0;
-		for (let i = 0; i < 4 && i < stride; i++) {
-			const x = data[row + i];
-			sub[i] = x;
-			subScore += x < 128 ? x : 256 - x;
-		}
-		for (let i = 4; i < stride; i++) {
-			const v = (data[row + i] - data[row + i - 4]) & 0xff;
-			sub[i] = v;
-			subScore += v < 128 ? v : 256 - v;
-		}
-		if (y > 0) {
-			for (let i = 0; i < stride; i++) {
-				const v = (data[row + i] - data[prev + i]) & 0xff;
-				up[i] = v;
-				upScore += v < 128 ? v : 256 - v;
+		if (words) {
+			let left = 0;
+			for (let x = 0; x < width; x++) {
+				const pixel = words[start + x];
+				const delta = subtractPixel(pixel, left);
+				subPixels[x] = delta;
+				subScore += scorePixel(delta);
+				left = pixel;
+			}
+			if (y > 0) {
+				for (let x = 0; x < width; x++) {
+					const delta = subtractPixel(words[start + x], words[start - width + x]);
+					upPixels[x] = delta;
+					upScore += scorePixel(delta);
+				}
+			} else {
+				upScore = noneScore;
 			}
 		} else {
-			up.set(none);
-			upScore = noneScore;
+			for (let i = 0; i < 4 && i < stride; i++) {
+				const x = data[row + i];
+				sub[i] = x;
+				subScore += x < 128 ? x : 256 - x;
+			}
+			for (let i = 4; i < stride; i++) {
+				const v = (data[row + i] - data[row + i - 4]) & 0xff;
+				sub[i] = v;
+				subScore += v < 128 ? v : 256 - v;
+			}
+			if (y > 0) {
+				for (let i = 0; i < stride; i++) {
+					const v = (data[row + i] - data[prev + i]) & 0xff;
+					up[i] = v;
+					upScore += v < 128 ? v : 256 - v;
+				}
+			} else {
+				upScore = noneScore;
+			}
 		}
 		// Filter codes: 0 None, 1 Sub, 2 Up, 4 Paeth.
-		let best: Uint8Array = none as Uint8Array;
+		let best: Uint8Array = none;
 		let code = 0;
 		let bestScore = noneScore;
 		if (subScore < bestScore) {
@@ -187,13 +230,21 @@ function filterScanlines(input: ArrayLike<number>, width: number, height: number
 		}
 		// Paeth only pays off on busy rows; flat artwork is already near zero.
 		if (y > 0 && bestScore > stride >> 3) {
-			for (let i = 0; i < stride; i++) {
-				const a = i >= 4 ? data[row + i - 4] : 0;
-				const b = data[prev + i];
-				const c = i >= 4 ? data[prev + i - 4] : 0;
-				pae[i] = (data[row + i] - paeth(a, b, c)) & 0xff;
+			// With no left neighbor, Paeth predicts the same first pixel as Up.
+			pae.set(up.subarray(0, 4));
+			let paethScore = 0;
+			for (let i = 0; i < 4 && i < stride; i++) {
+				const v = up[i];
+				paethScore += v < 128 ? v : 256 - v;
 			}
-			const paethScore = score(pae, stride);
+			for (let i = 4; i < stride && paethScore < bestScore; i++) {
+				const a = data[row + i - 4];
+				const b = data[prev + i];
+				const c = data[prev + i - 4];
+				const v = (data[row + i] - paeth(a, b, c)) & 0xff;
+				pae[i] = v;
+				paethScore += v < 128 ? v : 256 - v;
+			}
 			if (paethScore < bestScore) {
 				best = pae;
 				code = 4;

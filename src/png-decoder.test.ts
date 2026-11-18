@@ -109,6 +109,18 @@ function buildPng(opts: {
 const W = 11;
 const H = 9;
 
+describe('encodePng', () => {
+	it.each([0, 1])('preserves scanline filter bytes at input offset %i', async (offset) => {
+		const pixels = Buffer.from('000000000000000000000000807fff01807fff01807fff01807fff01807fff01807fff01e2f36ff648627a174af477c3ecaf6cacdd59a815aa35ba50', 'hex');
+		const data = new Uint8Array(pixels.length + offset).subarray(offset);
+		data.set(pixels);
+		const png = Buffer.from(await encodePng(data, 3, 5));
+		expect(png.subarray(37, 41).toString()).toBe('IDAT');
+		const filtered = inflateZlibSync(png.subarray(41, 41 + png.readUInt32BE(33)));
+		expect(Buffer.from(filtered).toString('hex')).toBe('0000000000000000000000000001807fff0100000000000000000200000000000000000000000001e2f36ff6666f0b210292fdac040abcfdb695f72efecd41128d');
+	});
+});
+
 describe('decodePng', () => {
 	for (const interlace of [false, true]) {
 		for (const filter of [0, 1, 2, 3, 4]) {
