@@ -621,7 +621,6 @@ function drawPlusStringWithEngine(
 			m[0] * layoutX + m[4], m[3] * layoutY + m[5], m[0] * layoutW, m[3] * layoutH);
 		if (aligned) return paintPlusEngineRun(rCtx, ef, { codes, glyphIndices: false, ...aligned, dy: null });
 	}
-	if (alignment !== 0) return false;
 	const ttf = realized.ttf;
 	// DrawString rounds the font ascent before adding the layout position;
 	// DriverString supplies its baseline directly and retains its own phase.
@@ -634,12 +633,18 @@ function drawPlusStringWithEngine(
 	// baselines, 144 with ceil).
 	// Synthetic styles, scaled transforms and fractional device sizes or
 	// baseline phases retain the existing path pending native controls.
-	const clearTypeCell = !realized.syntheticBold &&
+	const useCellAscent = !realized.syntheticBold &&
 		!realized.syntheticItalic && emPx === realized.ppem && m[0] === 1 && m[3] === 1 &&
 		Number.isInteger(layoutY + m[5]) && (format?.lineAlignment ?? 0) === 0;
-	const ascent = unhinted ? Math.round(exactAscent) : clearTypeCell
+	const flags = format?.flags ?? 0;
+	if (alignment !== 0 && ((alignment !== 1 && alignment !== 2) || flags !== 0 ||
+		realized.mode !== 'mono' || !realized.gridFit || !useCellAscent ||
+		!realized.designAdvance || codes.some((c) => c !== 10 && c !== 13 && (c < 32 || c > 126)))) return false;
+	const ascent = unhinted ? Math.round(exactAscent) : useCellAscent
 		? Math.max(Math.round(exactAscent), realized.ascent) : Math.ceil(exactAscent);
-	let x = m[0] * layoutX + m[4] + emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
+	const leading = emPx * (format?.leadingMargin ?? PLUS_LEADING_EM);
+	const trailing = emPx * (format?.trailingMargin ?? PLUS_LEADING_EM);
+	let x = m[0] * layoutX + m[4] + leading;
 	if (!unhinted) x = Math.round(x);
 	const y = m[3] * layoutY + m[5] + ascent;
 	// Without grid fitting GDI+ spaces glyphs by their linear advances times
@@ -659,7 +664,6 @@ function drawPlusStringWithEngine(
 			: ctGrid ? realized.ctGridAdvance!(gi) : realized.advance(gi);
 	};
 	const dx = unhinted || ctGrid ? codes.map(advanceOf) : null;
-	const flags = format?.flags ?? 0;
 	const left = m[0] * layoutX + m[4];
 	const top = m[3] * layoutY + m[5];
 	const width = m[0] * layoutW;
@@ -677,10 +681,13 @@ function drawPlusStringWithEngine(
 	// GDI+ measures a line by the tracked design advances whatever the hint (single-bit Arial 16: a 14-letter word
 	// breaks after 2, 4, 6 and 7 letters at widths 40 to 100; the painted hinted advances fit one more).
 	// Kerning counts too, unrounded (single-bit Arial 16 at width 120: "HELD MY WAX" fits only with its W-A pair).
-	const fit = (realized.designAdvance ? codes.map((c) => realized.designAdvance!(realized.glyphIndex(c), tracking)) : codes.map(advanceOf))
-		.map((w, i) => i + 1 < codes.length && ttf.kerning ? w + (ttf.kerning(realized.glyphIndex(codes[i]), realized.glyphIndex(codes[i + 1])) * emPx) / ttf.unitsPerEm : w);
+	const designWidths = codes.map((c) => realized.designAdvance?.(realized.glyphIndex(c), tracking) ?? advanceOf(c));
+	const fit = designWidths.map((w, i) => i + 1 < codes.length && ttf.kerning
+		? w + (ttf.kerning(realized.glyphIndex(codes[i]), realized.glyphIndex(codes[i + 1])) * emPx) / ttf.unitsPerEm : w);
 	let lines = layoutPlusLines(codes, fit, available);
+	let characterTrimmedLine: (typeof lines)[number] | undefined;
 	const paragraph = lines.length > 1;
+	if (alignment !== 0 && (!paragraph || !rect)) return false;
 	if (paragraph) clip = rect;
 	const descentUnits = ttf.winDescent ?? 0;
 	const lineUnits = ttf.hheaAscender !== undefined && ttf.hheaDescender !== undefined
@@ -694,6 +701,7 @@ function drawPlusStringWithEngine(
 			? Math.floor((height - ((ttf.winAscent + descentUnits) * emPx) / ttf.unitsPerEm) / lineSpacing) + 1
 			: Math.floor(height / lineSpacing - 0.25) + 1;
 		if (lines.length > visible) {
+			if (alignment !== 0) return false;
 			clip = rect;
 			const kept = lines.slice(0, Math.max(0, visible));
 			// Character trimming (the default) fills the last visible line with the rest of the text, broken between
@@ -708,7 +716,9 @@ function drawPlusStringWithEngine(
 					end++;
 				}
 				while (end > last.start && codes[end - 1] === 32) end--;
-				kept[kept.length - 1] = { start: last.start, end };
+				const keptLine = { start: last.start, end };
+				if (end > last.end) characterTrimmedLine = keptLine;
+				kept[kept.length - 1] = keptLine;
 			}
 			lines = kept;
 		}
@@ -736,10 +746,36 @@ function drawPlusStringWithEngine(
 			return unhinted ? k : Math.round(k);
 		};
 		const lineDx = Array.from({ length: line.end - line.start }, (_, k) => advanceOf(codes[line.start + k]) + kern(line.start + k));
+		if (line === characterTrimmedLine && !unhinted && realized.mode === 'mono') {
+			// A character-trimmed line can start words at their measured layout positions while
+			// retaining hinted spacing within each word.
+			let measured = left + leading;
+			let painted = x;
+			for (let i = line.start; i < line.end; i++) {
+				const k = i - line.start;
+				measured += fit[i];
+				painted += lineDx[k];
+				if (codes[i] === 32 && codes[i - 1] !== 32 && codes[i + 1] !== 32) {
+					const next = Math.round(measured);
+					lineDx[k] += next - painted;
+					painted = next;
+				}
+			}
+		}
+		let lineX = x;
+		if (alignment !== 0) {
+			// Grid-fitted lines align by their painted advances. A one-glyph line uses
+			// its design advance. Round each offset to float32 before snapping the start.
+			const lineWidth = lineDx.length === 1 ? designWidths[line.start] : lineDx.reduce((sum, advance) => sum + advance, 0);
+			const paddedWidth = Math.fround(lineWidth + Math.fround(leading + trailing));
+			const shift = Math.fround(alignment / 2 * Math.fround(width - paddedWidth));
+			const start = Math.fround(Math.fround(left + shift) + leading);
+			lineX = Math.ceil(start - 0.5);
+		}
 		paintPlusEngineRun(rCtx, ef, {
 			codes: lineCodes,
 			glyphIndices: false,
-			x,
+			x: lineX,
 			y: unhinted ? top + Math.round(exactAscent) + n * lineSpacing : Math.round(exact),
 			dx: lineDx.some((v, k) => v !== advanceOf(codes[line.start + k])) || dx ? lineDx : null,
 			dy: null,

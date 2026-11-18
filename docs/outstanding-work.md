@@ -16,12 +16,12 @@ State on 30 October 2026: 899 of 910 report comparisons are pixel-exact (`bun sc
 
 ## EMF+ drawing
 
-- **`DrawImage` points form and the other high-quality cases.** 19 of 124 float32 flips of the JPEG geometry and 36 horizontal sweep flips are still 1 to 3 float32 units off (plain Bilinear). High-quality draws of a cropped source, with wrap attributes, with a half-pixel offset or mirrored still use the fitted model, and the stretch span has not been given the visible-clip crop. To settle: the same stretch port with the source margin of `DpDriver::DrawImage`, checked against the crop, wrap and mirror captures.
-- **Path gradients.** 113 edge pixels of 24 of the 120 tiled colour controls (ellipses on fractional bounds, up to 2 levels) still differ: the alpha of the texture filter is one off at the edge of the shape. To settle: a probe of edge texels with chosen alphas through a texture brush.
+- **`DrawImage` points form and the other high-quality cases.** 19 of 124 float32 flips of the JPEG geometry and 36 horizontal sweep flips are still 1 to 3 float32 units off (plain Bilinear). Unit-height HighQualityBilinear rectangle crops match the native alpha and coverage sweep. Other crop, wrap, mirror, and half-pixel cases still differ. The stretch span still needs the visible-clip crop.
+- **Path gradients.** The 120 colour and 240 alpha controls are exact. The independent fractional tile captures still have isolated colour and alpha differences of one level.
 
 - **GDI+ single-bit glyphs.** Hinted with GDI's arithmetic, 1,658 of 1,680 native probe glyphs are exact. GDI+'s own arithmetic sits between GDI's and the previous one: 15 glyphs (Arial 16 `w`, the 1 px of `textx-plus-singlebitgridfit`) are exact only the previous way, and no subset of GDI's projection, movement and ISECT rules gets both. Italic faces keep the previous arithmetic. To settle: read GDI+'s interpreter arithmetic.
 - **Courier New DrawString advances.** Single-bit "HxH" is exact at 10 of 73 Courier New sizes: the second and third glyphs sit a pixel off. The other four faces are exact at 71 to 73 of 73.
-- **DrawString paragraphs.** Left-aligned paragraphs wrap, break, kern and clip as GDI+ does (single-bit Arial, 28 of 32 native captures exact). Open: inside a character-trimmed last line native widens the spaces and does not kern (1 to 3 px); centred and right-aligned paragraphs still take the single-line fallback; smoothed hints use the same rules unmeasured. To settle: glyph positions of trimmed lines, and the same probes under AntiAlias and ClearType.
+- **DrawString paragraphs.** Center and far alignment work line by line for single-bit grid-fitted text with a top-aligned layout box. One centered Arial line still starts one pixel off, and Courier New has advance differences. The 24 px character-trimmed Arial case still differs inside the last line. Vertical alignment, overflow with horizontal alignment, and smoothed paragraph hints need native controls.
 - **Large grayscale DrawString.** At em 76 and 80, AntiAlias and AntiAliasGridFit text lands 1 to 2 px lower than native, with slightly different glyphs.
 
 ## Images and colour

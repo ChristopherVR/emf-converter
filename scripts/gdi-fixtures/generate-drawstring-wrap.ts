@@ -11,6 +11,7 @@
  * `src/__fixtures__/gdi/text-drawstring-wrap.json.gz`.
  *
  * Usage (Windows): bun scripts/gdi-fixtures/generate-drawstring-wrap.ts
+ * Add --aligned to capture wrapped and explicit lines with StringFormat alignment.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,7 +23,18 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 const W = 200;
 const H = 160;
 const SENT = 'THE BIG BROWN FOX HELD MY WAX DECK';
-const CASES: Array<{ name: string; em: number; text: string; w: number; h: number }> = [
+interface ParagraphCase {
+	name: string;
+	em: number;
+	text: string;
+	w: number;
+	h: number;
+	alignment?: number;
+	family?: string;
+	x?: number;
+}
+
+const CASES: ParagraphCase[] = [
 	...[60, 80, 100, 120, 140, 160, 180].map((w) => ({ name: `sentence-w${w}`, em: 16, text: SENT, w, h: 140 })),
 	{ name: 'sentence-em24-w120', em: 24, text: SENT, w: 120, h: 140 },
 	...[12, 16, 20, 24, 32].map((em) => ({ name: `newlines-em${em}`, em, text: 'H\nH\nH', w: 180, h: 140 })),
@@ -34,6 +46,18 @@ const CASES: Array<{ name: string; em: number; text: string; w: number; h: numbe
 	{ name: 'kern-av-em24', em: 24, text: 'HAVAVH HAVAVH', w: 130, h: 140 },
 	{ name: 'no-wrap-kern-wa-em16', em: 16, text: 'HWAWAH', w: 180, h: 140 },
 ];
+const ALIGNED_CASES: ParagraphCase[] = [0, 1, 2].flatMap((alignment) => [
+	{ name: 'lines-16', em: 16, text: 'H\nHHH\nHH', w: 144, h: 100 },
+	{ name: 'lines-19', em: 19, text: 'AAA\nA\nAA', w: 103.5, h: 112 },
+	{ name: 'sentence', em: 16, text: SENT, w: 100, h: 140 },
+	{ name: 'kerning', em: 16, text: 'HWAWAH HWAWAH', w: 130, h: 140 },
+	{ name: 'long-word', em: 24, text: 'HHHHHHH', w: 100, h: 140 },
+	{ name: 'fractional-wrap', em: 19, text: 'Leave some room for the next word', w: 111.75, h: 140, x: 11.375 },
+	{ name: 'tahoma-wrap', em: 20, text: 'Leave some room for the next word', w: 122, h: 140, family: 'Tahoma' },
+	{ name: 'times-wrap', em: 17, text: 'Leave some room for the next word', w: 117, h: 140, family: 'Times New Roman' },
+	{ name: 'courier-wrap', em: 15, text: 'Leave some room for the next word', w: 123, h: 140, family: 'Courier New' },
+].map((c) => ({ ...c, name: c.name + '-' + ['near', 'center', 'far'][alignment], alignment })));
+const aligned = process.argv.includes('--aligned');
 
 function concat(parts: Uint8Array[]): Uint8Array {
 	const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -56,14 +80,13 @@ function plusRec(type: number, flags: number, data: Uint8Array = new Uint8Array(
 	r.set(d, 12);
 	return r;
 }
-function metafile(em: number, text: string, lw: number, lh: number): Uint8Array {
+function metafile({ em, text, w, h: layoutHeight, alignment, family = 'Arial', x = 10 }: ParagraphCase): Uint8Array {
 	const header = new Uint8Array(16);
 	const hv = new DataView(header.buffer);
 	hv.setUint32(0, 0xdbc01002, true);
 	hv.setUint32(4, 1, true); // video display
 	hv.setUint32(8, 96, true);
 	hv.setUint32(12, 96, true);
-	const family = 'Arial';
 	const font = new Uint8Array(24 + family.length * 2);
 	const fv = new DataView(font.buffer);
 	fv.setUint32(0, 0xdbc01002, true);
@@ -74,14 +97,27 @@ function metafile(em: number, text: string, lw: number, lh: number): Uint8Array 
 	const str = new Uint8Array(28 + text.length * 2);
 	const sv = new DataView(str.buffer);
 	sv.setUint32(0, 0xffff0000, true);
-	sv.setUint32(4, 0xffffffff, true); // no StringFormat object
+	sv.setUint32(4, alignment === undefined ? 0xffffffff : 1, true);
 	sv.setUint32(8, text.length, true);
-	[10, 10, lw, lh].forEach((n, i) => sv.setFloat32(12 + i * 4, n, true));
+	[x, 10, w, layoutHeight].forEach((n, i) => sv.setFloat32(12 + i * 4, n, true));
 	for (let i = 0; i < text.length; i++) sv.setUint16(28 + i * 2, text.charCodeAt(i), true);
+	const formatRecords: Uint8Array[] = [];
+	if (alignment !== undefined) {
+		const format = new Uint8Array(60);
+		const fields = new DataView(format.buffer);
+		fields.setUint32(0, 0xdbc01002, true);
+		fields.setUint32(12, alignment, true); // Near, Center or Far
+		fields.setFloat32(36, 1 / 6, true);
+		fields.setFloat32(40, 1 / 6, true);
+		fields.setFloat32(44, 1.03, true);
+		fields.setUint32(48, 1, true);
+		formatRecords.push(plusRec(0x4008, (7 << 8) | 1, format));
+	}
 	const plus = concat([
 		plusRec(0x4001, 0, header),
 		plusRec(0x401f, 1), // TextRenderingHint SingleBitPerPixelGridFit
 		plusRec(0x4008, (6 << 8) | 0, font),
+		...formatRecords,
 		plusRec(0x401c, 0x8000, str),
 		plusRec(0x4002, 0),
 	]);
@@ -107,7 +143,8 @@ function metafile(em: number, text: string, lw: number, lh: number): Uint8Array 
 
 const dir = mkdtempSync(join(tmpdir(), 'drawstring-wrap-'));
 try {
-	for (const c of CASES) writeFileSync(join(dir, `${c.name}.emf`), metafile(c.em, c.text, c.w, c.h));
+	const cases = aligned ? ALIGNED_CASES : CASES;
+	for (const c of cases) writeFileSync(join(dir, `${c.name}.emf`), metafile(c));
 	const ps = `Add-Type -AssemblyName System.Drawing
 Get-ChildItem '${dir}\\*.emf' | ForEach-Object {
 	$mf = New-Object System.Drawing.Imaging.Metafile($_.FullName)
@@ -122,7 +159,7 @@ Get-ChildItem '${dir}\\*.emf' | ForEach-Object {
 }`;
 	execFileSync('powershell', ['-NoProfile', '-Command', ps], { stdio: 'inherit' });
 	const captures = [];
-	for (const c of CASES) {
+	for (const c of cases) {
 		const img = await loadImage(readFileSync(join(dir, `${c.name}.png`)));
 		const canvas = createCanvas(W, H);
 		const g = canvas.getContext('2d');
@@ -132,7 +169,8 @@ Get-ChildItem '${dir}\\*.emf' | ForEach-Object {
 		for (let i = 0; i < W * H; i++) if (d[i * 4] > 128 && d[i * 4 + 1] < 128) bits[i >> 3] |= 1 << (i & 7);
 		captures.push({ name: c.name, emf: Buffer.from(readFileSync(join(dir, `${c.name}.emf`))).toString('base64'), ink: Buffer.from(bits).toString('base64') });
 	}
-	const out = new URL('../../src/__fixtures__/gdi/text-drawstring-wrap.json.gz', import.meta.url);
+	const name = aligned ? 'text-drawstring-wrap-aligned.json.gz' : 'text-drawstring-wrap.json.gz';
+	const out = new URL('../../src/__fixtures__/gdi/' + name, import.meta.url);
 	writeFileSync(out, gzipSync(JSON.stringify({ width: W, height: H, captures })));
 	console.log(`${captures.length} captures written`);
 } finally {

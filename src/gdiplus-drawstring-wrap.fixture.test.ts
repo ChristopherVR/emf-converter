@@ -19,16 +19,33 @@ import { ensureNodeCanvasModule } from './emf-canvas-helpers';
 import { convertMetafileToDataUrl } from './emf-converter';
 import { layoutPlusLines } from './emf-plus-text-image-handlers';
 
-const fixture: { width: number; height: number; captures: Array<{ name: string; emf: string; ink: string }> } = JSON.parse(
-	gunzipSync(readFileSync(new URL('./__fixtures__/gdi/text-drawstring-wrap.json.gz', import.meta.url))).toString(),
+interface ParagraphFixture {
+	width: number;
+	height: number;
+	captures: Array<{ name: string; emf: string; ink: string }>;
+}
+
+const fixtures: ParagraphFixture[] = ['text-drawstring-wrap', 'text-drawstring-wrap-aligned'].map((name) =>
+	JSON.parse(gunzipSync(readFileSync(new URL('./__fixtures__/gdi/' + name + '.json.gz', import.meta.url))).toString()),
 );
 const fontBytes = windowsFonts();
 
-/**
- * Open: inside the character-trimmed last line native widens the spaces (a pixel at 16 px, two at 24 px) and does
- * not kern; the line holds the right characters. Pinned to the measured pixel counts.
- */
-const OPEN: Record<string, number> = { 'sentence-em24-w120': 386, 'height-42': 24, 'height-45': 46, 'height-59': 94 };
+// Arial's 24 px trimmed line and one centered line still differ in their spacing.
+// Courier New also has single-bit advance differences in all three alignments.
+// Fresh Windows captures vary by one glyph pixel for Tahoma and Times New Roman.
+const OPEN: Record<string, number> = {
+	'sentence-em24-w120': 172,
+	'sentence-center': 150,
+	'tahoma-wrap-near': 1,
+	'tahoma-wrap-center': 1,
+	'tahoma-wrap-far': 1,
+	'times-wrap-near': 1,
+	'times-wrap-center': 1,
+	'times-wrap-far': 1,
+	'courier-wrap-near': 416,
+	'courier-wrap-center': 402,
+	'courier-wrap-far': 414,
+};
 
 beforeAll(async () => {
 	await ensureNodeCanvasModule();
@@ -57,8 +74,9 @@ describe('layoutPlusLines()', () => {
 });
 
 describe.skipIf(!fontBytes)('native SingleBitPerPixelGridFit DrawString paragraphs', () => {
-	it.each(fixture.captures.map((c) => [c.name, c]))('lays out %s', async (name, c) => {
-		const { width: w, height: h } = fixture;
+	const cases = fixtures.flatMap(({ width, height, captures }) => captures.map((capture) => ({ ...capture, width, height })));
+	it.each(cases)('lays out $name', async (c) => {
+		const { name, width: w, height: h } = c;
 		const emf = Buffer.from(c.emf, 'base64');
 		const url = await convertMetafileToDataUrl(emf.buffer.slice(emf.byteOffset, emf.byteOffset + emf.byteLength), { fonts: fontBytes! });
 		const img = await loadImage(Buffer.from(url!.slice(url!.indexOf(',') + 1), 'base64'));
