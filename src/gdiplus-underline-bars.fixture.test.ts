@@ -21,8 +21,7 @@ import { gdiTextCoverage } from './gdi-text-render';
  *  - The coverage is four sub-scanlines by eight horizontal samples, 32 levels: a value is `round(255 * k / 32)`.
  *  - Bars of two or more rows start at `ceil8(origin + 0.5)` (every capture agrees) and end at `ceil8(end + 0.5)`
  *    (1,939 of 1,968), where `end` is the origin plus the run's advance (design-unit advances times 1.03, see
- *    `gdiplus-singlebit-advances.fixture.test.ts`). A bar one row thick has sub-scanline dependent ends that are not
- *    modelled (the converter uses start + 0.3 and end + 0.8).
+ *    `gdiplus-singlebit-advances.fixture.test.ts`). A one-row bar uses the nominal line's diamond caps.
  */
 const json = (name: string): any[] => JSON.parse(gunzipSync(readFileSync(new URL(`./__fixtures__/gdi/${name}`, import.meta.url))).toString());
 const fonts = windowsFonts();
@@ -31,18 +30,28 @@ describe.skipIf(!fonts)('GDI+ AntiAlias underline and strike-out bars against na
 	const collection = new GdiFontCollection(fonts ?? []);
 	const captures = json('text-underline.json.gz');
 
-	function bars(c: any): { at: (x: number, y: number) => number; sumColumn: (x: number) => number; y0: number; y1: number } {
+	function bars(c: any, text = '        x', offsetX = 0): { at: (x: number, y: number) => number; sumColumn: (x: number) => number; y0: number; y1: number } {
 		const style = c.style;
 		const font = collection.realize({ face: c.face, height: -c.size, width: 0, weight: style & 1 ? 700 : 400, italic: !!(style & 2), charSet: 1, pitchAndFamily: 0, quality: 4, unhinted: true, ignoreGasp: true, gdiPlus: true } as any)!;
-		const codes = [...'        x'].map((ch) => ch.codePointAt(0)!);
+		const codes = [...text].map((ch) => ch.codePointAt(0)!);
 		const dx = codes.map((ch) => font.designAdvance!(font.glyphIndex(ch), 1.03));
-		const x0 = 10 + c.ox + c.size / 6;
+		const x0 = offsetX + 10 + c.ox + c.size / 6;
 		const y = 8 + c.oy + Math.round((font.ttf.winAscent * c.size) / font.ttf.unitsPerEm);
 		const cov = gdiTextCoverage(font, { codes, glyphIndices: false, x: x0, y, dx, dy: null, textAlign: 24, textColor: '#000000', bkColor: '#ffffff', bkMode: 1, options: 0, rect: null, matrix: null, underline: !!(style & 4), strikeOut: !!(style & 8), plusBars: 'fractional' }, { decorations: true, grayLevels: 15 })!;
 		const data = cov.bars!;
 		const at = (x: number, yy: number): number => (x >= cov.x && x < cov.x + cov.width && yy >= cov.y && yy < cov.y + cov.height ? data[(yy - cov.y) * cov.width + (x - cov.x)] : 0);
 		return { at, sumColumn: (x) => { let s = 0; for (let yy = cov.y; yy < cov.y + cov.height; yy++) s += at(x, yy); return s; }, y0: cov.y, y1: cov.y + cov.height };
 	}
+
+	it('keeps a thin underline at its offscreen origin', () => {
+		const c = captures.find((capture) => capture.face === 'Arial' && capture.size === 12 && capture.style === 4)!;
+		const offset = 2 ** 24;
+		const x = 10 + c.size;
+		const spaces = '         ';
+		const far = bars(c, spaces, offset);
+		expect(far.sumColumn(x)).toBe(0);
+		expect(far.sumColumn(offset + x)).toBe(bars(c, spaces).sumColumn(x));
+	});
 
 	it('every column profile through the bars is exact', () => {
 		let exact = 0;
@@ -77,7 +86,7 @@ describe.skipIf(!fonts)('GDI+ AntiAlias underline and strike-out bars against na
 		}
 		expect(stats).toEqual({
 			thickStart: 1968, thickStartExact: 1968, thickEnd: 1968, thickEndExact: 1939,
-			thinStart: 4432, thinStartExact: 1536, thinEnd: 4432, thinEndExact: 1246,
+			thinStart: 4432, thinStartExact: 4384, thinEnd: 4432, thinEndExact: 3967,
 		});
 	});
 });

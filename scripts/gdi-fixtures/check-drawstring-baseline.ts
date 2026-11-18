@@ -1,6 +1,7 @@
 /** Replay frozen native controls against a saved prior handler module.
  * bun scripts/gdi-fixtures/check-drawstring-baseline.ts --baseline /absolute/path/handler.ts
  * Optional --write-bounds /absolute/path/bounds.json saves only a comparison with no regressions.
+ * Both handlers use the current font engine. Compare separate checkouts to measure changes to the engine.
  * The supplied baseline must export handleEmfPlusTextImageRecord and resolve its imports.
  */
 import { createHash } from 'node:crypto';
@@ -23,7 +24,7 @@ interface Capture {
 const bytes = readFileSync(new URL('../../src/__fixtures__/gdi/text-drawstring-baseline.json.gz', import.meta.url));
 const captures: Capture[] = JSON.parse(gunzipSync(bytes).toString());
 const bounds: { baseline: string; sha256: string; before: number[]; ceilings: number[];
- minimumExact: number; minimumImproved: number } = JSON.parse(readFileSync(
+ minimumExact: number; minimumImproved: number; clearTypeRasterCeilings?: Record<number, number> } = JSON.parse(readFileSync(
  new URL('../../src/__fixtures__/gdi/text-drawstring-baseline-bounds.json', import.meta.url), 'utf8',
 ));
 const fontBytes = windowsFonts();
@@ -75,12 +76,14 @@ const difference = (actual: Uint8ClampedArray, native: Buffer): number => {
 };
 const before = baseline ? captures.map((c) => difference(render(c, baseline), Buffer.from(c.rgba, 'base64'))) : bounds.before;
 const after = captures.map((c) => difference(render(c, handleEmfPlusTextImageRecord), Buffer.from(c.rgba, 'base64')));
-const regressions = after.flatMap((count, i) => count > before[i] || (!baseline && count > bounds.ceilings[i])
- ? [`${captures[i].face} ${captures[i].size}px style ${captures[i].style}: ${before[i]} -> ${count}`] : []);
+const regressions = after.flatMap((count, i) => {
+ const limit = baseline ? before[i] : bounds.clearTypeRasterCeilings?.[i] ?? bounds.ceilings[i];
+ return count > limit ? [`${captures[i].face} ${captures[i].size}px style ${captures[i].style}: ${limit} -> ${count}`] : [];
+});
 if (regressions.length) throw new Error(`Per-case native regressions: ${regressions.join(', ')}`);
 const minimumExact = after.filter((count) => count === 0).length;
 const minimumImproved = after.filter((count, i) => count < before[i]).length;
 const heldoutImproved = after.filter((count, i) => captures[i].heldout && count < before[i]).length;
-console.log(`${captures.length} controls; ${minimumExact} exact; ${minimumImproved} improve (${heldoutImproved} heldout); 0 worsen`);
+console.log(`${captures.length} controls; ${minimumExact} exact; ${minimumImproved} improve (${heldoutImproved} heldout); ${baseline ? "0 worsen" : "0 exceed recorded ceilings"}`);
 if (destination) writeFileSync(resolve(destination), JSON.stringify({schemaVersion: 1, baseline: bounds.baseline,
  sha256: bounds.sha256, before, ceilings: after, minimumExact, minimumImproved}, null, 2) + '\n');

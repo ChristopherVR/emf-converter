@@ -93,6 +93,8 @@ export interface LogFontSpec {
 	ignoreGasp?: boolean;
 	/** GDI+ smoothing uses natural-width hinting and its own coverage quantisation. */
 	gdiPlus?: boolean;
+	/** The default GDI+ DrawString layout, which rounds mono point moves symmetrically on installed fonts. */
+	defaultDrawStringFormat?: boolean;
 	/**
 	 * The horizontal stretch `eyScale / exScale` stored in a GM_COMPATIBLE text record, which native playback draws the
 	 * text through (see {@link playbackStretchReacts}). Absent or 1: none.
@@ -550,12 +552,7 @@ export class RealizedFont implements GdiRealizedFont {
 	 * 270 degrees, escapement and world rotation alike). Undefined for an upright baseline.
 	 */
 	/**
-	 * GDI+ SingleBitPerPixelGridFit glyphs are close to GDI's monochrome glyphs: hinted with GDI's arithmetic and
-	 * scan-converted with GDI's converter, 1,658 of 1,680 native upright regular glyphs are exact (`xwvyAkMWKVXZ4&%`,
-	 * Arial, Tahoma, Times New Roman and Segoe UI at 9 to 36 px), against 1,442 with the previous arithmetic. GDI+'s
-	 * own arithmetic is neither: 15 glyphs (Arial 16 `w` among them) are exact only the old way, and no subset of
-	 * GDI's projection, movement and ISECT rules gets both. Italic faces keep the previous path (Times New Roman
-	 * Italic 22 in `textx-plus-singlebitgridfit`: 8 pixels the GDI way).
+	 * Upright GDI+ SingleBitPerPixelGridFit glyphs use GDI's projections and scan conversion.
 	 */
 	private plusMonoAsGdi(gdiPlus: boolean, mode: GdiTextMode, gridFit: boolean): boolean {
 		return gdiPlus && mode === 'mono' && gridFit && this.singleBitRequested;
@@ -567,6 +564,7 @@ export class RealizedFont implements GdiRealizedFont {
 	 * `gdiplus-courier-gray` and `gdiplus-shpix-x`, lose exact glyphs the GDI way).
 	 */
 	singleBitRequested = false;
+	defaultDrawStringFormat = false;
 
 	rotatedMetrics(ux: number, uy: number): { ascent: number; descent: number } | undefined {
 		if (Math.abs(ux) > 1e-9 && Math.abs(uy) > 1e-9) {
@@ -618,7 +616,10 @@ export class RealizedFont implements GdiRealizedFont {
 	private gdiMonoOutline(index: number): HintedGlyph {
 		let g = this.gdiMonoOutlines.get(index);
 		if (!g) {
-			this.gdiMonoSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, { version: 35, grayscale: false, gdiArithmetic: true, reportStretched: this.playbackStretched }, true);
+			this.gdiMonoSize ??= new HintedSize(this.ttf, this.ppemX, this.ppem, {
+				version: 35, grayscale: false, gdiArithmetic: true,
+				symmetricPointMoves: this.installed && this.defaultDrawStringFormat, reportStretched: this.playbackStretched,
+			}, true);
 			g = this.gdiMonoSize.hintGlyph(index < this.ttf.numGlyphs ? index : NOTDEF);
 			this.gdiMonoOutlines.set(index, g);
 		}
@@ -876,7 +877,10 @@ export class RealizedFont implements GdiRealizedFont {
 			// pin that). The dropouts are decided from the recorded crossing pairs the way fontdrvhost.exe does it
 			// (`nativeDropoutPass`).
 			const dropout = src.scanSet ? dropoutMode(src.scanControl, src.scanType) : !this.gdiPlus ? 0 : 2;
-			bitmap = rasterizeClearType(o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout, !this.gdiPlus && clearTypeSmoothsVertically(this.ttf, this.ppem));
+			bitmap = rasterizeClearType(
+				o, this.gdiPlus, this.gdiPlus ? clearTypeSpread(this.ttf) : undefined, dropout,
+				!this.gdiPlus && clearTypeSmoothsVertically(this.ttf, this.ppem), !this.gdiPlus || this.installed,
+			);
 		} else {
 			// GDI's own scan converter (a font that never runs SCANCTRL gets simple dropouts up to 32 ppem, as in monochrome);
 			// GDI+ AntiAlias keeps its previous behaviour.
@@ -1211,6 +1215,7 @@ export class GdiFontCollection {
 				);
 				tt.naturalWidths = spec.quality === CLEARTYPE_NATURAL_QUALITY;
 				tt.singleBitRequested = spec.quality === NONANTIALIASED_QUALITY;
+				tt.defaultDrawStringFormat = spec.defaultDrawStringFormat === true;
 				return tt;
 			};
 			let tt = make(resolvePpem(best, spec.height), spec.height > 0 ? Math.round(spec.height) : 0);
@@ -1424,13 +1429,14 @@ function clearTypeSmoothsVertically(ttf: TtfFont, ppem: number): boolean {
  * coverage instead of rounding it (native baseline-controlled captures).
  * A `spread` widens every sample row first (see `clearTypeSpread`); `dropout` is the scan converter's dropout mode.
  */
-function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpread, dropout = 2, vertical = false): GlyphBitmap | null {
+function rasterizeClearType(o: Outline, truncate: boolean, spread: ClearTypeSpread | undefined, dropout: number, vertical: boolean, nativeCrossings: boolean): GlyphBitmap | null {
 	const S = CLEARTYPE_OVERSAMPLE / 3;
 	// The stub rule has no overshoot exception here: native excludes the stubs it exempts (13 of 13 determined cases).
 	const KY = vertical ? CLEARTYPE_ROWS : 1;
 	const WT = vertical ? CLEARTYPE_ROW_WEIGHTS : [1];
 	const WSUM = WT.reduce((a, c) => a + c, 0);
-	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, !truncate, !truncate, true, !truncate, !truncate);
+	const scan = !truncate ? 'gdi' : nativeCrossings ? 'native-crossings' : 'profile';
+	const r = rasterizeSamples(o, CLEARTYPE_OVERSAMPLE, KY, 1, dropout, false, !truncate, nativeCrossings, true, nativeCrossings, scan);
 	if (!r) {
 		return null;
 	}
@@ -1477,5 +1483,5 @@ function rasterizeClearType(o: Outline, truncate = false, spread?: ClearTypeSpre
 			}
 		}
 	}
-	return { width, height, left: box.xMin, top: box.yMax, data, channels: 3 };
+	return { width, height, left: box.xMin, top: box.yMax, data, channels: 3, additiveClearType: truncate ? undefined : true };
 }

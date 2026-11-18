@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { ensureNodeCanvasModule } from './emf-canvas-helpers';
+import type { CanvasContext } from './emf-types';
 import { windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { GdiFontCollection } from './gdi-font-engine';
-import { blendCtLevel, gdiTextCoverage } from './gdi-text-render';
+import { rasterizeSamples, type Outline } from './ttf-raster';
+import { blendCtLevel, gdiTextCoverage, paintGdiTextRun } from './gdi-text-render';
 
 /** Native black-on-white values of the seven ClearType coverage levels 0..6. */
 const LEVELS = [255, 219, 182, 144, 102, 58, 0];
@@ -92,4 +95,53 @@ describe.skipIf(!windowsFonts())('GDI ExtTextOut ClearType scan conversion (gdi-
 		for (const c of polygons) bad += mismatches(c);
 		expect(bad).toBeLessThanOrEqual(16);
 	});
+});
+
+it.skipIf(!windowsFonts())('replays native ClearType coverage after each overlapping glyph', async () => {
+	await ensureNodeCanvasModule();
+	const { createCanvas } = await import('@napi-rs/canvas');
+	const canvas = createCanvas(80, 48);
+	const context = canvas.getContext('2d');
+	const font = new GdiFontCollection(windowsFonts()!).realize({
+		face: 'Arial', height: -8, width: 0, weight: 400, italic: false, charSet: 1, pitchAndFamily: 0, quality: 5,
+	})!;
+
+	// ExtTextOutW on a white DIB, with all three glyphs at the same origin.
+	context.fillStyle = '#ffffff';
+	context.fillRect(0, 0, canvas.width, canvas.height);
+	paintGdiTextRun(context as unknown as CanvasContext, font, {
+		codes: [0x61, 0x72, 0x56], glyphIndices: false, x: 24, y: 30, dx: [0, 0, 0], dy: null,
+		textAlign: 24, textColor: '#000000', bkColor: '#ffffff', bkMode: 1, options: 0,
+		rect: null, matrix: null, underline: false, strikeOut: false,
+	});
+	expect(Array.from(context.getImageData(25, 28, 1, 1).data)).toEqual([58, 58, 58, 255]);
+});
+
+it.skipIf(!windowsFonts())('keeps the first ClearType row beneath a rounded arc tangent', () => {
+	const font = new GdiFontCollection(windowsFonts()!).realize({
+		face: 'Segoe UI', height: -72, width: 0, weight: 400, italic: false, charSet: 1, pitchAndFamily: 0, quality: 5,
+	})!;
+	const bitmap = font.glyph(font.glyphIndex(0x66)).bitmap!;
+
+	// The GDI ExtTextOutW capture for "f" has full coverage 11 px right and 50 px above the origin.
+	const offset = ((bitmap.top - 50) * bitmap.width + 11 - bitmap.left) * 3;
+	expect(Array.from(bitmap.data.subarray(offset, offset + 3))).toEqual([255, 255, 255]);
+});
+
+it('keeps ClearType coverage when a compact outline has a large origin', () => {
+	const outline: Outline = { xs: [16, 140, 140, 16], ys: [16, 16, 140, 140], onCurve: [1, 1, 1, 1], endPts: [3] };
+	const dx = 2 ** 24;
+	const dy = 2 ** 26;
+	const moved = {
+		...outline,
+		xs: Array.from(outline.xs, (x) => x + dx * 64),
+		ys: Array.from(outline.ys, (y) => y + dy * 64),
+	};
+	const sample = (o: Outline) => rasterizeSamples(o, 6, 1, 1, 2, false, true, true, true, true, 'gdi')!;
+	const first = sample(outline);
+	const second = sample(moved);
+	expect(first.hi.data).toContain(1);
+	expect(second.hi.left - first.hi.left).toBe(dx * 6);
+	expect(second.hi.top - first.hi.top).toBe(dy);
+	expect(second.hi.data).toEqual(first.hi.data);
 });

@@ -455,6 +455,7 @@ function realizePlusEngineFont(
 	font: EmfPlusFont,
 	paint: string | CanvasGradient | CanvasPattern,
 	brushSampler: DeviceBrushSampler | null,
+	defaultStringFormat = false,
 ): PlusEngineFont | null {
 	const fonts = rCtx.fonts;
 	const color = typeof paint === 'string' ? rgbaToHex(paint) : null;
@@ -490,6 +491,7 @@ function realizePlusEngineFont(
 		// grayscale there, but single-bit under AntiAliasGridFit, as in GDI).
 		ignoreGasp: hint === 4,
 		gdiPlus: true,
+		...(hint === 1 && defaultStringFormat ? { defaultDrawStringFormat: true } : {}),
 		unscaledText: m[0] === 1 && m[3] === 1,
 	};
 	const realized = fonts.realize(spec, rCtx.fontFamilyMap);
@@ -607,7 +609,14 @@ function drawPlusStringWithEngine(
 	format?: EmfPlusStringFormat,
 	brushSampler: DeviceBrushSampler | null = null,
 ): boolean {
-	const ef = realizePlusEngineFont(rCtx, font, paint, brushSampler);
+	const defaultFormat = !format || (
+		format.flags === 0 && format.alignment === 0 && format.lineAlignment === 0 &&
+		(format.trimming ?? 1) === 1 &&
+		Math.fround(format.leadingMargin ?? PLUS_LEADING_EM) === Math.fround(PLUS_LEADING_EM) &&
+		Math.fround(format.trailingMargin ?? PLUS_LEADING_EM) === Math.fround(PLUS_LEADING_EM) &&
+		Math.fround(format.tracking ?? PLUS_DEFAULT_TRACKING) === Math.fround(PLUS_DEFAULT_TRACKING)
+	);
+	const ef = realizePlusEngineFont(rCtx, font, paint, brushSampler, defaultFormat);
 	if (!ef) {
 		return false;
 	}

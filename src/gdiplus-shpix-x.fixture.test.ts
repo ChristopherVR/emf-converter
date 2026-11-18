@@ -15,8 +15,8 @@ import { gdiTextCoverage } from './gdi-text-render';
  * The rule (`HintedSize.plusShpixX`): a call's shifts apply; an inline shift applies to a point touched in one
  * direction, or in both after both IUPs, or to a point touched in neither after both IUPs when the shift is at least half a
  * pixel (Arial Bold `2` 40: 328 pixels to exact); not to smaller shifts of untouched points (Courier New `R` 22, 8/64) nor to a
- * point touched in both before the IUPs (Times New Roman Italic `T` 22, 6/64), where applying them costs pixels in the pinned controls. It is only
- * on at an identity world scale: the uniformly scaled alignment controls (`W` and `AV`) get a few pixels worse otherwise.
+ * point touched in both before the IUPs with the legacy arithmetic. Installed fonts also apply horizontal moves to
+ * those points. The rule only applies at identity world scale: the uniformly scaled alignment controls (`W` and `AV`) get a few pixels worse otherwise.
  *
  * Everything below is native data: no capture that was exact without the rule is lost.
  */
@@ -77,6 +77,6 @@ describe.skipIf(!windowsFonts())('SHPIX along x in GDI+ grayscale text', () => {
 		const glyphs: Capture[] = load('text-real-glyphs.json.gz');
 		const [before, after, lost] = tally(glyphs, () => [6, 28], 40, (c) => new Uint8Array(Buffer.from(c.gray!, 'base64')));
 		expect(lost).toEqual([]);
-		expect([before, after]).toEqual([19062, 19649]); // [17016, 17411] with the legacy arithmetic (17,014 and 17,409 before the SCANCTRL and DELTAP rules of round 11, one each)
+		expect([before, after]).toEqual([19062, 19679]); // [17016, 17411] with the legacy arithmetic (17,014 and 17,409 before the SCANCTRL and DELTAP rules of round 11, one each)
 	}, 240000);
 });

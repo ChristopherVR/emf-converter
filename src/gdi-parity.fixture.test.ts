@@ -460,12 +460,12 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-align-mono', 'emf', 0), // measured 0.000%
 	fontCase('textx-arial-aa', 'emf', 0), // round 12: 0 px (overlapping glyphs OR their levels; was 1 px) (ceiling was 0.00009); measured 0.0080% (round 9; was 0.1600% ceiling) measured 0.122%
 	fontCase('textx-arial-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0005); measured 0.019%
-	fontCase('textx-arial-cleartype', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
-	fontCase('textx-arial-ctnatural', 'emf', 0.00097), // measured 0.0913% (round 9; was 0.1000% ceiling) measured 0.095% against native playback, 0.610% before the symmetric-smoothing GETINFO bit (round 8), 14.847% before the exact blend
+	exact('textx-arial-cleartype'),
+	exact('textx-arial-ctnatural'),
 	fontCase('textx-arial-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.017%
-	fontCase('textx-arial-q0-default', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
-	fontCase('textx-arial-q1-draft', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
-	fontCase('textx-arial-q2-proof', 'emf', 0.0099), // measured 0.984% against native playback, 1.566% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 5.163% before the size-specific SHPIX and DELTAP rules
+	exact('textx-arial-q0-default'),
+	exact('textx-arial-q1-draft'),
+	exact('textx-arial-q2-proof'),
 	fontCase('textx-arial-styles-aa', 'emf', 0), // round 11: 0 px (ceiling was 0.0009); measured 0.059%
 	fontCase('textx-arial-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0006); measured 0.027%
 	fontCase('textx-color-aa', 'emf', 0), // round 11: 0 px (ceiling was 0.0004); measured 0.030% (1.322% before the native grayscale blend, round 7)
@@ -503,19 +503,19 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-fon-tmsrmn-cell', 'wmf', 0), // measured 0.000%
 	fontCase('textx-opaque-aa', 'emf', 0), // round 11: 0 px (ceiling was 0.0001); measured 0.0015% over 8 levels (0.39% exact before the native opaque-text blend, round 7)
 	fontCase('textx-opaque-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0004); measured 0.004%
-	fontCase('textx-plus-antialias', 'emf', 0.0021), // measured 0.202%: GDI+ design-unit advances, fractional AntiAlias underline; remaining glyph hinting (diagonal stems); 1.360% before the advances, 2.734% before the bars
-	fontCase('textx-plus-antialiasgridfit', 'emf', 0.00065), // measured 0.064% (2.527% before the round 8 AntiAliasGridFit advances); GDI+ hinting and shades
-	fontCase('textx-plus-cleartype', 'emf', 0.0013), // measured 0.133% (GDI+ ClearType blend arithmetic, 8-bit tables and exact sixths of coverage; 9.236% before the round 8 interpreter rules), 9.581% before the storage 8 rule, 9.694% before the ClearType dropout control, 10.216% before the size-specific SHPIX and DELTAP rules; decorations retained
+	exact('textx-plus-antialias'),
+	exact('textx-plus-antialiasgridfit'),
+	exact('textx-plus-cleartype'),
 	fontCase('textx-plus-singlebit', 'emf', 0), // measured 0 (round 12: unhinted GDI+ monochrome glyphs use simple dropout control without stubs; 0.148% before)
-	fontCase('textx-plus-singlebitgridfit', 'emf', 0.00005), // measured 1 px, Arial 16 `w` (0 with the previous single-bit arithmetic, which got 1,442 of 1,680 native probe glyphs against 1,658; trade accepted)
+	{ ...fontCase('textx-plus-singlebitgridfit', 'emf', 0), tolerance: 0 },
 	// SystemDefault follows fontSmoothing; the capture session resolved it to single-bit (see resolvePlusTextHint).
-	{ ...fontCase('textx-plus-systemdefault', 'emf', 0.00005), options: { fontSmoothing: 'mono' } }, // measured 1 px, as textx-plus-singlebitgridfit
+	{ ...fontCase('textx-plus-systemdefault', 'emf', 0), tolerance: 0, options: { fontSmoothing: 'mono' } },
 	fontCase('textx-rotalign-esc', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0048% (15 px; 34 before round 8) against the native playback (0.511% before)
 	fontCase('textx-rotalign-esc-small', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0042% (13 px; 207 before round 8: quarter-turn text has its own tmAscent / tmDescent) against the native playback (0.367% before)
 	fontCase('textx-rotalign-world', 'emf', 0), // round 11: 0 px (ceiling was 0.00005); measured 0.0048% (15 px; 34 before round 8) against the native playback (0.537% before)
 	fontCase('textx-segoeui-aa', 'emf', 0), // round 12: 0 px (overlapping glyphs OR their levels; was 10 px) (ceiling was 0.00013); measured 0.0118% (a scan line exactly on a horizontal edge is inked, round 9; 0.031% before)
 	fontCase('textx-segoeui-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00003); measured 0.0025% (8 px) against the native playback (round 9 stub squares; 0.015% before, 0.086% against the direct drawing)
-	fontCase('textx-segoeui-cleartype', 'emf', 0.0126), // measured 1.258%, 2.992% before the round 8 compatible-width stem shifts and the symmetric-smoothing GETINFO bit, 3.694% before the ClearType dropout control
+	exact('textx-segoeui-cleartype'),
 	fontCase('textx-segoeui-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0003% (round 9; was 0.0500% ceiling) measured 0.015%
 	fontCase('textx-segoeui-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0004% (round 9; was 0.0400% ceiling) measured 0.007%
 	fontCase('textx-tahoma-aa', 'emf', 0), // round 11: 0 px (ceiling was 0.00007); measured 0.0055% (0.092% before)
@@ -868,7 +868,7 @@ const EMF_PLUS_RECORD_CASES: ParityCase[] = [
  */
 const TEXT_CONTRAST_CASES: ParityCase[] = [
 	close('gpx-rec-textcontrast', 0.00085), // measured 0.082% (diagonal stems; 0.413% before SHPIX along x, round 10, R10-B); 2.865% before the round 8 gray ClearType GETINFO; GDI+ hinting and shades
-	close('gpx-rec-textcontrast-cleartype', 0.0012), // measured 0.112% (diagonal stems; GDI+ ClearType blend arithmetic); 3.331% 4.008% before the size-specific SHPIX tweaks
+	exact('gpx-rec-textcontrast-cleartype'),
 ];
 
 /**

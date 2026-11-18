@@ -29,6 +29,8 @@
  * @module ttf-raster
  */
 
+import { msScan } from './ttf-msscan';
+
 /** A rendered glyph bitmap. `data` holds one byte per pixel (0/1 for mono, 0..levels for gray). */
 export interface GlyphBitmap {
 	width: number;
@@ -41,6 +43,8 @@ export interface GlyphBitmap {
 	data: Uint8Array;
 	/** 3 for a ClearType bitmap (R, G, B alpha per pixel, 0..255); omitted = one value per pixel. */
 	channels?: 3;
+	/** GDI ClearType adds and snaps channel coverage when glyphs overlap. */
+	additiveClearType?: true;
 }
 
 /** An outline in 26.6 device units, y up. */
@@ -320,6 +324,8 @@ class Raster {
 	}
 
 	private lineUp(x1: number, y1: number, x2: number, y2: number, miny: number, maxy: number): void {
+		const originalX = x1;
+		const originalY = y1;
 		let dx = x2 - x1;
 		const dy = y2 - y1;
 		if (dy <= 0 || y2 < miny || y1 > maxy) {
@@ -361,6 +367,13 @@ class Raster {
 			this.fresh = false;
 		}
 		let size = e2 - e1 + 1;
+		if (this.nativeArcs) {
+			// Keep the fractional offset of the first crossing when a later row reaches an exact sample centre.
+			for (let row = e1; row <= e2; row++) {
+				xs.push(originalX + mulDivRound(dx, row * this.prec - originalY, dy));
+			}
+			return;
+		}
 		let ix: number;
 		let rx: number;
 		if (dx > 0) {
@@ -647,7 +660,7 @@ class Raster {
 		if (dist < dA) {
 			const b = 2 * aA;
 			const c = dA - 2 * aA;
-			t = (2 * dist) / (b + Math.sqrt(b * b + 4 * c * dist));
+			t = dist === 0 ? 0 : (2 * dist) / (b + Math.sqrt(b * b + 4 * c * dist));
 		}
 		const along = 2 * t * aB + t * t * (dB - 2 * aB);
 		// Native counts the pixel centres from the rounded first-centre distance; ours are the true ones, so the crossing is
@@ -1661,7 +1674,7 @@ const GRAY_OVERSAMPLE = 4;
  * implied between two off-curve points to the 26.6 grid of the oversampled outline, halves up, as GDI does (see
  * {@link Raster.roundImpliedPoints}; ClearType's scan converter works on the 6x outline).
  */
-export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true, fineArcs = false, closedTies = false, squareStubs = false, roundImpliedPoints = false, nativeDropouts = false): { box: PixelBox; hi: GlyphBitmap } | null {
+export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, dropout = 2, stubOvershoot = true, fineArcs = false, closedTies = false, squareStubs = false, roundImpliedPoints = false, scan: 'profile' | 'native-crossings' | 'gdi' = 'profile'): { box: PixelBox; hi: GlyphBitmap } | null {
 	const n = o.xs.length;
 	if (n === 0) {
 		return null;
@@ -1684,13 +1697,29 @@ export function rasterizeSamples(o: Outline, kx: number, ky: number, padX = 0, d
 	};
 	if (box.xMax <= box.xMin) box.xMax = box.xMin + 1;
 	if (box.yMax <= box.yMin) box.yMax = box.yMin + 1;
-	const big: Outline = {
-		xs: Array.from(o.xs, (v) => v * kx),
-		ys: Array.from(o.ys, (v) => v * ky),
+	const samples = { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky };
+	const width = samples.xMax - samples.xMin;
+	const height = samples.yMax - samples.yMin;
+	if (width <= 0 || height <= 0 || width > 4096 || height > 4096) return null;
+	const scaled = (xOffset = 0, yOffset = 0): Outline => ({
+		xs: Array.from(o.xs, (v) => v * kx - xOffset),
+		ys: Array.from(o.ys, (v) => v * ky - yOffset),
 		onCurve: o.onCurve,
 		endPts: o.endPts,
-	};
-	const hi = rasterizeMono(big, dropout, { xMin: box.xMin * kx, xMax: box.xMax * kx, yMin: box.yMin * ky, yMax: box.yMax * ky }, stubOvershoot, false, roundImpliedPoints, false, fineArcs, closedTies, squareStubs, nativeDropouts);
+	});
+	// The integer scanner needs box-relative coordinates even when the glyph's absolute origin is large.
+	const fitted = scan === 'gdi' ? msScan(scaled(samples.xMin * 64, samples.yMin * 64), dropout) : null;
+	if (fitted) {
+		const data = new Uint8Array(width * height);
+		const fromX = Math.max(0, fitted.xMin);
+		const toX = Math.min(width, fitted.xMax);
+		for (let y = Math.min(height, fitted.yMax) - 1; y >= Math.max(0, fitted.yMin); y--) {
+			const src = (fitted.yMax - 1 - y) * (fitted.xMax - fitted.xMin) + fromX - fitted.xMin;
+			data.set(fitted.data.subarray(src, src + toX - fromX), (height - 1 - y) * width + fromX);
+		}
+		return { box, hi: { left: samples.xMin, top: samples.yMax, width, height, data } };
+	}
+	const hi = rasterizeMono(scaled(), dropout, samples, stubOvershoot, false, roundImpliedPoints, false, fineArcs, closedTies, squareStubs, scan !== 'profile');
 	return hi ? { box, hi } : null;
 }
 

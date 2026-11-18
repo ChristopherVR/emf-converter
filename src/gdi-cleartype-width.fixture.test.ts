@@ -66,14 +66,13 @@ function exactCount(info: SetInfo, quality: number): { exact: number; total: num
  * + 288 + 36 + 196 + 27 + 112 + 544 + 108 glyphs (8,418 captures). Before the width mode default quality was exact for 139, 90,
  * 904, 66, 7, 12, 123, 8, 9, 282 and 36 of them (1,676 of 4,209). What is left at either quality is not the width mode: the
  * `phantom`, `flags` and `follow` bars that a program moves past four pixels are clipped by native at the fourth pixel (24
- * samples; ours are not), and 72 `types` glyphs (MIRP from pp1 then MDRP, rounded) have a faint extra top sample row in native
- * at both qualities. The `rects` and `h` rest is a stem whose second edge is set by MIRP from a point that is not in the stem.
+ * samples; ours are not). The `rects` and `h` rest is a stem whose second edge is set by MIRP from a point that is not in the stem.
  */
 const EXPECTED: Record<string, [number, number]> = {
-	phantom: [278, 308],
-	types: [552, 552],
+	phantom: [285, 312],
+	types: [585, 585],
 	sweep: [1632, 1632],
-	kinds: [315, 315],
+	kinds: [324, 324],
 	corners: [288, 288],
 	rects: [36, 36],
 	centre: [196, 196],

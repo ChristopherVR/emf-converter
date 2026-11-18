@@ -40,11 +40,10 @@ function ours(fonts: GdiFontCollection, c: Capture): Uint8Array {
 
 /** Which captures (in file order, one bit each, least significant bit first) are pixel-exact today. */
 const EXACT_BITS =
-	'9FcuHP5rR05vMGqlN6CP01tQzektwIfwDrBx+P+/vx9cRE5vQTunJyCV0lPQSuEpaaf0/39+AAD8mJ4CVsr//9P/9+7j9//X//2/e//e1zn+/z94f/93/f9//v//R+fXu3/z+P9/4/30z3/d++//8/7/3x9gnt7kf+7hZ//nMbMvc7/p/3xe/EeuL/4j/h//mfeL347Lxx/4/wfM++/c77x9/mf0LL8xO5KfmW3L///3Dxi1R+kJUdf8/j/9b/tf//f8L/99/De5fXbDfD/v/frf92331/7+AQ3Ytf/Fzfn74ufv/3X7tfZ8u/Pf//3/Tq3O+PKYdw==';
+	'918u//9vx///v/v9/+vv13/2/fv/87//P7n1/f///99fx/////v///71/v//ev//f6/9/////6/+v//31/v//9P//+/j9//3//+/e//f1zn+//98f/93//9//v//Z+f3v3//+P9/8///33/d/+//+//////vn9/t///hd//vMb8vd//v/33f/8++7//3/v//u/fb/7/L///////f++/9/7/9/u/97v/3P/f//+/7/////z/1V///c////z/9//tf///+L/99/rf7fffDfb///f7//33/1/7//+3d///lz//78uf///X7/f78u/ff////Tr3e/v+Yfw==';
 
-const GIVEN_UP = ['italic 12px f phase 0'];
 const STYLES = ['regular', 'bold', 'italic', 'bold italic'];
-const EXACT_BY_STYLE: Record<string, number> = { regular: 257, bold: 396, italic: 324, 'bold italic': 364 };
+const EXACT_BY_STYLE: Record<string, number> = { regular: 432, bold: 435, italic: 434, 'bold italic': 420 };
 
 describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier New', () => {
 	const fonts = new GdiFontCollection(windowsFonts() ?? []);
@@ -60,7 +59,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 		expect(new Set(captures.map((c) => c.style)).size).toBe(4);
 	});
 
-	// Round 11 (DirectWrite's arithmetic, the default for installed fonts): 1,119 to 1,341 exact (223 gained, one given up: GIVEN_UP).
+	// Round 11 (DirectWrite's arithmetic, the default for installed fonts): 1,119 to 1,341 exact (223 gained, one lost). Native crossings recover 380 more, including italic 12 px f.
 	// Before the sample-row widening and the lone-leak rule none of the 1,976 captures was exact (886 with the widening alone; the
 	// font's dropout control adds 157; round 8's helper SHPIX rule adds five bold ones).
 	it('matches the pinned exact captures of every style', () => {
@@ -70,7 +69,7 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 			byStyle[key] = (byStyle[key] ?? 0) + (exact[i] ? 1 : 0);
 		}
 		expect(byStyle).toEqual(EXACT_BY_STYLE);
-		expect(exact.filter(Boolean)).toHaveLength(1341);
+		expect(exact.filter(Boolean)).toHaveLength(1721);
 	});
 
 	// Straight-edged glyphs (E H I L T 7) are exact at nearly every size and phase of the regular and bold faces (243 of 248; 237 with the earlier arithmetic) but for a few
@@ -97,7 +96,6 @@ describe.skipIf(!windowsFonts())('GDI+ ClearType glyphs of the system Courier Ne
 			const c = captures[i];
 			const name = `${STYLES[c.style]} ${c.size}px ${String.fromCharCode(c.code)} phase ${c.phase}`;
 			if (pinned && !exact[i]) lost.push(name);
-			if (GIVEN_UP.includes(name)) expect(exact[i], name).toBe(false);
 			if (!pinned && exact[i]) unrecorded.push(name);
 		}
 		expect(lost).toEqual([]);

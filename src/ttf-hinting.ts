@@ -350,10 +350,11 @@ export interface HintEnvironment {
 	 * against `GetGlyphOutline(GGO_NATIVE)` of instruction-prefix fonts, `PrefixHintProbe.cs`): a projection rounds
 	 * each coordinate's product alone before summing them; a movement along x, and IUP interpolation along both
 	 * axes, divides with `(a * b + c / 2) / c` truncated toward zero (so a negative quotient loses up to one unit
-	 * against round-half-away), while a movement along y rounds half away from zero. Not set for ClearType or GDI+,
-	 * which keep FreeType's combined rounding until measured.
+	 * against round-half-away), while a movement along y rounds half away from zero.
 	 */
 	gdiArithmetic?: boolean;
+	/** GDI+ monochrome retains nearest rounding with ties away from zero for point movement. */
+	symmetricPointMoves?: boolean;
 	/**
 	 * DirectWrite's ClearType interpreter running an installed font, which is what GDI+ text goes through (round 11,
 	 * read in `DWrite.dll`: `itrp_Project`, `itrp_OldProject`, `ComputeAndCheck_PF_Proj`, `itrp_SPVTL`, `itrp_SDPVTL`;
@@ -986,7 +987,7 @@ export class HintedSize {
 	 * is then the distance times the component over 1.0 on both axes.
 	 */
 	private moveAmt(distance: number, f: number, alongX: boolean): number {
-		if (this.gdiMath) {
+		if (this.gdiMath && !this.env.symmetricPointMoves) {
 			if (this.gs.fvIsPv || this.fDotP === 0x4000) {
 				return mulDiv(distance, f, 0x4000);
 			}
@@ -1252,20 +1253,18 @@ export class HintedSize {
 	}
 
 	/**
-	 * GDI+ grayscale text (`shpixX`): which SHPIX shifts along x native honours. Measured with prefix copies of Arial Bold
-	 * `y` (40 ppem), Arial `W` (12), Times New Roman Italic `T` (22) and Courier New `R` (22) and the 31,584 real glyphs
-	 * (see docs/parity-log.md): a shift made by a function call (not a generic per-size helper, `inSizeTweak`)
-	 * applies; one made inline in the glyph program applies to a point touched in exactly one direction, or in both once
-	 * both IUPs have run, or in neither once both have run when it moves at least 32/64 px (Arial Bold `2`); smaller
-	 * shifts of untouched points (Courier New `R` 22) and points touched in both before the IUPs (Times New Roman Italic
-	 * `T` 22) are not applied: either costs pixels in the pinned controls.
+	 * GDI+ grayscale at identity scale honours horizontal SHPIX on points touched in both directions, even before
+	 * IUP, with installed-font arithmetic. Native DirectWrite moves the italic T serif by 6/64 pixel in this state.
+	 * The earlier private-font rules use the touch flags, IUP state and size of the shift.
 	 */
 	private plusShpixX(p: number, amt: number): boolean {
 		if (!this.env.shpixX) return false;
 		if (this.callFrames.length > 0) return true;
 		const t = this.zp2.tags[p];
 		const tx = (t & TOUCH_X) !== 0, ty = (t & TOUCH_Y) !== 0;
-		return tx !== ty || (this.iupx && this.iupy && (tx || Math.abs(amt) >= 32));
+		return tx !== ty ||
+			(this.dwrite && tx && ty && this.gs.fvy === 0) ||
+			(this.iupx && this.iupy && (tx || Math.abs(amt) >= 32));
 	}
 
 	/**
@@ -1801,14 +1800,12 @@ export class HintedSize {
 						// shifts, but not the generic per-size helper functions
 						// (`isSizeTweak`): measured against native captures of Arial,
 						// Tahoma and Times New Roman, only those are ignored.
-						// Round 12: at default quality (compatible widths) a y SHPIX made after IUP[y] by anything but a
-						// generic per-size helper also moves points that carry no y touch (Arial 12/13 px `a`, `e`, `o`, `s`:
-						// the four corner-squaring calls at the end of the program; native prefix fonts first differ at
-						// exactly those calls). At natural quality native leaves them, and the generic helpers stay ignored.
+						// After IUP[y], ordinary y shifts also move untouched points in compatible-width GDI and
+						// installed-font GDI+ ClearType. Generic per-size helper shifts still require a y touch before IUP[y].
 						const keep =
 							!this.ctCompat() ||
 							this.inComposite ||
-							(gs.fvx === 0 && (this.shpixAlongY(p) || (this.iupy && this.linkMode() && !this.inSizeTweak()))) ||
+							(gs.fvx === 0 && (this.shpixAlongY(p) || (this.iupy && (this.linkMode() || (this.dwrite && !this.env.grayscale)) && !this.inSizeTweak()))) ||
 							(gs.fvx !== 0 && !this.inSizeTweak() && (!this.env.grayscale || this.plusShpixX(p, amt)));
 						if (keep) {
 							this.moveZp2(p, dx, dy, true);

@@ -19,7 +19,9 @@
 import { canvasDrawImage, canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
 import { mapFontFamily } from './emf-canvas-helpers';
 import { applyTextJustification, escapementSinCos } from './emf-gdi-text-layout';
+import { gdiplusFix, nominalLineCoverage } from './emf-plus-nominal-line';
 import { blendGrayChannel } from './gdi-gray-blend';
+import { snapClearTypeLevels } from './gdi-cleartype-levels';
 import type { GdiFontCollection, GdiRealizedFont, LogFontSpec } from './gdi-font-engine';
 import { isSvgContext, type SvgContext } from './svg-context';
 import type { CanvasContext, DrawState, TransformMatrix } from './emf-types';
@@ -793,6 +795,32 @@ function ctLevel(alpha: number): number {
 	return Math.round((alpha * 6) / 255);
 }
 
+function addClearTypeCoverage(
+	dst: Uint8Array | Uint8ClampedArray,
+	dstOffset: number,
+	src: Uint8Array,
+	srcOffset: number,
+	round = Math.round,
+): void {
+	const red = src[srcOffset];
+	const green = src[srcOffset + 1];
+	const blue = src[srcOffset + 2];
+	if (!red && !green && !blue) return;
+	if (!dst[dstOffset] && !dst[dstOffset + 1] && !dst[dstOffset + 2]) {
+		dst[dstOffset] = red;
+		dst[dstOffset + 1] = green;
+		dst[dstOffset + 2] = blue;
+		return;
+	}
+	// Windows snaps the saturated sum after each glyph, before the next glyph is added.
+	const levels = snapClearTypeLevels(
+		Math.min(6, ctLevel(dst[dstOffset]) + ctLevel(red)),
+		Math.min(6, ctLevel(dst[dstOffset + 1]) + ctLevel(green)),
+		Math.min(6, ctLevel(dst[dstOffset + 2]) + ctLevel(blue)),
+	);
+	for (let c = 0; c < 3; c++) dst[dstOffset + c] = round(levels[c] * 255 / 6);
+}
+
 /** Blends one channel of ClearType text `s` over `d` at subpixel coverage `a` (0..1) of a partly covered pixel. */
 function blendCt(s: number, d: number, a: number): number {
 	return blendCtLevel(s, d, ctLevel(a * 255));
@@ -818,10 +846,15 @@ function compositeClearType(
 			for (let x = 0; x < b.width; x++) {
 				const dx = p.x + x - x0;
 				if (dx < 0 || dx >= w) continue;
+				const source = (y * b.width + x) * ch;
+				const dest = (dy * w + dx) * 3;
+				if (b.additiveClearType) {
+					addClearTypeCoverage(alpha, dest, b.data, source);
+					continue;
+				}
 				for (let c = 0; c < 3; c++) {
-					const v = ch === 3 ? b.data[(y * b.width + x) * 3 + c] : b.data[y * b.width + x] * 255;
-					const i = (dy * w + dx) * 3 + c;
-					if (v > alpha[i]) alpha[i] = v;
+					const v = ch === 3 ? b.data[source + c] : b.data[source] * 255;
+					if (v > alpha[dest + c]) alpha[dest + c] = v;
 				}
 			}
 		}
@@ -900,6 +933,7 @@ interface SoftBar {
 	right: number;
 	top: number;
 	bottom: number;
+	nominal?: { pts: number[]; box: { x: number; y: number; w: number; h: number } };
 }
 
 /**
@@ -911,8 +945,7 @@ interface SoftBar {
  * `baseline` is the run's rounded-ascent baseline. The edge is then raised to the next quarter pixel (the rasteriser's
  * four sub-scanlines) after the position is truncated to 1/512 pixel: 3,248 underline and 1,160 strike-out columns of
  * the probe agree. Horizontally the bar runs over the run's advance; bars of two or more rows begin and end at
- * `ceil8(edge + 0.5)` (1/8 pixel columns, all measured ends agree); the thin bar's ends are fitted offsets
- * (start + 0.30, end + 0.80, within about a sixteenth), whose exact rule is not known.
+ * `ceil8(edge + 0.5)` (1/8 pixel columns). One-row antialiased bars use the diamond caps of nominal-width strokes.
  */
 function fractionalBars(
 	metrics: NonNullable<GdiRealizedFont['exactDecorations']>,
@@ -927,9 +960,21 @@ function fractionalBars(
 	const make = (top: number, thickness: number): SoftBar => {
 		const rows = Math.max(1, Math.round(thickness));
 		const t = raiseToQuarter(top - (rows - 1) / 2);
-		return rows === 1
-			? { left: start + 0.3, right: end + 0.8, top: t, bottom: t + 1 }
-			: { left: raiseToEighth(start + 0.5), right: raiseToEighth(end + 0.5), top: t, bottom: t + rows };
+		if (rows === 1) {
+			const bar = { left: start + 0.3, right: end + 0.8, top: t, bottom: t + 1 };
+			// The fixed-point converter uses a signed 32-bit intermediate at 1/256 pixel.
+			if (end < start || Math.max(Math.abs(start), Math.abs(end), Math.abs(top)) >= 0x7fffff) return bar;
+			const a = gdiplusFix(start);
+			const b = gdiplusFix(end);
+			const center = gdiplusFix(top);
+			const x = Math.floor(a / 16);
+			const y = Math.floor(center / 16);
+			return {
+				...bar,
+				nominal: { pts: [a, center, b, center], box: { x, y, w: Math.ceil(b / 16 + 1) - x, h: Math.ceil(center / 16 + 1) - y } },
+			};
+		}
+		return { left: raiseToEighth(start + 0.5), right: raiseToEighth(end + 0.5), top: t, bottom: t + rows };
 	};
 	const bars: SoftBar[] = [];
 	if (run.underline) bars.push(make(baseline - metrics.underlinePosition, metrics.underlineThickness));
@@ -989,8 +1034,10 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 		x1 = Math.max(x1, bar.right); y1 = Math.max(y1, bar.bottom);
 	}
 	for (const bar of softBars) {
-		x0 = Math.min(x0, Math.floor(bar.left)); y0 = Math.min(y0, Math.floor(bar.top));
-		x1 = Math.max(x1, Math.ceil(bar.right)); y1 = Math.max(y1, Math.ceil(bar.bottom));
+		const box = bar.nominal?.box;
+		x0 = Math.min(x0, box?.x ?? Math.floor(bar.left)); y0 = Math.min(y0, box?.y ?? Math.floor(bar.top));
+		x1 = Math.max(x1, box ? box.x + box.w : Math.ceil(bar.right));
+		y1 = Math.max(y1, box ? box.y + box.h : Math.ceil(bar.bottom));
 	}
 	const w = x1 - x0;
 	const h = y1 - y0;
@@ -1005,9 +1052,15 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 		const bc = b.channels === 3 ? 3 : 1;
 		for (let y = 0; y < b.height; y++) {
 			for (let x = 0; x < b.width; x++) {
+				const source = y * b.width + x;
+				const destination = (p.y + y - y0) * w + (p.x + x - x0);
+				if (channels === 3 && bc === 3) {
+					addClearTypeCoverage(data, destination * 3, b.data, source * 3, b.additiveClearType ? Math.round : Math.floor);
+					continue;
+				}
 				for (let c = 0; c < channels; c++) {
-					const v = bc === 3 ? b.data[(y * b.width + x) * 3 + c] : Math.round((b.data[y * b.width + x] * 255) / full);
-					const i = ((p.y + y - y0) * w + (p.x + x - x0)) * channels + c;
+					const v = Math.round((b.data[source] * 255) / full);
+					const i = destination * channels + c;
 					if (v > data[i]) data[i] = v;
 				}
 			}
@@ -1020,6 +1073,17 @@ export function gdiTextCoverage(font: GdiRealizedFont, run: GdiTextRun, options:
 	}
 	const barData = softBars.length > 0 ? new Uint8ClampedArray(w * h) : undefined;
 	for (const bar of softBars) {
+		if (bar.nominal) {
+			const { pts, box } = bar.nominal;
+			const mask = nominalLineCoverage([{ pts, closed: false }], { antialias: true, half: false, opaqueSolid: true }, box);
+			for (let y = 0; y < box.h; y++) {
+				const row = (box.y + y - y0) * w + box.x - x0;
+				for (let x = 0; x < box.w; x++) {
+					barData![row + x] = Math.max(barData![row + x], mask[y * box.w + x]);
+				}
+			}
+			continue;
+		}
 		for (let y = Math.floor(bar.top); y < Math.ceil(bar.bottom); y++) {
 			const rowCover = Math.min(y + 1, bar.bottom) - Math.max(y, bar.top);
 			for (let x = Math.floor(bar.left); x < Math.ceil(bar.right); x++) {
