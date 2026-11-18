@@ -237,6 +237,12 @@ const quick = await convertMetafileToDataUrl(buffer, { timeoutMs: 5000 });
 
 When the signal aborts, the promise rejects with `signal.reason` (an `AbortError` when there is none). A `null` result still means the buffer is not a valid metafile. Conversion checks the signal at every record, so it stops within about one record's work. One very large record, such as a single giant blit, can overrun the limit. With a `signal`, conversion yields to the event loop about every 16 ms.
 
+### Browser bundle size
+
+The full browser build loads embedded image decoders, the exact text engine, and Windows color data when a conversion needs them. A production Vite app that imports only `convertMetafileToDataUrl` loads about 175 kB gzip through its first ordinary PNG conversion. Files that need additional decoders or color tables load extra chunks.
+
+If you serve the package files directly, deploy `dist/browser-chunks/` beside the browser entry file and preserve their relative paths. For a Node deployment that copies the compiled files, keep `dist/node-chunks/` beside the Node entry files. Package managers and bundlers resolve these files when you import `emf-converter` normally.
+
 ### Lite browser build
 
 For a browser app that only needs a PNG preview and cares about bundle size, import from `emf-converter/lite`:
@@ -247,7 +253,7 @@ import { convertMetafileToDataUrl } from 'emf-converter/lite';
 const png = await convertMetafileToDataUrl(buffer, { fontFamilyMap: { 'MS Mincho': 'Noto Serif JP' } });
 ```
 
-It is about 425 KB minified (157 KB gzipped), against about 2.4 MB unminified (850 KB gzipped) for the full browser build. It exports `convertMetafileToDataUrl`, `convertMetafileToImageData`, `getMetafileInfo` and `DEFAULT_DPI_SCALE`, takes the same options except `fonts` and `fontSmoothing`, and replays every record the full build does. It leaves out:
+A production Vite app that imports only the lite PNG converter loads about 157 kB gzip. The lite build exports `convertMetafileToDataUrl`, `convertMetafileToImageData`, `getMetafileInfo` and `DEFAULT_DPI_SCALE`, takes the same options except `fonts` and `fontSmoothing`, and replays every record the full build does. It leaves out:
 
 - JPEG, WebP, SVG and PDF output.
 - The TrueType engine, so text is always drawn with the canvas's `fillText`. Use `fontFamilyMap` to choose installed or web fonts.
