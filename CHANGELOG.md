@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [5.0.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v5.0.0) - 2026-11-18
+
+### Performance
+
+- **browser:** Load codecs and rendering data on demand ([c1c9387](https://github.com/ChristopherVR/emf-converter/commit/c1c93876ef2c07d4cb8ad038f60ccec734cca899))
+- **replay:** Skip disabled record diagnostics ([2a28d74](https://github.com/ChristopherVR/emf-converter/commit/2a28d74bf5fff77c9f2d80ef458a79cdd0de7068))
+- **package:** Minify production Node bundles ([f09098a](https://github.com/ChristopherVR/emf-converter/commit/f09098ac726d8564c3838a01bed037bc268ab99e))
+- **png:** Score four filter bytes at once ([08a7bfd](https://github.com/ChristopherVR/emf-converter/commit/08a7bfd8b6d54cbcd270c9629ad3820ba20afcad))
+
+### Documentation
+
+- **distribution:** Explain the browser and Node chunk layout ([388ff92](https://github.com/ChristopherVR/emf-converter/commit/388ff92c1a75a1bb05085e7f12a00cc6560eb26a))
+- **performance:** Record the v5 browser transfer size ([bf147d8](https://github.com/ChristopherVR/emf-converter/commit/bf147d8c32ac862cbd45c484e342e3c2b1d3bb0e))
+
 ## [4.29.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.29.1) - 2026-11-18
 
 ### Bug Fixes
