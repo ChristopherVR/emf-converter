@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 
 import { readFileSync } from 'node:fs';
 
-import { compareFixture, fixturePath, loadReference, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
+import { compareFixture, diffImages, fixturePath, loadReference, renderFixture, windowsFonts } from './__fixtures__/gdi-parity-harness';
 import { setSoftwareCanvasOnly } from './emf-canvas-helpers';
 import { parseWmfHeader } from './emf-header-parser';
 import type { EmfConvertOptions } from './index';
@@ -469,7 +469,6 @@ const FONT_ENGINE_CASES: ParityCase[] = [
 	fontCase('textx-arial-styles-aa', 'emf', 0), // round 11: 0 px (ceiling was 0.0009); measured 0.059%
 	fontCase('textx-arial-styles-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0006); measured 0.027%
 	fontCase('textx-color-aa', 'emf', 0), // round 11: 0 px (ceiling was 0.0004); measured 0.030% (1.322% before the native grayscale blend, round 7)
-	fontCase('textx-color-cleartype', 'emf', 0.0082), // measured 0.815%, 1.280% before the round 8 compatible-width stem shifts, 1.868% before the ClearType dropout control
 	fontCase('textx-color-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.0004); measured 0.005%
 	fontCase('textx-couriernew-aa', 'emf', 0), // round 11: 0 px (ceiling was 0.00002); measured 0.0014% (round 9; was 0.0060% ceiling) measured 0.0052% (0.010% before round 9)
 	fontCase('textx-couriernew-cell-mono', 'emf', 0), // round 11: 0 px (ceiling was 0.00001); measured 0.0005% (round 9; was 0.0500% ceiling) measured 0.011%
@@ -1239,6 +1238,16 @@ describe('GDI ground-truth parity', () => {
 	});
 
 	describe.skipIf(!windowsFonts())('GDI text via the font engine (Windows fonts)', () => {
+		it('matches every textx-color-cleartype reference pixel', async () => {
+			const rendered = await renderFixture('textx-color-cleartype.emf', { fonts: windowsFonts()! });
+			const reference = await loadReference('textx-color-cleartype', true);
+			expect(rendered).not.toBeNull();
+			expect(diffImages(rendered!, reference, 0, 0)).toMatchObject({
+				compared: reference.width * reference.height,
+				mismatched: 0,
+			});
+		});
+
 		it.each(FONT_ENGINE_CASES.map((c) => [c.name, c] as const))('%s', async (_name, c) => {
 			const diff = await compareFixture(c.name, c.ext, c.tolerance, { fonts: windowsFonts()!, ...c.options });
 			expect(diff).not.toBeNull();
