@@ -16,10 +16,6 @@ interface Capture {
 	boundaryArgb?: number[];
 	bgra: string;
 }
-const bounds: Record<string, [number, number, number, number][]> = JSON.parse(readFileSync(
-	new URL('./__fixtures__/gdi/path-gradient-color-bounds.json', import.meta.url), 'utf8',
-));
-
 function boundaryOf(c: Capture): { x: number; y: number }[] {
 	const types = Buffer.from(c.types, 'base64');
 	const boundary: { x: number; y: number }[] = [];
@@ -47,7 +43,7 @@ function sourceOf(c: Capture): { points: { x: number; y: number }[]; types: Uint
 	return { points: c.points.map(([x, y]) => ({ x, y })), types };
 }
 
-function compare(c: Capture): [number, number, number, number] {
+function mismatchedPixels(c: Capture): number {
 	const boundary = boundaryOf(c);
 	const wraps: EmfPlusGradientWrapMode[] = ['tile', 'tile-flip-x', 'tile-flip-y', 'tile-flip-xy', 'clamp'];
 	const sampler = pathGradientSampler({
@@ -59,7 +55,7 @@ function compare(c: Capture): [number, number, number, number] {
 	const rgba = new Uint8ClampedArray(100 * 80 * 4);
 	sampler(0, 0, 100, 80, rgba);
 	const native = Buffer.from(c.bgra, 'base64');
-	let count = 0, sum = 0, maximum = 0, overOne = 0;
+	let count = 0;
 	for (let p = 0; p < 8000; p++) {
 		let difference = 0;
 		for (let channel = 0; channel < 4; channel++) {
@@ -68,27 +64,16 @@ function compare(c: Capture): [number, number, number, number] {
 			difference = Math.max(difference, Math.abs(actual - native[k + (channel === 3 ? 3 : 2 - channel)]));
 		}
 		if (difference) count++;
-		if (difference > 1) overOne++;
-		sum += difference;
-		maximum = Math.max(maximum, difference);
 	}
-	return [count, sum, maximum, overOne];
+	return count;
 }
 
 for (const [name, length] of [['colors', 120], ['alpha', 240]] as const) {
-	it(`preserves per-case premultiplied native path-gradient bounds for ${length} ${name} controls`, () => {
+	it(`matches premultiplied native path-gradient pixels for ${length} ${name} controls`, () => {
 		const captures: Capture[] = JSON.parse(gunzipSync(readFileSync(
 			new URL(`./__fixtures__/gdi/path-gradient-${name}.json.gz`, import.meta.url),
 		)).toString());
 		expect(captures).toHaveLength(length);
-		expect(bounds[name]).toHaveLength(length);
-		// Every ceiling is min(old, corrected). These retain opaque and varying
-		// surrounds, reverse vertex orders, focus contours and all wrap modes.
-		for (const [i, capture] of captures.entries()) {
-			const metrics = compare(capture);
-			for (let metric = 0; metric < 4; metric++) {
-				expect(metrics[metric], `${name} capture ${i}, metric ${metric}`).toBeLessThanOrEqual(bounds[name][i][metric]);
-			}
-		}
+		expect(captures.reduce((total, capture) => total + mismatchedPixels(capture), 0)).toBe(0);
 	});
 }

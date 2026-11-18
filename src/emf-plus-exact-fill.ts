@@ -37,7 +37,7 @@ import { hatchSampler } from './emf-plus-brush-hatch';
 import { prepareVertexGradient, vertexGradientColorAt } from './emf-plus-path-gradient-vertices';
 import { prepareOneD } from './emf-plus-path-gradient-oned';
 import { unpremultipliedArgb } from './emf-plus-path-gradient-fan';
-import { invertTextureMatrix, writeTextureRect } from './emf-plus-brush-texture';
+import { invertTextureMatrix, textureRowPositions, writeTextureRect } from './emf-plus-brush-texture';
 import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { linearRampSampler, unpremultiply } from './emf-plus-linear-ramp';
 import { applyPlusWorldTransform, deviceToCanvasMatrix, plusCanvasShift, plusWorldMatrix } from './emf-plus-state-handlers';
@@ -268,6 +268,8 @@ function fractionalTileSampler(
 	if (!(x1 > x0) || !(y1 > y0) || width < 1 || height < 1 || width * height > 4 * 1024 * 1024) return null;
 	const kx = width / (x1 - x0);
 	const ky = height / (y1 - y0);
+	const inv = invertTextureMatrix([(x1 - x0) / width, 0, 0, (y1 - y0) / height, x0, y0]);
+	if (!inv) return null;
 	const toTile = (point: { x: number; y: number }): { x: number; y: number } => ({
 		x: (full[0] * point.x + full[4] - x0) * kx,
 		y: (full[3] * point.y + full[5] - y0) * ky,
@@ -301,6 +303,8 @@ function fractionalTileSampler(
 	};
 	return (px, py, w, h, out) => {
 		const t = texel();
+		const xs = new Float64Array(w);
+		textureRowPositions(inv, px, 0, xs, new Float64Array(w));
 		for (let j = 0; j < h; j++) {
 			const v = ky * (py + j - y0);
 			const iv = Math.floor(v);
@@ -308,7 +312,7 @@ function fractionalTileSampler(
 			const r0 = tileIndex(iv, height, mirrorY) * width;
 			const r1 = tileIndex(iv + 1, height, mirrorY) * width;
 			for (let i = 0; i < w; i++) {
-				const u = kx * (px + i - x0);
+				const u = xs[i];
 				const iu = Math.floor(u);
 				const wx = Math.floor((u - iu) * TILE_WEIGHT_STEPS + 0.5) / TILE_WEIGHT_STEPS;
 				const c0 = tileIndex(iu, width, mirrorX);
