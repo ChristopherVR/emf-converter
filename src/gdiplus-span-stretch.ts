@@ -69,6 +69,25 @@ function validFixed16(v: number): boolean {
 	return v >= -32768 && v <= 32767;
 }
 
+const fix = (v: number): number => floorInt(add(mul(v, 65536), 0.5));
+const grid = (v: number): number => floorInt(add(mul(v, 16), 0.5));
+
+/** Vertical source phase at the first row of a stretch, computed from the float32 device rectangle. */
+export function stretchVerticalStart(sy: number, sh: number, dy: number, dh: number): { firstRow: number; yStart: number; yStep: number } | null {
+	if (![sy, sh, dy, dh].every(validFixed16)) return null;
+	const yStep = fix(div(sh, dh));
+	if (yStep === 0) return null;
+	const top = grid(dy);
+	const bottom = grid(add(mul(sh, div(dh, sh)), dy));
+	const firstRow = i32(Math.min(top, bottom) << 12) >> 16;
+	const lastRow = (i32(Math.max(top, bottom) << 12) + 0xffff) >> 16;
+	const syF = down32(yStep);
+	const w = yStep < 0 ? sub(down32(lastRow), add(dh, dy)) : sub(down32(firstRow), dy);
+	const scaled = mul(mul(w, syF), TWO_POW_M16);
+	const yStart = fix(yStep < 0 ? sub(sy, scaled) : add(scaled, sy));
+	return { firstRow, yStart, yStep };
+}
+
 /** The fixed-point state of one stretched draw (`DpOutputSpanStretch::InitializeClass`). */
 export interface StretchState {
 	request: StretchRequest;
@@ -99,33 +118,26 @@ export interface StretchState {
 export function createStretch(request: StretchRequest): StretchState | null {
 	const [sx, sy, sw, sh] = request.src.map(Math.fround);
 	const [dx, dy, dw, dh] = request.dest.map(Math.fround);
-	if (![sx, sy, sw, sh, dx, dy, dw, dh].every(validFixed16)) return null;
+	if (![sx, sw, dx, dw].every(validFixed16)) return null;
 	const kScale = request.kernel === 'cubic' ? 2 : 1;
 	// The stretch is never below one kernel radius: one texel for the tent, two for the cubic.
 	const minStretch = request.kernel === 'cubic' ? 0x20000 : 0x10000;
 	const half = 0.5;
-	const fix = (v: number): number => floorInt(add(mul(v, 65536), half));
 	const xStepS = fix(div(sw, dw));
 	const xStepR = fix(div(dw, sw));
-	const yStepS = fix(div(sh, dh));
 	const yStepR = fix(div(dh, sh));
 	void xStepR;
 	void yStepR;
-	if (xStepS === 0 || yStepS === 0) return null;
-	const grid = (v: number): number => floorInt(add(mul(v, 16), half));
+	const vertical = stretchVerticalStart(sy, sh, dy, dh);
+	if (xStepS === 0 || !vertical) return null;
+	const { firstRow, yStart, yStep } = vertical;
 	const left = grid(dx);
 	const right = grid(add(mul(sw, div(dw, sw)), dx));
-	const top = grid(dy);
-	const bottom = grid(add(mul(sh, div(dh, sh)), dy));
 	const lo = Math.min(left, right);
 	const hi = Math.max(left, right);
-	const topLo = Math.min(top, bottom);
-	const botHi = Math.max(top, bottom);
 	const firstColumn = (lo + 15) >> 4;
 	const loFix = i32(lo << 12);
 	const hiFix = i32(hi << 12);
-	const topFix = i32(topLo << 12);
-	const botFix = i32(botHi << 12);
 	const floatOf = (v: number): number => down32(v);
 	// Horizontal first position.
 	const sxF = floatOf(xStepS);
@@ -151,25 +163,8 @@ export function createStretch(request: StretchRequest): StretchState | null {
 	};
 	const xStretch = stretchOf(sw, dw);
 	const xRecip = floorInt(add(mul(div(65536, floatOf(xStretch)), 65536), half));
-	// Vertical first position.
-	const syF = floatOf(yStepS);
-	let yStart: number;
-	if (yStepS < 0) {
-		let w = floatOf((botFix + 0xffff) >> 16);
-		w = sub(w, add(dh, dy));
-		w = mul(w, syF);
-		w = mul(w, TWO_POW_M16);
-		yStart = fix(sub(sy, w));
-	} else {
-		let w = floatOf(topFix >> 16);
-		w = sub(w, dy);
-		w = mul(w, syF);
-		w = mul(w, TWO_POW_M16);
-		yStart = fix(add(w, sy));
-	}
 	const yStretch = stretchOf(sh, dh);
 	const yRecip = floorInt(add(mul(div(65536, floatOf(yStretch)), 65536), half));
-	const firstRow = topFix >> 16;
 	const columns = ((hiFix + 0xffff) >> 16) - (loFix >> 16) + 1;
 	const kernelRows = 2 * ((yStretch + 0xffff) >> 16) + 1;
 	// ValidateKernelRange.
@@ -188,7 +183,7 @@ export function createStretch(request: StretchRequest): StretchState | null {
 		xStretch,
 		xRecip,
 		yStart,
-		yStep: yStepS,
+		yStep,
 		yStretch,
 		yRecip,
 		kernelRows,

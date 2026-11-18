@@ -18,6 +18,7 @@ import jpegJs from 'jpeg-js';
 import { convertMetafileToDataUrl, convertMetafileToJpegDataUrl, convertMetafileToSvg } from './emf-converter';
 import { canvasGetImageData, createTempCanvas, ensureNodeCanvasModule, setSoftwareCanvasOnly } from './emf-canvas-helpers';
 import { decodePng } from './png-decoder';
+import { encodePng } from './png-encoder';
 import { getRenderableEmfBounds, parseEmfHeader } from './emf-header-parser';
 import { replayEmfRecords } from './emf-record-replay';
 
@@ -73,15 +74,17 @@ function plusComment(type: number, flags: number, data: Uint8Array = new Uint8Ar
 	return b;
 }
 
-function buildEmf(bounds: [number, number, number, number], records: Uint8Array[]): ArrayBuffer {
+function buildEmf(bounds: [number, number, number, number], records: Uint8Array[], sizeAt96Dpi?: [number, number]): ArrayBuffer {
 	const body = concat([...records, record(14, [0, 16, 20])]);
 	const h = new Uint8Array(108);
 	const v = new DataView(h.buffer);
-	const ints = [1, 108, ...bounds, 0, 0, 5291, 5291, 0x464d4520, 0x00010000, 108 + body.length, records.length + 2];
+	const frame = sizeAt96Dpi?.map((px) => Math.round((px * 2540) / 96)) ?? [5291, 5291];
+	const device = sizeAt96Dpi ? [1920, 960, 508, 254] : [1024, 768, 320, 240];
+	const ints = [1, 108, ...bounds, 0, 0, ...frame, 0x464d4520, 0x00010000, 108 + body.length, records.length + 2];
 	ints.forEach((n, i) => v.setUint32(i * 4, n >>> 0, true));
 	v.setUint16(56, 2, true);
-	[1024, 768, 320, 240].forEach((n, i) => v.setInt32(72 + i * 4, n, true));
-	[320000, 240000].forEach((n, i) => v.setInt32(100 + i * 4, n, true));
+	device.forEach((n, i) => v.setInt32(72 + i * 4, n, true));
+	device.slice(2).forEach((n, i) => v.setInt32(100 + i * 4, n * 1000, true));
 	return concat([h, body]).buffer as ArrayBuffer;
 }
 
@@ -111,6 +114,48 @@ function plusFillRect(argb: number, x: number, y: number, w: number, h: number):
 	[x, y, w, h].forEach((n, i) => v.setFloat32(8 + i * 4, n, true));
 	return plusComment(0x400a, 0x8000, d);
 }
+
+describe('EMF+ DrawImage rectangle crops', () => {
+	it('matches the HighQualityBilinear bottom edge of unit-scale crops', async () => {
+		const bitmapWidth = 40;
+		const bitmapHeight = 80;
+		const opaqueWhite = new Uint8Array(bitmapWidth * bitmapHeight * 4).fill(255);
+		const png = await encodePng(opaqueWhite, bitmapWidth, bitmapHeight);
+		const imageHeader = new Uint8Array(28);
+		const header = new DataView(imageHeader.buffer);
+		header.setUint32(0, 0xdbc01002, true);
+		header.setUint32(4, 1, true); // ImageTypeBitmap
+		header.setUint32(24, 1, true); // BitmapDataTypeCompressed
+		const image = plusComment(0x4008, 5 << 8, concat([imageHeader, png]));
+
+		// These cases agree in Windows EMF playback and the direct GDI+ probe in hq-crop-height.json.gz.
+		const crops = [
+			{ height: 2, top: 8.125 },
+			{ height: 9, top: 8.125 },
+			{ height: 19, top: 61.125 },
+		];
+		const alphas: number[] = [];
+		for (const { height, top } of crops) {
+			const data = new Uint8Array(40);
+			const view = new DataView(data.buffer);
+			view.setUint32(0, 0xffffffff, true); // no ImageAttributes
+			view.setUint32(4, 2, true); // source unit is pixels
+			[0, 0, 8, height, 4, top, 8, height].forEach((value, i) => view.setFloat32(8 + i * 4, value, true));
+			const emf = buildEmf([0, 0, 127, 127], [
+				plusHeader(false),
+				image,
+				plusComment(0x4021, 6), // HighQualityBilinear
+				plusComment(0x4022, 3), // PixelOffsetModeNone
+				plusComment(0x401a, 0, data),
+				plusComment(0x4002, 0),
+			], [128, 128]);
+			const url = await convertMetafileToDataUrl(emf, { dpiScale: 1 });
+			const out = await decodePng(Buffer.from(url!.split(',')[1], 'base64'));
+			alphas.push(out!.data[((Math.floor(top) + height) * out!.width + 8) * 4 + 3]);
+		}
+		expect(alphas).toEqual([237, 255, 236]);
+	});
+});
 
 // ---------------------------------------------------------------------------
 // Rendering and measurement

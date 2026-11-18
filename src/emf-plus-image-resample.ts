@@ -74,7 +74,7 @@
 import { invertTextureMatrix } from './emf-plus-brush-texture';
 import { addDown, bicubicSpanPositions, deviceDestRect, drawImagePointsDeviceMatrix, inferPointsMatrix, invertDown, multiplyDown, rectFormDeviceMatrix, spanPositions, transformPoints, type Mat6 } from './gdiplus-image-points';
 import { down32 } from './float32-down';
-import { createStretch, stretchRun } from './gdiplus-span-stretch';
+import { createStretch, stretchRun, stretchVerticalStart } from './gdiplus-span-stretch';
 import { mul as downMul, sqrt as sqrtDown } from './gdiplus-float';
 import { hqCubicBinWeights, hqCubicCdf } from './emf-plus-hq-cubic-weights';
 import { rasterizePlusFill, toPlusFix } from './emf-plus-raster';
@@ -1178,7 +1178,25 @@ function resampleHqAxisAligned(
 				: dx > 1e-9
 					? Math.round((1 - dx) * stepU)
 					: 0;
-	const offsetV = dy > 1e-9 ? Math.round(dy * stepV) : 0;
+	let offsetV = dy > 1e-9 ? Math.round(dy * stepV) : 0;
+	const sourceBottom = spec.srcY + spec.srcH;
+	let trailingRow: number | undefined;
+	if (
+		scaleV === 1 && !cubic && !mirrorU && !spec.wrap && !spec.halfPixelOffset && sourceBottom + 1 < height
+		&& integral(spec.srcY) && integral(spec.srcH) && spec.worldMatrix && spec.worldRect
+	) {
+		const src = [spec.srcX, spec.srcY, spec.srcW, spec.srcH];
+		const device = rectFormDeviceMatrix(src, spec.worldRect, spec.worldMatrix);
+		const dest = device && deviceDestRect(device, src);
+		// A unit-height tent keeps the second trailing tap only when the float32 transform shortens the destination.
+		if (dest && dest[3] >= spec.srcH) {
+			trailingRow = sourceBottom;
+			const vertical = stretchVerticalStart(spec.srcY, spec.srcH, dest[1], dest[3]);
+			if (vertical && vertical.yStep === stepV) {
+				offsetV = vertical.yStart - spec.srcY * 65536 + (yFirst - vertical.firstRow) * stepV;
+			}
+		}
+	}
 	// A reduction's start position carries the float32 rounding of the edge's magnitude (see `hqStartShift`).
 	const fractionU = rawLeftEdge - Math.floor(rawLeftEdge);
 	const startShiftU = mirrorU || fractionU >= HQ_START_SHIFT_FRACTION_LIMIT ? 0 : -hqStartShift(rawLeftEdge);
@@ -1257,11 +1275,9 @@ function resampleHqAxisAligned(
 		rowMax = Math.min(height - 1, rowMax);
 	}
 	const rows = Math.max(0, rowMax - rowMin + 1);
-	// The vertical pass of a scaled draw reads the source rectangle's rows plus a margin of the kernel's radius
-	// (rounded up, in texels) on each side; a tap farther out is transparent. A unit-scale axis is left open: whether
-	// its margin is that one or one texel wider is a float32 coin toss (see "Cropped sources and mirrors" in
-	// parity-log.md). Under a WrapMode the taps wrap instead.
+	// A scaled draw reads the source rows plus the kernel's radius, rounded up. Under a WrapMode the taps wrap instead.
 	const rowMargin = Math.abs(scaleV - 1) < 1e-9 ? Infinity : Math.ceil((cubic ? 2 : 1) / Math.min(1, scaleV));
+	const lastSourceRow = trailingRow ?? sourceBottom + rowMargin - 1;
 	// Horizontal pass: premultiplied, rounded to 8 bits, limited to the alpha.
 	const inter = new Uint8Array(rows * w * 4);
 	for (let r = 0; r < rows; r++) {
@@ -1276,7 +1292,7 @@ function resampleHqAxisAligned(
 				rowTexel = wrapTap(rowTexel, 0, height, edge.mirrorY, edge);
 			}
 		}
-		if (rowTexel === OUTSIDE_TRANSPARENT || (rowTexel !== OUTSIDE_CLAMP && (rowTexel < spec.srcY - rowMargin || rowTexel > spec.srcY + spec.srcH + rowMargin - 1))) {
+		if (rowTexel === OUTSIDE_TRANSPARENT || (rowTexel !== OUTSIDE_CLAMP && (rowTexel < spec.srcY - rowMargin || rowTexel > lastSourceRow))) {
 			continue;
 		}
 		const srcRow = rowTexel * width;
