@@ -10,6 +10,7 @@ export default defineConfig((options) => {
 	sourcemap: false,
 	clean: !options.watch,
 	treeshake: true,
+	minify: !options.watch,
 	platform: 'neutral',
 	esbuildOptions(options) {
 		options.chunkNames = 'node-chunks/[name]-[hash]';
