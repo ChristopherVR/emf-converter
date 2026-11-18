@@ -2,7 +2,7 @@
 
 What is still open, and what would settle each item. Current behaviour for users is in [Limitations](./limitations.md). The measurements and everything already ruled out are in the [Parity log](./parity-log.md).
 
-On 18 November 2026, All 910 report comparisons match Windows RGB exactly over the common device area (`bun scripts/gdi-fixtures/report.ts`). Eight references have rendered ink beyond their captured extent.
+On 18 November 2026, all 910 report comparisons match Windows RGB exactly and cover all painted pixels on both sides (`bun scripts/gdi-fixtures/report.ts`).
 
 ## Text
 

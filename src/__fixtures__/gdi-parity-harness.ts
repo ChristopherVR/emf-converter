@@ -271,3 +271,10 @@ export function windowsFonts(): Buffer[] | null {
 	systemFontsCache = paths.every((p) => existsSync(p)) ? paths.map((p) => readFileSync(p)) : null;
 	return systemFontsCache;
 }
+
+/** Additional 8514 raster faces used by the regenerated System and Fixedsys sheets. */
+export function windows8514Fonts(): Buffer[] | null {
+	const dir = process.env.GDI_FIXTURE_FONTS ?? join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts');
+	const paths = ['8514sys.fon', '8514fix.fon'].map((file) => join(dir, file));
+	return paths.every((path) => existsSync(path)) ? paths.map((path) => readFileSync(path)) : null;
+}

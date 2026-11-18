@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 
 public static class PlaybackExtentProbe
 {
@@ -28,6 +29,10 @@ public static class PlaybackExtentProbe
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr obj);
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool GdiFlush();
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    static extern int AddFontResourceEx(string path, uint flags, IntPtr reserved);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    static extern bool RemoveFontResourceEx(string path, uint flags, IntPtr reserved);
 
     delegate int RecordCallback(IntPtr dc, IntPtr table, IntPtr record, int handles, IntPtr data);
     [DllImport("gdi32.dll")] static extern bool EnumEnhMetaFile(IntPtr dc, IntPtr metafile, RecordCallback callback, IntPtr data, ref Rect rect);
@@ -78,6 +83,81 @@ public static class PlaybackExtentProbe
             if (metafile != IntPtr.Zero) DeleteEnhMetaFile(metafile);
             if (screen != IntPtr.Zero) ReleaseDC(IntPtr.Zero, screen);
         }
+    }
+
+    // The current system raster fonts can take precedence over same-name private VGA fonts. Give the exact VGA
+    // bitmap resource a private alias, then bind a temporary copy of the recording to that face.
+    public static bool CaptureWithVgaFont(string dir, string name, int width, int height, int originX, int originY, string face)
+    {
+        string fontFile, alias;
+        switch (face) {
+            case "Fixedsys": fontFile = "vgafix.fon"; alias = "ParityFx"; break;
+            case "System": fontFile = "vgasys.fon"; alias = "ParSys"; break;
+            default: throw new ArgumentException("Unsupported VGA raster face: " + face);
+        }
+
+        string fontDir = Environment.GetEnvironmentVariable("GDI_FIXTURE_FONTS") ??
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts");
+        byte[] font = AliasedVgaFont(Path.Combine(fontDir, fontFile), face, alias);
+        string source = Path.Combine(dir, name + ".emf");
+        byte[] recording = File.ReadAllBytes(source);
+        int aliases = 0;
+        for (int p = 0; p < recording.Length;) {
+            int type = BitConverter.ToInt32(recording, p), size = BitConverter.ToInt32(recording, p + 4);
+            if (size < 8 || size > recording.Length - p) throw new InvalidDataException("Invalid EMF record: " + source);
+            // EMR_EXTCREATEFONTINDIRECTW has a 32-character LOGFONTW face name at byte 40.
+            if (type == 82 && size >= 104 && Encoding.Unicode.GetString(recording, p + 40, 64).TrimEnd('\0') == face) {
+                Encoding.Unicode.GetBytes(alias, 0, alias.Length, recording, p + 40);
+                aliases++;
+            }
+            p += size;
+        }
+        if (aliases == 0) throw new InvalidDataException("No " + face + " font records: " + source);
+
+        string temp = Path.Combine(Path.GetTempPath(), "gdi-vga-" + Guid.NewGuid().ToString("N"));
+        string fontPath = temp + ".fnt", emfPath = temp + ".emf";
+        const uint privateFont = 0x10;
+        bool registered = false;
+        try {
+            File.WriteAllBytes(fontPath, font);
+            File.WriteAllBytes(emfPath, recording);
+            registered = AddFontResourceEx(fontPath, privateFont, IntPtr.Zero) > 0;
+            if (!registered) throw new InvalidOperationException("Could not register the private VGA font: " + face);
+            using (var original = new Bitmap(Path.Combine(dir, name + ".png"))) {
+                var rect = new Rect { left = -originX, top = -originY,
+                    right = original.Width - originX, bottom = original.Height - originY };
+                return CaptureGdi(emfPath, Path.Combine(dir, name + ".extent.png"), width, height, rect, false);
+            }
+        } finally {
+            if (registered) RemoveFontResourceEx(fontPath, privateFont, IntPtr.Zero);
+            File.Delete(emfPath);
+            File.Delete(fontPath);
+        }
+    }
+
+    static byte[] AliasedVgaFont(string path, string face, string alias)
+    {
+        byte[] fon = File.ReadAllBytes(path);
+        int ne = BitConverter.ToInt32(fon, 0x3c);
+        int table = ne + BitConverter.ToUInt16(fon, ne + 0x24);
+        int shift = BitConverter.ToUInt16(fon, table);
+        for (int group = table + 2; BitConverter.ToUInt16(fon, group) != 0;) {
+            int type = BitConverter.ToUInt16(fon, group), count = BitConverter.ToUInt16(fon, group + 2);
+            int entry = group + 8;
+            if (type == 0x8008 && count == 1) {
+                int offset = BitConverter.ToUInt16(fon, entry) << shift;
+                int size = BitConverter.ToInt32(fon, offset + 2);
+                byte[] fnt = new byte[size];
+                Buffer.BlockCopy(fon, offset, fnt, 0, size);
+                int faceOffset = BitConverter.ToInt32(fnt, 105);
+                if (Encoding.ASCII.GetString(fnt, faceOffset, face.Length + 1) != face + '\0')
+                    throw new InvalidDataException("Unexpected VGA bitmap face: " + path);
+                Encoding.ASCII.GetBytes(alias, 0, alias.Length, fnt, faceOffset);
+                return fnt;
+            }
+            group = entry + count * 12;
+        }
+        throw new InvalidDataException("Expected one bitmap font resource in " + path);
     }
 
     public static bool Capture(string dir, string name, int width, int height, int originX, int originY, bool plus, bool nativeFrame = false, bool recordPlayback = false, string suffix = ".extent.png")

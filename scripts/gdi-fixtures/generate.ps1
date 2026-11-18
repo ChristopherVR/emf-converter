@@ -386,18 +386,22 @@ if ($Which -eq 'playback-extents') {
         $case = @($cases | Where-Object { $_.name -eq $PlaybackCase })
         if ($case.Count -ne 1) { throw "Unknown expanded playback case: $PlaybackCase" }
         $case = $case[0]
-        $success = [PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $case.plus, ($case.nativeFrame -eq $true), ($case.recordPlayback -eq $true))
+        $success = if ($case.vgaFace) {
+            [PlaybackExtentProbe]::CaptureWithVgaFont($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $case.vgaFace)
+        } else {
+            [PlaybackExtentProbe]::Capture($outDir, $case.name, $case.w, $case.h, $case.ox, $case.oy, $case.plus, ($case.nativeFrame -eq $true), ($case.recordPlayback -eq $true))
+        }
         if ($success -ne $case.playbackSucceeded) { throw "Unexpected native playback status: $($case.name)" }
         return
     }
     # Native replay depends on earlier playback in the process for some old
     # recordings. Give every reference the same fresh-process initial state.
     foreach ($case in $cases) {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extents -PlaybackCase $case.name
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extents -PlaybackCase $case.name -OutDir $outDir
         if ($LASTEXITCODE -ne 0) { throw "Expanded playback capture failed: $($case.name)" }
     }
     foreach ($case in $open) {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extents -PlaybackCase $case.name -PlaybackOpen
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $MyInvocation.MyCommand.Path playback-extents -PlaybackCase $case.name -PlaybackOpen -OutDir $outDir
         if ($LASTEXITCODE -ne 0) { throw "Open playback capture failed: $($case.name)" }
     }
     $files = @((Join-Path $outDir 'playback-extents.json'), (Join-Path $outDir 'playback-extents-open.json')) + @($cases | ForEach-Object {

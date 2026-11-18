@@ -9,10 +9,10 @@
  * are reported; comparisons cover the common device area, including its edges.
  * Set GDI_DUMP=<dir> to also write each converter render as a PNG.
  */
-import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { diffImages, fixturePath, inkOutside, loadReference, renderFixture, windowsFonts } from '../../src/__fixtures__/gdi-parity-harness';
+import { diffImages, fixturePath, inkOutside, loadReference, renderFixture, windows8514Fonts, windowsFonts } from '../../src/__fixtures__/gdi-parity-harness';
 
 async function main(): Promise<void> {
 	const dir = fixturePath('');
@@ -40,10 +40,8 @@ async function main(): Promise<void> {
 			continue;
 		}
 		total++;
-		// The `.regen` raster-face captures were drawn on a 120 dpi session whose font set holds the 8514 System and Fixedsys faces.
-		const fontDir = process.env.GDI_FIXTURE_FONTS ?? join(process.env.WINDIR ?? 'C:\\Windows', 'Fonts');
-		const extra = name.endsWith('.regen') ? ['8514sys.fon', '8514fix.fon'].map((x) => join(fontDir, x)) : [];
-		const baseOptions = fonts && extra.length > 0 && extra.every((p) => existsSync(p)) ? { fonts: [...fonts, ...extra.map((p) => readFileSync(p))] } : options;
+		const extra = fonts && name.endsWith('.regen') ? windows8514Fonts() : null;
+		const baseOptions = fonts && extra ? { fonts: [...fonts, ...extra] } : options;
 		// GDI+ SystemDefault follows the machine's font smoothing; the session that captured this reference resolved
 		// it to single-bit (GDI's DEFAULT_QUALITY in the same run is ClearType, so the two are pinned separately).
 		const renderOptions = name === 'textx-plus-systemdefault' ? { ...baseOptions, fontSmoothing: 'mono' as const } : baseOptions;

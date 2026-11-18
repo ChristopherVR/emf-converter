@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-11-18T09:05:07.4718519Z",
+  "groups": "playback-extents",
+  "os": "Microsoft Windows NT 10.0.26300.0",
+  "build": 9711,
+  "architecture": "AMD64",
+  "runnerImage": null,
+  "runnerImageVersion": null,
+  "screenDpi": [
+    144,
+    144
+  ],
+  "libraries": [
+    {
+      "name": "gdi32.dll",
+      "version": "10.0.26100.8328 (WinBuild.160101.0800)",
+      "sha256": "772c73e294a4c5f5e0d4146288af95287a85c074d3aee3fa9f320dc010d7dbfe"
+    },
+    {
+      "name": "gdiplus.dll",
+      "version": "10.0.26100.9711 (WinBuild.160101.0800)",
+      "sha256": "a010137a9f89d49a484a0603f0e35a19195305002c857f313f857be662e1ab92"
+    },
+    {
+      "name": "win32u.dll",
+      "version": "10.0.26100.9711 (WinBuild.160101.0800)",
+      "sha256": "d46a695db805e808efa63d1095ce3e1b6be9c0155dad405d444530efc1ed0362"
+    },
+    {
+      "name": "mscms.dll",
+      "version": "10.0.26100.1 (WinBuild.160101.0800)",
+      "sha256": "2f81079500f55cf0cf3e8b8d0e432e420ff4603505789f17adc6da1de0bc5ca2"
+    }
+  ],
+  "fonts": [
+    {
+      "name": "8514fix.fon",
+      "location": "system",
+      "sha256": "9d79657757c94d0c8ce4de56f4a3b9faa8087d651961dbea9eaa201513c05389"
+    },
+    {
+      "name": "8514sys.fon",
+      "location": "system",
+      "sha256": "dc7e1c9bb168e22b7a8b1a10c5d9555d71ea8486dc0d628fa17d117698bae61b"
+    },
+    {
+      "name": "vgafix.fon",
+      "location": "system",
+      "sha256": "57402d1e89dc0d8368cde612d720ab4a6a813bfe5e243e9da2775013e06f2b0f"
+    },
+    {
+      "name": "vgasys.fon",
+      "location": "system",
+      "sha256": "7baefa14ef8ef2355374d0b5061043dd5f4f8c33ff57680366e4a725f91646f8"
+    }
+  ],
+  "references": [
+    {
+      "name": "compat-widemirror-ellipse-p3-m.emf",
+      "sha256": "6152ed7bd4b836525c23b919abbd1930e7b8164143b34ed00dd550c822167376"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p3-m.extent.png",
+      "sha256": "c0eb6ca2d07b06e88d2ae615fe9fc7ce1fed29ee5fcd3de71f9332f6b3b09346"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p3-m.png",
+      "sha256": "5ef9b18460d1479d8036547fa9f0cf27d34aa405752407eff4a0c3b3e77d8d23"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p3-u.emf",
+      "sha256": "1c13b73040d7ce4a052d40817483688dd6c36eb85b76d523cbdd5b9103968173"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p3-u.extent.png",
+      "sha256": "1003ab05960a51a12013eadbb23b9bc767399e26552607ed47d08af096b9ad5a"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p3-u.png",
+      "sha256": "9d012ae9ae773075c48655f36dad7d8d3cf699f991b0a527189da80f7d7a0265"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p4-m.emf",
+      "sha256": "0050c0ba799a0a6776a483162e9e9b8966f099e54396b692da00bbeecd122499"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p4-m.extent.png",
+      "sha256": "c9476690a93791f37e790c9d070b5a865b47e8842bc1de4897a8393ddf3290f9"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p4-m.png",
+      "sha256": "2c9a2b62d54016f3119058bba60ffa3ffec608e25eee4e0096eadb7e6e527a72"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p4-u.emf",
+      "sha256": "c29faf4c9895e0c50ade1a967fba1d8ecf5928067064c33a48ca6c00496a0f94"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p4-u.extent.png",
+      "sha256": "b9cdacc34594a0b990e70852bd196679faffda91ad853d6adc3562e13de42886"
+    },
+    {
+      "name": "compat-widemirror-ellipse-p4-u.png",
+      "sha256": "aee89203176f57253b49455791791d069ba717946f3d883198f0b154baf7d870"
+    },
+    {
+      "name": "textx-fon-fixedsys.emf",
+      "sha256": "9014024cd9ce4c7467d7b2dd5206299ba8ce26e7c2d689696f317736d288af55"
+    },
+    {
+      "name": "textx-fon-fixedsys.extent.png",
+      "sha256": "45623cbec86cb829d9b334056d7909a071d2c070618587c6ec584eb99cd0652e"
+    },
+    {
+      "name": "textx-fon-fixedsys.png",
+      "sha256": "784afb8b9cc950bbbbc40306eb50cb7a583933f010e8960a6b4724e777ecebc1"
+    },
+    {
+      "name": "textx-fon-fixedsys.regen.emf",
+      "sha256": "00aef2ba6ea08f73b421ee284bb6d35dd3e1ade5f091f809e1d96ce6776c53a1"
+    },
+    {
+      "name": "textx-fon-fixedsys.regen.extent.png",
+      "sha256": "dcb287b5f0bf121a500df1b8d0d2e28e6add92dea8756e4174a43dc950d71ea3"
+    },
+    {
+      "name": "textx-fon-fixedsys.regen.png",
+      "sha256": "c72561e9321d2a044bc45030e86e029f4419c86028b89ee84775d4553cc70fce"
+    },
+    {
+      "name": "textx-fon-system.emf",
+      "sha256": "cce9111c15191f6a052798a8c7ba94333a25ce3b2e46b777c7ae34cb7d6cf974"
+    },
+    {
+      "name": "textx-fon-system.extent.png",
+      "sha256": "1f990f69c78b9a1356ea866a319bc10ca68b4e7718ad6f94eaa94c61be43b8dd"
+    },
+    {
+      "name": "textx-fon-system.png",
+      "sha256": "bebf953c172530532f1260eb4319fbd0e1adc2ab91c3fb186daba70f0305dedd"
+    },
+    {
+      "name": "textx-fon-system.regen.emf",
+      "sha256": "e7bd0db1b819e67982b1fb4b78008cf2c3f9e5e01cf519c8ad86b6ba6f51ce3b"
+    },
+    {
+      "name": "textx-fon-system.regen.extent.png",
+      "sha256": "11823c4a1e8a5cbae6812d4f188058db70e72129342edbcdc01e2151588e9904"
+    },
+    {
+      "name": "textx-fon-system.regen.png",
+      "sha256": "ba946b74374b989d1086fd8088ecff50ee6019f968d6ce3a1a9eec32987b3839"
+    }
+  ]
+}
