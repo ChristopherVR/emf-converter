@@ -770,7 +770,8 @@ export function drawGdiTextCall(
  * colour pairs, Arial 12 to 40 px, ClearType, ClearType natural and default quality, are all reproduced). A
  * channel's coverage is one of seven levels `k / 6`. The text colour and the destination are decoded through a
  * gamma 1.2 table (the system's font-smoothing contrast, 1200, divided by 1000) rounded to 8 bits, mixed as
- * `(decode[text] * k + decode[dst] * (6 - k)) / 6` rounded half up, and encoded through the inverse table.
+ * `(decode[text] * k + decode[dst] * (6 - k)) / 6` rounded to the nearest level, and encoded through the inverse table.
+ * Half ties round up except at 1/6 coverage with darker text or 5/6 coverage with lighter text.
  * A pixel with no coverage in any channel is untouched; one fully covered in all three takes the text colour;
  * every other pixel runs all three channels through the tables, so an uncovered channel of a partly covered
  * pixel round-trips (a 64 background becomes 65).
@@ -781,7 +782,10 @@ const CT_ENCODE = Uint8Array.from({ length: 256 }, (_, x) => Math.floor(255 * Ma
 
 /** Blends one channel of ClearType text `s` over `d` at coverage level `k` (0..6) of a partly covered pixel. */
 export function blendCtLevel(s: number, d: number, k: number): number {
-	return CT_ENCODE[Math.floor((CT_DECODE[s] * k + CT_DECODE[d] * (6 - k) + 3) / 6)];
+	const source = CT_DECODE[s];
+	const destination = CT_DECODE[d];
+	const roundDownTie = (k === 1 && source < destination) || (k === 5 && source > destination);
+	return CT_ENCODE[Math.floor((source * k + destination * (6 - k) + (roundDownTie ? 2 : 3)) / 6)];
 }
 
 /** The coverage level (0..6) of a ClearType channel alpha (0..255). */
