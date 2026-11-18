@@ -18,7 +18,7 @@ import {
 	MAX_RECORDS_EMFPLUS_DEFAULT,
 } from './emf-constants';
 import { argbToRgba } from './emf-color-helpers';
-import { emfLog } from './emf-logging';
+import { DEBUG_EMF, emfLog } from './emf-logging';
 import { createContinuationAccumulator, feedEmfPlusObjectRecord } from './emf-plus-continuation';
 import { handleEmfPlusCurveRecord } from './emf-plus-curve-handlers';
 import { handleEmfPlusDrawRecord } from './emf-plus-draw-handlers';
@@ -214,9 +214,9 @@ export function* replayEmfPlusRecordsSteps(
 
 	const end = offset + length;
 	let recordCount = 0;
-	const emfPlusRecordTypes = new Map<number, number>();
+	const emfPlusRecordTypes = DEBUG_EMF ? new Map<number, number>() : undefined;
 
-	emfLog(`replayEmfPlusRecords: offset=0x${offset.toString(16)}, length=${length}`);
+	if (DEBUG_EMF) emfLog(`replayEmfPlusRecords: offset=0x${offset.toString(16)}, length=${length}`);
 
 	while (offset + 12 <= end && recordCount < maxRecords) {
 		checkBudget();
@@ -232,7 +232,7 @@ export function* replayEmfPlusRecordsSteps(
 			break;
 		}
 		recordCount++;
-		emfPlusRecordTypes.set(recType, (emfPlusRecordTypes.get(recType) ?? 0) + 1);
+		if (emfPlusRecordTypes) emfPlusRecordTypes.set(recType, (emfPlusRecordTypes.get(recType) ?? 0) + 1);
 
 		const dataOff = offset + 12;
 
@@ -266,7 +266,7 @@ export function* replayEmfPlusRecordsSteps(
 					rCtx.dpiX = s.dpiX = validDpi(dpiX);
 					rCtx.dpiY = s.dpiY = validDpi(dpiY);
 					rCtx.videoDisplay = s.videoDisplay = (plusFlags & 0x0001) !== 0;
-					emfLog(`replayEmfPlusRecords: HEADER dpiX=${dpiX}, dpiY=${dpiY}, flags=0x${plusFlags.toString(16)}`);
+					if (DEBUG_EMF) emfLog(`replayEmfPlusRecords: HEADER dpiX=${dpiX}, dpiY=${dpiY}, flags=0x${plusFlags.toString(16)}`);
 				}
 				break;
 			}
@@ -352,22 +352,23 @@ export function* replayEmfPlusRecordsSteps(
 		);
 	}
 
-	// Log summary
-	const summary: string[] = [];
-	for (const [type, cnt] of emfPlusRecordTypes) {
-		summary.push(`${EMFPLUS_REC_NAMES[type] ?? `0x${type.toString(16)}`}:${cnt}`);
+	if (emfPlusRecordTypes) {
+		const summary: string[] = [];
+		for (const [type, cnt] of emfPlusRecordTypes) {
+			summary.push(`${EMFPLUS_REC_NAMES[type] ?? `0x${type.toString(16)}`}:${cnt}`);
+		}
+		emfLog(`replayEmfPlusRecords: ${recordCount} records processed: ${summary.join(', ')}`);
+		emfLog(
+			`replayEmfPlusRecords: totalImageObjects=${rCtx.totalImageObjects}, totalDrawImageCalls=${rCtx.totalDrawImageCalls}, deferredImages=${rCtx.deferredImages.length}`,
+		);
+		emfLog(
+			`replayEmfPlusRecords: object table has ${rCtx.objectTable.size} entries: [${Array.from(
+				rCtx.objectTable.entries(),
+			)
+				.map(([id, obj]) => `${id}:${obj.kind}`)
+				.join(', ')}]`,
+		);
 	}
-	emfLog(`replayEmfPlusRecords: ${recordCount} records processed: ${summary.join(', ')}`);
-	emfLog(
-		`replayEmfPlusRecords: totalImageObjects=${rCtx.totalImageObjects}, totalDrawImageCalls=${rCtx.totalDrawImageCalls}, deferredImages=${rCtx.deferredImages.length}`,
-	);
-	emfLog(
-		`replayEmfPlusRecords: object table has ${rCtx.objectTable.size} entries: [${Array.from(
-			rCtx.objectTable.entries(),
-		)
-			.map(([id, obj]) => `${id}:${obj.kind}`)
-			.join(', ')}]`,
-	);
 
 	// Persist state for next EMR_COMMENT continuation
 	if (state) {

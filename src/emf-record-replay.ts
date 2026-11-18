@@ -24,7 +24,7 @@ import { handleEmfGdiPolyPathRecord } from './emf-gdi-poly-path-handlers';
 import { flushRasterLayer, isLayerSafeRecord } from './emf-gdi-raster-layer';
 import { handleEmfGdiStateRecord } from './emf-gdi-state-handlers';
 import { parseEmfHeader } from './emf-header-parser';
-import { emfLog } from './emf-logging';
+import { DEBUG_EMF, emfLog } from './emf-logging';
 import { registerNestedMetafileReplayer } from './emf-plus-draw-image';
 import { replayEmfPlusRecordsSteps } from './emf-plus-replay';
 import { checkBudget, runToEnd, yieldDue } from './abort-budget';
@@ -106,9 +106,11 @@ export function* replayEmfRecordsSteps(
 	dpiScale: number = 1,
 	replayOptions: ReplayOptions = {},
 ): Generator<void, DeferredImageDraw[]> {
-	emfLog(
-		`replayEmfRecords: bounds=(${bounds.left},${bounds.top})→(${bounds.right},${bounds.bottom}), canvas=${canvasW}×${canvasH}`,
-	);
+	if (DEBUG_EMF) {
+		emfLog(
+			`replayEmfRecords: bounds=(${bounds.left},${bounds.top})→(${bounds.right},${bounds.bottom}), canvas=${canvasW}×${canvasH}`,
+		);
+	}
 
 	const allDeferredImages: DeferredImageDraw[] = [];
 	const emfPlusState = createEmfPlusState();
@@ -137,9 +139,11 @@ export function* replayEmfRecordsSteps(
 		-bounds.top * sy,
 	];
 	emfPlusState.nestingDepth = replayOptions.nestingDepth;
-	emfLog(
-		`replayEmfRecords: logical=${logicalW}×${logicalH}, scale=(${sx.toFixed(4)},${sy.toFixed(4)})`,
-	);
+	if (DEBUG_EMF) {
+		emfLog(
+			`replayEmfRecords: logical=${logicalW}×${logicalH}, scale=(${sx.toFixed(4)},${sy.toFixed(4)})`,
+		);
+	}
 
 	// Build the replay context
 	const rCtx: EmfGdiReplayCtx = {
@@ -176,7 +180,7 @@ export function* replayEmfRecordsSteps(
 	const maxOffset = view.byteLength;
 	let recordCount = 0;
 	let emfPlusCommentCount = 0;
-	const gdiRecordTypes = new Map<number, number>();
+	const gdiRecordTypes = DEBUG_EMF ? new Map<number, number>() : undefined;
 
 	while (offset + 8 <= maxOffset && recordCount < maxRecords) {
 		checkBudget();
@@ -191,7 +195,7 @@ export function* replayEmfRecordsSteps(
 		recordCount++;
 
 		const dataOff = offset + 8;
-		gdiRecordTypes.set(recType, (gdiRecordTypes.get(recType) ?? 0) + 1);
+		if (gdiRecordTypes) gdiRecordTypes.set(recType, (gdiRecordTypes.get(recType) ?? 0) + 1);
 
 		// --- inlined records (comment, EOF, ignored) ---
 		if (recType === EMR_COMMENT) {
@@ -200,10 +204,12 @@ export function* replayEmfRecordsSteps(
 				const sig = view.getUint32(dataOff + 4, true);
 				if (sig === EMFPLUS_SIGNATURE && commentDataSize > 4) {
 					flushRasterLayer(rCtx);
-					emfPlusCommentCount++;
-					emfLog(
-						`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} at offset 0x${offset.toString(16)}, dataSize=${commentDataSize}`,
-					);
+					if (DEBUG_EMF) {
+						emfPlusCommentCount++;
+						emfLog(
+							`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} at offset 0x${offset.toString(16)}, dataSize=${commentDataSize}`,
+						);
+					}
 					const deferred = yield* replayEmfPlusRecordsSteps(
 						view,
 						dataOff + 8,
@@ -218,19 +224,22 @@ export function* replayEmfRecordsSteps(
 						replayOptions.textureCache,
 						replayOptions.fonts,
 					);
-					emfLog(
-						`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} returned ${deferred.length} deferred images`,
-					);
+					if (DEBUG_EMF) {
+						emfLog(
+							`replayEmfRecords: EMF+ comment #${emfPlusCommentCount} returned ${deferred.length} deferred images`,
+						);
+					}
 					allDeferredImages.push(...deferred);
-				} else if (sig === EMR_COMMENT_PUBLIC_SIGNATURE) {
-					emfLog(
-						`replayEmfRecords: EMR_COMMENT_PUBLIC at offset 0x${offset.toString(16)}, size=${commentDataSize}`,
-					);
-				} else {
-					// Could be spool or other comment type
-					emfLog(
-						`replayEmfRecords: EMR_COMMENT (sig=0x${sig.toString(16).padStart(8, '0')}) at offset 0x${offset.toString(16)}, size=${commentDataSize}`,
-					);
+				} else if (DEBUG_EMF) {
+					if (sig === EMR_COMMENT_PUBLIC_SIGNATURE) {
+						emfLog(
+							`replayEmfRecords: EMR_COMMENT_PUBLIC at offset 0x${offset.toString(16)}, size=${commentDataSize}`,
+						);
+					} else {
+						emfLog(
+							`replayEmfRecords: EMR_COMMENT (sig=0x${sig.toString(16).padStart(8, '0')}) at offset 0x${offset.toString(16)}, size=${commentDataSize}`,
+						);
+					}
 				}
 			}
 			offset += recSize;
@@ -238,15 +247,17 @@ export function* replayEmfRecordsSteps(
 		}
 
 		if (recType === EMR_EOF) {
-			emfLog(`replayEmfRecords: EMR_EOF reached after ${recordCount} records`);
-			const summary: string[] = [];
-			for (const [type, count] of gdiRecordTypes) {
-				summary.push(`${GDI_NAMES[type] ?? `0x${type.toString(16)}`}:${count}`);
+			if (gdiRecordTypes) {
+				emfLog(`replayEmfRecords: EMR_EOF reached after ${recordCount} records`);
+				const summary: string[] = [];
+				for (const [type, count] of gdiRecordTypes) {
+					summary.push(`${GDI_NAMES[type] ?? `0x${type.toString(16)}`}:${count}`);
+				}
+				emfLog('replayEmfRecords: GDI record summary:', summary.join(', '));
+				emfLog(
+					`replayEmfRecords: total deferred images = ${allDeferredImages.length}, EMF+ object table size = ${emfPlusState.objectTable.size}`,
+				);
 			}
-			emfLog('replayEmfRecords: GDI record summary:', summary.join(', '));
-			emfLog(
-				`replayEmfRecords: total deferred images = ${allDeferredImages.length}, EMF+ object table size = ${emfPlusState.objectTable.size}`,
-			);
 			break;
 		}
 

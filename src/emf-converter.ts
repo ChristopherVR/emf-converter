@@ -40,7 +40,7 @@ import { decodeDibToImageData } from './emf-dib-decoder';
 import type { GdiFontCollection } from './gdi-font-engine';
 import { decodeBmpFile, payloadSize, sniffImageMime } from './emf-image-payload';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
-import { emfLog, emfWarn } from './emf-logging';
+import { DEBUG_EMF, emfLog, emfWarn } from './emf-logging';
 import { resampleImage } from './emf-plus-image-resample';
 import { preDecodeEmfPlusImages } from './emf-plus-image-predecode';
 import { preDecodeEmfPlusTextures } from './emf-plus-texture-predecode';
@@ -314,7 +314,7 @@ async function replayMetafile(
 	createSurface: SurfaceFactory,
 ): Promise<{ surface: Surface; deferredImages: DeferredImageDraw[] } | null> {
 	emfLog(`replayMetafile: input buffer ${buffer.byteLength} bytes`);
-	if (buffer.byteLength >= 16) {
+	if (DEBUG_EMF && buffer.byteLength >= 16) {
 		const hdrBytes = new Uint8Array(buffer, 0, 16);
 		emfLog(
 			`replayMetafile: first 16 bytes: [${Array.from(hdrBytes)

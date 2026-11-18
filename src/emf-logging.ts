@@ -2,7 +2,7 @@
  * Debug logging for the EMF/WMF converter.
  */
 
-const DEBUG_EMF = false;
+export const DEBUG_EMF = false;
 
 export const emfLog = (...args: unknown[]): void => {
 	if (DEBUG_EMF) {
