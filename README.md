@@ -239,7 +239,7 @@ When the signal aborts, the promise rejects with `signal.reason` (an `AbortError
 
 ### Browser bundle size
 
-The full browser build loads embedded image decoders, the exact text engine, and Windows color data when a conversion needs them. A production Vite app that imports only `convertMetafileToDataUrl` loads about 175 kB gzip through its first ordinary PNG conversion. Files that need additional decoders or color tables load extra chunks.
+The full browser build loads embedded image decoders, the exact text engine, and Windows color data when a conversion needs them. A production Vite app that imports only `convertMetafileToDataUrl` loads about 179 kB gzip through its first ordinary PNG conversion. Files that need additional decoders or color tables load extra chunks.
 
 If you serve the package files directly, deploy `dist/browser-chunks/` beside the browser entry file and preserve their relative paths. For a Node deployment that copies the compiled files, keep `dist/node-chunks/` beside the Node entry files. Package managers and bundlers resolve these files when you import `emf-converter` normally.
 
