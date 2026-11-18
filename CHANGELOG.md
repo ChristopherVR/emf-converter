@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [4.29.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.29.1) - 2026-11-18
+
+### Bug Fixes
+
+- **emf-plus:** Match the horizontal phase of gradient tiles ([3be3db3](https://github.com/ChristopherVR/emf-converter/commit/3be3db39ed611029c855aede0e2b2db8028d3ad0))
+- **emf-plus:** Match unit-height bilinear crop edges ([ac06953](https://github.com/ChristopherVR/emf-converter/commit/ac0695354888a3aa64213eb7dca162e7700347f8))
+- **emf-plus:** Align and trim grid-fitted paragraphs ([e1d0a0a](https://github.com/ChristopherVR/emf-converter/commit/e1d0a0a747e80c4eed5d5117e6bfb7f057c7e17c))
+- **gdi:** Round ClearType blend half ties like Windows ([dd7761e](https://github.com/ChristopherVR/emf-converter/commit/dd7761eeff3493cfa4f40889f2b1969b97172373))
+- **gdi:** Close the remaining Windows picture differences ([770ccef](https://github.com/ChristopherVR/emf-converter/commit/770ccefd9f6e031baac18e35b7196af0ec433798))
+
+### Testing
+
+- **gdi:** Compare every colored ClearType pixel ([aad6dcd](https://github.com/ChristopherVR/emf-converter/commit/aad6dcdc48441f98cbcbee982b253f0439e1815b))
+- **gdi:** Cover the final eight clipped Windows references ([a1771aa](https://github.com/ChristopherVR/emf-converter/commit/a1771aaa774590d22c8ab553920f83b755f7f71b))
+
 ## [4.29.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v4.29.0) - 2026-11-14
 
 ### Features
