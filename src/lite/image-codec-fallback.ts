@@ -6,6 +6,6 @@
  */
 export const BUNDLED_IMAGE_CODECS = false;
 
-export function decodeImageCodecFallback(_bytes: Uint8Array): { data: Uint8ClampedArray; width: number; height: number } | null {
+export async function decodeImageCodecFallback(_bytes: Uint8Array): Promise<null> {
 	return null;
 }

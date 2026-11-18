@@ -22,7 +22,7 @@ import { flushRasterLayer } from './emf-gdi-raster-layer';
 import { brushPaint } from './emf-gdi-raster-shapes';
 import { surfaceSize } from './emf-rop2-exact';
 import { SpanList } from './gdi-raster';
-import { canReadBack } from './svg-context';
+import { canReadBack } from './svg-capabilities';
 import { resolveColorRef } from './wmf-objects';
 import type { WmfPlayer } from './wmf-player';
 import { deviceRect } from './wmf-region';

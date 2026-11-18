@@ -96,7 +96,7 @@ import {
 	type GdiRasterPath,
 	type StyleState,
 } from './gdi-raster';
-import { isSvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
 
 /**
  * Canvas-pixel shift that samples a fill at GDI's pixel centres with GDI's

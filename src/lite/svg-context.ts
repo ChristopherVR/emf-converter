@@ -7,11 +7,3 @@ export class SvgContext {
 		throw new Error('SVG output is not part of the emf-converter lite build');
 	}
 }
-
-export function isSvgContext(_ctx: unknown): _ctx is SvgContext {
-	return false;
-}
-
-export function canReadBack(_ctx: unknown): boolean {
-	return true;
-}

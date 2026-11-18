@@ -39,7 +39,7 @@ import { acquireScratch, compositeOverlay, rop2Rop3Index, surfaceSize } from './
 import { evalRop3 } from './emf-rop3';
 import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
 import type { SpanList } from './gdi-raster';
-import { canReadBack, isSvgContext } from './svg-context';
+import { canReadBack, isSvgContext } from './svg-capabilities';
 
 /** What each covered pixel is painted with (before the ROP2 combine). */
 export type RasterPaint =

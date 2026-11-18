@@ -42,7 +42,7 @@ describe('encodeJpeg', () => {
 		[7, 5, true],
 		[16, 16, true],
 		[33, 17, true],
-	])('round-trips a %sx%s image (4:2:0 %s) through two independent decoders', (w, h, sub) => {
+	])('round-trips a %sx%s image (4:2:0 %s) through two independent decoders', async (w, h, sub) => {
 		// 4:2:0 averages colour over 2 x 2 pixels, so its image has no steep colour detail.
 		const src = testImage(w, h, 255, !sub);
 		const jpeg = encodeJpeg(src, w, h, { chromaSubsampling: sub });
@@ -51,7 +51,7 @@ describe('encodeJpeg', () => {
 		const viaJs = jpegJs.decode(jpeg, { useTArray: true, formatAsRGBA: true });
 		expect([viaJs.width, viaJs.height]).toEqual([w, h]);
 		expect(psnr(src, viaJs.data)).toBeGreaterThan(30);
-		const viaTurbo = decodeJpegTurbo(jpeg);
+		const viaTurbo = await decodeJpegTurbo(jpeg);
 		expect(viaTurbo).not.toBeNull();
 		expect([viaTurbo!.width, viaTurbo!.height]).toEqual([w, h]);
 		expect(psnr(src, viaTurbo!.data)).toBeGreaterThan(30);

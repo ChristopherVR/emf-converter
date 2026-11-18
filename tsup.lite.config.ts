@@ -15,6 +15,7 @@ export const LITE_MODULES = [
 	'image-codec-fallback',
 	'jpeg-encoder',
 	'software-raster',
+	'svg-capabilities',
 	'svg-context',
 	'webp-encoder',
 ];

@@ -21,9 +21,6 @@
  */
 
 import { effectedDraw } from './emf-plus-draw-image';
-import { encodePng } from './png-encoder';
-import { encodeJpeg } from './jpeg-encoder';
-import { encodeWebp } from './webp-encoder';
 import {
 	canvasDrawImage,
 	canvasGetImageData,
@@ -40,7 +37,7 @@ import {
 	type Drawable,
 } from './emf-canvas-helpers';
 import { decodeDibToImageData } from './emf-dib-decoder';
-import { GdiFontCollection } from './gdi-font-engine';
+import type { GdiFontCollection } from './gdi-font-engine';
 import { decodeBmpFile, payloadSize, sniffImageMime } from './emf-image-payload';
 import { parseEmfHeader, getRenderableEmfBounds, parseWmfHeader } from './emf-header-parser';
 import { emfLog, emfWarn } from './emf-logging';
@@ -48,11 +45,11 @@ import { resampleImage } from './emf-plus-image-resample';
 import { preDecodeEmfPlusImages } from './emf-plus-image-predecode';
 import { preDecodeEmfPlusTextures } from './emf-plus-texture-predecode';
 import { replayEmfRecordsSteps } from './emf-record-replay';
+import { prepareWmfReplayData } from './replay-data-preflight';
 import { BUDGET, Budget, budgetFor, runSliced, runSync } from './abort-budget';
 import type { AnyCanvas, CanvasContext, DeferredImageDraw, DeferredImageResample } from './emf-types';
 import { SoftwareRasterCanvas } from './software-raster';
-import { SvgContext } from './svg-context';
-import type { ImagePayload } from './svg-context';
+import type { ImagePayload, SvgContext } from './svg-context';
 import { bytesToBase64, svgMarkupToDataUrl, svgTreeToDataUrl, svgTreeToString } from './svg-tree';
 import type { SvgNode } from './svg-tree';
 import { readMetafileInput, type MetafileInput } from './metafile-input';
@@ -368,7 +365,7 @@ async function replayMetafile(
 			const textureCache = await preDecodeEmfPlusTextures(view);
 			// Likewise every EMF+ Image object, so DrawImage paints in record order
 			// under the clip active at that record (emf-plus-draw-image.ts).
-			const imageCache = await preDecodeEmfPlusImages(view);
+			const imageCache = await preDecodeEmfPlusImages(view, 0, { maxRecords: opts.maxRecords, budget });
 			budget?.check();
 			const renderBounds = getRenderableEmfBounds(emfHeader);
 			if (!renderBounds) {
@@ -399,7 +396,7 @@ async function replayMetafile(
 					textureCache,
 					imageCache,
 					gdiAntialias: opts.gdiAntialias,
-					fonts: fontCollection(opts),
+					fonts: await fontCollection(opts),
 				},
 			));
 			// Clears any clipping regions record handlers installed.
@@ -425,6 +422,7 @@ async function replayMetafile(
 			emfLog('replayMetafile: invalid WMF dimensions');
 			return null;
 		}
+		await prepareWmfReplayData(view, header.headerSize, { maxRecords: opts.maxRecords, budget });
 		// The picture's size on the configured reference device (wmf-mapping.ts).
 		const playback = wmfPlayback(view, header, opts.wmfReferenceDpi);
 		const surface = createSurface(playback.width, playback.height);
@@ -439,7 +437,7 @@ async function replayMetafile(
 			maxRecords: opts.maxRecords,
 			fontFamilyMap: opts.fontFamilyMap,
 			gdiAntialias: opts.gdiAntialias,
-			fonts: fontCollection(opts),
+			fonts: await fontCollection(opts),
 		}));
 		surface.ctx.restore();
 		return { surface, deferredImages: [] };
@@ -452,10 +450,11 @@ async function replayMetafile(
 }
 
 /** The parsed `fonts` option (cached per array), or undefined without one. */
-function fontCollection(opts: EmfConvertOptions): GdiFontCollection | undefined {
+async function fontCollection(opts: EmfConvertOptions): Promise<GdiFontCollection | undefined> {
 	if (!opts.fonts || opts.fonts.length === 0) {
 		return undefined;
 	}
+	const { GdiFontCollection } = await import('./gdi-font-engine');
 	const collection = GdiFontCollection.for(opts.fonts, opts.fontSmoothing ?? 'cleartype');
 	return collection.size > 0 ? collection : undefined;
 }
@@ -545,7 +544,7 @@ async function processDeferredImages(
 					emfWarn(`  Deferred image [${idx}]: skipping embedded metafile, recursion depth ${recursionDepth}`);
 					continue;
 				}
-				const nested = await convertMetafile(plainBuffer, withBudget<ConvertOptions>({ format: 'png' }, budget), recursionDepth + 1);
+				const nested = await convertPng(plainBuffer, withBudget({}, budget), recursionDepth + 1);
 				if (!nested) {
 					emfWarn(`  Deferred image [${idx}]: metafile conversion returned null`);
 					complete = false;
@@ -559,6 +558,7 @@ async function processDeferredImages(
 				if (pixels) {
 					const effected = effectedDraw({ kind: 'plus-image', type: 1, data: img.imageData }, { kind: 'bitmap', rgba: pixels.data, width: pixels.width, height: pixels.height }, img.effect, img, img.effectSource);
 					if (effected) {
+						const { encodePng } = await import('./png-encoder');
 						bytes = toPlainBuffer((await encodePng(effected.bitmap.rgba, effected.bitmap.width, effected.bitmap.height)).buffer);
 						img = effected.draw;
 						ctx.setTransform(...img.transform);
@@ -664,29 +664,31 @@ export async function convertMetafile(
 		budget?.check();
 		return { format, mimeType: MIME_TYPES.svg, data: new TextEncoder().encode(markup), width: svg.canvas.width, height: svg.canvas.height };
 	}
+	if (options?.format === 'jpeg') return convertJpeg(input, options, recursionDepth);
+	if (options?.format === 'webp') return convertWebp(input, options, recursionDepth);
+	return convertPng(input, options, recursionDepth);
+}
+
+type RasterFormat = Exclude<MetafileOutputFormat, 'svg'>;
+type RasterEncoder = (image: RgbaImage, budget: Budget | null) => Promise<Uint8Array>;
+
+async function encodeRaster(
+	input: MetafileInput,
+	options: EmfConvertOptions | undefined,
+	recursionDepth: number,
+	format: RasterFormat,
+	encode: RasterEncoder,
+): Promise<ConvertedImage | null> {
+	const budget = budgetFor(options);
+	options = withBudget(options, budget);
 	const image = await convertMetafileToImageData(input, options, recursionDepth);
 	if (!image) {
 		return null;
 	}
 	try {
-		const { data: pixels, width, height } = image;
-		let data: Uint8Array;
-		if (format === 'jpeg') {
-			const jpegOptions = options as JpegConvertOptions;
-			data = runSync(budget, () => encodeJpeg(pixels, width, height, {
-				quality: jpegOptions.quality,
-				background: parseBackground(jpegOptions.background),
-				chromaSubsampling: jpegOptions.chromaSubsampling,
-			}));
-		} else if (format === 'webp') {
-			const webpOptions = options as WebpConvertOptions;
-			data = runSync(budget, () => encodeWebp(pixels, width, height, {
-				lossy: webpOptions.lossless === false,
-				quality: webpOptions.quality,
-			}));
-		} else {
-			data = await runSync(budget, () => encodePng(pixels, width, height));
-		}
+		const { width, height } = image;
+		budget?.check();
+		const data = await encode(image, budget);
 		budget?.check();
 		return { format, mimeType: MIME_TYPES[format], data, width, height };
 	} catch (err) {
@@ -695,6 +697,34 @@ export async function convertMetafile(
 		console.warn('[emf-converter] Conversion failed:', err instanceof Error ? err.message : err);
 		return null;
 	}
+}
+
+function convertPng(input: MetafileInput, options?: EmfConvertOptions, depth = 0): Promise<ConvertedImage | null> {
+	return encodeRaster(input, options, depth, 'png', async ({ data, width, height }, budget) => {
+		const { encodePng } = await import('./png-encoder');
+		return runSync(budget, () => encodePng(data, width, height));
+	});
+}
+
+function convertJpeg(input: MetafileInput, options?: JpegConvertOptions, depth = 0): Promise<ConvertedImage | null> {
+	return encodeRaster(input, options, depth, 'jpeg', async ({ data, width, height }, budget) => {
+		const { encodeJpeg } = await import('./jpeg-encoder');
+		return runSync(budget, () => encodeJpeg(data, width, height, {
+			quality: options?.quality,
+			background: parseBackground(options?.background),
+			chromaSubsampling: options?.chromaSubsampling,
+		}));
+	});
+}
+
+function convertWebp(input: MetafileInput, options?: WebpConvertOptions, depth = 0): Promise<ConvertedImage | null> {
+	return encodeRaster(input, options, depth, 'webp', async ({ data, width, height }, budget) => {
+		const { encodeWebp } = await import('./webp-encoder');
+		return runSync(budget, () => encodeWebp(data, width, height, {
+			lossy: options?.lossless === false,
+			quality: options?.quality,
+		}));
+	});
 }
 
 /**
@@ -760,7 +790,7 @@ export async function convertMetafileToImageData(
  * @returns A `data:image/png;base64,...` string, or `null` on failure.
  */
 export async function convertMetafileToDataUrl(input: MetafileInput, options?: EmfConvertOptions): Promise<string | null> {
-	return toDataUrl(await convertMetafile(input, { ...options, format: 'png' }));
+	return toDataUrl(await convertPng(input, { ...options }));
 }
 
 /**
@@ -781,7 +811,7 @@ export async function convertMetafileToJpegDataUrl(
 	input: MetafileInput,
 	options?: JpegConvertOptions,
 ): Promise<string | null> {
-	return toDataUrl(await convertMetafile(input, { ...options, format: 'jpeg' }));
+	return toDataUrl(await convertJpeg(input, { ...options }));
 }
 
 function toDataUrl(image: ConvertedImage | null): string | null {
@@ -806,7 +836,7 @@ export async function convertMetafileToWebpDataUrl(
 	input: MetafileInput,
 	options?: WebpConvertOptions,
 ): Promise<string | null> {
-	return toDataUrl(await convertMetafile(input, { ...options, format: 'webp' }));
+	return toDataUrl(await convertWebp(input, { ...options }));
 }
 
 /** Parses a `#rgb` / `#rrggbb` background colour; anything else is white. */
@@ -964,6 +994,7 @@ async function processDeferredImagesSvg(
 				if (pixels) {
 					const effected = effectedDraw({ kind: 'plus-image', type: 1, data: img.imageData }, { kind: 'bitmap', rgba: pixels.data, width: pixels.width, height: pixels.height }, img.effect, img, img.effectSource);
 					if (effected) {
+						const { encodePng } = await import('./png-encoder');
 						bytes = toPlainBuffer((await encodePng(effected.bitmap.rgba, effected.bitmap.width, effected.bitmap.height)).buffer);
 						img = effected.draw;
 					}
@@ -1090,6 +1121,7 @@ export async function replayToSvgContext(
 	const idPrefix = opts.idPrefix ?? `emf${documentNumber}-`;
 	let svg: SvgContext | null = null;
 	try {
+		const { SvgContext } = await import('./svg-context');
 		const result = await replayMetafile(buffer, opts, (lw, lh) => {
 			const size = computeSurfaceSize(lw, lh, opts.maxWidth, opts.maxHeight, dpiScale, opts.maxCanvasDimension);
 			const shadow =

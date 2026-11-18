@@ -35,7 +35,7 @@ import { rewritePixels } from './emf-rop2-exact';
 import { applyRop3, classifyRop3, clampPositiveRect, evalRop3, rop3Index, rop3Operands } from './emf-rop3';
 import type { Rop3Pattern, Rop3Plan } from './emf-rop3';
 import type { CanvasContext, EmfGdiReplayCtx } from './emf-types';
-import { canReadBack } from './svg-context';
+import { canReadBack } from './svg-capabilities';
 
 /** A decoded blit: destination rect (canvas px, may be negative) and optional source. */
 interface BlitRequest {

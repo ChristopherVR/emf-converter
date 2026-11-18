@@ -53,7 +53,7 @@ import {
 } from './emf-constants';
 import { evalRop3 } from './emf-rop3';
 import type { CanvasContext } from './emf-types';
-import { canReadBack, isSvgContext } from './svg-context';
+import { canReadBack, isSvgContext } from './svg-capabilities';
 
 /** ROP3-style truth-table index (bits 16..23 convention), S-independent, per bitwise ROP2 mode. */
 const ROP2_EXACT_INDEX: Record<number, number> = {

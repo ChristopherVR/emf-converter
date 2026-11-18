@@ -23,7 +23,8 @@ import { gdiplusFix, nominalLineCoverage } from './emf-plus-nominal-line';
 import { blendGrayChannel } from './gdi-gray-blend';
 import { snapClearTypeLevels } from './gdi-cleartype-levels';
 import type { GdiFontCollection, GdiRealizedFont, LogFontSpec } from './gdi-font-engine';
-import { isSvgContext, type SvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
+import type { SvgContext } from './svg-context';
 import type { CanvasContext, DrawState, TransformMatrix } from './emf-types';
 
 /** ExtTextOut option flags. */

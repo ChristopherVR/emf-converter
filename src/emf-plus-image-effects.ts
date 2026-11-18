@@ -47,7 +47,7 @@
  * @module emf-plus-image-effects
  */
 
-import { nativeCurveLookup } from './emf-plus-image-curves';
+import { nativeCurveLookup } from './replay-data';
 import { truncF32 } from './emf-plus-linear-ramp';
 
 /** A rectangle in image pixels, right and bottom exclusive (a RECTL). */

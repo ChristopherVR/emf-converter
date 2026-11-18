@@ -1,5 +1,5 @@
 import { OEM437_HIGH, OEM_HIGH } from './emf-ansi-tables';
-import { JOHAB_ROWS } from './emf-ansi-johab';
+import { johabRow } from './replay-data';
 import type { TextCodePages } from './emf-types';
 
 /** Windows-1252 mapping used by the EMF/WMF ANSI text records. */
@@ -62,7 +62,7 @@ export function decodeAnsiRecord(bytes: readonly number[], charSet: number, code
 		const byteLengths: number[] = [];
 		for (let i = 0; i < bytes.length; i++) {
 			const lead = bytes[i];
-			const row = JOHAB_ROWS[lead];
+			const row = johabRow(lead);
 			const code = row && i + 1 < bytes.length ? row.charCodeAt(bytes[i + 1]) : 0xfffd;
 			const count = lead < 128 || code === 0xfffd ? 1 : 2;
 			codes.push(lead < 128 ? lead : code);

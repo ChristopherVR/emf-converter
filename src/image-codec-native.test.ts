@@ -105,7 +105,7 @@ it('draws nothing for a 12-bit JPEG, as GDI+ does ("Unsupported JPEG data precis
 	await ensureNodeCanvasModule();
 	const bytes = new Uint8Array(readFileSync(new URL('./__fixtures__/gdi/codec-jpeg-12bit.bin', import.meta.url)));
 	expect(await decodeDeferredImageBytes(bytes.buffer)).toBeNull();
-	expect(() => decodeJpegPixels(bytes)).toThrow();
+	await expect(decodeJpegPixels(bytes)).rejects.toThrow();
 	expect(sniffImageMime(bytes)).toBeNull();
 	// An EMF+ DrawImage of that file leaves the white surface untouched in GDI+'s playback and in ours.
 	const rendered = (await renderFixture('codec-jpeg-12bit-playback.emf'))!;
@@ -142,8 +142,8 @@ it.each(arithFixtures.filter(name => !arithIsFourComponent(name)))('decodes arit
 // as the Huffman-coded copy of those coefficients, and GDI+ must accept it.
 it.each(arithFixtures.filter(name => arithIsFourComponent(name)))('decodes four-component arithmetic JPEG %s like its Huffman copy', async name => {
 	const read = (file: string) => new Uint8Array(readFileSync(new URL(`./__fixtures__/gdi/${file}`, import.meta.url)));
-	const arithmetic = decodeJpegPixels(read(`codec-jpeg-${name}.bin`));
-	const huffman = decodeJpegPixels(read(`codec-jpeg-${name}-huffman.bin`));
+	const arithmetic = await decodeJpegPixels(read(`codec-jpeg-${name}.bin`));
+	const huffman = await decodeJpegPixels(read(`codec-jpeg-${name}-huffman.bin`));
 	expect(arithmetic.width).toBe(37);
 	expect(Array.from(arithmetic.data)).toEqual(Array.from(huffman.data));
 	const native = (await decodePng(read(`codec-jpeg-${name}.png`)))!;

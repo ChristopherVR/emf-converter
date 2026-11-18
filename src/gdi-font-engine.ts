@@ -51,6 +51,7 @@ import { parseFontFile, type TtfFont } from './ttf-font';
 import { DEFAULT_DROPOUT_PPEM, HintedSize, type HintedGlyph } from './ttf-hinting';
 import { msGrayBitmap, msMonoBitmap, msScanFlags } from './ttf-msscan';
 import { snapClearTypeLevels } from './gdi-cleartype-levels';
+import { ANTIALIASED_QUALITY, CLEARTYPE_NATURAL_QUALITY, CLEARTYPE_QUALITY, DRAFT_QUALITY, NONANTIALIASED_QUALITY, PROOF_QUALITY } from './gdi-font-quality';
 import { dropoutMode, rasterizeGray, rasterizeMono, rasterizeSamples, type GlyphBitmap, type Outline } from './ttf-raster';
 
 /** Raw bytes of a `.ttf` or `.ttc` file. */
@@ -59,14 +60,7 @@ export type FontSource = ArrayBuffer | ArrayBufferView;
 /** How glyphs are rendered: 1-bit, 17-level grayscale, or ClearType. */
 export type GdiTextMode = 'mono' | 'gray' | 'cleartype';
 
-/** LOGFONT quality constants. */
-export const DEFAULT_QUALITY = 0;
-export const DRAFT_QUALITY = 1;
-export const PROOF_QUALITY = 2;
-export const NONANTIALIASED_QUALITY = 3;
-export const ANTIALIASED_QUALITY = 4;
-export const CLEARTYPE_QUALITY = 5;
-export const CLEARTYPE_NATURAL_QUALITY = 6;
+export { DEFAULT_QUALITY, DRAFT_QUALITY, PROOF_QUALITY, NONANTIALIASED_QUALITY, ANTIALIASED_QUALITY, CLEARTYPE_QUALITY, CLEARTYPE_NATURAL_QUALITY } from './gdi-font-quality';
 
 /** A LOGFONT with its sizes already mapped to device pixels. */
 export interface LogFontSpec {

@@ -60,7 +60,7 @@ import { emfWarn } from './emf-logging';
 import { acquireScratch, compositeOverlay, rewritePixels, type PixelBox } from './emf-rop2-exact';
 import { evalRop3, rop3Operands } from './emf-rop3';
 import type { EmfGdiReplayCtx } from './emf-types';
-import { canReadBack } from './svg-context';
+import { canReadBack } from './svg-capabilities';
 
 // ---------------------------------------------------------------------------
 // Sources

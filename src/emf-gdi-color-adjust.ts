@@ -15,7 +15,7 @@
  * Each stage works on one pixel's channels as 0..255 values, in this order:
  *
  *   1. `IlluminantIndex` 1..5, 7 and 8: a native colour cube (see
- *      {@link ILLUMINANT_CUBE_DATA}); 0 and 6 (D65) leave colours unchanged.
+ *      {@link illuminantData}); 0 and 6 (D65) leave colours unchanged.
  *      The cube is a linear map ({@link ILLUMINANT_MATRICES}, white stays
  *      white) whose out-of-range results are gamut-compressed like the chroma
  *      stage's. With colorfulness or tint Windows hands the unclamped matrix
@@ -47,8 +47,7 @@
  * @module emf-gdi-color-adjust
  */
 
-import { CHROMA_TIE_FLIPS } from './emf-gdi-chroma-tie-data';
-import { ILLUMINANT_CUBE_DATA } from './emf-gdi-illuminant-data';
+import { chromaTieFlips, illuminantData } from './replay-data';
 import { inflateZlibSync } from './png-decoder';
 import type { GdiColorAdjustment } from './emf-types';
 
@@ -87,7 +86,7 @@ const illuminantCubes = new Map<number, Uint8Array | null>();
 function illuminantCube(index: number): Uint8Array | null {
 	let cube = illuminantCubes.get(index);
 	if (cube === undefined) {
-		const encoded = ILLUMINANT_CUBE_DATA[index];
+		const encoded = illuminantData(index);
 		cube = null;
 		if (encoded) {
 			const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
@@ -327,14 +326,14 @@ const chromaTieTables = new Map<string, Int8Array | null>();
 /**
  * The measured one-level corrections of the chroma stage for a colorfulness / tint setting without an
  * illuminant, indexed `(cubeIndex * 3 + channel)`, or `null` when the setting was not measured (see
- * {@link CHROMA_TIE_FLIPS}).
+ * {@link chromaTieFlips}).
  */
 function chromaTieTable(ca: GdiColorAdjustment): Int8Array | null {
 	if (ca.illuminant !== 0 && ca.illuminant !== 6) return null;
 	const key = `${ca.colorfulness},${ca.redGreenTint}`;
 	let table = chromaTieTables.get(key);
 	if (table === undefined) {
-		const flips = CHROMA_TIE_FLIPS[key];
+		const flips = chromaTieFlips(key);
 		table = null;
 		if (flips) {
 			table = new Int8Array(32768 * 3);
@@ -364,7 +363,7 @@ function tieIndex(c: readonly number[]): number {
  * stages). Returns packed `0xRRGGBB` for packed `0xRRGGBB`.
  *
  * `options.chromaTies` (default true) applies the measured one-level corrections of the chroma stage to
- * palette colours of the settings in {@link CHROMA_TIE_FLIPS}; the generator of that table turns it off.
+ * palette colours of the settings in {@link chromaTieFlips}; the generator of that table turns it off.
  */
 export function colorAdjustmentMapper(ca: GdiColorAdjustment, options?: { chromaTies?: boolean }): (rgb: number) => number {
 	const illuminant = illuminantCube(ca.illuminant);

@@ -56,6 +56,7 @@ import { encodePng } from './png-encoder';
 import { PathBuilder, flattenPath, pointInPolylines, type PathSeg } from './canvas-path';
 import { SoftwareRasterCanvas, SoftwareRasterContext, isSoftwareRaster } from './software-raster';
 import { estimateTextWidth, parseFont } from './text-estimate';
+import { SVG_CONTEXT } from './svg-capabilities';
 import { bytesToBase64 } from './svg-tree';
 import type { SvgNode } from './svg-tree';
 import type { CanvasContext } from './emf-types';
@@ -485,6 +486,7 @@ interface PendingImage {
  * replay expects a 2D context, then call {@link SvgContext.toTree}.
  */
 export class SvgContext {
+	readonly [SVG_CONTEXT] = true;
 	/** Canvas-like handle (width/height), as `ctx.canvas` is used for surface size. */
 	readonly canvas: { width: number; height: number; svgContext: SvgContext };
 	/** Hidden raster mirror, when exact destination reads are available. */
@@ -1718,18 +1720,4 @@ export interface SvgGlyphRun {
 	italic: boolean;
 	aliased: boolean;
 	fill: string;
-}
-
-/** True when `ctx` is an {@link SvgContext}. */
-export function isSvgContext(ctx: unknown): ctx is SvgContext {
-	return ctx instanceof SvgContext;
-}
-
-/**
- * True when reading pixels back from `ctx` yields the real destination:
- * always for a raster canvas, and for an {@link SvgContext} only when it has
- * a shadow canvas.
- */
-export function canReadBack(ctx: unknown): boolean {
-	return !(ctx instanceof SvgContext) || ctx.canReadPixels;
 }

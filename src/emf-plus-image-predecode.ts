@@ -34,10 +34,12 @@ import { emfLog, emfWarn } from './emf-logging';
 import { parseEmfPlusImageObject } from './emf-plus-object-complex';
 import {
 	decodeCompressedBytesToRgba,
+	EMF_PLUS_SCAN_RECORD_LIMIT,
 	preDecodeEmfPlusTextures,
 	walkEmfPlusObjects,
 } from './emf-plus-texture-predecode';
 import type { EmfPlusImageCache, EmfPlusMetafileCaches } from './emf-types';
+import { observeEmfReplayData, prepareEmfReplayData, type ReplayDataOptions } from './replay-data-preflight';
 
 /** Deepest metafile-in-metafile nesting pre-decoded (matches the converter's recursion cap). */
 export const MAX_NESTED_METAFILE_DEPTH = 3;
@@ -51,12 +53,13 @@ interface ImageCandidate {
 
 /**
  * Pre-decodes every EMF+ Image object in `view` (see the module doc).
- * `depth` is the metafile nesting depth of `view` itself. Never throws:
- * a failed decode just leaves that image out of the cache.
+ * `depth` is the metafile nesting depth of `view` itself. A failed image
+ * decode leaves that image out of the cache.
  */
-export async function preDecodeEmfPlusImages(view: DataView, depth: number = 0): Promise<EmfPlusImageCache> {
+export async function preDecodeEmfPlusImages(view: DataView, depth: number = 0, options?: ReplayDataOptions): Promise<EmfPlusImageCache> {
 	const cache: EmfPlusImageCache = new Map();
 	const candidates: ImageCandidate[] = [];
+	const replayData = observeEmfReplayData(view, options);
 	try {
 		walkEmfPlusObjects(view, (obj) => {
 			const objectType = (obj.flags >> 8) & 0x7f;
@@ -67,10 +70,17 @@ export async function preDecodeEmfPlusImages(view: DataView, depth: number = 0):
 			if (parsed.data && parsed.data.byteLength > 0) {
 				candidates.push({ key: obj.cacheKey, type: parsed.type, data: parsed.data });
 			}
-		});
+		}, replayData?.observer);
 	} catch (err) {
+		options?.budget?.throwIfTripped();
 		emfWarn('preDecodeEmfPlusImages: scan failed:', err instanceof Error ? err.message : err);
+		if (replayData) await prepareEmfReplayData(null, options);
 		return cache;
+	}
+	if (replayData) {
+		// A raised replay limit can reach records outside the pre-decode scan.
+		const beyondScan = (options?.maxRecords ?? 0) > EMF_PLUS_SCAN_RECORD_LIMIT && view.byteLength >= EMF_PLUS_SCAN_RECORD_LIMIT * 8;
+		await prepareEmfReplayData(beyondScan ? null : replayData.needs, options);
 	}
 	for (const c of candidates) {
 		const nestedView = new DataView(c.data, 0, c.data.byteLength);
@@ -78,7 +88,7 @@ export async function preDecodeEmfPlusImages(view: DataView, depth: number = 0):
 			if (depth >= MAX_NESTED_METAFILE_DEPTH) {
 				continue;
 			}
-			cache.set(c.key, { kind: 'metafile', caches: await preDecodeMetafileCaches(nestedView, depth + 1) });
+			cache.set(c.key, { kind: 'metafile', caches: await preDecodeMetafileCaches(nestedView, depth + 1, options?.budget) });
 			continue;
 		}
 		const decoded = await decodeCompressedBytesToRgba(nestedView, 0, c.data.byteLength);
@@ -95,9 +105,9 @@ export async function preDecodeEmfPlusImages(view: DataView, depth: number = 0):
  * texture brush images and its Image objects (recursively for nested
  * metafiles). `depth` is the nesting depth of `view`.
  */
-export async function preDecodeMetafileCaches(view: DataView, depth: number = 0): Promise<EmfPlusMetafileCaches> {
+export async function preDecodeMetafileCaches(view: DataView, depth: number = 0, budget?: ReplayDataOptions['budget']): Promise<EmfPlusMetafileCaches> {
 	return {
 		textures: await preDecodeEmfPlusTextures(view),
-		images: await preDecodeEmfPlusImages(view, depth),
+		images: await preDecodeEmfPlusImages(view, depth, { budget }),
 	};
 }

@@ -46,7 +46,7 @@ import {
 import { MAX_NESTED_METAFILE_DEPTH } from './emf-plus-image-predecode';
 import { resampleImage } from './emf-plus-image-resample';
 import { plusWorldMatrix } from './emf-plus-state-handlers';
-import { isSvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
 import type { ImagePayload, SvgContext } from './svg-context';
 import type {
 	CanvasContext,

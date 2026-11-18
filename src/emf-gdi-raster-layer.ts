@@ -24,7 +24,7 @@
 import { canvasGetImageData, canvasPutImageData, createImageDataCompat } from './emf-canvas-helpers';
 import { acquireScratch, compositeOverlay, surfaceSize } from './emf-rop2-exact';
 import type { EmfGdiReplayCtx } from './emf-types';
-import { isSvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
 
 /** Largest canvas (in pixels) the layer is allocated for (64 MB of RGBA). */
 export const MAX_LAYER_PIXELS = 16 * 1024 * 1024;

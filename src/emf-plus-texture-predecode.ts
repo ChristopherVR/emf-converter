@@ -65,6 +65,13 @@ import { emfLog, emfWarn } from './emf-logging';
 import { penBrushOffset } from './emf-plus-object-complex';
 import type { EmfPlusDecodedTexture, EmfPlusTextureCache } from './emf-types';
 
+export const EMF_PLUS_SCAN_RECORD_LIMIT = 500000;
+
+export interface EmfRecordObserver {
+	emf(type: number, dataOff: number, recordSize: number): void;
+	plus(type: number, dataOff: number, dataSize: number): void;
+}
+
 /** One candidate compressed-texture image found during the scan. */
 interface Candidate {
 	/** The brush object's cache key (see {@link AssembledEmfPlusObject.cacheKey}). */
@@ -123,12 +130,12 @@ function scanEmfPlusStream(
 	length: number,
 	acc: ContinuationAccumulator,
 	visit: (obj: AssembledEmfPlusObject) => void,
+	observer: EmfRecordObserver | undefined,
 ): void {
 	const end = offset + length;
 	let off = offset;
 	let recordCount = 0;
-	const MAX_RECORDS = 500000;
-	while (off + 12 <= end && recordCount < MAX_RECORDS) {
+	while (off + 12 <= end && recordCount < EMF_PLUS_SCAN_RECORD_LIMIT) {
 		const recType = view.getUint16(off, true);
 		const recFlags = view.getUint16(off + 2, true);
 		const recSize = view.getUint32(off + 4, true);
@@ -137,6 +144,7 @@ function scanEmfPlusStream(
 			break;
 		}
 		recordCount++;
+		if (observer && recDataSize <= recSize - 12) observer.plus(recType, off + 12, recDataSize);
 		if (recType === EMFPLUS_OBJECT) {
 			const assembled = feedEmfPlusObjectRecord(acc, view, recFlags, off + 12, recDataSize);
 			if (assembled) {
@@ -153,25 +161,25 @@ function scanEmfPlusStream(
  * matches) found in the raw EMF byte stream's `EMR_COMMENT`/EMF+
  * sub-streams. A no-op for WMF input, which has no EMF+ records.
  */
-export function walkEmfPlusObjects(view: DataView, visit: (obj: AssembledEmfPlusObject) => void): void {
+export function walkEmfPlusObjects(view: DataView, visit: (obj: AssembledEmfPlusObject) => void, observer?: EmfRecordObserver): void {
 	const acc = createContinuationAccumulator();
 	let offset = 0;
 	const maxOffset = view.byteLength;
 	let recordCount = 0;
-	const MAX_RECORDS = 500000;
-	while (offset + 8 <= maxOffset && recordCount < MAX_RECORDS) {
+	while (offset + 8 <= maxOffset && recordCount < EMF_PLUS_SCAN_RECORD_LIMIT) {
 		const recType = view.getUint32(offset, true);
 		const recSize = view.getUint32(offset + 4, true);
 		if (recSize < 8 || offset + recSize > maxOffset) {
 			break;
 		}
 		recordCount++;
+		observer?.emf(recType, offset + 8, recSize);
 		if (recType === EMR_COMMENT && recSize >= 16) {
 			const dataOff = offset + 8;
 			const commentDataSize = view.getUint32(dataOff, true);
 			const sig = view.getUint32(dataOff + 4, true);
 			if (sig === EMFPLUS_SIGNATURE && commentDataSize > 4) {
-				scanEmfPlusStream(view, dataOff + 8, commentDataSize - 4, acc, visit);
+				scanEmfPlusStream(view, dataOff + 8, commentDataSize - 4, acc, visit, observer);
 			}
 		} else if (recType === EMR_EOF) {
 			break;

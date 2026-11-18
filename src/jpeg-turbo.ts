@@ -11,7 +11,6 @@
  * Origin: this follows the algorithms of the Independent JPEG Group's libjpeg (jidctint.c, jdhuff.c,
  * jdsample.c, jdcolor.c; see THIRD_PARTY_NOTICES), so that its output matches Windows exactly.
  */
-import { cmykPlanesToRgba } from './jpeg-cmyk';
 import { ArithDecoder, defaultArithConditioning, type ArithConditioning } from './jpeg-arith';
 
 export interface TurboJpeg {
@@ -285,9 +284,10 @@ function upsample(plane: Uint8Array, stride: number, cw: number, ch: number, hr:
 }
 
 /** Decode `bytes`, or return `null` when this decoder does not support the file. */
-export function decodeJpegTurbo(bytes: Uint8Array, colorTransform?: boolean): TurboJpeg | null {
+export async function decodeJpegTurbo(bytes: Uint8Array, colorTransform?: boolean): Promise<TurboJpeg | null> {
 	try {
-		return decodeInner(bytes, colorTransform);
+		const planes = decodeJpegPlanes(bytes);
+		return planes ? await convertPlanes(planes, colorTransform) : null;
 	} catch {
 		return null;
 	}
@@ -301,11 +301,6 @@ export interface JpegPlanes {
 	ids: number[];
 	/** Adobe APP14 colour transform byte, when present. */
 	adobe: number | undefined;
-}
-
-function decodeInner(data: Uint8Array, colorTransform?: boolean): TurboJpeg | null {
-	const p = decodeJpegPlanes(data);
-	return p ? convertPlanes(p, colorTransform) : null;
 }
 
 /** Decode entropy-coded data to unconverted component planes. */
@@ -448,9 +443,10 @@ export function decodeJpegPlanes(data: Uint8Array): JpegPlanes | null {
 	return { width, height, planes: full, ids: comps.map(c => c.id), adobe };
 }
 
-function convertPlanes({ width, height, planes: full, ids, adobe }: JpegPlanes, colorTransform?: boolean): TurboJpeg | null {
+async function convertPlanes({ width, height, planes: full, ids, adobe }: JpegPlanes, colorTransform?: boolean): Promise<TurboJpeg> {
 	if (full.length === 4) {
 		// libjpeg treats an Adobe transform of 0, or no marker, as CMYK and anything else as YCCK.
+		const { cmykPlanesToRgba } = await import('./jpeg-cmyk');
 		return { width, height, data: cmykPlanesToRgba(full, width, height, adobe !== undefined && adobe !== 0) };
 	}
 	const out = new Uint8Array(width * height * 4);

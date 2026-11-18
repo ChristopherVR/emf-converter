@@ -43,7 +43,7 @@ import { linearRampSampler, unpremultiply } from './emf-plus-linear-ramp';
 import { applyPlusWorldTransform, deviceToCanvasMatrix, plusCanvasShift, plusWorldMatrix } from './emf-plus-state-handlers';
 import { flatteningContext } from './emf-plus-flatten';
 import { figuresBox, rasterizePlusFill, recordPlusFigures, type FixFigure } from './emf-plus-raster';
-import { isSvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
 import type {
 	CanvasContext,
 	EmfPlusBrush,

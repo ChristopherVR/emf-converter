@@ -32,7 +32,7 @@ import { brushPaint, fixPoint } from './emf-gdi-raster-shapes';
 import { emfWarn } from './emf-logging';
 import type { EmfGdiReplayCtx } from './emf-types';
 import { SpanList } from './gdi-raster';
-import { canReadBack } from './svg-context';
+import { canReadBack } from './svg-capabilities';
 
 /** `FLOODFILLSURFACE`. */
 const FLOODFILLSURFACE = 1;

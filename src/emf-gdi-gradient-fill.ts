@@ -36,7 +36,7 @@ import { fixPoint } from './emf-gdi-raster-shapes';
 import { acquireScratch, compositeOverlay } from './emf-rop2-exact';
 import type { EmfGdiReplayCtx } from './emf-types';
 import { fillPolygonSpans } from './gdi-raster';
-import { isSvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
 
 /** GradientFill modes. */
 const GRADIENT_FILL_RECT_H = 0;

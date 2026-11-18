@@ -41,15 +41,9 @@ import {
 	getPageUnitMultiplier,
 	DEFAULT_PLUS_DPI,
 } from './emf-plus-state-handlers';
-import { isSvgContext } from './svg-context';
-import {
-	ANTIALIASED_QUALITY,
-	CLEARTYPE_NATURAL_QUALITY,
-	NONANTIALIASED_QUALITY,
-	type DefaultTextSmoothing,
-	type GdiRealizedFont,
-	type LogFontSpec,
-} from './gdi-font-engine';
+import { isSvgContext } from './svg-capabilities';
+import { ANTIALIASED_QUALITY, CLEARTYPE_NATURAL_QUALITY, NONANTIALIASED_QUALITY } from './gdi-font-quality';
+import type { DefaultTextSmoothing, GdiRealizedFont, LogFontSpec } from './gdi-font-engine';
 import { ETO_CLIPPED, gdiTextCoverage, paintGdiTextRun } from './gdi-text-render';
 import type {
 	DeferredImageDraw,

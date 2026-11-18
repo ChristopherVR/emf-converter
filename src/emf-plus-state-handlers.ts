@@ -57,7 +57,7 @@ import { isHalfPixelOffset } from './emf-plus-image-resample';
 import { emfPlusPathClipShape } from './emf-plus-path';
 import { clipPixelRects } from './emf-plus-raster';
 import { down32 } from './float32-down';
-import { isSvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
 import type {
 	EmfPlusBrush,
 	EmfPlusGraphicsExt,

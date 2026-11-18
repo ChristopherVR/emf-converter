@@ -6,11 +6,14 @@ export default defineConfig((options) => {
 	entry: ['src/index.ts'],
 	format: ['esm', 'cjs'],
 	dts: true,
-	splitting: false,
+	splitting: true,
 	sourcemap: false,
 	clean: !options.watch,
 	treeshake: true,
 	platform: 'neutral',
+	esbuildOptions(options) {
+		options.chunkNames = 'node-chunks/[name]-[hash]';
+	},
 	// Optional peer dependency, only ever reached via a dynamic import() at
 	// runtime in plain Node.js. Keep it external so consumers who never hit
 	// that path aren't forced to bundle or install it.

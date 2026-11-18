@@ -60,7 +60,7 @@ import { nominalLineCoverage, recordNominalFigures, type NominalFigure } from '.
 import { widenFigures, type DevicePen } from './emf-plus-widen';
 import { insetStrokeCoverage } from './emf-plus-inset-outline';
 import { mulMatrix } from './emf-plus-brush-gradient';
-import { isSvgContext } from './svg-context';
+import { isSvgContext } from './svg-capabilities';
 import type { CanvasContext, EmfPlusPen, EmfPlusReplayCtx, TransformMatrix } from './emf-types';
 
 /**
