@@ -1,6 +1,6 @@
 {
 	"name": "emf-converter",
-	"version": "5.0.1",
+	"version": "5.0.2",
 	"description": "Convert EMF/WMF metafile binaries to PNG, JPEG or WebP data URLs, SVG (markup, data URL, React/JSX) or PDF",
 	"keywords": [
 		"canvas",

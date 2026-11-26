@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [5.0.2](https://github.com/ChristopherVR/emf-converter/releases/tag/v5.0.2) - 2026-11-26
+
+### Build & CI
+
+- **deps-dev:** Bump vitest (#33) ([b6fe0b7](https://github.com/ChristopherVR/emf-converter/commit/b6fe0b782d3599c9a649d5aea8f68301d70bad65))
+
 ## [5.0.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v5.0.1) - 2026-11-26
 
 ### Performance
