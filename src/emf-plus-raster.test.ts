@@ -45,6 +45,14 @@ describe('rasterizePlusFill', () => {
 		expect(cov[1 * 6 + 2]).toBe(255);
 	});
 
+	it('adds disjoint subpixel spans to the same antialiased pixel', () => {
+		const figures = [square(-1, 0, 0.25, 1), square(0.75, 0.25, 1.125, 1)];
+		const coverage = rasterizePlusFill(figures, false, true, true, { x: 0, y: 0, w: 2, h: 1 });
+		// The first span covers two columns for four sample rows. The second
+		// covers two columns in pixel 0 and one in pixel 1 for three rows.
+		expect([...coverage]).toEqual([112, 24]);
+	});
+
 	it('fills nonzero or even-odd', () => {
 		const outer = square(0, 0, 6, 4);
 		const inner = square(2, 1, 4, 3);

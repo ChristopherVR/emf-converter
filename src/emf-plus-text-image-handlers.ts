@@ -900,18 +900,14 @@ function drawPlusDriverString(
 	const bold = font.flags & 1 ? 'bold ' : '';
 	const italic = font.flags & 2 ? 'italic ' : '';
 	const family = mapFontFamily(font.family, rCtx.fontFamilyMap);
-	const setFont = (): void => {
-		ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
-		ctx.textBaseline = 'alphabetic';
-		ctx.textAlign = 'left';
-	};
+	ctx.font = `${italic}${bold}${font.emSize}px ${family}`;
+	ctx.textBaseline = 'alphabetic';
+	ctx.textAlign = 'left';
 	if (realizedAdvance) {
-		setFont();
 		fillPlusText(rCtx, recFlags, brushVal, String.fromCharCode(...codes), positions[0].x, positions[0].y, font.emSize);
 		return;
 	}
 	for (let i = 0; i < codes.length; i++) {
-		setFont();
 		fillPlusText(rCtx, recFlags, brushVal, String.fromCharCode(codes[i]), positions[i].x, positions[i].y, font.emSize);
 	}
 }

@@ -2,6 +2,17 @@
  * Colour conversion helpers for the EMF/WMF converter.
  */
 
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+
+/** Packs RGBA bytes into the 32-bit word that stores them in memory order. */
+export function packRgbaWord(r: number, g: number, b: number, a: number): number {
+	const rr = Math.round(r) & 255;
+	const gg = Math.round(g) & 255;
+	const bb = Math.round(b) & 255;
+	const aa = Math.round(a) & 255;
+	return (LITTLE_ENDIAN ? (aa << 24) | (bb << 16) | (gg << 8) | rr : (rr << 24) | (gg << 16) | (bb << 8) | aa) >>> 0;
+}
+
 export function colorRefToHex(r: number, g: number, b: number): string {
 	const toHex = (v: number) => v.toString(16).padStart(2, '0');
 	return `#${toHex(r & 0xff)}${toHex(g & 0xff)}${toHex(b & 0xff)}`;

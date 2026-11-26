@@ -52,6 +52,7 @@ import {
 	type PathSeg,
 	type Polyline,
 } from './canvas-path';
+import { packRgbaWord } from './emf-color-helpers';
 import { rasterizeRings, type PixelRect } from './software-raster-coverage';
 import {
 	SoftwareGradient,
@@ -253,17 +254,6 @@ export class SoftwareRasterCanvas {
 /** True when `value` is a {@link SoftwareRasterCanvas} or its context. */
 export function isSoftwareRaster(value: unknown): value is SoftwareRasterCanvas | SoftwareRasterContext {
 	return value instanceof SoftwareRasterCanvas || value instanceof SoftwareRasterContext;
-}
-
-const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
-
-/** Packs RGBA bytes into the 32-bit word that stores them in memory order. */
-function packWord(r: number, g: number, b: number, a: number): number {
-	const rr = Math.round(r) & 255;
-	const gg = Math.round(g) & 255;
-	const bb = Math.round(b) & 255;
-	const aa = Math.round(a) & 255;
-	return (LITTLE_ENDIAN ? (aa << 24) | (bb << 16) | (gg << 8) | rr : (rr << 24) | (gg << 16) | (bb << 8) | aa) >>> 0;
 }
 
 function clipAt(clip: ClipMask, x: number, y: number): number {
@@ -680,7 +670,7 @@ export class SoftwareRasterContext {
 		}
 		const fastOpaque = solid !== undefined && sa0 >= 1 && op === 'source-over';
 		const words = fastOpaque ? this.canvas.words : null;
-		const word = solid ? packWord(solid[0], solid[1], solid[2], 255) : 0;
+		const word = solid ? packRgbaWord(solid[0], solid[1], solid[2], 255) : 0;
 		rasterizeRings(rings, rule, bounds, (y, x0, x1, level) => {
 			const rowStart = y * width;
 			if (words && level === 255 && !clip) {

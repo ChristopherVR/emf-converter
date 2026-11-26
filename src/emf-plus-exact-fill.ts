@@ -31,6 +31,7 @@
  */
 
 import { canvasGetImageData, canvasPutImageData, createImageDataCompat, createTempCanvas } from './emf-canvas-helpers';
+import { packRgbaWord } from './emf-color-helpers';
 import { flattenBezierGdiplus, gdiplusFix } from './emf-plus-bezier';
 import { mulMatrix,pathGradientColorAt, pathGradientQuantum } from './emf-plus-brush-gradient';
 import { hatchSampler } from './emf-plus-brush-hatch';
@@ -791,8 +792,14 @@ export function solidSampler(argb: number): DeviceBrushSampler {
 	const r = (argb >>> 16) & 0xff;
 	const g = (argb >>> 8) & 0xff;
 	const b = argb & 0xff;
+	const word = packRgbaWord(r, g, b, a);
 	return (_x0, _y0, w, h, out) => {
-		for (let i = 0; i < w * h * 4; i += 4) {
+		const pixels = w * h;
+		if (out.byteOffset % 4 === 0 && out.length >= pixels * 4) {
+			new Uint32Array(out.buffer, out.byteOffset, pixels).fill(word);
+			return;
+		}
+		for (let i = 0; i < pixels * 4; i += 4) {
 			out[i] = r;
 			out[i + 1] = g;
 			out[i + 2] = b;
@@ -915,6 +922,7 @@ export function gdiplusBlendPixels(data: Uint8ClampedArray, dst: Uint8ClampedArr
 			exact = false;
 			continue;
 		}
+		if (cv === 255 && a === 255) continue;
 		// Samples inside (coverage = round(k * 255 / 32) is one-to-one).
 		const k = cv === 255 ? 32 : Math.round((cv * 32) / 255);
 		const A = Math.round((a * k) / 32);

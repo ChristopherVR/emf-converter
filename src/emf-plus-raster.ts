@@ -281,14 +281,16 @@ export function rasterizePlusFill(
 	const x0 = 16 * box.x + o - (antialias ? 8 : 0);
 	const y0 = 16 * box.y + o - (antialias ? 8 : 0);
 	const cols = box.w * sx;
+	const lastY = y0 + stepY * (box.h * sy - 1);
 	interface Edge {
-		ax: number;
 		ay: number;
-		bx: number;
-		by: number;
+		base: number;
+		dx: number;
+		denominator: number;
 		top: number;
 		bottom: number;
 		w: number;
+		k: number;
 	}
 	const edges: Edge[] = [];
 	for (const f of figures) {
@@ -299,61 +301,71 @@ export function rasterizePlusFill(
 			const ay = f[2 * i + 1];
 			const bx = f[2 * j];
 			const by = f[2 * j + 1];
-			if (ay === by) {
+			const top = Math.min(ay, by);
+			const bottom = Math.max(ay, by);
+			if (!(top < bottom && top <= lastY && bottom > y0)) {
 				continue;
 			}
-			edges.push({ ax, ay, bx, by, top: Math.min(ay, by), bottom: Math.max(ay, by), w: by > ay ? 1 : -1 });
+			const dy = by - ay;
+			edges.push({ ay, base: ax * dy, dx: bx - ax, denominator: Math.abs(dy), top, bottom, w: dy > 0 ? 1 : -1, k: 0 });
 		}
 	}
 	const coverage = new Uint8ClampedArray(box.w * box.h);
-	const counts = new Int32Array(box.w);
-	const diff = new Int32Array(cols + 1);
-	const xs: Array<{ k: number; w: number }> = [];
+	const diff = antialias ? new Int32Array(box.w + 2) : null;
+	edges.sort((a, b) => a.top - b.top);
+	const active: Edge[] = [];
+	let next = 0;
 	for (let py = 0; py < box.h; py++) {
-		counts.fill(0);
+		const row = py * box.w;
+		diff?.fill(0);
 		for (let r = 0; r < sy; r++) {
 			const y = y0 + stepY * (py * sy + r);
-			xs.length = 0;
-			for (const e of edges) {
-				if (y < e.top || y >= e.bottom) {
-					continue;
-				}
-				// Crossing x = N / D exactly (D > 0); first sample with x0 + stepX k >= N / D.
-				let D = e.by - e.ay;
-				let N = e.ax * D + (e.bx - e.ax) * (y - e.ay);
-				if (D < 0) {
-					D = -D;
-					N = -N;
-				}
-				const k = ceilDiv(N - x0 * D, stepX * D);
-				xs.push({ k: Math.min(Math.max(k, 0), cols), w: e.w });
+			let length = 0;
+			for (const edge of active) {
+				if (y < edge.bottom) active[length++] = edge;
 			}
-			if (xs.length < 2) {
-				continue;
+			active.length = length;
+			while (next < edges.length && edges[next].top <= y) {
+				const edge = edges[next++];
+				if (y < edge.bottom) active.push(edge);
 			}
-			xs.sort((a, b) => a.k - b.k);
-			diff.fill(0);
+			if (active.length < 2) continue;
+			for (const edge of active) {
+				// Crossing x = N / D; take the first sample with x0 + stepX k >= N / D.
+				const n = (edge.base + edge.dx * (y - edge.ay)) * edge.w - x0 * edge.denominator;
+				const d = stepX * edge.denominator;
+				edge.k = n <= 0 ? 0 : n >= cols * d ? cols : ceilDiv(n, d);
+			}
+			active.sort((a, b) => a.k - b.k);
 			let wind = 0;
-			for (let i = 0; i + 1 < xs.length; i++) {
-				wind += xs[i].w;
+			for (let i = 0; i + 1 < active.length; i++) {
+				wind += active[i].w;
 				const inside = evenOdd ? (wind & 1) !== 0 : wind !== 0;
-				if (inside && xs[i + 1].k > xs[i].k) {
-					diff[xs[i].k]++;
-					diff[xs[i + 1].k]--;
-				}
-			}
-			let run = 0;
-			for (let k = 0; k < cols; k++) {
-				run += diff[k];
-				if (run > 0) {
-					counts[(k / sx) | 0]++;
+				const start = active[i].k;
+				const end = active[i + 1].k;
+				if (!inside || !(end > start)) continue;
+				if (!diff) {
+					coverage.fill(255, row + start, row + end);
+				} else {
+					// Add all eight samples for interior pixels and the exact fraction at each end.
+					// If both ends lie in one pixel, the updates combine to end - start there.
+					const left = start >> 3;
+					const right = end >> 3;
+					const leftSamples = start & 7;
+					const rightSamples = end & 7;
+					diff[left] += 8 - leftSamples;
+					diff[left + 1] += leftSamples;
+					diff[right] += rightSamples - 8;
+					diff[right + 1] -= rightSamples;
 				}
 			}
 		}
-		const total = sx * sy;
-		for (let px = 0; px < box.w; px++) {
-			const c = counts[px];
-			coverage[py * box.w + px] = c === 0 ? 0 : c >= total ? 255 : Math.round((c * 255) / total);
+		if (diff) {
+			let count = 0;
+			for (let px = 0; px < box.w; px++) {
+				count += diff[px];
+				coverage[row + px] = (count * 255 + 16) >> 5;
+			}
 		}
 	}
 	return coverage;

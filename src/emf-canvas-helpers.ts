@@ -508,7 +508,9 @@ export function applyFont(ctx: CanvasContext, state: DrawState, scale = 1): void
 	const weightPart = weight ? `${weight} ` : '';
 	const size = fontSizePx(state, scale);
 	const family = mapFontFamily(state.fontFamily, state.fontFamilyMap);
-	ctx.font = `${italic}${weightPart}${size}px ${family}`;
+	const font = `${italic}${weightPart}${size}px ${family}`;
+	// Read the live font so Canvas saves/restores and EMF+ text are respected.
+	if (ctx.font !== font) ctx.font = font;
 }
 
 /**
