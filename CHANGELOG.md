@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 This file is generated from [Conventional Commits](https://www.conventionalcommits.org)
 by [git-cliff](https://git-cliff.org); do not edit it by hand.
 
+## [5.0.1](https://github.com/ChristopherVR/emf-converter/releases/tag/v5.0.1) - 2026-11-26
+
+### Performance
+
+- **replay:** Rasterize gdiplus coverage by span ([06d8973](https://github.com/ChristopherVR/emf-converter/commit/06d8973cd50dd07ad208563d9746359b33ef6c6e))
+
 ## [5.0.0](https://github.com/ChristopherVR/emf-converter/releases/tag/v5.0.0) - 2026-11-18
 
 ### Performance
