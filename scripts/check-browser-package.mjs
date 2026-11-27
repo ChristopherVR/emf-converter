@@ -79,6 +79,19 @@ for (const name of ['browser.js', 'browser.mjs', 'lite.js', 'lite.mjs', ...brows
 	const source = await readFile(join(pkg, 'dist', name), 'utf8');
 	assert.doesNotMatch(source, /import\s*\([^)]*['"](?:@napi-rs\/canvas|node:)/);
 }
+// Both Node entry formats must preserve the directives for consumer bundlers.
+const nodeChunks = await readdir(join(pkg, 'dist/node-chunks'));
+for (const extension of ['.js', '.mjs']) {
+	const files = ['index' + extension, ...nodeChunks
+		.filter(name => name.endsWith(extension))
+		.map(name => `node-chunks/${name}`)];
+	const sources = await Promise.all(files.map(name => readFile(join(pkg, 'dist', name), 'utf8')));
+	const canvasImports = sources.flatMap(source =>
+		source.match(/import\(\s*(?:\/\*[^*]*\*\/\s*)*['"]@napi-rs\/canvas['"]\s*\)/g) ?? []);
+	assert.equal(canvasImports.length, 1, `expected an optional canvas import in Node ${extension}`);
+	assert.match(canvasImports[0], /\/\*\s*webpackIgnore:\s*true\s*\*\//, `Node ${extension} lost webpackIgnore`);
+	assert.match(canvasImports[0], /\/\*\s*@vite-ignore\s*\*\//, `Node ${extension} lost @vite-ignore`);
+}
 const { createServer, build } = await import(process.argv[2] ? pathToFileURL(resolve(process.argv[2])).href : 'vite');
 // Vite's HTML plugin uses cwd as well as root; keep both on the same Windows drive.
 process.chdir(root);
