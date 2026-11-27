@@ -10,7 +10,9 @@ export default defineConfig((options) => {
 	sourcemap: false,
 	clean: !options.watch,
 	treeshake: true,
-	minify: !options.watch,
+	// Whitespace minification strips the optional canvas import's bundler directives.
+	minifyIdentifiers: !options.watch,
+	minifySyntax: !options.watch,
 	platform: 'neutral',
 	esbuildOptions(options) {
 		options.chunkNames = 'node-chunks/[name]-[hash]';
